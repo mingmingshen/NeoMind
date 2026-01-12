@@ -30,6 +30,9 @@ pub struct SessionMessage {
     pub tool_calls: Option<Vec<serde_json::Value>>,
     /// Tool call ID for tool responses.
     pub tool_call_id: Option<String>,
+    /// Tool call name for tracking which tool was called.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_name: Option<String>,
     /// Thinking/reasoning content.
     pub thinking: Option<String>,
     /// Message timestamp.
@@ -44,6 +47,7 @@ impl SessionMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -56,6 +60,7 @@ impl SessionMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -68,6 +73,7 @@ impl SessionMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -80,6 +86,7 @@ impl SessionMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }

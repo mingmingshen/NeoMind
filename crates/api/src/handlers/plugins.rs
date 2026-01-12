@@ -167,7 +167,31 @@ fn get_plugin_registry() -> Arc<UnifiedPluginRegistry> {
     }).clone()
 }
 
-/// List all plugins.
+/// Convert device adapter to unified PluginDto.
+fn adapter_to_plugin_dto(adapter: AdapterPluginDto) -> PluginDto {
+    PluginDto {
+        id: adapter.id.clone(),
+        name: adapter.name.clone(),
+        plugin_type: format!("device_adapter_{}", adapter.adapter_type),
+        category: "devices".to_string(),
+        state: if adapter.running { "Running".to_string() } else { "Stopped".to_string() },
+        enabled: adapter.enabled,
+        version: adapter.version,
+        description: format!("{} device adapter", adapter.adapter_type.to_uppercase()),
+        author: None,
+        required_version: "1.0.0".to_string(),
+        stats: PluginStatsDto::default(),
+        loaded_at: DateTime::from_timestamp(adapter.last_activity, 0).unwrap_or_default(),
+        path: None,
+        running: adapter.running,
+    }
+}
+
+/// List all extension plugins (dynamically loaded .so/.wasm files).
+///
+/// This endpoint returns only extension plugins loaded from plugin files.
+/// Built-in system components (LLM backend, device connections, etc.) are managed
+/// in their respective dedicated tabs in the UI.
 ///
 /// GET /api/plugins
 ///
@@ -175,32 +199,59 @@ fn get_plugin_registry() -> Arc<UnifiedPluginRegistry> {
 /// - type: Filter by plugin type (llm_backend, storage_backend, etc.)
 /// - state: Filter by state (Loaded, Initialized, Running, Stopped, etc.)
 /// - enabled: Show only enabled plugins (true/false)
+/// - category: Filter by category (ai, devices, notify)
 pub async fn list_plugins_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Query(query): Query<PluginListQuery>,
 ) -> HandlerResult<serde_json::Value> {
-    let registry = get_plugin_registry();
-    let mut plugins = registry.list().await;
+    use edge_ai_devices::DeviceAdapterPluginRegistry;
+    use edge_ai_core::plugin::types::PluginCategory;
 
-    // Apply filters
-    if let Some(type_filter) = query.r#type {
-        let plugin_type = PluginType::from_str(&type_filter);
-        plugins.retain(|p| p.plugin_type == plugin_type);
+    let mut all_plugins: Vec<PluginDto> = Vec::new();
+
+    // 1. Get plugins from UnifiedPluginRegistry
+    let registry = get_plugin_registry();
+    let registry_plugins = registry.list().await;
+    for plugin in registry_plugins {
+        all_plugins.push(PluginDto::from(plugin));
     }
 
-    if let Some(state_filter) = query.state {
-        plugins.retain(|p| format!("{:?}", p.state) == state_filter);
+    // 2. Get device adapter plugins from DeviceAdapterPluginRegistry
+    // Note: Only dynamically loaded adapters are shown here.
+    // Built-in MQTT broker is managed in the Device Connections tab.
+    if let Some(_event_bus) = &state.event_bus {
+        // Try to get the global registry
+        if let Some(adapter_registry) = edge_ai_devices::DeviceAdapterPluginRegistry::try_get() {
+            let adapter_stats = adapter_registry.get_stats().await;
+            for adapter in adapter_stats.adapters {
+                // Only show external adapters (exclude built-in internal-mqtt which is managed elsewhere)
+                if adapter.id != "internal-mqtt" {
+                    all_plugins.push(adapter_to_plugin_dto(AdapterPluginDto::from(adapter)));
+                }
+            }
+        }
+    }
+
+    // 3. Apply filters
+    if let Some(type_filter) = &query.r#type {
+        all_plugins.retain(|p| {
+            // Match exact plugin_type or match the base type (e.g., device_adapter_* matches device_adapter)
+            p.plugin_type == *type_filter ||
+            p.plugin_type.starts_with(&format!("{}_", type_filter))
+        });
+    }
+
+    if let Some(state_filter) = &query.state {
+        all_plugins.retain(|p| p.state == *state_filter);
     }
 
     if let Some(enabled_only) = query.enabled {
-        plugins.retain(|p| p.enabled == enabled_only);
+        all_plugins.retain(|p| p.enabled == enabled_only);
     }
 
-    let dtos: Vec<PluginDto> = plugins.into_iter().map(PluginDto::from).collect();
-
     ok(json!({
-        "plugins": dtos,
-        "count": dtos.len(),
+        "plugins": all_plugins,
+        "count": all_plugins.len(),
     }))
 }
 
@@ -227,14 +278,16 @@ pub async fn get_plugin_handler(
     }))
 }
 
-/// Register a new plugin.
+/// Register a new extension plugin from a plugin file.
 ///
 /// POST /api/plugins
 ///
-/// This endpoint can register:
-/// - Native plugins (by providing a path to .so/.dylib/.dll file)
-/// - WASM plugins (by providing a path to .wasm file)
-/// - Built-in plugins (by ID)
+/// This endpoint loads external plugins from plugin files:
+/// - Native plugins: .so (Linux), .dylib (macOS), .dll (Windows)
+/// - WASM plugins: .wasm file (future support)
+///
+/// Note: Built-in system components (LLM backend, device connections) are
+/// managed in their respective dedicated tabs, not through this endpoint.
 pub async fn register_plugin_handler(
     State(_state): State<ServerState>,
     Json(req): Json<RegisterPluginRequest>,
@@ -642,12 +695,13 @@ impl From<edge_ai_devices::AdapterPluginInfo> for AdapterPluginDto {
 ///
 /// GET /api/plugins/device-adapters
 pub async fn list_device_adapter_plugins_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     use edge_ai_devices::DeviceAdapterPluginRegistry;
 
-    let event_bus = state.event_bus.clone().unwrap();
-    let registry = DeviceAdapterPluginRegistry::new((*event_bus).clone());
+    let registry = DeviceAdapterPluginRegistry::try_get()
+        .ok_or_else(|| ErrorResponse::service_unavailable("Device adapter registry not initialized"))?;
+
     let stats = registry.get_stats().await;
 
     let adapters: Vec<AdapterPluginDto> = stats.adapters
@@ -667,13 +721,13 @@ pub async fn list_device_adapter_plugins_handler(
 ///
 /// POST /api/plugins/device-adapters
 pub async fn register_device_adapter_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     use edge_ai_devices::{DeviceAdapterPluginRegistry, AdapterPluginConfig};
 
-    let event_bus = state.event_bus.clone().unwrap();
-    let registry = DeviceAdapterPluginRegistry::new((*event_bus).clone());
+    let registry = DeviceAdapterPluginRegistry::try_get()
+        .ok_or_else(|| ErrorResponse::service_unavailable("Device adapter registry not initialized"))?;
 
     // Parse request
     let id = req.get("id").and_then(|v| v.as_str())
@@ -720,13 +774,13 @@ pub async fn register_device_adapter_handler(
 ///
 /// GET /api/plugins/:id/devices
 pub async fn get_adapter_devices_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     use edge_ai_devices::DeviceAdapterPluginRegistry;
 
-    let event_bus = state.event_bus.clone().unwrap();
-    let registry = DeviceAdapterPluginRegistry::new((*event_bus).clone());
+    let registry = DeviceAdapterPluginRegistry::try_get()
+        .ok_or_else(|| ErrorResponse::service_unavailable("Device adapter registry not initialized"))?;
 
     let devices = registry.get_adapter_devices(&id).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get devices: {}", e)))?;
@@ -753,12 +807,12 @@ pub async fn get_adapter_devices_handler(
 ///
 /// GET /api/plugins/device-adapters/stats
 pub async fn get_device_adapter_stats_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     use edge_ai_devices::DeviceAdapterPluginRegistry;
 
-    let event_bus = state.event_bus.clone().unwrap();
-    let registry = DeviceAdapterPluginRegistry::new((*event_bus).clone());
+    let registry = DeviceAdapterPluginRegistry::try_get()
+        .ok_or_else(|| ErrorResponse::service_unavailable("Device adapter registry not initialized"))?;
     let stats = registry.get_stats().await;
 
     ok(json!(stats))

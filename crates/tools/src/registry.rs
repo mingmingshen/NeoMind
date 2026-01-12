@@ -217,7 +217,7 @@ impl ToolRegistryBuilder {
     }
 
     /// Add the query data tool with real storage.
-    pub fn with_real_query_data_tool(self, storage: Arc<edge_ai_storage::TimeSeriesStore>) -> Self {
+    pub fn with_real_query_data_tool(self, storage: Arc<edge_ai_devices::TimeSeriesStorage>) -> Self {
         self.with_tool(Arc::new(super::real::QueryDataTool::new(storage)))
     }
 

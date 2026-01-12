@@ -38,6 +38,10 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     state.init_workflow_engine().await;
     startup.service("Workflow engine", ServiceStatus::Started);
 
+    // Initialize tools (must be after workflow engine)
+    state.init_tools().await;
+    startup.service("AI tools", ServiceStatus::Started);
+
     // Configuration phase
     startup.phase_config();
 

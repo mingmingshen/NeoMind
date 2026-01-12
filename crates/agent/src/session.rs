@@ -41,6 +41,8 @@ pub struct SessionManager {
     default_config: AgentConfig,
     /// Default LLM backend (configured for new sessions)
     default_llm_backend: Arc<RwLock<Option<LlmBackend>>>,
+    /// Tool registry for all sessions
+    tool_registry: Arc<RwLock<Option<Arc<edge_ai_tools::ToolRegistry>>>>,
 }
 
 impl SessionManager {
@@ -67,6 +69,7 @@ impl SessionManager {
             store,
             default_config: AgentConfig::default(),
             default_llm_backend: Arc::new(RwLock::new(None)),
+            tool_registry: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -82,6 +85,7 @@ impl SessionManager {
             store,
             default_config: AgentConfig::default(),
             default_llm_backend: Arc::new(RwLock::new(None)),
+            tool_registry: Arc::new(RwLock::new(None)),
         };
 
         // Note: We don't restore sessions on startup for now
@@ -125,6 +129,7 @@ impl SessionManager {
                     content: msg.content.clone(),
                     tool_calls,
                     tool_call_id: msg.tool_call_id.clone(),
+                    tool_call_name: msg.tool_call_name.clone(),
                     thinking: msg.thinking.clone(),
                     timestamp: msg.timestamp,
                 }
@@ -171,6 +176,7 @@ impl SessionManager {
                     content: sm.content,
                     tool_calls,
                     tool_call_id: sm.tool_call_id,
+                    tool_call_name: sm.tool_call_name,
                     thinking: sm.thinking,
                     timestamp: sm.timestamp,
                 }
@@ -200,10 +206,22 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Set the tool registry for all new sessions.
+    pub async fn set_tool_registry(&self, registry: Arc<edge_ai_tools::ToolRegistry>) {
+        *self.tool_registry.write().await = Some(registry);
+    }
+
     /// Create a new session.
     pub async fn create_session(&self) -> Result<String> {
         let session_id = Uuid::new_v4().to_string();
-        let agent = Arc::new(Agent::new(self.default_config.clone(), session_id.clone()));
+
+        // Use tool registry if set, otherwise create default mock tools
+        let tool_registry = self.tool_registry.read().await.clone();
+        let agent = if let Some(tools) = tool_registry {
+            Arc::new(Agent::with_tools(self.default_config.clone(), session_id.clone(), tools))
+        } else {
+            Arc::new(Agent::new(self.default_config.clone(), session_id.clone()))
+        };
 
         // Configure LLM if a default backend is set
         let llm_backend = self.default_llm_backend.read().await.clone();
@@ -247,7 +265,14 @@ impl SessionManager {
                         // Session is in database but not in memory (server restart)
                         // Recreate the agent
                         eprintln!("Restoring session {} from database", id);
-                        let agent = Arc::new(Agent::new(self.default_config.clone(), id.clone()));
+
+                        // Use tool registry if set, otherwise create default mock tools
+                        let tool_registry = self.tool_registry.read().await.clone();
+                        let agent = if let Some(tools) = tool_registry {
+                            Arc::new(Agent::with_tools(self.default_config.clone(), id.clone(), tools))
+                        } else {
+                            Arc::new(Agent::new(self.default_config.clone(), id.clone()))
+                        };
 
                         // Configure LLM if a default backend is set
                         let llm_backend = self.default_llm_backend.read().await.clone();
@@ -479,6 +504,7 @@ impl Default for SessionManager {
                 }),
                 default_config: AgentConfig::default(),
                 default_llm_backend: Arc::new(RwLock::new(None)),
+                tool_registry: Arc::new(RwLock::new(None)),
             }
         })
     }

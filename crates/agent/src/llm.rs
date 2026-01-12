@@ -131,6 +131,8 @@ pub struct LlmInterface {
     max_tokens: usize,
     /// Default system prompt.
     system_prompt: String,
+    /// Tool definitions for function calling.
+    tool_definitions: Arc<RwLock<Vec<edge_ai_core::llm::backend::ToolDefinition>>>,
     /// Concurrency limiter.
     limiter: ConcurrencyLimiter,
     /// Whether to use instance manager for runtime retrieval.
@@ -149,6 +151,7 @@ impl LlmInterface {
             top_p: config.top_p,
             max_tokens: config.max_tokens,
             system_prompt: "You are a helpful AI assistant.".to_string(),
+            tool_definitions: Arc::new(RwLock::new(Vec::new())),
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(0)),
         }
@@ -165,6 +168,7 @@ impl LlmInterface {
             top_p: config.top_p,
             max_tokens: config.max_tokens,
             system_prompt: "You are a helpful AI assistant.".to_string(),
+            tool_definitions: Arc::new(RwLock::new(Vec::new())),
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(1)),
         }
@@ -267,6 +271,72 @@ impl LlmInterface {
         self
     }
 
+    /// Set tool definitions for function calling.
+    pub async fn set_tool_definitions(&self, tools: Vec<edge_ai_core::llm::backend::ToolDefinition>) {
+        *self.tool_definitions.write().await = tools;
+    }
+
+    /// Get current tool definitions.
+    pub async fn get_tool_definitions(&self) -> Vec<edge_ai_core::llm::backend::ToolDefinition> {
+        self.tool_definitions.read().await.clone()
+    }
+
+    /// Build system prompt with tool descriptions.
+    async fn build_system_prompt_with_tools(&self) -> String {
+        let tools = self.tool_definitions.read().await;
+        if tools.is_empty() {
+            return self.system_prompt.clone();
+        }
+
+        let mut prompt = self.system_prompt.clone();
+        prompt.push_str("\n\n## Available Tools\n\n");
+        prompt.push_str("You can use the following tools to help users:\n\n");
+
+        for tool in tools.iter() {
+            prompt.push_str(&format!("### {}\n{}\n\n", tool.name, tool.description));
+
+            // Extract parameter descriptions
+            if let Some(props) = tool.parameters.get("properties") {
+                if let Some(obj) = props.as_object() {
+                    if !obj.is_empty() {
+                        prompt.push_str("**Parameters:**\n");
+                        for (param_name, param_info) in obj {
+                            let desc = param_info.get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("No description");
+                            prompt.push_str(&format!("- `{}`: {}\n", param_name, desc));
+                        }
+                        prompt.push('\n');
+                    }
+                }
+            }
+
+            // List required parameters
+            if let Some(required) = tool.parameters.get("required") {
+                if let Some(arr) = required.as_array() {
+                    if !arr.is_empty() {
+                        let req_names: Vec<&str> = arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .collect();
+                        prompt.push_str(&format!("**Required:** {}\n\n", req_names.join(", ")));
+                    }
+                }
+            }
+        }
+
+        prompt.push_str("## Tool Call Format\n\n");
+        prompt.push_str("When you need to use a tool, format your response as:\n\n");
+        prompt.push_str("```\n<tool_calls>\n");
+        prompt.push_str("<invoke name=\"tool_name\">\n");
+        prompt.push_str("  <parameter name=\"param1\">value1</parameter>\n");
+        prompt.push_str("  <parameter name=\"param2\">value2</parameter>\n");
+        prompt.push_str("</invoke>\n");
+        prompt.push_str("</tool_calls>\n```\n\n");
+        prompt.push_str("Only use tools when explicitly requested by the user or when it clearly helps answer their question.\n");
+
+        prompt
+    }
+
     /// Update the model name.
     pub async fn update_model(&self, model: String) {
         let mut model_guard = self.model.write().await;
@@ -296,7 +366,9 @@ impl LlmInterface {
         let start = Instant::now();
 
         let model_arc = Arc::clone(&self.model);
-        let system_prompt = self.system_prompt.clone();
+
+        // Build system prompt with tools
+        let system_prompt = self.build_system_prompt_with_tools().await;
 
         // Build input outside the lock
         let model_guard = model_arc.read().await;
@@ -317,11 +389,17 @@ impl LlmInterface {
         let user_msg = Message::user(user_message);
         let messages = vec![system_msg, user_msg];
 
+        // Get tool definitions
+        let tools = self.tool_definitions.read().await;
+        let tools_input = if tools.is_empty() { None } else { Some(tools.clone()) };
+        drop(tools);
+
         let input = LlmInput {
             messages,
             params,
             model: Some(model),
             stream: false,
+            tools: tools_input,
         };
 
         // Get runtime using instance manager if enabled
@@ -351,7 +429,9 @@ impl LlmInterface {
         let user_message = user_message.into();
 
         let model_arc = Arc::clone(&self.model);
-        let system_prompt = self.system_prompt.clone();
+
+        // Build system prompt with tools
+        let system_prompt = self.build_system_prompt_with_tools().await;
 
         // Build input outside the lock
         let model_guard = model_arc.read().await;
@@ -372,11 +452,17 @@ impl LlmInterface {
         let user_msg = Message::user(user_message);
         let messages = vec![system_msg, user_msg];
 
+        // Get tool definitions
+        let tools = self.tool_definitions.read().await;
+        let tools_input = if tools.is_empty() { None } else { Some(tools.clone()) };
+        drop(tools);
+
         let input = LlmInput {
             messages,
             params,
             model: Some(model),
             stream: true,
+            tools: tools_input,
         };
 
         // Get runtime using instance manager if enabled

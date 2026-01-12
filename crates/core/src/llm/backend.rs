@@ -154,6 +154,17 @@ impl Default for GenerationParams {
     }
 }
 
+/// Tool definition for LLM function calling.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolDefinition {
+    /// Tool name
+    pub name: String,
+    /// Tool description
+    pub description: String,
+    /// Parameters as JSON Schema
+    pub parameters: serde_json::Value,
+}
+
 /// LLM input.
 #[derive(Debug, Clone)]
 pub struct LlmInput {
@@ -168,6 +179,9 @@ pub struct LlmInput {
 
     /// Stream response
     pub stream: bool,
+
+    /// Tool definitions for function calling (optional)
+    pub tools: Option<Vec<ToolDefinition>>,
 }
 
 impl LlmInput {
@@ -178,6 +192,7 @@ impl LlmInput {
             params: GenerationParams::default(),
             model: None,
             stream: false,
+            tools: None,
         }
     }
 
@@ -208,6 +223,12 @@ impl LlmInput {
     /// Enable streaming.
     pub fn with_streaming(mut self, stream: bool) -> Self {
         self.stream = stream;
+        self
+    }
+
+    /// Set tool definitions for function calling.
+    pub fn with_tools(mut self, tools: Vec<ToolDefinition>) -> Self {
+        self.tools = Some(tools);
         self
     }
 

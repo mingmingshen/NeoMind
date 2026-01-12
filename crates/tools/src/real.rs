@@ -8,19 +8,18 @@ use serde_json::Value;
 use super::error::{Result, ToolError};
 use super::tool::{object_schema, string_property, number_property, Tool, ToolOutput};
 
-use edge_ai_storage::TimeSeriesStore;
-use edge_ai_devices::MqttDeviceManager;
+use edge_ai_devices::{MqttDeviceManager, TimeSeriesStorage};
 use edge_ai_rules::RuleEngine;
 use edge_ai_workflow::WorkflowEngine;
 
 /// Tool for querying time series data using real storage.
 pub struct QueryDataTool {
-    storage: Arc<TimeSeriesStore>,
+    storage: Arc<TimeSeriesStorage>,
 }
 
 impl QueryDataTool {
     /// Create a new query data tool with real storage.
-    pub fn new(storage: Arc<TimeSeriesStore>) -> Self {
+    pub fn new(storage: Arc<TimeSeriesStorage>) -> Self {
         Self { storage }
     }
 }
@@ -67,18 +66,17 @@ impl Tool for QueryDataTool {
             .unwrap_or(end_time - 86400); // Default 24 hours
 
         // Query the data from real storage
-        let result = self
+        let data_points = self
             .storage
-            .query_range(device_id, metric, start_time, end_time)
+            .query(device_id, metric, start_time, end_time)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to query data: {}", e)))?;
 
         // Convert data points to the expected format
-        let data: Vec<Value> = result.points.iter().map(|p| {
+        let data: Vec<Value> = data_points.iter().map(|p| {
             serde_json::json!({
                 "timestamp": p.timestamp,
-                "value": p.value,
-                "quality": p.quality,
+                "value": p.value.as_f64().unwrap_or(0.0),
             })
         }).collect();
 

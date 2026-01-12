@@ -8,13 +8,113 @@ use crate::error::{AgentError, Result};
 
 /// Parse tool calls from LLM response text.
 ///
-/// Looks for JSON objects containing tool/function information
-/// and returns the remaining text along with any parsed tool calls.
+/// Supports both XML format (<tool_calls><invoke name="...">)
+/// and JSON format ({"tool": "...", "arguments": {...}}).
+/// Returns the remaining text along with any parsed tool calls.
 pub fn parse_tool_calls(text: &str) -> Result<(String, Vec<ToolCall>)> {
     let mut content = text.to_string();
     let mut tool_calls = Vec::new();
 
-    // Find all JSON objects in the text
+    // First, try to parse XML format: <tool_calls><invoke name="tool_name">...</invoke></tool_calls>
+    if let Some(start) = text.find("<tool_calls>") {
+        if let Some(end) = text.find("</tool_calls>") {
+            let tool_calls_str = &text[start..end + 13];
+            content = text[..start].trim().to_string();
+
+            // Find all <invoke> tags within <tool_calls>
+            let mut remaining = tool_calls_str;
+            while let Some(invoke_start) = remaining.find("<invoke") {
+                // Extract the tool name from <invoke name="...">
+                if let Some(name_start) = remaining[invoke_start..].find("name=\"") {
+                    let name_start = invoke_start + name_start + 6; // 6 = len("name=\"")
+                    let name_part = &remaining[name_start..];
+                    if let Some(name_end) = name_part.find('"') {
+                        let tool_name = &name_part[..name_end];
+
+                        // Extract parameters from <parameter name="..." value="..."/>
+                        let mut arguments = serde_json::Map::new();
+
+                        // Find parameters after the invoke tag
+                        let after_invoke = &remaining[name_start + name_end..];
+                        let mut param_search = after_invoke;
+
+                        while let Some(param_start) = param_search.find("<parameter") {
+                            let param_section = &param_search[param_start..];
+
+                            // Extract parameter name
+                            let param_name = if let Some(n_start) = param_section.find("name=\"") {
+                                let n_start = n_start + 6;
+                                let n_part = &param_section[n_start..];
+                                if let Some(n_end) = n_part.find('"') {
+                                    &n_part[..n_end]
+                                } else {
+                                    ""
+                                }
+                            } else {
+                                ""
+                            };
+
+                            // Extract parameter value
+                            let param_value = if let Some(v_start) = param_section.find("value=\"") {
+                                let v_start = v_start + 7;
+                                let v_part = &param_section[v_start..];
+                                if let Some(v_end) = v_part.find('"') {
+                                    &v_part[..v_end]
+                                } else {
+                                    ""
+                                }
+                            } else if let Some(v_start) = param_section.find(">") {
+                                // Try content between tags: <parameter name="x">value</parameter>
+                                let v_start = v_start + 1;
+                                let v_part = &param_section[v_start..];
+                                if let Some(v_end) = v_part.find("</parameter>") {
+                                    &v_part[..v_end]
+                                } else {
+                                    ""
+                                }
+                            } else {
+                                ""
+                            };
+
+                            if !param_name.is_empty() {
+                                // Try to parse as JSON value, otherwise use string
+                                if let Ok(json_val) = serde_json::from_str::<Value>(param_value) {
+                                    arguments.insert(param_name.to_string(), json_val);
+                                } else {
+                                    arguments.insert(param_name.to_string(), Value::String(param_value.to_string()));
+                                }
+                            }
+
+                            // Move past this parameter tag
+                            if let Some(tag_end) = param_search[param_start..].find(">") {
+                                param_search = &param_search[param_start + tag_end + 1..];
+                            } else {
+                                break;
+                            }
+                        }
+
+                        let call = ToolCall {
+                            name: tool_name.to_string(),
+                            id: Uuid::new_v4().to_string(),
+                            arguments: Value::Object(arguments),
+                        };
+                        tool_calls.push(call);
+                    }
+                }
+
+                // Move past this invoke tag
+                if let Some(invoke_end) = remaining.find("</invoke>") {
+                    remaining = &remaining[invoke_end + 9..]; // 9 = len("</invoke>")
+                } else {
+                    break;
+                }
+            }
+
+            return Ok((content, tool_calls));
+        }
+    }
+
+    // Fallback: Try to parse JSON format
     if let Some(match_start) = text.find('{') {
         // Find the matching closing brace by counting braces
         let mut brace_count = 0;
@@ -170,5 +270,37 @@ mod tests {
         assert!(cleaned.contains("Text"));
         assert!(cleaned.contains("more"));
         assert!(cleaned.contains("end"));
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_empty() {
+        let text = "I'll list the devices for you. <tool_calls>\n<invoke name=\"list_devices\">\n</invoke>\n</tool_calls>";
+        let (content, calls) = parse_tool_calls(text).unwrap();
+
+        assert_eq!(content.trim(), "I'll list the devices for you.");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "list_devices");
+        assert!(calls[0].arguments.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_with_params() {
+        let text = "<tool_calls>\n<invoke name=\"query_data\">\n<parameter name=\"device_id\" value=\"sensor1\"/>\n</invoke>\n</tool_calls>";
+        let (content, calls) = parse_tool_calls(text).unwrap();
+
+        assert!(content.trim().is_empty() || content.trim() == "I'll help you.");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "query_data");
+        assert_eq!(calls[0].arguments["device_id"], "sensor1");
+    }
+
+    #[test]
+    fn test_parse_xml_tool_calls_multiple() {
+        let text = "<tool_calls>\n<invoke name=\"list_devices\">\n</invoke>\n<invoke name=\"list_rules\">\n</invoke>\n</tool_calls>";
+        let (content, calls) = parse_tool_calls(text).unwrap();
+
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "list_devices");
+        assert_eq!(calls[1].name, "list_rules");
     }
 }

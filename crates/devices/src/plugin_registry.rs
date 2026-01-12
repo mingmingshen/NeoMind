@@ -121,7 +121,34 @@ pub struct DeviceAdapterPluginRegistry {
 }
 
 impl DeviceAdapterPluginRegistry {
+    /// Get the global device adapter plugin registry.
+    /// This will initialize the registry on first call with the provided event bus.
+    /// Subsequent calls will return the same instance.
+    pub fn get_or_init(event_bus: EventBus) -> Arc<Self> {
+        use std::sync::OnceLock;
+        static REGISTRY: OnceLock<Arc<DeviceAdapterPluginRegistry>> = OnceLock::new();
+
+        REGISTRY.get_or_init(|| {
+            Arc::new(Self {
+                plugins: RwLock::new(HashMap::new()),
+                configs: RwLock::new(HashMap::new()),
+                event_bus,
+                neotalk_version: env!("CARGO_PKG_VERSION").to_string(),
+            })
+        }).clone()
+    }
+
+    /// Try to get the global registry without initializing.
+    /// Returns None if the registry hasn't been initialized yet.
+    pub fn try_get() -> Option<Arc<Self>> {
+        use std::sync::OnceLock;
+        static REGISTRY: OnceLock<Arc<DeviceAdapterPluginRegistry>> = OnceLock::new();
+        REGISTRY.get().cloned()
+    }
+
     /// Create a new device adapter plugin registry.
+    /// Note: This creates a new isolated instance. For most use cases,
+    /// prefer using `get_or_init()` to get the shared global registry.
     pub fn new(event_bus: EventBus) -> Self {
         Self {
             plugins: RwLock::new(HashMap::new()),

@@ -160,6 +160,9 @@ pub struct AgentMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
     /// Tool call ID (for tool responses)
     pub tool_call_id: Option<String>,
+    /// Tool call name (for tracking which tool was called)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_name: Option<String>,
     /// Thinking content (for AI reasoning process)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking: Option<String>,
@@ -175,6 +178,7 @@ impl AgentMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -187,6 +191,7 @@ impl AgentMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -199,6 +204,7 @@ impl AgentMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: Some(thinking.into()),
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -211,18 +217,20 @@ impl AgentMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
 
     /// Create a tool result message.
-    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn tool_result(tool_name: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: "tool".to_string(),
             content: content.into(),
             tool_calls: None,
-            tool_call_id: Some(tool_call_id.into()),
+            tool_call_id: None,
+            tool_call_name: Some(tool_name.into()),
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -235,6 +243,7 @@ impl AgentMessage {
             content: content.into(),
             tool_calls: Some(tool_calls),
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -258,6 +267,7 @@ impl AgentMessage {
             content: msg.content.as_text(),
             tool_calls: None,
             tool_call_id: None,
+            tool_call_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -374,9 +384,9 @@ mod tests {
         let sys_msg = AgentMessage::system("You are helpful");
         assert_eq!(sys_msg.role, "system");
 
-        let tool_msg = AgentMessage::tool_result("call_123", "Success");
+        let tool_msg = AgentMessage::tool_result("list_devices", "Success");
         assert_eq!(tool_msg.role, "tool");
-        assert_eq!(tool_msg.tool_call_id, Some("call_123".to_string()));
+        assert_eq!(tool_msg.tool_call_name, Some("list_devices".to_string()));
     }
 
     #[test]

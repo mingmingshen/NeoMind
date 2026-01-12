@@ -270,6 +270,7 @@ pub async fn llm_generate_handler(
         },
         model: Some(model_name),
         stream: false,
+        tools: None,
     };
 
     let start = std::time::Instant::now();

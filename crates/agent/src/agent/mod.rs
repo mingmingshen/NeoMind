@@ -70,14 +70,8 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Create a new agent with LLM backend.
-    pub fn new(config: AgentConfig, session_id: String) -> Self {
-        let tools = Arc::new(
-            edge_ai_tools::ToolRegistryBuilder::new()
-                .with_standard_tools()
-                .build(),
-        );
-
+    /// Create a new agent with custom tool registry.
+    pub fn with_tools(config: AgentConfig, session_id: String, tools: Arc<edge_ai_tools::ToolRegistry>) -> Self {
         let session_id_clone = session_id.clone();
 
         // Create LLM interface
@@ -104,7 +98,17 @@ impl Agent {
         }
     }
 
-    /// Create with default config.
+    /// Create a new agent with default (mock) tools.
+    pub fn new(config: AgentConfig, session_id: String) -> Self {
+        let tools = Arc::new(
+            edge_ai_tools::ToolRegistryBuilder::new()
+                .with_standard_tools()
+                .build(),
+        );
+        Self::with_tools(config, session_id, tools)
+    }
+
+    /// Create with default config and mock tools.
     pub fn with_session(session_id: String) -> Self {
         Self::new(AgentConfig::default(), session_id)
     }
@@ -147,7 +151,34 @@ impl Agent {
 
         self.llm_interface.set_llm(llm).await;
         self.llm_configured.store(true, std::sync::atomic::Ordering::Release);
+
+        // Set tool definitions for function calling
+        self.update_tool_definitions().await;
+
         Ok(())
+    }
+
+    /// Update tool definitions in the LLM interface.
+    pub async fn update_tool_definitions(&self) {
+        use edge_ai_core::llm::backend::ToolDefinition as CoreToolDefinition;
+        use edge_ai_tools::ToolDefinition as ToolsToolDefinition;
+
+        // Get tool definitions from registry
+        let tool_defs: Vec<ToolsToolDefinition> = self.tools.definitions();
+
+        // Convert to core ToolDefinition format
+        let core_defs: Vec<CoreToolDefinition> = tool_defs
+            .into_iter()
+            .map(|def| CoreToolDefinition {
+                name: def.name,
+                description: def.description,
+                parameters: def.parameters,
+            })
+            .collect();
+
+        let tool_count = core_defs.len();
+        self.llm_interface.set_tool_definitions(core_defs).await;
+        tracing::debug!("Updated {} tool definitions for LLM", tool_count);
     }
 
     /// Check if LLM is configured.
@@ -262,6 +293,10 @@ impl Agent {
     async fn process_with_llm(&self, user_message: &str) -> Result<AgentResponse> {
         use tool_parser::parse_tool_calls;
 
+        // Add user message to memory
+        let user_msg = AgentMessage::user(user_message);
+        self.short_term_memory.write().await.push(user_msg);
+
         // First call: get response from LLM (may include tool calls)
         let chat_response = self.llm_interface.chat(user_message).await
             .map_err(|e| super::error::AgentError::Llm(e.to_string()))?;
@@ -269,12 +304,14 @@ impl Agent {
         // Parse response for tool calls
         let (content, tool_calls) = parse_tool_calls(&chat_response.text)?;
 
+        // Save assistant response with tool call information
+        let assistant_msg = AgentMessage::assistant_with_tools(content, tool_calls.clone());
+        self.short_term_memory.write().await.push(assistant_msg.clone());
+
         // If no tool calls, return the direct response
         if tool_calls.is_empty() {
-            let message = AgentMessage::assistant(content);
-            self.short_term_memory.write().await.push(message.clone());
             return Ok(AgentResponse {
-                message,
+                message: assistant_msg,
                 tool_calls: vec![],
                 memory_context_used: true,
                 tools_used: vec![],
@@ -285,47 +322,52 @@ impl Agent {
         // Execute tools and get results
         let mut tool_results = Vec::new();
         let mut tools_used = Vec::new();
-        let mut error_messages = Vec::new();
+        let mut tool_messages = Vec::new();
 
         for tool_call in &tool_calls {
             match self.execute_tool(&tool_call.name, &tool_call.arguments).await {
                 Ok(result) => {
                     tools_used.push(tool_call.name.clone());
-                    tool_results.push(format!("Tool '{}' returned: {}", tool_call.name, result));
+                    tool_results.push(result.clone());
+                    // Save tool result as a "tool" message in memory
+                    let tool_result_msg = AgentMessage::tool_result(&tool_call.name, &result);
+                    tool_messages.push(tool_result_msg);
                 }
                 Err(e) => {
-                    error_messages.push(format!("Tool '{}' error: {}", tool_call.name, e));
+                    let error_msg = format!("Error: {}", e);
+                    tool_messages.push(AgentMessage::tool_result(&tool_call.name, &error_msg));
                 }
             }
         }
 
-        // If there were tool errors, return a direct error response
-        if !error_messages.is_empty() {
-            let error_response = format!(
-                "执行工具时出错: {}。可用的工具包括: list_devices, list_rules, query_data。",
-                error_messages.join("; ")
-            );
-            let final_message = AgentMessage::assistant(error_response);
-            self.short_term_memory.write().await.push(final_message.clone());
-
-            return Ok(AgentResponse {
-                message: final_message,
-                tool_calls,
-                memory_context_used: true,
-                tools_used,
-                processing_time_ms: 0,
-            });
+        // Add tool result messages to memory
+        for msg in tool_messages {
+            self.short_term_memory.write().await.push(msg);
         }
 
-        // Combine all results
-        let combined_result = tool_results.join("\n");
+        // Build conversation history for the follow-up call
+        let history = self.short_term_memory.read().await;
+        let conversation: Vec<String> = history.iter()
+            .take(20) // Limit context window
+            .map(|msg| {
+                match msg.role.as_str() {
+                    "user" => format!("User: {}", msg.content),
+                    "assistant" => format!("Assistant: {}", msg.content),
+                    "tool" => format!("Tool[{}]: {}", msg.tool_call_name.as_ref().unwrap_or(&String::new()), msg.content),
+                    _ => String::new(),
+                }
+            })
+            .collect();
+        drop(history);
 
-        // Second call: get LLM's interpretation of tool results
+        // Build follow-up prompt with full conversation context
+        let conversation_text = conversation.join("\n");
         let follow_up_prompt = format!(
-            "用户询问: {}. 工具执行结果: {}. 请根据结果提供有用的回答。",
-            user_message, combined_result
+            "{}\n\nBased on the conversation above and the tool results, provide a helpful response to the user.",
+            conversation_text
         );
 
+        // Second call: get LLM's interpretation of tool results
         let follow_up_response = self.llm_interface.chat(&follow_up_prompt).await
             .map_err(|e| super::error::AgentError::Llm(e.to_string()))?;
 

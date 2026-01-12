@@ -810,6 +810,7 @@ mod tests {
                         data_type: MetricDataType::Float,
                         min: Some(-40.0),
                         max: Some(120.0),
+                        required: false,
                     }
                 ],
             },

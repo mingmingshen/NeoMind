@@ -283,6 +283,50 @@ impl ServerState {
                 tracing::warn!("MQTT broker not available, device management will be disabled: {}", e);
             }
         }
+
+        // Initialize the global device adapter plugin registry
+        if let Some(event_bus) = &self.event_bus {
+            use edge_ai_devices::DeviceAdapterPluginRegistry;
+            let _ = DeviceAdapterPluginRegistry::get_or_init((**event_bus).clone());
+            tracing::info!("Device adapter plugin registry initialized");
+        }
+    }
+
+    /// Initialize tool registry with real service connections.
+    pub async fn init_tools(&self) {
+        use edge_ai_tools::{ToolRegistryBuilder, real};
+        use std::sync::Arc;
+
+        // Check if workflow engine is initialized first
+        let workflow_engine_read = self.workflow_engine.read().await;
+        let _has_workflow = workflow_engine_read.as_ref().is_some();
+        let workflow_engine_clone = workflow_engine_read.as_ref().cloned();
+        drop(workflow_engine_read);
+
+        // Build tool registry with real implementations
+        let mut builder = ToolRegistryBuilder::new()
+            // Query time series data
+            .with_real_query_data_tool(self.time_series_storage.clone())
+            // Control devices via MQTT
+            .with_real_control_device_tool(self.mqtt_device_manager.clone())
+            // List devices
+            .with_real_list_devices_tool(self.mqtt_device_manager.clone())
+            // Create rules
+            .with_real_create_rule_tool(self.rule_engine.clone())
+            // List rules
+            .with_real_list_rules_tool(self.rule_engine.clone());
+
+        // Add trigger workflow tool if workflow engine is initialized
+        if let Some(engine) = workflow_engine_clone {
+            builder = builder.with_tool(Arc::new(real::TriggerWorkflowTool::new(engine)));
+            let tool_registry = Arc::new(builder.build());
+            self.session_manager.set_tool_registry(tool_registry.clone()).await;
+            tracing::info!(category = "ai", "Tool registry initialized with {} tools (including workflow)", tool_registry.len());
+        } else {
+            let tool_registry = Arc::new(builder.build());
+            self.session_manager.set_tool_registry(tool_registry.clone()).await;
+            tracing::info!(category = "ai", "Tool registry initialized with {} tools (workflow engine not available)", tool_registry.len());
+        }
     }
 
     /// Initialize event log storage (no-op, kept for compatibility).

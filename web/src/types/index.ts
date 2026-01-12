@@ -689,12 +689,13 @@ export enum PluginStateEnum {
 /**
  * Plugin DTO - matches backend PluginDto exactly
  *
- * Backend: crates/api/src/handlers/plugins.rs:68-96
+ * Backend: crates/api/src/handlers/plugins.rs:68-101
  */
 export interface Plugin {
   id: string
   name: string
   plugin_type: string  // PluginType.as_str() - snake_case
+  category: 'ai' | 'devices' | 'notify'  // User-facing category for UI grouping
   state: string  // PluginState - "Loaded", "Initialized", "Running", "Stopped", "Error(...)", "Paused"
   enabled: boolean
   version: string
