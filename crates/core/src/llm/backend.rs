@@ -138,6 +138,9 @@ pub struct GenerationParams {
 
     /// Presence penalty (-2.0 - 2.0)
     pub presence_penalty: Option<f32>,
+
+    /// Enable thinking/reasoning mode (for models that support it like qwen3-vl)
+    pub thinking_enabled: Option<bool>,
 }
 
 impl Default for GenerationParams {
@@ -146,10 +149,11 @@ impl Default for GenerationParams {
             temperature: Some(0.7),
             top_p: Some(0.9),
             top_k: None,
-            max_tokens: Some(512),
+            max_tokens: Some(usize::MAX),
             stop: None,
             frequency_penalty: Some(0.0),
             presence_penalty: Some(0.0),
+            thinking_enabled: None,  // Let backend decide based on model capabilities
         }
     }
 }

@@ -10,8 +10,53 @@ use std::time::Instant;
 use edge_ai_core::llm::backend::{LlmRuntime, LlmError, LlmInput, LlmOutput, GenerationParams};
 use edge_ai_storage::{
     LlmBackendStore, LlmBackendInstance, ConnectionTestResult,
-    LlmBackendType,
+    LlmBackendType, BackendCapabilities,
 };
+
+/// Detect model capabilities from model name (for Ollama instances)
+fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
+    let name_lower = model_name.to_lowercase();
+
+    // Thinking support: deepseek-r1, qwen3 variants
+    let supports_thinking = name_lower.contains("thinking")
+        || name_lower.contains("deepseek-r1")
+        || name_lower.starts_with("qwen3");
+
+    // Multimodal support: vl, vision models
+    let supports_multimodal = name_lower.contains("vl")
+        || name_lower.contains("vision")
+        || name_lower.contains("mm");
+
+    // Tools support: exclude very small models
+    let supports_tools = !name_lower.contains("270m")
+        && !name_lower.contains("e4b")
+        && !name_lower.contains("0.5b")
+        && !name_lower.contains("0.6b")
+        && !name_lower.contains("1b")
+        && !name_lower.contains("embed-text");
+
+    BackendCapabilities {
+        supports_streaming: true,
+        supports_multimodal,
+        supports_thinking,
+        supports_tools,
+        max_context: 8192,
+    }
+}
+
+/// Ensure an instance has correct capabilities (for Ollama models)
+fn ensure_instance_capabilities(mut instance: LlmBackendInstance) -> LlmBackendInstance {
+    // For Ollama backends, update capabilities based on model name
+    if matches!(instance.backend_type, LlmBackendType::Ollama) {
+        // Only update if the capabilities seem outdated (no supports_tools field set properly)
+        // or if tools support is false but model name suggests it should support tools
+        let detected = detect_ollama_capabilities(&instance.model);
+        if !instance.capabilities.supports_tools && detected.supports_tools {
+            instance.capabilities = detected;
+        }
+    }
+    instance
+}
 
 /// LLM backend instance manager
 ///
@@ -227,13 +272,17 @@ impl LlmBackendInstanceManager {
     /// List all instances
     pub fn list_instances(&self) -> Vec<LlmBackendInstance> {
         let instances = self.instances.read().unwrap();
-        instances.values().cloned().collect()
+        instances
+            .values()
+            .cloned()
+            .map(ensure_instance_capabilities)
+            .collect()
     }
 
     /// Get a specific instance
     pub fn get_instance(&self, id: &str) -> Option<LlmBackendInstance> {
         let instances = self.instances.read().unwrap();
-        instances.get(id).cloned()
+        instances.get(id).cloned().map(ensure_instance_capabilities)
     }
 
     /// Test connection to a backend instance

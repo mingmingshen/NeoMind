@@ -48,8 +48,11 @@ pub use types::{
     SessionState, ToolCall,
 };
 pub use fallback::{default_fallback_rules, process_fallback, FallbackRule};
-pub use streaming::{events_to_string_stream, process_stream_events};
+pub use streaming::{events_to_string_stream, process_stream_events, process_stream_events_with_safeguards, StreamSafeguards};
 pub use formatter::{format_tool_result, format_summary};
+
+/// Maximum number of tool calls allowed per request to prevent infinite loops
+const MAX_TOOL_CALLS_PER_REQUEST: usize = 5;
 
 /// Maximum context window size in tokens (approximate)
 const MAX_CONTEXT_TOKENS: usize = 8000;
@@ -196,6 +199,13 @@ impl Agent {
         Ok(())
     }
 
+    /// Set a custom LLM runtime directly (for testing purposes).
+    pub async fn set_custom_llm(&self, llm: Arc<dyn LlmRuntime>) {
+        self.llm_interface.set_llm(llm).await;
+        self.llm_configured.store(true, std::sync::atomic::Ordering::Release);
+        self.update_tool_definitions().await;
+    }
+
     /// Update tool definitions in the LLM interface.
     pub async fn update_tool_definitions(&self) {
         use edge_ai_core::llm::backend::ToolDefinition as CoreToolDefinition;
@@ -328,6 +338,10 @@ impl Agent {
     }
 
     /// Process with real LLM.
+    /// 
+    /// ## Safeguards:
+    /// - Maximum tool calls per request limited to MAX_TOOL_CALLS_PER_REQUEST
+    /// - Token limit configured in ChatConfig
     async fn process_with_llm(&self, user_message: &str) -> Result<AgentResponse> {
         use tool_parser::parse_tool_calls;
 
@@ -352,7 +366,7 @@ impl Agent {
             .map_err(|e| super::error::AgentError::Llm(e.to_string()))?;
 
         // Parse response for tool calls
-        let (content, tool_calls) = parse_tool_calls(&chat_response.text)?;
+        let (content, mut tool_calls) = parse_tool_calls(&chat_response.text)?;
 
         // If no tool calls, return the direct response
         if tool_calls.is_empty() {
@@ -366,6 +380,16 @@ impl Agent {
                 tools_used: vec![],
                 processing_time_ms: 0,
             });
+        }
+
+        // === SAFEGUARD: Limit number of tool calls to prevent infinite loops ===
+        if tool_calls.len() > MAX_TOOL_CALLS_PER_REQUEST {
+            tracing::warn!(
+                "Too many tool calls ({}) in single request, limiting to {}",
+                tool_calls.len(),
+                MAX_TOOL_CALLS_PER_REQUEST
+            );
+            tool_calls.truncate(MAX_TOOL_CALLS_PER_REQUEST);
         }
 
         // Tool calls detected - DON'T save the initial assistant message yet

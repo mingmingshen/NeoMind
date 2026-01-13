@@ -163,6 +163,21 @@ pub struct OllamaModelsResponse {
     pub models: Vec<OllamaModel>,
 }
 
+/// Ollama model details.
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct OllamaModelDetails {
+    #[serde(default)]
+    pub format: String,
+    #[serde(default)]
+    pub family: String,
+    #[serde(default)]
+    pub families: Vec<String>,
+    #[serde(default)]
+    pub parameter_size: String,
+    #[serde(default)]
+    pub quantization_level: String,
+}
+
 /// Ollama model info.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct OllamaModel {
@@ -171,6 +186,16 @@ pub struct OllamaModel {
     pub modified_at: String,
     #[serde(default)]
     pub size: Option<u64>,
+    #[serde(default)]
+    pub details: OllamaModelDetails,
+}
+
+/// Model capability info for API responses.
+#[derive(Debug, Serialize, Default)]
+pub struct ModelCapabilities {
+    pub supports_thinking: bool,
+    pub supports_tools: bool,
+    pub supports_multimodal: bool,
 }
 
 // ============================================================================

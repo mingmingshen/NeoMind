@@ -1,4 +1,10 @@
 //! Streaming response processing with thinking tag support.
+//!
+//! This module includes safeguards against infinite LLM loops:
+//! - Global stream timeout
+//! - Maximum thinking content length
+//! - Maximum tool call iterations
+//! - Repetition detection
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -13,6 +19,61 @@ use crate::error::{AgentError, Result};
 use crate::llm::LlmInterface;
 use super::types::{AgentEvent, AgentMessage, SessionState, ToolCall};
 use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
+
+/// Configuration for stream processing safeguards
+pub struct StreamSafeguards {
+    /// Maximum time allowed for entire stream processing (default: 60s)
+    pub max_stream_duration: Duration,
+    /// Maximum thinking content length in characters (default: unlimited)
+    pub max_thinking_length: usize,
+    /// Maximum content length in characters (default: unlimited)
+    pub max_content_length: usize,
+    /// Maximum tool call iterations per request (default: 5)
+    pub max_tool_iterations: usize,
+    /// Maximum consecutive similar chunks to detect loops (default: 3)
+    pub max_repetition_count: usize,
+}
+
+impl Default for StreamSafeguards {
+    fn default() -> Self {
+        Self {
+            // Global timeout - 2 minutes should be enough for most queries
+            max_stream_duration: Duration::from_secs(120),
+            // IMPORTANT: Limit thinking content to prevent infinite loops
+            // Some reasoning models (like DeepSeek-R1) can generate very long thinking
+            // that doesn't converge to a decision
+            max_thinking_length: 8000,  // ~8000 characters of thinking
+            max_content_length: usize::MAX,
+            // Tool iterations limit - REDUCED to prevent loops
+            max_tool_iterations: 3,
+            // Repetition detection threshold
+            max_repetition_count: 3,
+        }
+    }
+}
+
+/// Detect if content is repetitive (indicating a loop)
+fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize) -> bool {
+    if recent_chunks.len() < threshold || new_chunk.len() < 10 {
+        return false;
+    }
+    
+    // Check if the last N chunks are very similar
+    let recent = &recent_chunks[recent_chunks.len().saturating_sub(threshold)..];
+    let similar_count = recent.iter()
+        .filter(|chunk| {
+            // Check similarity: at least 80% character overlap
+            let overlap = chunk.chars()
+                .zip(new_chunk.chars())
+                .filter(|(a, b)| a == b)
+                .count();
+            let max_len = chunk.len().max(new_chunk.len());
+            max_len > 0 && overlap * 100 / max_len >= 80
+        })
+        .count();
+    
+    similar_count >= threshold - 1
+}
 
 /// Simple in-memory cache for tool results with TTL
 struct ToolResultCache {
@@ -184,6 +245,13 @@ fn build_context_window(messages: &[AgentMessage]) -> Vec<&AgentMessage> {
 ///    - Execute tools in parallel
 ///    - Get final LLM response based on tool results
 ///    - Stream the final response
+///
+/// ## Safeguards against infinite loops:
+/// - Global stream timeout (60s default)
+/// - Maximum thinking content length (10000 chars)
+/// - Maximum content length (20000 chars)
+/// - Repetition detection to catch loops
+/// - Maximum tool call iterations (5)
 pub fn process_stream_events(
     llm_interface: Arc<LlmInterface>,
     short_term_memory: Arc<tokio::sync::RwLock<Vec<AgentMessage>>>,
@@ -191,14 +259,51 @@ pub fn process_stream_events(
     tools: Arc<edge_ai_tools::ToolRegistry>,
     user_message: &str,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
+    process_stream_events_with_safeguards(
+        llm_interface,
+        short_term_memory,
+        state,
+        tools,
+        user_message,
+        StreamSafeguards::default(),
+    )
+}
+
+/// Process a user message with streaming response and custom safeguards.
+pub fn process_stream_events_with_safeguards(
+    llm_interface: Arc<LlmInterface>,
+    short_term_memory: Arc<tokio::sync::RwLock<Vec<AgentMessage>>>,
+    state: Arc<RwLock<SessionState>>,
+    tools: Arc<edge_ai_tools::ToolRegistry>,
+    user_message: &str,
+    safeguards: StreamSafeguards,
+) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     let user_message = user_message.to_string();
     let llm_clone = llm_interface.clone();
+
+    // === FIX 1: Get conversation history and pass to LLM ===
+    // This prevents the LLM from repeating actions or calling tools again
+    let history_for_llm: Vec<edge_ai_core::Message> = tokio::task::block_in_place(|| {
+        let handle = tokio::runtime::Handle::try_current()
+            .expect("No runtime found");
+        handle.block_on(async {
+            let memory = short_term_memory.read().await;
+            let history_messages = memory.clone();
+            // Use context window to limit history size (most recent messages first)
+            build_context_window(&history_messages)
+                .iter()
+                .map(|msg| msg.to_core())
+                .collect::<Vec<_>>()
+        })
+    });
+
+    tracing::debug!("Passing {} messages from history to LLM", history_for_llm.len());
 
     // Get the stream from llm_interface - use block_in_place for sync→async transition
     let stream = tokio::task::block_in_place(|| {
         let handle = tokio::runtime::Handle::try_current()
             .map_err(|e| format!("No runtime: {}", e))?;
-        handle.block_on(llm_clone.chat_stream(&user_message))
+        handle.block_on(llm_clone.chat_stream_with_history(&user_message, &history_for_llm))
             .map_err(|e| format!("Chat stream failed: {}", e))
     });
 
@@ -214,16 +319,60 @@ pub fn process_stream_events(
         let mut has_content = false;
         let mut has_thinking = false;
 
+        // === SAFEGUARD: Track stream start time for timeout ===
+        let stream_start = Instant::now();
+
+        // === SAFEGUARD: Track recent chunks for repetition detection ===
+        let mut recent_chunks: Vec<String> = Vec::new();
+        const RECENT_CHUNK_WINDOW: usize = 10;
+
+        // === SAFEGUARD: Track recently executed tools to prevent loops ===
+        // Store tool names that were executed in this session (last 5 tools)
+        let mut recently_executed_tools: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(5);
+
         // === Stream and forward events ===
         while let Some(result) = StreamExt::next(&mut stream).await {
+            // === SAFEGUARD: Check global timeout ===
+            if stream_start.elapsed() > safeguards.max_stream_duration {
+                tracing::warn!("Stream timeout reached after {:?}", stream_start.elapsed());
+                yield AgentEvent::error("Response timeout - stream took too long".to_string());
+                break;
+            }
+            
             match result {
                 Ok((text, is_thinking)) => {
                     if text.is_empty() {
                         continue;
                     }
+                    
+                    // === SAFEGUARD: Check for repetitive content (loop detection) ===
+                    if detect_repetition(&recent_chunks, &text, safeguards.max_repetition_count) {
+                        tracing::warn!("Repetition detected in LLM output, breaking loop");
+                        yield AgentEvent::error("Detected repetitive output - stopping to prevent loop".to_string());
+                        break;
+                    }
+                    recent_chunks.push(text.clone());
+                    if recent_chunks.len() > RECENT_CHUNK_WINDOW {
+                        recent_chunks.remove(0);
+                    }
 
-                    // thinking: send immediately
+                    // thinking: send immediately with length check
                     if is_thinking {
+                        // === SAFEGUARD: Check thinking content length (only if limit is set) ===
+                        if safeguards.max_thinking_length != usize::MAX
+                            && thinking_content.len() + text.len() > safeguards.max_thinking_length
+                        {
+                            tracing::warn!(
+                                "Thinking content exceeded max length ({} > {}), forcing stream termination",
+                                thinking_content.len() + text.len(),
+                                safeguards.max_thinking_length
+                            );
+                            yield AgentEvent::error(format!(
+                                "Thinking too long ({} chars), stopping to prevent infinite loop",
+                                thinking_content.len()
+                            ));
+                            break;
+                        }
                         thinking_content.push_str(&text);
                         has_thinking = true;
                         yield AgentEvent::thinking(text);
@@ -232,6 +381,16 @@ pub fn process_stream_events(
 
                     // content: need to check for tool calls
                     has_content = true;
+
+                    // === SAFEGUARD: Check content length (only if limit is set) ===
+                    if safeguards.max_content_length != usize::MAX
+                        && content_before_tools.len() + buffer.len() + text.len() > safeguards.max_content_length
+                    {
+                        tracing::warn!("Content exceeded max length ({}), stopping stream", safeguards.max_content_length);
+                        yield AgentEvent::error("Response too long - content limit reached".to_string());
+                        break;
+                    }
+
                     buffer.push_str(&text);
 
                     // Check for tool calls in buffer
@@ -247,6 +406,29 @@ pub fn process_stream_events(
                             buffer = buffer[tool_end + 13..].to_string();
 
                             if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
+                                // === SAFEGUARD: Check for duplicate tool calls to prevent loops ===
+                                let mut duplicate_found = false;
+                                for call in &calls {
+                                    if recently_executed_tools.contains(&call.name) {
+                                        tracing::warn!(
+                                            "Tool '{}' was recently executed - potential loop detected",
+                                            call.name
+                                        );
+                                        yield AgentEvent::error(format!(
+                                            "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                            call.name
+                                        ));
+                                        duplicate_found = true;
+                                        tool_calls.clear();
+                                        break;
+                                    }
+                                }
+
+                                if duplicate_found {
+                                    // Loop was detected, skip this batch
+                                    break;
+                                }
+
                                 tool_calls = calls;
                                 tool_calls_detected = true;
                             }
@@ -293,12 +475,28 @@ pub fn process_stream_events(
         // === PHASE 2: Handle tool calls if detected ===
         if tool_calls_detected {
             tracing::info!("Starting PARALLEL tool execution");
+            
+            // === SAFEGUARD: Limit number of tool calls to prevent infinite loops ===
+            if tool_calls.len() > safeguards.max_tool_iterations {
+                tracing::warn!(
+                    "Too many tool calls ({}) requested, limiting to {}",
+                    tool_calls.len(),
+                    safeguards.max_tool_iterations
+                );
+                yield AgentEvent::error(format!(
+                    "Too many tool calls requested ({}), limiting to {}",
+                    tool_calls.len(),
+                    safeguards.max_tool_iterations
+                ));
+                tool_calls.truncate(safeguards.max_tool_iterations);
+            }
+            let tool_calls_to_execute = tool_calls.clone();
 
             // Create cache for this batch of tool executions (5 minute TTL)
             let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
 
             // Execute all tool calls in parallel
-            let tool_futures: Vec<_> = tool_calls.iter().map(|tool_call| {
+            let tool_futures: Vec<_> = tool_calls_to_execute.iter().map(|tool_call| {
                 let tools_clone = tools.clone();
                 let cache_clone = cache.clone();
                 let name = tool_call.name.clone();
@@ -377,41 +575,126 @@ pub fn process_stream_events(
                 }
             }
 
-            // Phase 2: Generate follow-up response after tool execution
-            // Instead of calling LLM again (which would trigger excessive thinking),
-            // directly format the tool results for a cleaner user experience
-            let final_text = if tool_call_results.is_empty() {
-                // No tools were executed, this shouldn't happen in Phase 2
-                "操作已完成。".to_string()
-            } else {
-                // Format tool results directly
-                format_tool_results(&tool_call_results)
-            };
-
-            // Stream the response in chunks
-            let chars: Vec<char> = final_text.chars().collect();
-            let chunk_size = 20usize;
-            for chunk in chars.chunks(chunk_size) {
-                let chunk_str: String = chunk.iter().collect();
-                if !chunk_str.is_empty() {
-                    yield AgentEvent::content(chunk_str);
-                    tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
+            // === SAFEGUARD: Update recently executed tools list to prevent loops ===
+            // Only add tools that succeeded to the list
+            for (name, _result) in &tool_call_results {
+                if !recently_executed_tools.contains(name) {
+                    recently_executed_tools.push_back(name.clone());
+                    if recently_executed_tools.len() > 5 {
+                        recently_executed_tools.pop_front();
+                    }
+                    tracing::debug!("Added '{}' to recently executed tools (now: {:?})", name, recently_executed_tools);
                 }
             }
 
-            // Save a SINGLE complete message with tool_calls and final response
-            // This prevents duplicate messages when session is restored
-            // NOTE: Use tool_calls_with_results which includes execution results
-            let complete_msg = if !thinking_content.is_empty() {
+            // === FIX 2: Phase 2 - Proper LLM follow-up after tool execution ===
+            // Instead of directly formatting tool results, we:
+            // 1. Save the initial assistant message with tool calls
+            // 2. Add tool result messages to history
+            // 3. Call LLM again to generate a natural response based on tool results
+            // This prevents the LLM from re-calling tools in future conversations
+
+            // Step 1: Save the initial assistant message (with tool calls but without results yet)
+            let initial_msg = if !thinking_content.is_empty() {
                 AgentMessage::assistant_with_tools_and_thinking(
-                    &final_text,
-                    tool_calls_with_results.clone(),
+                    &content_before_tools,  // Content before tool calls
+                    tool_calls.clone(),      // Tool calls without results
                     &thinking_content,
                 )
             } else {
-                AgentMessage::assistant_with_tools(&final_text, tool_calls_with_results.clone())
+                AgentMessage::assistant_with_tools(
+                    &content_before_tools,
+                    tool_calls.clone(),
+                )
             };
-            short_term_memory.write().await.push(complete_msg);
+            short_term_memory.write().await.push(initial_msg);
+
+            // Step 2: Add tool result messages to history
+            for (tool_name, result_str) in &tool_call_results {
+                let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
+                short_term_memory.write().await.push(tool_result_msg);
+            }
+
+            // Step 3: Call LLM again to generate final response based on tool results
+            // Use chat_without_tools to prevent another round of tool calls
+            tracing::info!("Generating final response based on tool results");
+
+            // Build prompt for LLM to generate response based on tool results
+            let followup_prompt = format!(
+                "Based on the tool execution results above, provide a helpful response to the user's question: \"{}\"",
+                user_message
+            );
+
+            let llm_for_followup = llm_interface.clone();
+            let memory_clone = short_term_memory.clone();
+
+            // === Get updated history (including the tool results we just added) ===
+            let followup_result = tokio::task::block_in_place(|| {
+                let handle = tokio::runtime::Handle::try_current()
+                    .expect("No runtime found");
+
+                // Clone the memory within block_in_place
+                let history = memory_clone.blocking_read();
+                let history_messages: Vec<edge_ai_core::Message> = history.iter()
+                    .map(|msg| msg.to_core())
+                    .collect::<Vec<_>>();
+                drop(history);
+
+                // CRITICAL: Use chat_stream_without_tools_with_history to prevent Phase 2 from calling tools again
+                // This prevents infinite loops where LLM keeps calling tools
+                handle.block_on(
+                    llm_for_followup.chat_stream_without_tools_with_history(&followup_prompt, &history_messages)
+                )
+            });
+
+            let followup_stream = match followup_result {
+                Ok(stream) => stream,
+                Err(e) => {
+                    tracing::error!("Failed to generate follow-up response: {}", e);
+                    // Fallback to formatted tool results
+                    let fallback_text = format_tool_results(&tool_call_results);
+                    for chunk in fallback_text.chars().collect::<Vec<_>>().chunks(20) {
+                        let chunk_str: String = chunk.iter().collect();
+                        if !chunk_str.is_empty() {
+                            yield AgentEvent::content(chunk_str);
+                        }
+                    }
+                    return;
+                }
+            };
+
+            // Stream the follow-up response from LLM
+            let mut followup_stream = Box::pin(followup_stream);
+            let mut final_response_content = String::new();
+
+            while let Some(result) = StreamExt::next(&mut followup_stream).await {
+                match result {
+                    Ok((chunk, is_thinking)) => {
+                        if chunk.is_empty() {
+                            continue;
+                        }
+                        if is_thinking {
+                            // Stream thinking content
+                            yield AgentEvent::thinking(chunk.clone());
+                            final_response_content.push_str(&chunk);
+                        } else {
+                            // Stream response content
+                            yield AgentEvent::content(chunk.clone());
+                            final_response_content.push_str(&chunk);
+                        }
+                    }
+                    Err(e) => {
+                        yield AgentEvent::error(format!("Follow-up generation failed: {}", e));
+                        break;
+                    }
+                }
+            }
+
+            // Step 4: Save the final assistant response
+            let final_msg = AgentMessage::assistant(&final_response_content);
+            short_term_memory.write().await.push(final_msg);
+
+            tracing::info!("Tool execution and follow-up response complete");
         }
 
         state.write().await.increment_messages();

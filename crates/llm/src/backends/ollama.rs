@@ -2,6 +2,10 @@
 //!
 //! Ollama is a local LLM runner that supports various models.
 //! This backend communicates with Ollama via its native API.
+//!
+//! Tool Calling Support:
+//! - Models with native tool support (qwen3-vl, etc.): Use Ollama's native tool API
+//! - Models without native tool support (gemma3:270m, etc.): Use text-based tool calling
 
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
@@ -16,6 +20,9 @@ use edge_ai_core::llm::backend::{
     LlmRuntime, StreamChunk, TokenUsage,
 };
 use edge_ai_core::message::{Content, ContentPart, Message, MessageRole};
+
+/// Stream timeout in seconds - prevents infinite loops
+const STREAM_TIMEOUT_SECS: u64 = 300;
 
 /// Ollama configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -99,13 +106,72 @@ impl OllamaRuntime {
         })
     }
 
-    /// Convert messages to Ollama format.
-    fn messages_to_ollama(&self, messages: &[Message]) -> Vec<OllamaMessage> {
+    /// Format tools for text-based tool calling (for models without native tool support).
+    fn format_tools_for_text_calling(tools: &[edge_ai_core::llm::backend::ToolDefinition]) -> String {
+        let mut result = String::from("可用工具:\n\n");
+
+        for tool in tools {
+            result.push_str(&format!("## {}\n", tool.name));
+            result.push_str(&format!("{}\n", tool.description));
+            result.push_str("参数:\n");
+
+            if let Some(props) = tool.parameters.get("properties") {
+                if let Some(obj) = props.as_object() {
+                    for (name, prop) in obj {
+                        let desc = prop.get("description").and_then(|d| d.as_str()).unwrap_or("无描述");
+                        let type_name = prop.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+                        result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
+                    }
+                }
+            }
+
+            if let Some(required) = tool.parameters.get("required") {
+                if let Some(arr) = required.as_array() {
+                    if !arr.is_empty() {
+                        let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                        result.push_str(&format!("必填: {}\n", required_names.join(", ")));
+                    }
+                }
+            }
+
+            result.push('\n');
+        }
+
+        result.push_str("工具调用格式: 当需要使用工具时，请输出如下格式的XML:\n\n");
+        result.push_str("<tool_calls>\n");
+        result.push_str("  <invoke name=\"工具名称\">\n");
+        result.push_str("    <parameter name=\"参数名\">参数值</parameter>\n");
+        result.push_str("  </invoke>\n");
+        result.push_str("</tool_calls>\n");
+
+        result
+    }
+
+    /// Convert messages to Ollama format, optionally injecting tool descriptions.
+    fn messages_to_ollama_with_tools(
+        &self,
+        messages: &[Message],
+        tools: Option<&[edge_ai_core::llm::backend::ToolDefinition]>,
+        supports_native_tools: bool,
+    ) -> Vec<OllamaMessage> {
+        let tool_instructions = if !supports_native_tools && tools.map_or(false, |t| !t.is_empty()) {
+            Some(Self::format_tools_for_text_calling(tools.unwrap()))
+        } else {
+            None
+        };
+
         messages
             .iter()
             .map(|msg| {
                 // Extract text content
-                let text = msg.text();
+                let mut text = msg.text();
+
+                // Inject tool instructions into system message for models without native tool support
+                if msg.role == MessageRole::System {
+                    if let Some(instructions) = &tool_instructions {
+                        text = format!("{}\n\n{}", text, instructions);
+                    }
+                }
 
                 // Extract images from multimodal content
                 let images = extract_images_from_content(&msg.content);
@@ -122,6 +188,11 @@ impl OllamaRuntime {
                 }
             })
             .collect()
+    }
+
+    /// Convert messages to Ollama format (backward compatibility).
+    fn messages_to_ollama(&self, messages: &[Message]) -> Vec<OllamaMessage> {
+        self.messages_to_ollama_with_tools(messages, None, true)
     }
 }
 
@@ -228,68 +299,97 @@ impl LlmRuntime for OllamaRuntime {
         let url = format!("{}/api/chat", self.config.endpoint);
         tracing::debug!("Ollama: calling URL: {}", url);
 
+        // Detect model capabilities
+        let caps = detect_model_capabilities(&model);
+
+        // Handle max_tokens: let model generate naturally without artificial limits
+        let num_predict = match input.params.max_tokens {
+            Some(v) if v >= usize::MAX - 1000 => None,
+            Some(v) => Some(v),
+            None => None,
+        };
+
+        // Determine tool support and prepare accordingly
+        let supports_native_tools = caps.supports_tools;
+        let has_tools = input.tools.as_ref().map_or(false, |t| !t.is_empty());
+
+        // Only use native tools parameter for models that support it
+        // For other models, tools will be injected into the system message
+        let native_tools = if supports_native_tools {
+            if let Some(input_tools) = &input.tools {
+                if !input_tools.is_empty() {
+                    let ollama_tools: Vec<OllamaTool> = input_tools.iter().map(|tool| {
+                        OllamaTool {
+                            tool_type: "function".to_string(),
+                            function: OllamaToolFunction {
+                                name: tool.name.clone(),
+                                description: tool.description.clone(),
+                                parameters: tool.parameters.clone(),
+                            },
+                        }
+                    }).collect();
+                    tracing::debug!("Ollama: using native tools API for {} tools", ollama_tools.len());
+                    Some(ollama_tools)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            // Model doesn't support native tools - will use text-based calling
+            if has_tools {
+                tracing::info!("Ollama: model {} doesn't support native tools, using text-based tool calling", model);
+            }
+            None
+        };
+
+        // Build stop sequences
+        let stop_sequences = if has_tools {
+            Some(vec!["\n\nUser:".to_string()])
+        } else {
+            None
+        };
+
         let options = if input.params.temperature.is_some()
-            || input.params.max_tokens.is_some()
+            || num_predict.is_some()
             || input.params.top_p.is_some()
+            || stop_sequences.is_some()
         {
             Some(OllamaOptions {
                 temperature: input.params.temperature,
-                num_predict: input.params.max_tokens,
+                num_predict,
                 top_p: input.params.top_p,
+                repeat_penalty: None,
+                stop: stop_sequences,
             })
         } else {
             None
         };
 
-        // Convert tools to Ollama/OpenAI format
-        let tools = if let Some(input_tools) = &input.tools {
-            if !input_tools.is_empty() {
-                let ollama_tools: Vec<OllamaTool> = input_tools.iter().map(|tool| {
-                    OllamaTool {
-                        tool_type: "function".to_string(),
-                        function: OllamaToolFunction {
-                            name: tool.name.clone(),
-                            description: tool.description.clone(),
-                            parameters: tool.parameters.clone(),
-                        },
-                    }
-                }).collect();
-                tracing::debug!("Ollama: sending {} tools in request", ollama_tools.len());
-                Some(ollama_tools)
-            } else {
-                None
-            }
-        } else {
-            None
+        // Thinking: user controls via thinking_enabled parameter
+        let think = match input.params.thinking_enabled {
+            Some(true) => None,  // Let model use its default behavior
+            Some(false) => Some(OllamaThink::Bool(false)),  // Explicitly disable
+            None => None,  // Let model decide
         };
 
-        // Enable thinking for all models that support it
-        // Disable when tools are present - excessive thinking interferes with tool calling
-        // Based on Ollama docs: https://docs.ollama.com/capabilities/thinking
-        let has_tools = tools.as_ref().map_or(false, |t| !t.is_empty());
-
-        // When tools are present, completely omit the think field (not even false)
-        // This prevents Ollama from generating thinking content during tool calls
-        let think = if !has_tools {
-            Some(OllamaThink::Bool(true))  // Enable thinking when no tools
-        } else {
-            None  // Omit think field when tools are present
-        };
-
-        if has_tools {
-            tracing::debug!("Ollama: thinking omitted for tool call request");
-        }
-
-        // No format parameter needed - let Ollama handle thinking naturally
         let format: Option<String> = None;
+
+        // Convert messages with tool injection for non-native models
+        let messages = self.messages_to_ollama_with_tools(
+            &input.messages,
+            input.tools.as_deref(),
+            supports_native_tools,
+        );
 
         let request = OllamaChatRequest {
             model: model.clone(),
-            messages: self.messages_to_ollama(&input.messages),
+            messages,
             stream: false,
             options,
             think,
-            tools,
+            tools: native_tools,
             format,
         };
 
@@ -322,23 +422,22 @@ impl LlmRuntime for OllamaRuntime {
         let ollama_response: OllamaChatResponse = serde_json::from_str(&body)
             .map_err(|e| LlmError::Serialization(e))?;
 
-        // Handle native tool calls - convert to XML format for compatibility
+        // Handle response - combine content and thinking
         let mut response_text = if ollama_response.message.content.is_empty() {
             ollama_response.message.thinking.clone()
         } else {
             ollama_response.message.content.clone()
         };
 
-        // If tool_calls are present, append them in XML format
+        // Handle native tool calls from Ollama
         if !ollama_response.message.tool_calls.is_empty() {
-            tracing::debug!("Ollama: received {} tool calls in non-streaming response", ollama_response.message.tool_calls.len());
+            tracing::debug!("Ollama: received {} native tool calls", ollama_response.message.tool_calls.len());
             let mut xml_buffer = String::from("<tool_calls>");
             for tool_call in &ollama_response.message.tool_calls {
                 xml_buffer.push_str(&format!(
                     "<invoke name=\"{}\">",
                     tool_call.function.name
                 ));
-                // Convert arguments JSON to XML parameter format
                 if let Some(obj) = tool_call.function.arguments.as_object() {
                     for (key, value) in obj {
                         xml_buffer.push_str(&format!(
@@ -351,9 +450,7 @@ impl LlmRuntime for OllamaRuntime {
                 xml_buffer.push_str("</invoke>");
             }
             xml_buffer.push_str("</tool_calls>");
-            // Append tool calls to response text
             response_text.push_str(&xml_buffer);
-            tracing::debug!("Ollama: converted tool_calls to XML: {}", xml_buffer);
         }
 
         let result = Ok(LlmOutput {
@@ -401,72 +498,88 @@ impl LlmRuntime for OllamaRuntime {
         let url = format!("{}/api/chat", self.config.endpoint);
         let client = self.client.clone();
 
-        // Handle max_tokens: usize::MAX means "no limit" - don't send num_predict to Ollama
-        // This lets the model use its natural token limit without artificial constraints
+        // Detect model capabilities
+        let caps = detect_model_capabilities(&model);
+
+        // Handle max_tokens
         let num_predict = match input.params.max_tokens {
-            Some(v) if v >= usize::MAX - 1000 => None,  // No limit - don't send num_predict
-            Some(v) => Some(v),                        // Use specified limit
-            None => None,                              // No limit specified
+            Some(v) if v >= usize::MAX - 1000 => None,
+            Some(v) => Some(v),
+            None => None,
+        };
+
+        // Determine tool support and prepare accordingly
+        let supports_native_tools = caps.supports_tools;
+        let has_tools = input.tools.as_ref().map_or(false, |t| !t.is_empty());
+
+        // Only use native tools parameter for models that support it
+        let native_tools = if supports_native_tools {
+            if let Some(input_tools) = &input.tools {
+                if !input_tools.is_empty() {
+                    let ollama_tools: Vec<OllamaTool> = input_tools.iter().map(|tool| {
+                        OllamaTool {
+                            tool_type: "function".to_string(),
+                            function: OllamaToolFunction {
+                                name: tool.name.clone(),
+                                description: tool.description.clone(),
+                                parameters: tool.parameters.clone(),
+                            },
+                        }
+                    }).collect();
+                    tracing::debug!("Ollama: using native tools API for {} tools (stream)", ollama_tools.len());
+                    Some(ollama_tools)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            if has_tools {
+                tracing::info!("Ollama: model {} doesn't support native tools, using text-based tool calling (stream)", model);
+            }
+            None
+        };
+
+        // Build stop sequences
+        let stop_sequences = if has_tools {
+            Some(vec!["\n\nUser:".to_string()])
+        } else {
+            None
         };
 
         let options = if input.params.temperature.is_some()
             || num_predict.is_some()
             || input.params.top_p.is_some()
+            || stop_sequences.is_some()
         {
             Some(OllamaOptions {
                 temperature: input.params.temperature,
                 num_predict,
                 top_p: input.params.top_p,
+                repeat_penalty: None,
+                stop: stop_sequences,
             })
         } else {
             None
         };
 
-        // Convert tools to Ollama/OpenAI format
-        let tools = if let Some(input_tools) = &input.tools {
-            if !input_tools.is_empty() {
-                let ollama_tools: Vec<OllamaTool> = input_tools.iter().map(|tool| {
-                    OllamaTool {
-                        tool_type: "function".to_string(),
-                        function: OllamaToolFunction {
-                            name: tool.name.clone(),
-                            description: tool.description.clone(),
-                            parameters: tool.parameters.clone(),
-                        },
-                    }
-                }).collect();
-                tracing::debug!("Ollama: sending {} tools in stream request", ollama_tools.len());
-                Some(ollama_tools)
-            } else {
-                None
-            }
-        } else {
-            None
+        // Thinking: user controls via thinking_enabled parameter
+        let think = match input.params.thinking_enabled {
+            Some(true) => None,
+            Some(false) => Some(OllamaThink::Bool(false)),
+            None => None,
         };
 
-        // Enable thinking for all models that support it
-        // Disable when tools are present - excessive thinking interferes with tool calling
-        // Based on Ollama docs: https://docs.ollama.com/capabilities/thinking
-        let has_tools = tools.as_ref().map_or(false, |t| !t.is_empty());
+        // Convert messages with tool injection for non-native models
+        let messages = self.messages_to_ollama_with_tools(
+            &input.messages,
+            input.tools.as_deref(),
+            supports_native_tools,
+        );
 
-        // When tools are present, completely omit the think field (not even false)
-        // This prevents Ollama from generating thinking content during tool calls
-        // TEMPORARILY DISABLED: Some models like qwen3-vl:2b only output thinking when think=true
-        // TODO: Re-enable once model behavior is fixed or we handle thinking properly
-        let think = None; /*
-        let think = if !has_tools {
-            tracing::debug!("Enabling think=true for model {}", model);
-            Some(OllamaThink::Bool(true))
-        } else {
-            tracing::debug!("Thinking disabled for tool call request on model {}", model);
-            None
-        };
-        */
-
-        // Convert messages to Ollama format before spawning the task
-        let messages = self.messages_to_ollama(&input.messages);
-        tracing::debug!("Ollama: generate_stream - URL: {}, messages count: {}", url, messages.len());
-        eprintln!("[DEBUG OLLAMA] has_tools: {}, think set: {}", has_tools, think.is_some());
+        tracing::debug!("Ollama: generate_stream - URL: {}, messages: {}, native_tools: {}, text_tools: {}",
+            url, messages.len(), native_tools.is_some(), !supports_native_tools && has_tools);
 
         // No format parameter needed - let Ollama handle thinking naturally
         let format: Option<String> = None;
@@ -478,7 +591,7 @@ impl LlmRuntime for OllamaRuntime {
                 stream: true,
                 options,
                 think,
-                tools,
+                tools: native_tools,
                 format,
             };
 
@@ -538,8 +651,19 @@ impl LlmRuntime for OllamaRuntime {
                     let mut buffer = Vec::new();
                     let mut sent_done = false;
                     let mut total_bytes = 0usize;
+                    let mut total_chars = 0usize;    // Track total output characters
+                    let mut thinking_chars = 0usize;  // Track thinking characters separately
+                    let stream_start = Instant::now(); // Track stream duration
 
                     while let Some(chunk_result) = byte_stream.next().await {
+                        // Check for timeout
+                        if stream_start.elapsed() > Duration::from_secs(STREAM_TIMEOUT_SECS) {
+                            let error_msg = format!("Stream timeout after {} seconds", STREAM_TIMEOUT_SECS);
+                            println!("[ollama.rs] {}", error_msg);
+                            tracing::warn!("{}", error_msg);
+                            let _ = tx.send(Err(LlmError::Generation(error_msg))).await;
+                            return;
+                        }
                         match chunk_result {
                             Ok(chunk) => {
                                 // Empty chunks are normal in HTTP streaming - don't break on them
@@ -625,6 +749,8 @@ impl LlmRuntime for OllamaRuntime {
                                                 let _ = tx.send(Ok((xml_buffer, false))).await;
                                             }
 
+                                            // IMPORTANT: Process content BEFORE checking done flag
+                                            // The final chunk with done=true may still contain content that must be sent
                                             // Send thinking content first (reasoning process)
                                             if !ollama_chunk.message.thinking.is_empty() {
                                                 tracing::debug!("Ollama thinking chunk: {}", ollama_chunk.message.thinking);
@@ -640,17 +766,16 @@ impl LlmRuntime for OllamaRuntime {
                                             }
 
                                             if ollama_chunk.done {
-                                                // Ollama has finished generation - log and close stream
-                                                // Log what content was in this final chunk
+                                                // Ollama has finished generation - all content has been sent above
                                                 let final_content = ollama_chunk.message.content.clone();
                                                 let final_thinking = ollama_chunk.message.thinking.clone();
                                                 println!("[ollama.rs] Ollama sent done=true, total_bytes: {}, final_content_len: {}, final_thinking_len: {}, closing stream",
                                                     total_bytes, final_content.chars().count(), final_thinking.chars().count());
                                                 if !final_content.is_empty() {
-                                                    println!("[ollama.rs] Final content: '{}'", final_content);
+                                                    println!("[ollama.rs] Final content was sent: '{}'", final_content);
                                                 }
                                                 if !final_thinking.is_empty() {
-                                                    println!("[ollama.rs] Final thinking: '{}'", final_thinking);
+                                                    println!("[ollama.rs] Final thinking was sent: '{}'", final_thinking);
                                                 }
                                                 tracing::info!("Ollama stream complete: {} bytes transferred", total_bytes);
                                                 sent_done = true;
@@ -696,12 +821,23 @@ impl LlmRuntime for OllamaRuntime {
     }
 
     fn capabilities(&self) -> BackendCapabilities {
-        BackendCapabilities::builder()
+        let caps = detect_model_capabilities(&self.model);
+        let mut builder = BackendCapabilities::builder()
             .streaming()
-            .multimodal()
-            .thinking_display()
-            .max_context(4096)
-            .build()
+            .max_context(4096);
+
+        // Conditionally add capabilities based on model detection
+        if caps.supports_multimodal {
+            builder = builder.multimodal();
+        }
+        if caps.supports_thinking {
+            builder = builder.thinking_display();
+        }
+        if caps.supports_tools {
+            builder = builder.function_calling();
+        }
+
+        builder.build()
     }
 
     fn metrics(&self) -> BackendMetrics {
@@ -769,6 +905,48 @@ struct OllamaOptions {
     num_predict: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_p: Option<f32>,
+    /// Repeat penalty to prevent model from repeating itself (1.0 = disabled, higher = more penalty)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repeat_penalty: Option<f32>,
+    /// Stop sequences to prevent model from generating unwanted content
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop: Option<Vec<String>>,
+}
+
+/// Model capability information
+struct ModelCapability {
+    supports_tools: bool,
+    supports_thinking: bool,
+    supports_multimodal: bool,
+}
+
+/// Detect model capabilities from model name
+fn detect_model_capabilities(model_name: &str) -> ModelCapability {
+    let name_lower = model_name.to_lowercase();
+
+    // Models that support thinking/reasoning
+    let supports_thinking = name_lower.contains("thinking")
+        || name_lower.contains("deepseek-r1")
+        || name_lower.starts_with("qwen3");
+
+    // Models that support function calling
+    // Note: Smaller models like gemma3:270m do NOT support tools
+    let supports_tools = !name_lower.contains("270m")
+        && !name_lower.contains("1b")
+        && !name_lower.contains("tiny")
+        && !name_lower.contains("micro")
+        && !name_lower.contains("nano");
+
+    // Models that support multimodal (vision)
+    let supports_multimodal = name_lower.contains("vl")
+        || name_lower.contains("vision")
+        || name_lower.contains("mm");
+
+    ModelCapability {
+        supports_tools,
+        supports_thinking,
+        supports_multimodal,
+    }
 }
 
 /// Tool definition in OpenAI-compatible format for Ollama.

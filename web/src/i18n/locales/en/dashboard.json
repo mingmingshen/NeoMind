@@ -6,7 +6,7 @@
   "startChat": "Start a conversation",
   "sendMessage": "Send message",
   "messagePlaceholder": "Type your message...",
-  "thinking": "Thinking...",
+  "thinking": "Thinking",
   "error": "Error",
   "toolCall": "Tool Call",
   "toolCalls": "Tool Calls",
@@ -55,5 +55,8 @@
   "deleteSessionTitle": "Delete Session",
   "deleteDesc": "Are you sure you want to delete this session? This action cannot be undone.",
   "defaultTitle": "New Chat",
-  "executionResult": "Execution Result"
+  "executionResult": "Execution Result",
+  "expandSidebar": "Expand sidebar",
+  "collapseSidebar": "Collapse sidebar",
+  "openMenu": "Open menu"
 }

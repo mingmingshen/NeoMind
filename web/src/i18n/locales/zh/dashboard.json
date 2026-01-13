@@ -6,7 +6,7 @@
   "startChat": "开始对话",
   "sendMessage": "发送消息",
   "messagePlaceholder": "输入您的消息...",
-  "thinking": "思考中...",
+  "thinking": "思考",
   "error": "错误",
   "toolCall": "工具调用",
   "toolCalls": "工具调用",
@@ -54,5 +54,8 @@
   "deleteSessionTitle": "删除会话",
   "deleteDesc": "确定要删除这个会话吗？此操作无法撤销。",
   "defaultTitle": "新对话",
-  "executionResult": "执行结果"
+  "executionResult": "执行结果",
+  "expandSidebar": "展开侧边栏",
+  "collapseSidebar": "收起侧边栏",
+  "openMenu": "打开菜单"
 }

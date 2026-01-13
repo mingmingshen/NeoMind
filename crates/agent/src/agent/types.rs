@@ -126,23 +126,11 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             name: "NeoTalk Agent".to_string(),
-            system_prompt: r#"你是 NeoTalk，一个专业的边缘计算和物联网设备管理助手。
+            // IMPORTANT: Keep system prompt SHORT to prevent excessive thinking
+            // Long prompts can trigger infinite thinking loops in reasoning models
+            system_prompt: r#"你是NeoTalk物联网助手。帮助用户管理设备、查询数据和配置规则。
 
-你可以帮助用户管理设备、查询数据、控制操作和配置规则。
-
-直接回答用户问题，用简洁的语言和表格展示数据。
-
-可用工具：
-- list_devices: 列出所有设备
-- query_data: 查询设备历史数据
-- control_device: 控制设备开关
-- create_rule: 创建自动化规则
-- list_rules: 列出所有规则
-- trigger_workflow: 触发工作流
-- query_rule_history: 查询规则执行历史
-- query_workflow_status: 查询工作流状态
-
-根据用户需求使用合适的工具，将结果格式化后呈现给用户。"#.to_string(),
+回复要求：简洁明了，直接回答问题。"#.to_string(),
             max_context_tokens: 8000,
             temperature: 0.4,
             enable_tools: true,

@@ -21,8 +21,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Brain, Wrench } from 'lucide-react'
 import type { LlmBackendInstance, LlmBackendType, CreateLlmBackendRequest, UpdateLlmBackendRequest, BackendTypeDefinition } from '@/types'
+
+// Ollama model with capabilities from API
+interface OllamaModel {
+  name: string
+  size?: number
+  family: string
+  parameter_size: string
+  capabilities: {
+    supports_thinking: boolean
+    supports_tools: boolean
+    supports_multimodal: boolean
+  }
+}
 
 // Helper function to get backend type definitions with translations
 function getBackendTypes(t: (key: string) => string): Record<LlmBackendType, BackendTypeDefinition> {
@@ -109,6 +122,9 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
   const { t } = useTranslation(['plugins', 'common'])
   const [submitting, setSubmitting] = useState(false)
   const [selectedType, setSelectedType] = useState<LlmBackendType>(editing?.backend_type || 'ollama')
+  const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([])
+  const [loadingModels, setLoadingModels] = useState(false)
+  const [selectedModel, setSelectedModel] = useState<string>(editing?.model || '')
 
   const schema = getSchema(t)
   const BACKEND_TYPES = getBackendTypes(t)
@@ -140,6 +156,32 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
     },
   })
 
+  // Fetch Ollama models when dialog opens and type is Ollama
+  useEffect(() => {
+    if (open && selectedType === 'ollama' && ollamaModels.length === 0) {
+      fetchOllamaModels()
+    }
+  }, [open, selectedType])
+
+  // Fetch Ollama models from API
+  const fetchOllamaModels = async () => {
+    setLoadingModels(true)
+    try {
+      const endpoint = editing?.endpoint || BACKEND_TYPES.ollama.default_endpoint || 'http://localhost:11434'
+      const response = await fetch(`/api/settings/llm/models?endpoint=${encodeURIComponent(endpoint)}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.models) {
+          setOllamaModels(data.models)
+        }
+      }
+    } catch {
+      console.error('Failed to fetch Ollama models')
+    } finally {
+      setLoadingModels(false)
+    }
+  }
+
   // Update form when editing changes
   useEffect(() => {
     if (editing) {
@@ -153,6 +195,7 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
         max_tokens: editing.max_tokens,
       })
       setSelectedType(editing.backend_type)
+      setSelectedModel(editing.model)
     } else {
       reset({
         name: '',
@@ -164,6 +207,7 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
         max_tokens: undefined,
       })
       setSelectedType('ollama')
+      setSelectedModel(BACKEND_TYPES.ollama.default_model)
     }
   }, [editing, reset, BACKEND_TYPES])
 
@@ -176,15 +220,43 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
     if (!editing) {
       setValue('endpoint', config.default_endpoint)
       setValue('model', config.default_model)
+      setSelectedModel(config.default_model)
     }
+
+    // Fetch Ollama models if switching to Ollama
+    if (type === 'ollama') {
+      fetchOllamaModels()
+    } else {
+      setOllamaModels([])
+    }
+  }
+
+  const handleModelSelect = (modelName: string) => {
+    setSelectedModel(modelName)
+    setValue('model', modelName)
+  }
+
+  // Get capabilities for selected Ollama model
+  const getSelectedModelCapabilities = () => {
+    if (selectedType !== 'ollama') return null
+    return ollamaModels.find(m => m.name === selectedModel)?.capabilities || null
   }
 
   const handleFormSubmit = async (data: FormValues) => {
     setSubmitting(true)
     try {
-      const success = await onSubmit(editing ? { ...data } : data as CreateLlmBackendRequest)
+      // Add capabilities for Ollama backends
+      const submitData: CreateLlmBackendRequest | UpdateLlmBackendRequest = { ...data }
+      if (selectedType === 'ollama') {
+        const capabilities = getSelectedModelCapabilities()
+        if (capabilities) {
+          ;(submitData as any).capabilities = capabilities
+        }
+      }
+      const success = await onSubmit(editing ? { ...submitData } : submitData as CreateLlmBackendRequest)
       if (success) {
         reset()
+        setOllamaModels([])
         onClose()
       }
     } finally {
@@ -193,6 +265,7 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
   }
 
   const backendConfig = BACKEND_TYPES[selectedType]
+  const modelCapabilities = getSelectedModelCapabilities()
 
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
@@ -249,22 +322,91 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
               id="endpoint"
               placeholder={backendConfig.default_endpoint}
               {...register('endpoint')}
+              onBlur={() => {
+                // Refresh models when endpoint changes for Ollama
+                if (selectedType === 'ollama' && !editing) {
+                  fetchOllamaModels()
+                }
+              }}
             />
             <p className="text-xs text-muted-foreground">
               {t('plugins:llm.default')}: {backendConfig.default_endpoint}
             </p>
           </div>
 
-          {/* Model */}
+          {/* Model Selection */}
           <div className="space-y-2">
             <Label htmlFor="model">{t('plugins:llm.modelName')} *</Label>
-            <Input
-              id="model"
-              placeholder={backendConfig.default_model}
-              {...register('model')}
-            />
-            {errors.model && (
-              <p className="text-sm text-destructive">{errors.model.message}</p>
+            {selectedType === 'ollama' && ollamaModels.length > 0 ? (
+              <>
+                <Select
+                  value={selectedModel}
+                  onValueChange={handleModelSelect}
+                >
+                  <SelectTrigger id="model">
+                    {loadingModels ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-muted-foreground">{t('common:loading')}</span>
+                      </div>
+                    ) : (
+                      <SelectValue placeholder={t('plugins:llm.selectModel')} />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ollamaModels.map((model) => (
+                      <SelectItem key={model.name} value={model.name}>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-xs truncate">{model.name}</span>
+                          <span className="text-muted-foreground text-xs whitespace-nowrap">{model.parameter_size}</span>
+                          <div className="flex items-center gap-1 shrink-0 ml-auto">
+                            {model.capabilities.supports_thinking && (
+                              <Brain className="h-3 w-3 text-blue-500" />
+                            )}
+                            {model.capabilities.supports_tools && (
+                              <Wrench className="h-3 w-3 text-green-500" />
+                            )}
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {modelCapabilities && (
+                  <div className="flex items-center gap-2 text-xs">
+                    {modelCapabilities.supports_thinking && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                        <Brain className="h-3 w-3" />
+                        <span>Thinking</span>
+                      </span>
+                    )}
+                    {modelCapabilities.supports_tools && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+                        <Wrench className="h-3 w-3" />
+                        <span>Tools</span>
+                      </span>
+                    )}
+                    {modelCapabilities.supports_multimodal && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 border border-purple-500/20">
+                        <span>🖼️</span>
+                        <span>Image</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <Input
+                  id="model"
+                  placeholder={backendConfig.default_model}
+                  {...register('model')}
+                  defaultValue={selectedModel}
+                />
+                {errors.model && (
+                  <p className="text-sm text-destructive">{errors.model.message}</p>
+                )}
+              </>
             )}
           </div>
 

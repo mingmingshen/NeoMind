@@ -288,22 +288,18 @@ impl LlmInterface {
             return self.system_prompt.clone();
         }
 
-        // IMPORTANT: Put output format requirements at the very beginning
-        // This is critical for models with thinking enabled
-        let mut prompt = "你是一个物联网设备管理助手。请直接用自然语言回答用户的问题。\n\n".to_string();
+        let mut prompt = String::with_capacity(1024);
 
-        prompt.push_str("【输出要求】\n");
-        prompt.push_str("1. 必须在content字段输出最终回复，用户只能看到这个\n");
-        prompt.push_str("2. 不要只在thinking中思考，必须输出可读的回复\n");
-        prompt.push_str("3. 回复要简洁友好，直接回答问题\n\n");
+        // Simple, clear system prompt without restrictive instructions
+        prompt.push_str("你是NeoTalk物联网助手，帮助用户管理设备和查询数据。\n\n");
 
-        prompt.push_str(&self.system_prompt.clone());
+        // Append the base system prompt
+        prompt.push_str(&self.system_prompt);
 
-        // Clear guidance to prevent confusion and looping
-        prompt.push_str("\n\n## 工具使用规则\n\n");
-        prompt.push_str("- 只在用户明确提到设备、传感器、数据查询时使用工具\n");
-        prompt.push_str("- 问候、闲聊、一般问题直接回答，不用工具\n");
-        prompt.push_str("- 回复要简短友好\n");
+        // Tool usage rules
+        prompt.push_str("\n\n## 工具使用\n");
+        prompt.push_str("- 设备/数据相关问题使用工具\n");
+        prompt.push_str("- 闲聊直接回答，不使用工具\n");
 
         prompt
     }
@@ -388,6 +384,17 @@ impl LlmInterface {
         let model = model_guard.as_ref().cloned().unwrap_or_else(|| "qwen3-vl:2b".to_string());
         drop(model_guard);
 
+        // Get thinking_enabled from active backend instance if using instance manager
+        let thinking_enabled = if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                manager.get_active_instance().map(|inst| inst.thinking_enabled)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let params = edge_ai_core::llm::backend::GenerationParams {
             temperature: Some(self.temperature),
             top_p: Some(self.top_p),
@@ -396,6 +403,7 @@ impl LlmInterface {
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
+            thinking_enabled,
         };
 
         let system_msg = Message::system(&system_prompt);
@@ -458,7 +466,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
-        self.chat_stream_internal(user_message, None).await
+        self.chat_stream_internal(user_message, None, true).await
     }
 
     /// Send a chat message with streaming response, with conversation history.
@@ -467,7 +475,26 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: &[Message],
     ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
-        self.chat_stream_internal(user_message, Some(history)).await
+        self.chat_stream_internal(user_message, Some(history), true).await
+    }
+
+    /// Send a chat message with streaming response, without tools.
+    /// This is for Phase 2 where tools have already been executed.
+    pub async fn chat_stream_without_tools(
+        &self,
+        user_message: impl Into<String>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
+        self.chat_stream_internal(user_message, None, false).await
+    }
+
+    /// Send a chat message with streaming response, without tools, with conversation history.
+    /// This is for Phase 2 where tools have already been executed.
+    pub async fn chat_stream_without_tools_with_history(
+        &self,
+        user_message: impl Into<String>,
+        history: &[Message],
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
+        self.chat_stream_internal(user_message, Some(history), false).await
     }
 
     /// Internal streaming chat implementation.
@@ -475,18 +502,35 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: Option<&[Message]>,
+        include_tools: bool,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
         let user_message = user_message.into();
 
         let model_arc = Arc::clone(&self.model);
 
-        // Build system prompt with tools
-        let system_prompt = self.build_system_prompt_with_tools().await;
+        // Build system prompt (with or without tools based on phase)
+        let system_prompt = if include_tools {
+            self.build_system_prompt_with_tools().await
+        } else {
+            // Simple system prompt for Phase 2 (no tools needed)
+            "You are NeoTalk, an edge computing and IoT device management assistant. Help users based on the provided conversation context.".to_string()
+        };
 
         // Build input outside the lock
         let model_guard = model_arc.read().await;
         let model = model_guard.as_ref().cloned().unwrap_or_else(|| "qwen3-vl:2b".to_string());
         drop(model_guard);
+
+        // Get thinking_enabled from active backend instance if using instance manager
+        let thinking_enabled = if self.uses_instance_manager() {
+            if let Some(manager) = &self.instance_manager {
+                manager.get_active_instance().map(|inst| inst.thinking_enabled)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let params = edge_ai_core::llm::backend::GenerationParams {
             temperature: Some(self.temperature),
@@ -496,6 +540,7 @@ impl LlmInterface {
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
+            thinking_enabled,
         };
 
         let system_msg = Message::system(&system_prompt);
@@ -518,9 +563,7 @@ impl LlmInterface {
 
         // Get tool definitions
         let tools = self.tool_definitions.read().await;
-        eprintln!("[DEBUG LLM] Tool definitions count: {}", tools.len());
         let tools_input = if tools.is_empty() { None } else { Some(tools.clone()) };
-        eprintln!("[DEBUG LLM] tools_input is_some: {:?}", tools_input.is_some());
         drop(tools);
 
         let input = LlmInput {
@@ -530,7 +573,6 @@ impl LlmInterface {
             stream: true,
             tools: tools_input,
         };
-        eprintln!("[DEBUG LLM] LlmInput created with tools: {:?}", input.tools.as_ref().map(|t| t.len()));
 
         // Get runtime using instance manager if enabled
         let llm = self.get_runtime().await?;
@@ -582,7 +624,9 @@ impl Default for ChatConfig {
             model: "qwen3-vl:2b".to_string(),
             temperature: 0.4,
             top_p: 0.95,
-            max_tokens: usize::MAX,  // No limit for complex tasks
+            // Let models generate naturally without artificial token limits
+            // Models have their own built-in stopping criteria
+            max_tokens: usize::MAX,
             concurrent_limit: DEFAULT_CONCURRENT_LIMIT,
         }
     }

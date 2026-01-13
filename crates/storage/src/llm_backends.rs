@@ -59,6 +59,10 @@ pub struct LlmBackendInstance {
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
 
+    /// Enable thinking/reasoning mode for models that support it
+    #[serde(default = "default_thinking_enabled")]
+    pub thinking_enabled: bool,
+
     /// Backend capabilities
     #[serde(default)]
     pub capabilities: BackendCapabilities,
@@ -81,6 +85,10 @@ pub struct BackendCapabilities {
     /// Supports thinking/reasoning output
     #[serde(default)]
     pub supports_thinking: bool,
+
+    /// Supports function/tool calling
+    #[serde(default)]
+    pub supports_tools: bool,
 
     /// Maximum context window size
     #[serde(default = "default_max_context")]
@@ -137,6 +145,11 @@ fn default_max_tokens() -> usize {
     usize::MAX
 }
 
+fn default_thinking_enabled() -> bool {
+    // Default to true for models that support thinking
+    true
+}
+
 fn default_max_context() -> usize {
     4096
 }
@@ -156,6 +169,7 @@ impl LlmBackendInstance {
                     supports_streaming: true,
                     supports_multimodal: true,
                     supports_thinking: true,
+                    supports_tools: true,
                     max_context: 8192,
                 },
             ),
@@ -166,6 +180,7 @@ impl LlmBackendInstance {
                     supports_streaming: true,
                     supports_multimodal: true,
                     supports_thinking: false,
+                    supports_tools: true,
                     max_context: 128000,
                 },
             ),
@@ -176,6 +191,7 @@ impl LlmBackendInstance {
                     supports_streaming: true,
                     supports_multimodal: true,
                     supports_thinking: false,
+                    supports_tools: true,
                     max_context: 200000,
                 },
             ),
@@ -186,6 +202,7 @@ impl LlmBackendInstance {
                     supports_streaming: true,
                     supports_multimodal: true,
                     supports_thinking: false,
+                    supports_tools: true,
                     max_context: 1000000,
                 },
             ),
@@ -196,6 +213,7 @@ impl LlmBackendInstance {
                     supports_streaming: true,
                     supports_multimodal: false,
                     supports_thinking: false,
+                    supports_tools: false,
                     max_context: 128000,
                 },
             ),
@@ -212,6 +230,7 @@ impl LlmBackendInstance {
             temperature: default_temperature(),
             top_p: default_top_p(),
             max_tokens: default_max_tokens(),
+            thinking_enabled: default_thinking_enabled(),
             capabilities,
             updated_at: Utc::now().timestamp(),
         }

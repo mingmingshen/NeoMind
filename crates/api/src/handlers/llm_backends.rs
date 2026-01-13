@@ -56,11 +56,20 @@ pub struct CreateBackendRequest {
     /// Maximum tokens to generate
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
+
+    /// Enable thinking/reasoning mode for models that support it
+    #[serde(default = "default_thinking_enabled")]
+    pub thinking_enabled: bool,
+
+    /// Model capabilities (optional, from Ollama model detection)
+    #[serde(default)]
+    pub capabilities: Option<BackendCapabilities>,
 }
 
 fn default_temperature() -> f32 { 0.7 }
 fn default_top_p() -> f32 { 0.9 }
 fn default_max_tokens() -> usize { usize::MAX }
+fn default_thinking_enabled() -> bool { true }
 
 /// Request to update an LLM backend instance
 #[derive(Debug, Deserialize)]
@@ -85,6 +94,9 @@ pub struct UpdateBackendRequest {
 
     /// Maximum tokens
     pub max_tokens: Option<usize>,
+
+    /// Enable thinking/reasoning mode for models that support it
+    pub thinking_enabled: Option<bool>,
 }
 
 /// Backend instance DTO for API responses
@@ -100,6 +112,7 @@ pub struct BackendInstanceDto {
     pub temperature: f32,
     pub top_p: f32,
     pub max_tokens: usize,
+    pub thinking_enabled: bool,
     pub capabilities: BackendCapabilities,
     pub updated_at: i64,
     pub healthy: Option<bool>,
@@ -119,6 +132,7 @@ impl From<LlmBackendInstance> for BackendInstanceDto {
             temperature: instance.temperature,
             top_p: instance.top_p,
             max_tokens: instance.max_tokens,
+            thinking_enabled: instance.thinking_enabled,
             capabilities: instance.capabilities,
             updated_at: instance.updated_at,
             healthy: None, // Populated separately
@@ -279,8 +293,9 @@ pub async fn create_backend_handler(
     // Generate unique ID
     let id = LlmBackendStore::generate_id(&req.backend_type);
 
-    // Get default capabilities for the backend type
-    let capabilities = get_default_capabilities(&backend_type);
+    // Use provided capabilities or get defaults for the backend type
+    let capabilities = req.capabilities
+        .unwrap_or_else(|| get_default_capabilities(&backend_type));
 
     let instance = LlmBackendInstance {
         id: id.clone(),
@@ -293,6 +308,7 @@ pub async fn create_backend_handler(
         temperature: req.temperature,
         top_p: req.top_p,
         max_tokens: req.max_tokens,
+        thinking_enabled: req.thinking_enabled,
         capabilities,
         updated_at: chrono::Utc::now().timestamp(),
     };
@@ -346,6 +362,9 @@ pub async fn update_backend_handler(
     }
     if let Some(max_tokens) = req.max_tokens {
         instance.max_tokens = max_tokens;
+    }
+    if let Some(thinking_enabled) = req.thinking_enabled {
+        instance.thinking_enabled = thinking_enabled;
     }
     instance.updated_at = chrono::Utc::now().timestamp();
 
@@ -518,30 +537,35 @@ fn get_default_capabilities(backend_type: &LlmBackendType) -> BackendCapabilitie
             supports_streaming: true,
             supports_multimodal: true,
             supports_thinking: true,
+            supports_tools: true,
             max_context: 8192,
         },
         LlmBackendType::OpenAi => BackendCapabilities {
             supports_streaming: true,
             supports_multimodal: true,
             supports_thinking: false,
+            supports_tools: true,
             max_context: 128000,
         },
         LlmBackendType::Anthropic => BackendCapabilities {
             supports_streaming: true,
             supports_multimodal: true,
             supports_thinking: false,
+            supports_tools: true,
             max_context: 200000,
         },
         LlmBackendType::Google => BackendCapabilities {
             supports_streaming: true,
             supports_multimodal: true,
             supports_thinking: false,
+            supports_tools: true,
             max_context: 1000000,
         },
         LlmBackendType::XAi => BackendCapabilities {
             supports_streaming: true,
             supports_multimodal: false,
             supports_thinking: false,
+            supports_tools: false,
             max_context: 128000,
         },
     }

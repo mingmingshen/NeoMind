@@ -848,6 +848,7 @@ export interface BackendCapabilities {
   supports_streaming: boolean
   supports_multimodal: boolean
   supports_thinking: boolean
+  supports_tools: boolean
   max_context: number
 }
 
@@ -862,6 +863,7 @@ export interface LlmBackendInstance {
   temperature: number
   top_p: number
   max_tokens: number
+  thinking_enabled: boolean  // Enable thinking/reasoning mode for models that support it
   capabilities: BackendCapabilities
   updated_at: number
   healthy?: boolean  // Health check result (from API)
@@ -876,6 +878,8 @@ export interface CreateLlmBackendRequest {
   temperature?: number
   top_p?: number
   max_tokens?: number
+  thinking_enabled?: boolean  // Enable thinking/reasoning mode for models that support it
+  capabilities?: BackendCapabilities  // Model capabilities (from Ollama model detection)
 }
 
 export interface UpdateLlmBackendRequest {
@@ -886,6 +890,7 @@ export interface UpdateLlmBackendRequest {
   temperature?: number
   top_p?: number
   max_tokens?: number
+  thinking_enabled?: boolean  // Enable thinking/reasoning mode for models that support it
 }
 
 export interface LlmBackendListResponse {

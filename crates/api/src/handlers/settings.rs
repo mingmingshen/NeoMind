@@ -5,7 +5,10 @@ use serde_json::json;
 
 use super::{ServerState, common::{HandlerResult, ok}};
 use crate::config::LlmSettingsRequest;
-use crate::models::{ErrorResponse, OllamaModelsResponse};
+use crate::models::{ErrorResponse, OllamaModelsResponse, ModelCapabilities};
+
+// Re-export futures for join_all
+use futures::future;
 
 /// Get current LLM settings.
 pub async fn get_llm_settings_handler() -> HandlerResult<serde_json::Value> {
@@ -166,6 +169,87 @@ pub async fn test_llm_handler(
     }
 }
 
+/// Detect model capabilities from modelfile content.
+fn parse_modelfile_capabilities(modelfile: &str) -> ModelCapabilities {
+    let modelfile_lower = modelfile.to_lowercase();
+
+    // Check for thinking support from RENDERER or PARSER
+    let supports_thinking = modelfile_lower.contains("renderer")
+        && modelfile_lower.contains("thinking");
+
+    // Check for multimodal support from RENDERER or PARSER
+    let supports_multimodal = modelfile_lower.contains("renderer")
+        && (modelfile_lower.contains("vl")
+            || modelfile_lower.contains("vision")
+            || modelfile_lower.contains("mm"));
+
+    // Tools support - models with advanced template systems typically support tools
+    // Exclude very small models and embedding models
+    let supports_tools = !modelfile_lower.contains("embed")
+        && !modelfile_lower.contains("270m")
+        && !modelfile_lower.contains("e4b")
+        && !modelfile_lower.contains("0.5b")
+        && !modelfile_lower.contains("0.6b")
+        && !modelfile_lower.contains("1b");
+
+    ModelCapabilities {
+        supports_thinking,
+        supports_tools,
+        supports_multimodal,
+    }
+}
+
+/// Fallback: Detect model capabilities from name and family.
+fn detect_model_capabilities(name: &str, family: &str) -> ModelCapabilities {
+    let name_lower = name.to_lowercase();
+    let family_lower = family.to_lowercase();
+
+    // Thinking support: deepseek-r1, qwen3 variants
+    let supports_thinking = name_lower.contains("thinking")
+        || name_lower.contains("deepseek-r1")
+        || name_lower.starts_with("qwen3")
+        || family_lower.contains("qwen3");
+
+    // Multimodal support: vl, vision models
+    let supports_multimodal = name_lower.contains("vl")
+        || name_lower.contains("vision")
+        || name_lower.contains("mm")
+        || family_lower.contains("vl");
+
+    // Tools support: exclude very small models
+    let supports_tools = !name_lower.contains("270m")
+        && !name_lower.contains("e4b")  // gemma3n:e4b doesn't support tools
+        && !name_lower.contains("0.5b")
+        && !name_lower.contains("0.6b")
+        && !name_lower.contains("1b")
+        && !name_lower.contains("embed-text");
+
+    ModelCapabilities {
+        supports_thinking,
+        supports_tools,
+        supports_multimodal,
+    }
+}
+
+/// Get model details from Ollama /api/show endpoint.
+async fn get_model_details(client: &reqwest::Client, endpoint: &str, model_name: &str) -> Option<serde_json::Value> {
+    let url = format!("{}/api/show", endpoint.trim_end_matches('/'));
+    let body = serde_json::json!({ "name": model_name });
+
+    let response = client.post(&url)
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+        .ok()?;
+
+    if !response.status().is_success() {
+        return None;
+    }
+
+    response.json().await.ok()
+}
+
 /// Get available models from Ollama.
 pub async fn list_ollama_models_handler(
     Query(params): Query<std::collections::HashMap<String, String>>,
@@ -198,10 +282,44 @@ pub async fn list_ollama_models_handler(
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to parse response: {}", e)))?;
 
-    // Extract model names (keep the full name with tag)
-    let models: Vec<String> = ollama_response.models
+    // Fetch detailed info for each model (in parallel)
+    let fetch_futures: Vec<_> = ollama_response.models.iter()
+        .map(|m| {
+            let client = &client;
+            let model_name = m.name.clone();
+            let endpoint = endpoint.clone();
+            async move {
+                let details = get_model_details(client, &endpoint, &model_name).await;
+                (model_name, details)
+            }
+        })
+        .collect();
+
+    let details_results = futures::future::join_all(fetch_futures).await;
+
+    // Build models with capabilities from modelfile
+    let models: Vec<serde_json::Value> = ollama_response.models
         .iter()
-        .map(|m| m.name.clone())
+        .map(|m| {
+            // Find the details for this model
+            let capabilities = details_results.iter()
+                .find(|(name, _)| name == &m.name)
+                .and_then(|(_, details)| {
+                    details.as_ref()
+                        .and_then(|d| d.get("modelfile"))
+                        .and_then(|mf| mf.as_str())
+                        .map(|modelfile| parse_modelfile_capabilities(modelfile))
+                })
+                .unwrap_or_else(|| detect_model_capabilities(&m.name, &m.details.family));
+
+            json!({
+                "name": m.name,
+                "size": m.size,
+                "family": m.details.family,
+                "parameter_size": m.details.parameter_size,
+                "capabilities": capabilities,
+            })
+        })
         .collect();
 
     ok(json!({
@@ -267,6 +385,7 @@ pub async fn llm_generate_handler(
             stop: None,
             frequency_penalty: None,
             presence_penalty: None,
+            thinking_enabled: None,
         },
         model: Some(model_name),
         stream: false,
