@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -15,8 +23,8 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { Plus, Trash2, Edit, Play, Workflow as WorkflowIcon, ArrowRight } from 'lucide-react'
-import { ActionBar, EmptyState } from '@/components/shared'
+import { Plus, Trash2, Edit, Play, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
+import { ActionBar, EmptyStateInline } from '@/components/shared'
 import { api } from '@/lib/api'
 import type { Workflow, WorkflowStep } from '@/types'
 import { cn } from '@/lib/utils'
@@ -34,6 +42,7 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
   const [newWorkflowName, setNewWorkflowName] = useState('')
   const [newWorkflowDescription, setNewWorkflowDescription] = useState('')
   const [executingId, setExecutingId] = useState<string | null>(null)
+  const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set())
 
   const fetchWorkflows = async () => {
     setLoading(true)
@@ -84,6 +93,18 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
     } finally {
       setExecutingId(null)
     }
+  }
+
+  const toggleDetails = (id: string) => {
+    setExpandedDetails((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   const handleCreateWorkflow = async () => {
@@ -158,7 +179,7 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
       {/* Header with actions */}
       <ActionBar
         title={t('automation:workflowsTitle')}
-        titleIcon={<WorkflowIcon className="h-5 w-5" />}
+        titleIcon={<ArrowRight className="h-5 w-5" />}
         description={t('automation:workflowsDesc')}
         actions={[
           {
@@ -170,123 +191,149 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
         onRefresh={onRefresh}
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading ? (
-          <div className="col-span-full flex items-center justify-center py-12">
-            <p className="text-muted-foreground">{t('automation:loading')}</p>
-          </div>
-        ) : workflows.length === 0 ? (
-          <div className="col-span-full">
-            <EmptyState
-              icon="workflow"
-              title={t('automation:noWorkflows')}
-              action={{
-                label: t('automation:createFirstWorkflow'),
-                onClick: () => setCreateDialogOpen(true),
-                icon: <Plus className="h-4 w-4" />,
-              }}
-            />
-          </div>
-        ) : (
-          workflows.map((workflow) => (
-            <Card key={workflow.id} className={cn(!workflow.enabled && 'opacity-60')}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-base">{workflow.name}</CardTitle>
-                    {workflow.description && (
-                      <CardDescription className="mt-1">
-                        {workflow.description}
-                      </CardDescription>
-                    )}
-                  </div>
-                  <Switch
-                    checked={workflow.enabled}
-                    onCheckedChange={() => handleToggleWorkflow(workflow)}
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Triggers */}
-                {workflow.triggers && workflow.triggers.length > 0 && (
-                <div>
-                  <div className="text-xs text-muted-foreground mb-2">{t('automation:triggers')}</div>
-                  <div className="flex flex-wrap gap-1">
-                    {workflow.triggers.map((trigger, i) => (
-                      <Badge key={i} variant="outline" className="text-xs">
-                        {trigger.type === 'manual' && t('automation:manual')}
-                        {trigger.type === 'event' && t('automation:event')}
-                        {trigger.type === 'schedule' && t('automation:scheduleLabel')}
-                        {trigger.type === 'device_state' && t('automation:deviceState')}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-                )}
+      {/* Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('automation:workflowName')}</TableHead>
+              <TableHead>{t('automation:triggers')}</TableHead>
+              <TableHead align="center">{t('automation:enabled')}</TableHead>
+              <TableHead align="center">{t('automation:executionCount')}</TableHead>
+              <TableHead>{t('automation:updatedAt')}</TableHead>
+              <TableHead align="right">{t('automation:actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <EmptyStateInline title={t('automation:loading')} colSpan={6} />
+            ) : workflows.length === 0 ? (
+              <EmptyStateInline title={`${t('automation:noWorkflows')} - ${t('automation:workflowsDesc')}`} colSpan={6} />
+            ) : (
+              workflows.map((workflow) => {
+                const isExpanded = expandedDetails.has(workflow.id)
+                const hasSteps = workflow.steps && workflow.steps.length > 0
 
-                {/* Steps */}
-                {workflow.steps && workflow.steps.length > 0 && (
-                <div>
-                  <div className="text-xs text-muted-foreground mb-2">{t('automation:stepsLabel')}</div>
-                  <div className="flex items-center gap-1 overflow-x-auto pb-1">
-                    {workflow.steps.slice(0, 4).map((step, i) => (
-                      <div key={step.id} className="flex items-center">
-                        <div className="flex items-center gap-1 px-2 py-1 bg-muted rounded-md">
-                          <span>{getStepIcon(step.type)}</span>
-                          <span className="text-xs truncate max-w-[80px]">{step.name}</span>
+                return (
+                  <>
+                    <TableRow
+                      key={workflow.id}
+                      className={cn(!workflow.enabled && 'opacity-60')}
+                    >
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{workflow.name}</div>
+                          {workflow.description && (
+                            <div className="text-xs text-muted-foreground truncate max-w-md">
+                              {workflow.description}
+                            </div>
+                          )}
                         </div>
-                        {i < Math.min((workflow.steps?.length ?? 0) - 1, 3) && (
-                          <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                        )}
-                      </div>
-                    ))}
-                    {workflow.steps.length > 4 && (
-                      <Badge variant="outline" className="ml-1">
-                        +{workflow.steps.length - 4}
-                      </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {workflow.triggers && workflow.triggers.length > 0 ? (
+                            workflow.triggers.map((trigger, i) => (
+                              <Badge key={i} variant="outline" className="text-xs">
+                                {trigger.type === 'manual' && t('automation:manual')}
+                                {trigger.type === 'event' && t('automation:event')}
+                                {trigger.type === 'schedule' && t('automation:scheduleLabel')}
+                                {trigger.type === 'device_state' && t('automation:deviceState')}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">
+                              {t('automation:manual')}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Switch
+                          checked={workflow.enabled}
+                          onCheckedChange={() => handleToggleWorkflow(workflow)}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <span className="text-sm">{workflow.execution_count || 0}</span>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatTimestamp(workflow.updated_at)}
+                      </TableCell>
+                      <TableCell align="right">
+                        <div className="flex items-center justify-end gap-1">
+                          {hasSteps && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => toggleDetails(workflow.id)}
+                            >
+                              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => handleExecuteWorkflow(workflow.id)}
+                            disabled={!workflow.enabled || executingId === workflow.id}
+                          >
+                            <Play className="h-3 w-3 mr-1" />
+                            {executingId === workflow.id ? t('automation:executing') : t('automation:execute')}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setEditWorkflow(workflow)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => handleDeleteWorkflow(workflow.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expandable details row */}
+                    {isExpanded && hasSteps && (
+                      <TableRow key={`${workflow.id}-details`}>
+                        <TableCell colSpan={6} className="bg-muted/30">
+                          <div className="space-y-3 py-2">
+                            <div>
+                              <div className="text-sm font-medium mb-2">{t('automation:stepsLabel')}</div>
+                              <div className="flex items-center gap-1 overflow-x-auto pb-1">
+                                {workflow.steps?.map((step, i) => (
+                                  <div key={step.id} className="flex items-center">
+                                    <div className="flex items-center gap-1 px-2 py-1 bg-background rounded-md border">
+                                      <span>{getStepIcon(step.type)}</span>
+                                      <span className="text-xs truncate max-w-[100px]">{step.name}</span>
+                                    </div>
+                                    {i < (workflow.steps?.length ?? 0) - 1 && (
+                                      <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </div>
-                </div>
-                )}
-
-                {/* Stats */}
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{t('automation:executionCount')}: {workflow.execution_count || 0}</span>
-                  <span>{t('automation:updatedAt')}: {formatTimestamp(workflow.updated_at)}</span>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 pt-2 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleExecuteWorkflow(workflow.id)}
-                    disabled={!workflow.enabled || executingId === workflow.id}
-                  >
-                    <Play className="h-3 w-3 mr-1" />
-                    {executingId === workflow.id ? t('automation:executing') : t('automation:execute')}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditWorkflow(workflow)}
-                  >
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteWorkflow(workflow.id)}
-                  >
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+                  </>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Create Workflow Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

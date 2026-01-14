@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -22,9 +22,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { AlertCircle, Plus, Check, Trash2, Eye, Bell } from "lucide-react"
-import { LoadingState, EmptyState, Pagination, AlertBadge, BulkActionBar, ActionBar } from "@/components/shared"
+import { Plus, Check, Trash2, Eye, Bell } from "lucide-react"
+import { EmptyStateInline, Pagination, AlertBadge, BulkActionBar, ActionBar } from "@/components/shared"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
@@ -237,105 +245,116 @@ export function AlertsTab() {
         onCancel={() => setSelectedIds(new Set())}
       />
 
-      {/* Content */}
-      {alertsLoading ? (
-        <LoadingState text={t('common:loading')} />
-      ) : filteredAlerts.length === 0 ? (
-        <EmptyState
-          icon={<AlertCircle className="h-12 w-12 text-muted-foreground" />}
-          title={t('alerts:noAlerts')}
-          description={t('alerts:noAlertsDesc')}
-        />
-      ) : (
-        <div className="space-y-4">
-          {/* Header with Select All */}
-          <div className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
-            <Checkbox
-              checked={allOnPageSelected}
-              onCheckedChange={toggleAll}
-            />
-            <span>{t('common:selectAll')}</span>
-          </div>
-
-          {paginatedAlerts.map((alert) => (
-            <Card
-              key={alert.id}
-              className={
-                !alert.acknowledged
-                  ? alert.severity === 'critical'
-                    ? 'border-l-4 border-l-red-500'
-                    : alert.severity === 'warning'
-                    ? 'border-l-4 border-l-yellow-500'
-                    : 'border-l-4 border-l-blue-500'
-                  : ''
-              }
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1">
+      {/* Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[40px]">
+                <Checkbox
+                  checked={allOnPageSelected}
+                  onCheckedChange={toggleAll}
+                />
+              </TableHead>
+              <TableHead>{t('alerts:alertTitle')}</TableHead>
+              <TableHead>{t('alerts:severity')}</TableHead>
+              <TableHead>{t('common:status')}</TableHead>
+              <TableHead>{t('alerts:source')}</TableHead>
+              <TableHead>{t('alerts:createdAt')}</TableHead>
+              <TableHead align="right">{t('automation:actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {alertsLoading ? (
+              <EmptyStateInline title={t('common:loading')} colSpan={7} />
+            ) : filteredAlerts.length === 0 ? (
+              <EmptyStateInline title={`${t('alerts:noAlerts')} - ${t('alerts:noAlertsDesc')}`} colSpan={7} />
+            ) : paginatedAlerts.length === 0 ? (
+              <EmptyStateInline title={t('alerts:noAlertsOnPage')} colSpan={7} />
+            ) : (
+              paginatedAlerts.map((alert) => (
+                <TableRow
+                  key={alert.id}
+                  className={!alert.acknowledged ? (
+                    alert.severity === 'critical' ? 'bg-red-500/5' :
+                    alert.severity === 'warning' ? 'bg-yellow-500/5' :
+                    'bg-blue-500/5'
+                  ) : ''}
+                >
+                  <TableCell>
                     <Checkbox
                       checked={selectedIds.has(alert.id)}
                       onCheckedChange={() => toggleSelection(alert.id)}
                     />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <CardTitle className="text-base">{alert.title}</CardTitle>
-                        <AlertBadge level={alert.severity as "critical" | "warning" | "info" | "emergency"} />
-                        {!alert.acknowledged && (
-                          <Badge variant="default" className="text-xs">{t('alerts:unacknowledged')}</Badge>
-                        )}
-                        {alert.source && (
-                          <Badge variant="outline" className="text-xs">
-                            {alert.source}
-                          </Badge>
-                        )}
-                      </div>
-                      <CardDescription className="text-xs">
-                        {formatTimestamp(alert.created_at)}
-                      </CardDescription>
+                  </TableCell>
+                  <TableCell>
+                    <div className="max-w-md">
+                      <div className="font-medium truncate">{alert.title}</div>
+                      <div className="text-xs text-muted-foreground truncate">{alert.message}</div>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => setSelectedAlert(alert)}
-                      variant="ghost"
-                      size="sm"
-                    >
-                      <Eye className="h-3 w-3" />
-                    </Button>
-                    {!alert.acknowledged && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleAcknowledge(alert.id)}
-                        disabled={acknowledgingId === alert.id}
-                      >
-                        <Check className="mr-1 h-3 w-3" />
-                        {acknowledgingId === alert.id ? t('alerts:acknowledging') : t('alerts:acknowledge')}
-                      </Button>
+                  </TableCell>
+                  <TableCell>
+                    <AlertBadge level={alert.severity as "critical" | "warning" | "info" | "emergency"} />
+                  </TableCell>
+                  <TableCell>
+                    {alert.acknowledged ? (
+                      <Badge variant="outline">{t('alerts:acknowledged')}</Badge>
+                    ) : (
+                      <Badge variant="default">{t('alerts:unacknowledged')}</Badge>
                     )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="text-sm">
-                <p className="text-muted-foreground">{alert.message}</p>
-              </CardContent>
-            </Card>
-          ))}
+                  </TableCell>
+                  <TableCell>
+                    {alert.source && (
+                      <Badge variant="outline" className="text-xs">
+                        {alert.source}
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatTimestamp(alert.created_at)}
+                  </TableCell>
+                  <TableCell align="right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setSelectedAlert(alert)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {!alert.acknowledged && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => handleAcknowledge(alert.id)}
+                          disabled={acknowledgingId === alert.id}
+                        >
+                          <Check className="mr-1 h-3 w-3" />
+                          {acknowledgingId === alert.id ? t('alerts:acknowledging') : t('alerts:acknowledge')}
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
 
-          {/* Pagination */}
-          {filteredAlerts.length > alertsPerPage && (
-            <div className="px-4 pt-4">
-              <Pagination
-                total={filteredAlerts.length}
-                pageSize={alertsPerPage}
-                currentPage={page}
-                onPageChange={setPage}
-              />
-            </div>
-          )}
-        </div>
-      )}
+        {/* Pagination */}
+        {filteredAlerts.length > alertsPerPage && (
+          <div className="px-4 pt-4 border-t">
+            <Pagination
+              total={filteredAlerts.length}
+              pageSize={alertsPerPage}
+              currentPage={page}
+              onPageChange={setPage}
+            />
+          </div>
+        )}
+      </Card>
 
       {/* Create Alert Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -169,8 +168,6 @@ export function DeviceList({
 
       {loading ? (
         <LoadingState text={t('devices:loading')} />
-      ) : devices.length === 0 ? (
-        <EmptyStateInline title={t('devices:noDevices')} colSpan={8} />
       ) : (
         <Card>
           <Table>
@@ -189,8 +186,11 @@ export function DeviceList({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedDevices.map((device) => (
-                <TableRow key={device.id} className={cn(selectedIds.has(device.id) && "bg-muted/50")}>
+              {devices.length === 0 ? (
+                <EmptyStateInline title={t('devices:noDevices')} colSpan={8} />
+              ) : (
+                paginatedDevices.map((device) => (
+                  <TableRow key={device.id} className={cn(selectedIds.has(device.id) && "bg-muted/50")}>
                   <TableCell align="center">
                     <Checkbox
                       checked={selectedIds.has(device.id)}
@@ -218,7 +218,8 @@ export function DeviceList({
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </Card>

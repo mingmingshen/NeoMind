@@ -142,6 +142,10 @@ export function DashboardPage() {
     setStreamingContent("")
     setStreamingThinking("")
     setStreamingToolCalls([])
+    // Also reset refs to ensure no stale data persists
+    streamingContentRef.current = ""
+    streamingThinkingRef.current = ""
+    streamingToolCallsRef.current = []
   }, [sessionId])
 
   // Setup WebSocket message handler
@@ -157,6 +161,22 @@ export function DashboardPage() {
   }, [addMessage, loadSessions, setSessionId])
 
   const handleMessage = useCallback((msg: ServerMessage) => {
+    // Only process messages that belong to the current session
+    // Messages without sessionId (device_update) are always processed
+    // Control messages (session_created, session_switched) are always processed
+    const hasSessionId = 'sessionId' in msg && msg.sessionId !== undefined
+    if (hasSessionId && msg.type !== 'session_created' && msg.type !== 'session_switched') {
+      // If there's no active session, or sessionId doesn't match, ignore
+      if (!sessionId || msg.sessionId !== sessionId) {
+        console.log('[dashboard] Ignoring message for different session', {
+          msgSessionId: msg.sessionId,
+          currentSessionId: sessionId,
+          msgType: msg.type,
+        })
+        return
+      }
+    }
+
     switch (msg.type) {
       case 'system':
         break
@@ -264,7 +284,7 @@ export function DashboardPage() {
       case 'device_update':
         break
     }
-  }, []) // No dependencies - use refs inside
+  }, [sessionId]) // sessionId is used for message filtering
 
   // Register message handler once
   useEffect(() => {
@@ -517,7 +537,7 @@ export function DashboardPage() {
                           const hasResult = tc.result !== undefined && tc.result !== null
 
                           return (
-                            <div key={i} className="px-3 py-2">
+                            <div key={resultKey} className="px-3 py-2">
                               {/* Tool Name Row */}
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -633,7 +653,7 @@ export function DashboardPage() {
                       </div>
                       <div className="divide-y divide-border/30">
                         {streamingToolCalls.map((tc, i) => (
-                          <div key={i} className="px-3 py-2">
+                          <div key={tc.id || `streaming-${i}`} className="px-3 py-2">
                             <div className="flex items-center gap-2">
                               <div className="h-5 w-5 rounded-full flex items-center justify-center bg-amber-500/20 text-amber-600">
                                 <Loader2 className="h-3 w-3 animate-spin" />

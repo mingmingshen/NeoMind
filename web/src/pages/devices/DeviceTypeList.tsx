@@ -1,6 +1,5 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -138,33 +137,27 @@ export function DeviceTypeList({
 
       {loading ? (
         <LoadingState text={t('devices:types.loading')} />
-      ) : deviceTypes.length === 0 ? (
+      ) : (
         <Card>
           <Table>
-            <TableBody>
-              <EmptyStateInline title={t('devices:types.noTypes')} colSpan={7} />
-            </TableBody>
-          </Table>
-        </Card>
-      ) : (
-        <>
-          <Card>
-            <Table>
             <TableHeader>
-                <TableRow>
-                  <TableHead align="center" className="w-[50px]">
-                    <Checkbox checked={allOnPageSelected} onCheckedChange={toggleAll} />
-                  </TableHead>
-                  <TableHead>{t('devices:types.headers.id')}</TableHead>
-                  <TableHead>{t('devices:types.headers.name')}</TableHead>
-                  <TableHead>{t('devices:types.headers.description')}</TableHead>
-                  <TableHead align="center">{t('devices:types.headers.metrics')}</TableHead>
-                  <TableHead align="center">{t('devices:types.headers.commands')}</TableHead>
-                  <TableHead align="right">{t('devices:types.headers.actions')}</TableHead>
-                </TableRow>
+              <TableRow>
+                <TableHead align="center" className="w-[50px]">
+                  <Checkbox checked={allOnPageSelected} onCheckedChange={toggleAll} />
+                </TableHead>
+                <TableHead>{t('devices:types.headers.id')}</TableHead>
+                <TableHead>{t('devices:types.headers.name')}</TableHead>
+                <TableHead>{t('devices:types.headers.description')}</TableHead>
+                <TableHead align="center">{t('devices:types.headers.metrics')}</TableHead>
+                <TableHead align="center">{t('devices:types.headers.commands')}</TableHead>
+                <TableHead align="right">{t('devices:types.headers.actions')}</TableHead>
+              </TableRow>
             </TableHeader>
             <TableBody>
-                {paginatedDeviceTypes.map((type) => (
+              {deviceTypes.length === 0 ? (
+                <EmptyStateInline title={t('devices:types.noTypes')} colSpan={7} />
+              ) : (
+                paginatedDeviceTypes.map((type) => (
                   <TableRow key={type.device_type} className={cn(selectedIds.has(type.device_type) && "bg-muted/50")}>
                     <TableCell align="center">
                       <Checkbox
@@ -199,23 +192,22 @@ export function DeviceTypeList({
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
 
-          {/* Pagination Controls */}
-          {deviceTypes.length > deviceTypesPerPage && (
-            <div className="pt-4">
-              <Pagination
-                total={deviceTypes.length}
-                pageSize={deviceTypesPerPage}
-                currentPage={deviceTypePage}
-                onPageChange={onPageChange}
-              />
-            </div>
-          )}
-        </>
+      {deviceTypes.length > deviceTypesPerPage && (
+        <div className="pt-4">
+          <Pagination
+            total={deviceTypes.length}
+            pageSize={deviceTypesPerPage}
+            currentPage={deviceTypePage}
+            onPageChange={onPageChange}
+          />
+        </div>
       )}
     </>
   )

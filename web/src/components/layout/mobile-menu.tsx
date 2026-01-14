@@ -43,7 +43,7 @@ export function MobileMenuProvider({ children }: { children: ReactNode }) {
 }
 
 export function MobileMenuTrigger() {
-  const { isOpen, setOpen } = useMobileMenu()
+  const { setOpen } = useMobileMenu()
 
   return (
     <Button

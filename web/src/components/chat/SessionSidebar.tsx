@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
-import { Plus, MessageSquare, Trash2, Edit2, X } from "lucide-react"
+import { Plus, MessageSquare, Trash2, Edit2, X, Eraser } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
@@ -39,11 +39,13 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
     sessionId,
     switchSession,
     deleteSession,
+    clearAllSessions,
     updateSessionTitle,
     createSession,
     loadSessions,
   } = useStore()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [clearAllDialogOpen, setClearAllDialogOpen] = useState(false)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
   const [sessionToRename, setSessionToRename] = useState<string | null>(null)
@@ -82,7 +84,27 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
   const handleDeleteConfirm = async () => {
     if (sessionToDelete) {
       setLoading(true)
+      const wasCurrentSession = sessionToDelete === sessionId
+
       await deleteSession(sessionToDelete)
+
+      // Reload sessions after deletion to get fresh state
+      await loadSessions()
+
+      // Check if we need to create a new session (no sessions left)
+      const { sessions: updatedSessions, sessionId: currentSessionId, createSession } = useStore.getState()
+
+      if (updatedSessions.length === 0) {
+        // No sessions left, create a new one
+        await createSession()
+      } else if (wasCurrentSession && !currentSessionId) {
+        // We deleted the current session but didn't get a new one, switch to first available
+        const firstSessionId = updatedSessions[0].sessionId
+        if (firstSessionId) {
+          await switchSession(firstSessionId)
+        }
+      }
+
       setLoading(false)
       setDeleteDialogOpen(false)
       setSessionToDelete(null)
@@ -104,6 +126,18 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
       setRenameDialogOpen(false)
       setSessionToRename(null)
       setNewTitle("")
+    }
+  }
+
+  const handleClearAllConfirm = async () => {
+    setLoading(true)
+    try {
+      await clearAllSessions()
+      setClearAllDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to clear all sessions:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -172,15 +206,28 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
               )}
               <h2 className="text-sm font-semibold">{t('sessionList')}</h2>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={handleNewChat}
-              disabled={loading}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleNewChat}
+                disabled={loading}
+                title={t('newChat')}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={() => setClearAllDialogOpen(true)}
+                disabled={loading || sessions.length === 0}
+                title={t('clearHistory')}
+              >
+                <Eraser className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Session List */}
@@ -311,6 +358,29 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
             </Button>
             <Button onClick={handleRenameConfirm}>
               {t('save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clear All History Confirmation Dialog */}
+      <Dialog open={clearAllDialogOpen} onOpenChange={setClearAllDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eraser className="h-5 w-5 text-destructive" />
+              {t('clearHistoryTitle', { ns: 'dashboard' })}
+            </DialogTitle>
+            <DialogDescription>
+              {t('clearHistoryDesc', { ns: 'dashboard', count: sessions.length })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearAllDialogOpen(false)} disabled={loading}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleClearAllConfirm} disabled={loading}>
+              {loading ? t('clearing', { ns: 'dashboard' }) : t('clearHistoryConfirm', { ns: 'dashboard' })}
             </Button>
           </DialogFooter>
         </DialogContent>

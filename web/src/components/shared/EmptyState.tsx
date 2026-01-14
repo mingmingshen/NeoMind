@@ -11,7 +11,6 @@ import {
   Package,
   Users,
   Settings,
-  AlertCircle,
   Inbox,
   Search,
 } from 'lucide-react'
@@ -71,7 +70,7 @@ export interface EmptyStateProps {
  * />
  */
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
-  const iconContent = typeof icon === 'string' ? iconMap[icon] : icon
+  const iconContent = typeof icon === 'string' ? iconMap[icon as keyof typeof iconMap] : icon
 
   return (
     <div className={cn('flex flex-col items-center justify-center py-12 px-4 text-center', className)}>

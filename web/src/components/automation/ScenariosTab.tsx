@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import {
   Dialog,
   DialogContent,
@@ -16,7 +24,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Plus, Trash2, Edit, Play, Home } from 'lucide-react'
-import { ActionBar, EmptyState } from '@/components/shared'
+import { ActionBar, EmptyStateInline } from '@/components/shared'
 import { api } from '@/lib/api'
 import type { Scenario, ScenarioAction } from '@/types'
 import { cn } from '@/lib/utils'
@@ -45,6 +53,7 @@ export function ScenariosTab({ onRefresh }: ScenariosTabProps) {
   const [newScenarioName, setNewScenarioName] = useState('')
   const [newScenarioIcon, setNewScenarioIcon] = useState('🏠')
   const [newScenarioActions, setNewScenarioActions] = useState('')
+  const [executingId, setExecutingId] = useState<string | null>(null)
 
   const fetchScenarios = async () => {
     setLoading(true)
@@ -88,11 +97,14 @@ export function ScenariosTab({ onRefresh }: ScenariosTabProps) {
   }
 
   const handleActivateScenario = async (id: string) => {
+    setExecutingId(id)
     try {
       await api.activateScenario(id)
       await fetchScenarios()
     } catch (error) {
       console.error('Failed to activate scenario:', error)
+    } finally {
+      setExecutingId(null)
     }
   }
 
@@ -170,13 +182,6 @@ export function ScenariosTab({ onRefresh }: ScenariosTabProps) {
     }
   }
 
-  const presetScenarios = [
-    { name: '回家模式', icon: '🏠', description: '打开灯光、调节空调至舒适温度' },
-    { name: '离家模式', icon: '🚪', description: '关闭所有设备、开启安防' },
-    { name: '睡眠模式', icon: '💤', description: '关闭灯光、调高空调、静音' },
-    { name: '起床模式', icon: '☀️', description: '渐亮灯光、播放轻音乐、调节温度' },
-  ]
-
   return (
     <>
       {/* Header with actions */}
@@ -194,122 +199,103 @@ export function ScenariosTab({ onRefresh }: ScenariosTabProps) {
         onRefresh={onRefresh}
       />
 
-      {/* Preset Scenarios */}
-      {scenarios.length === 0 && !loading && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          {presetScenarios.map((preset) => (
-            <Card
-              key={preset.name}
-              className="cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => {
-                setNewScenarioName(preset.name)
-                setNewScenarioIcon(preset.icon)
-                setCreateDialogOpen(true)
-              }}
-            >
-              <CardContent className="p-4 text-center">
-                <div className="text-4xl mb-2">{preset.icon}</div>
-                <div className="font-medium">{preset.name}</div>
-                <div className="text-xs text-muted-foreground mt-1">{preset.description}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Scenario Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {loading ? (
-          <div className="col-span-full flex items-center justify-center py-12">
-            <p className="text-muted-foreground">{t('automation:loading')}</p>
-          </div>
-        ) : scenarios.length === 0 ? (
-          <div className="col-span-full">
-            <EmptyState
-              icon="scenario"
-              title={t('automation:noScenarios')}
-              description={t('automation:scenariosEmptyHint')}
-            />
-          </div>
-        ) : (
-          scenarios.map((scenario) => (
-            <Card
-              key={scenario.id}
-              className={cn(
-                'cursor-pointer transition-all',
-                scenario.active && 'ring-2 ring-primary',
-                !scenario.enabled && 'opacity-50'
-              )}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">{scenario.icon || SCENARIO_ICONS[scenario.name] || '🎬'}</span>
-                    <CardTitle className="text-base">{scenario.name}</CardTitle>
-                  </div>
-                  <Switch
-                    checked={scenario.enabled}
-                    onCheckedChange={() => handleToggleScenario(scenario)}
-                  />
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Actions preview */}
-                <div className="space-y-1">
-                  {scenario.actions.slice(0, 3).map((action, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span>{getActionIcon(action)}</span>
-                      <span className="truncate text-muted-foreground">
-                        {getActionDescription(action)}
-                      </span>
-                    </div>
-                  ))}
-                  {scenario.actions.length > 3 && (
-                    <div className="text-xs text-muted-foreground">
-                      {t('automation:moreActions', { count: scenario.actions.length - 3 })}
-                    </div>
+      {/* Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('automation:scenarioName')}</TableHead>
+              <TableHead>{t('automation:actions')}</TableHead>
+              <TableHead align="center">{t('automation:enabled')}</TableHead>
+              <TableHead align="center">{t('automation:status')}</TableHead>
+              <TableHead align="right">{t('automation:actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <EmptyStateInline title={t('automation:loading')} colSpan={5} />
+            ) : scenarios.length === 0 ? (
+              <EmptyStateInline title={`${t('automation:noScenarios')} - ${t('automation:scenariosEmptyHint')}`} colSpan={5} />
+            ) : (
+              scenarios.map((scenario) => (
+                <TableRow
+                  key={scenario.id}
+                  className={cn(
+                    scenario.active && 'bg-green-500/5',
+                    !scenario.enabled && 'opacity-50'
                   )}
-                </div>
-
-                {/* Status and Actions */}
-                <div className="flex items-center gap-2 pt-2 border-t">
-                  <Button
-                    variant={scenario.active ? 'default' : 'outline'}
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => handleActivateScenario(scenario.id)}
-                    disabled={!scenario.enabled || scenario.active}
-                  >
-                    <Play className="h-3 w-3 mr-1" />
-                    {scenario.active ? t('automation:scenariosActive') : t('automation:scenariosExecute')}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditScenario(scenario)}
-                  >
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteScenario(scenario.id)}
-                  >
-                    <Trash2 className="h-3 w-3 text-destructive" />
-                  </Button>
-                </div>
-
-                {/* Active badge */}
-                {scenario.active && (
-                  <Badge className="w-full justify-center bg-green-500">
-                    {t('automation:scenariosActive')}
-                  </Badge>
-                )}
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </div>
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{scenario.icon || SCENARIO_ICONS[scenario.name] || '🎬'}</span>
+                      <span className="font-medium">{scenario.name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="max-w-md">
+                      <div className="flex flex-wrap gap-1">
+                        {scenario.actions.slice(0, 3).map((action, i) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {getActionIcon(action)} {getActionDescription(action)}
+                          </Badge>
+                        ))}
+                        {scenario.actions.length > 3 && (
+                          <Badge variant="secondary" className="text-xs">
+                            +{scenario.actions.length - 3}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell align="center">
+                    <Switch
+                      checked={scenario.enabled}
+                      onCheckedChange={() => handleToggleScenario(scenario)}
+                    />
+                  </TableCell>
+                  <TableCell align="center">
+                    {scenario.active ? (
+                      <Badge className="bg-green-500">{t('automation:scenariosActive')}</Badge>
+                    ) : (
+                      <Badge variant="outline">{t('automation:ready')}</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant={scenario.active ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-8"
+                        onClick={() => handleActivateScenario(scenario.id)}
+                        disabled={!scenario.enabled || scenario.active || executingId === scenario.id}
+                      >
+                        <Play className="h-3 w-3 mr-1" />
+                        {executingId === scenario.id ? t('automation:executing') : t('automation:scenariosExecute')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setEditScenario(scenario)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleDeleteScenario(scenario.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </Card>
 
       {/* Create Scenario Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

@@ -876,7 +876,7 @@ export const api = {
       body: JSON.stringify({ alert_ids: ids }),
     }),
   bulkDeleteSessions: (ids: string[]) =>
-    fetchAPI<{ deleted: number }>('/bulk/sessions/delete', {
+    fetchAPI<{ total: number; succeeded: number; failed: number }>('/bulk/sessions/delete', {
       method: 'POST',
       body: JSON.stringify({ session_ids: ids }),
     }),

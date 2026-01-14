@@ -3,13 +3,21 @@ import { useTranslation } from 'react-i18next'
 import { api } from '@/lib/api'
 import type { CommandDto } from '@/types'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { LoadingState, EmptyState, ActionBar } from '@/components/shared'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { EmptyStateInline, ActionBar } from '@/components/shared'
 import { useApiData } from '@/hooks/useApiData'
 import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
-import { Terminal, RotateCcw } from 'lucide-react'
+import { Terminal, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 
 type CommandFilter = 'all' | 'pending' | 'completed' | 'failed'
 
@@ -23,6 +31,9 @@ export function CommandsTab() {
   const { t } = useTranslation(['common', 'commands'])
   const [filter, setFilter] = useState<CommandFilter>('all')
   const { toast } = useToast()
+
+  // Expandable details state
+  const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set())
 
   const { data: commands, loading, refetch } = useApiData(
     () => fetchCommands(filter),
@@ -47,6 +58,18 @@ export function CommandsTab() {
     } catch (error) {
       toast({ title: t('commands:cancelFailed'), description: (error as Error).message || t('commands:cancelFailedDesc'), variant: 'destructive' })
     }
+  }
+
+  const toggleDetails = (id: string) => {
+    setExpandedDetails((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   const getStatusBadge = (status: string) => {
@@ -130,113 +153,152 @@ export function CommandsTab() {
         ))}
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <LoadingState text={t('commands:loading')} />
-      ) : !commands || commands.length === 0 ? (
-        <EmptyState
-          title={t('commands:noCommands')}
-          description={t('commands:noCommandsDesc')}
-        />
-      ) : (
-        <div className="space-y-4">
-          {commands.map((command) => (
-            <Card
-              key={command.id}
-              className={
-                command.status === 'Pending' || command.status === 'Queued'
-                  ? 'border-l-4 border-l-blue-500'
-                  : command.status === 'Failed' || command.status === 'Timeout'
-                  ? 'border-l-4 border-l-red-500'
-                  : ''
-              }
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <CardTitle className="text-base font-mono">{command.command}</CardTitle>
-                      {getStatusBadge(command.status)}
-                      {getPriorityBadge(command.priority)}
-                    </div>
-                    <CardDescription className="text-xs">
-                      {t('commands:device')}: <span className="font-mono">{command.device_id}</span> • {t('commands:source')}: {command.source_type}
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    {(command.status === 'Failed' || command.status === 'Timeout') && (
-                      <Button
-                        onClick={() => handleRetry(command.id)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        <RotateCcw className="h-3 w-3 mr-1" />
-                        {t('commands:retry')}
-                      </Button>
+      {/* Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('commands:command')}</TableHead>
+              <TableHead>{t('commands:status')}</TableHead>
+              <TableHead>{t('commands:priority')}</TableHead>
+              <TableHead>{t('commands:device')}</TableHead>
+              <TableHead>{t('commands:createdAt')}</TableHead>
+              <TableHead align="right">{t('automation:actions')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <EmptyStateInline title={t('commands:loading')} colSpan={6} />
+            ) : !commands || commands.length === 0 ? (
+              <EmptyStateInline title={`${t('commands:noCommands')} - ${t('commands:noCommandsDesc')}`} colSpan={6} />
+            ) : (
+              commands.map((command) => {
+                const isExpanded = expandedDetails.has(command.id)
+                const hasDetails = (command.params && Object.keys(command.params).length > 0) || command.result
+
+                return (
+                  <>
+                    <TableRow
+                      key={command.id}
+                      className={
+                        command.status === 'Pending' || command.status === 'Queued'
+                          ? 'bg-blue-500/5'
+                          : command.status === 'Failed' || command.status === 'Timeout'
+                          ? 'bg-red-500/5'
+                          : ''
+                      }
+                    >
+                      <TableCell>
+                        <div className="max-w-xs">
+                          <div className="font-mono text-sm">{command.command}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {t('commands:commandId')}: {command.id.slice(0, 8)}...
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          {getStatusBadge(command.status)}
+                          {command.attempt > 1 && (
+                            <span className="text-xs text-orange-600">
+                              {t('commands:attempt')} {command.attempt}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {getPriorityBadge(command.priority)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <div className="font-mono">{command.device_id}</div>
+                          <div className="text-xs text-muted-foreground">{command.source_type}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        <div className="flex flex-col gap-1">
+                          <div>{formatTimestamp(command.created_at)}</div>
+                          {command.executed_at && (
+                            <div className="text-xs">
+                              {t('commands:executedAt')}: {formatTimestamp(command.executed_at)}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell align="right">
+                        <div className="flex items-center justify-end gap-1">
+                          {hasDetails && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => toggleDetails(command.id)}
+                            >
+                              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </Button>
+                          )}
+                          {(command.status === 'Failed' || command.status === 'Timeout') && (
+                            <Button
+                              onClick={() => handleRetry(command.id)}
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                            >
+                              <RotateCcw className="h-3 w-3 mr-1" />
+                              {t('commands:retry')}
+                            </Button>
+                          )}
+                          {(command.status === 'Pending' || command.status === 'Queued') && (
+                            <Button
+                              onClick={() => handleCancel(command.id)}
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                            >
+                              {t('commands:cancel')}
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expandable details row */}
+                    {isExpanded && hasDetails && (
+                      <TableRow key={`${command.id}-details`}>
+                        <TableCell colSpan={6} className="bg-muted/30">
+                          <div className="space-y-3 py-2">
+                            {command.params && Object.keys(command.params).length > 0 && (
+                              <div>
+                                <div className="text-sm font-medium mb-1">{t('commands:parameters')}</div>
+                                <pre className="p-2 bg-background rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(command.params, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                            {command.result && (
+                              <div>
+                                <div className="text-sm font-medium mb-1">{t('commands:result')}</div>
+                                <div className="p-2 bg-background rounded text-xs">
+                                  <div className="text-muted-foreground">{command.result.message}</div>
+                                  {command.result.response_data && (
+                                    <pre className="mt-2 p-2 bg-muted rounded overflow-x-auto">
+                                      {JSON.stringify(command.result.response_data, null, 2)}
+                                    </pre>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                    {(command.status === 'Pending' || command.status === 'Queued') && (
-                      <Button
-                        onClick={() => handleCancel(command.id)}
-                        variant="outline"
-                        size="sm"
-                      >
-                        {t('commands:cancel')}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="text-sm">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-muted-foreground">
-                  <div>
-                    <span className="font-medium">{t('commands:commandId')}:</span>{' '}
-                    <span className="font-mono text-xs">{command.id.slice(0, 8)}...</span>
-                  </div>
-                  <div>
-                    <span className="font-medium">{t('commands:createdAt')}:</span> {formatTimestamp(command.created_at)}
-                  </div>
-                  {command.executed_at && (
-                    <div>
-                      <span className="font-medium">{t('commands:executedAt')}:</span> {formatTimestamp(command.executed_at)}
-                    </div>
-                  )}
-                  <div>
-                    <span className="font-medium">{t('commands:attempts')}:</span>{' '}
-                    <span className={command.attempt > 1 ? 'text-orange-600 font-medium' : ''}>
-                      {command.attempt}
-                    </span>
-                  </div>
-                </div>
-                {command.params && Object.keys(command.params).length > 0 && (
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                      {t('commands:parameters')}
-                    </summary>
-                    <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-x-auto">
-                      {JSON.stringify(command.params, null, 2)}
-                    </pre>
-                  </details>
-                )}
-                {command.result && (
-                  <details className="mt-3" open={command.status === 'Failed' || command.status === 'Timeout'}>
-                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                      {t('commands:result')}
-                    </summary>
-                    <div className="mt-2 p-3 bg-muted rounded text-xs">
-                      <div className="text-muted-foreground">{command.result.message}</div>
-                      {command.result.response_data && (
-                        <pre className="mt-2 p-2 bg-background rounded overflow-x-auto">
-                          {JSON.stringify(command.result.response_data, null, 2)}
-                        </pre>
-                      )}
-                    </div>
-                  </details>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                  </>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   )
 }
