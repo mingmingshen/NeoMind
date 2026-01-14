@@ -39,6 +39,9 @@ pub struct ChatResponse {
     /// Processing time in milliseconds.
     #[serde(rename = "processingTimeMs")]
     pub processing_time_ms: u64,
+    /// Thinking content (if any).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
 }
 
 /// Create session request.

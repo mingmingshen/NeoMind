@@ -31,7 +31,10 @@ async fn process_stream_to_channel(
 ) {
     let mut end_event_sent = false;
     let mut event_count = 0u32;
-    let stream_timeout = Duration::from_secs(30);  // Match agent-level max_stream_duration
+    // Stream timeout: 120 seconds to support thinking models
+    // QWEN3 with thinking can take 60-90 seconds for complex queries
+    // Increased from 30s to prevent premature timeout during thinking phase
+    let stream_timeout = Duration::from_secs(120);
 
     loop {
         let next_event = tokio::time::timeout(stream_timeout, StreamExt::next(&mut stream)).await;
@@ -326,14 +329,32 @@ pub async fn chat_handler(
     Path(id): Path<String>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, ErrorResponse> {
-    let response = state.session_manager.process_message(&id, &req.message).await
-        .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
+    use tokio::time::{timeout, Duration};
+
+    // Add a 120-second timeout to support thinking models
+    // QWEN3 with thinking enabled can take 60-90 seconds for complex queries
+    // due to the model's repetitive thinking generation, especially with longer context
+    let response = match timeout(Duration::from_secs(120), state.session_manager.process_message(&id, &req.message)).await {
+        Ok(Ok(resp)) => resp,
+        Ok(Err(e)) => return Err(ErrorResponse::with_message(e.to_string())),
+        Err(_) => {
+            // Timeout - return an error response instead of hanging
+            return Ok(Json(ChatResponse {
+                response: "请求超时。模型思考时间过长，请尝试简化问题或开启新对话。".to_string(),
+                session_id: id,
+                tools_used: vec![],
+                processing_time_ms: 120000,
+                thinking: None,
+            }));
+        }
+    };
 
     Ok(Json(ChatResponse {
-        response: response.message.content,
+        response: response.message.content.clone(),
         session_id: id,
-        tools_used: response.tools_used,
+        tools_used: response.tools_used.clone(),
         processing_time_ms: response.processing_time_ms,
+        thinking: response.message.thinking.clone(),
     }))
 }
 
@@ -447,14 +468,29 @@ async fn handle_ws_socket(
                                                     return;
                                                 }
                                             } else {
-                                                // Session doesn't exist, clear it
-                                                *session_id_guard = None;
+                                                // Requested session doesn't exist - keep the current valid session
+                                                // Only clear if current session is also invalid (empty string)
+                                                if session_id_guard.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
+                                                    *session_id_guard = None;
+                                                }
+                                                // Otherwise, keep using the current valid session
+                                                let msg = json!({
+                                                    "type": "error",
+                                                    "message": format!("Requested session '{}' not found, using current session", req_id),
+                                                }).to_string();
+                                                if socket.send(AxumMessage::Text(msg)).await.is_err() {
+                                                    return;
+                                                }
                                             }
                                         }
                                     }
 
-                                    // Ensure we have a session
-                                    if session_id_guard.is_none() {
+                                    // Ensure we have a valid session (not None and not empty string)
+                                    let has_valid_session = session_id_guard.as_ref()
+                                        .map(|s| !s.is_empty())
+                                        .unwrap_or(false);
+
+                                    if !has_valid_session {
                                         // Create new session for this message
                                         let new_id = state.session_manager.create_session().await.unwrap_or_else(|_| {
                                             uuid::Uuid::new_v4().to_string()
