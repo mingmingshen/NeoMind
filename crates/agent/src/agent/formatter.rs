@@ -268,7 +268,7 @@ mod tests {
 
         let result = format_tool_result(&data);
         assert!(result.contains("|"));
-        assert!(result.contains("设备"));
+        assert!(result.contains("类型"));  // "type" translates to "类型"
     }
 
     #[test]

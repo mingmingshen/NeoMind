@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_loader_creation() {
-        let loader = NativePluginLoader::new();
+        let mut loader = NativePluginLoader::new();
         assert!(loader.search_paths.is_empty());
 
         loader.add_search_path("/tmp/plugins");
