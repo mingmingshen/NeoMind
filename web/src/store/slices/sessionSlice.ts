@@ -6,8 +6,78 @@
  */
 
 import type { StateCreator } from 'zustand'
+import type { Message } from '@/types'
+
+/**
+ * Merge fragmented assistant messages from backend storage.
+ *
+ * Backend stores messages as separate parts:
+ * - [assistant_msg1] with thinking + tool_calls (but empty/minimal content)
+ * - [tool_result_msgs] with role="tool"
+ * - [assistant_msg2] with content only (no thinking/tool_calls)
+ *
+ * This function merges them into the format expected by frontend:
+ * - [assistant_msg] with thinking + tool_calls + content
+ */
+function mergeAssistantMessages(messages: Message[]): Message[] {
+  const result: Message[] = []
+  let pendingAssistantMessage: Message | null = null
+
+  for (const msg of messages) {
+    // Skip tool role messages - they're just for LLM context
+    // Use type assertion since backend sends 'tool' role but frontend type doesn't include it
+    if ((msg as any).role === 'tool') {
+      continue
+    }
+
+    if (msg.role === 'assistant') {
+      // Check if this message has content but no thinking/tool_calls
+      const hasOnlyContent = msg.content &&
+        msg.content.trim().length > 0 &&
+        !msg.thinking &&
+        (!msg.tool_calls || msg.tool_calls.length === 0)
+
+      // Check if this message has thinking/tool_calls but minimal content
+      const hasStructureOnly = (msg.thinking || (msg.tool_calls && msg.tool_calls.length > 0)) &&
+        (!msg.content || msg.content.trim().length === 0)
+
+      if (hasOnlyContent && pendingAssistantMessage) {
+        // This is the content part - merge with pending message
+        pendingAssistantMessage.content = msg.content
+        pendingAssistantMessage.timestamp = msg.timestamp // Use the timestamp of when content was generated
+        result.push(pendingAssistantMessage)
+        pendingAssistantMessage = null
+      } else if (hasStructureOnly) {
+        // This is the structure part (thinking + tools) - hold for next content message
+        pendingAssistantMessage = { ...msg }
+      } else {
+        // Complete standalone message - just add it
+        if (pendingAssistantMessage) {
+          result.push(pendingAssistantMessage)
+          pendingAssistantMessage = null
+        }
+        result.push(msg)
+      }
+    } else {
+      // User or system message
+      if (pendingAssistantMessage) {
+        result.push(pendingAssistantMessage)
+        pendingAssistantMessage = null
+      }
+      result.push(msg)
+    }
+  }
+
+  // Don't forget any pending message
+  if (pendingAssistantMessage) {
+    result.push(pendingAssistantMessage)
+  }
+
+  return result
+}
+
 import type { SessionState } from '../types'
-import type { Message, ChatSession } from '@/types'
+import type { ChatSession } from '@/types'
 import { api } from '@/lib/api'
 
 export interface SessionSlice extends SessionState {
@@ -79,9 +149,26 @@ export const createSessionSlice: StateCreator<
     try {
       // Fetch the session history
       const historyResult = await api.getSessionHistory(sessionId)
+
+      // Debug: Check if backend returns tool call results
+      const assistantMessages = (historyResult.messages || []).filter((m: any) => m.role === 'assistant' && m.tool_calls?.length > 0)
+      if (assistantMessages.length > 0) {
+        const toolsWithResults = assistantMessages[0].tool_calls?.filter((tc: any) => tc.result !== undefined && tc.result !== null).length || 0
+        console.log(`[sessionSlice] Found ${assistantMessages.length} assistant messages with tool calls, ${toolsWithResults} have results`)
+        if (toolsWithResults === 0) {
+          console.warn('[sessionSlice] No tool calls have results! Backend may be using old code.')
+          console.log('[sessionSlice] Tool call data:', assistantMessages[0].tool_calls)
+        }
+      }
+
+      // Merge fragmented assistant messages from backend
+      // Backend stores: [msg1(thinking+tools)] + [tool results] + [msg2(content only)]
+      // Frontend expects: [msg1(thinking+tools+content)]
+      const mergedMessages = mergeAssistantMessages(historyResult.messages || [])
+
       set({
         sessionId,
-        messages: historyResult.messages || [],
+        messages: mergedMessages,
       })
 
       // Update WebSocket to use the new session
@@ -310,7 +397,9 @@ export const createSessionSlice: StateCreator<
   fetchSessionHistory: async (sessionId: string) => {
     try {
       const result = await api.getSessionHistory(sessionId)
-      set({ messages: result.messages || [] })
+      // Merge fragmented assistant messages from backend
+      const mergedMessages = mergeAssistantMessages(result.messages || [])
+      set({ messages: mergedMessages })
     } catch (error) {
       console.error('Failed to fetch session history:', error)
     }

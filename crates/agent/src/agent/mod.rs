@@ -485,16 +485,31 @@ impl Agent {
         // Execute tools and get results
         let mut tool_results = Vec::new();
         let mut tools_used = Vec::new();
+        let mut tool_calls_with_results = Vec::new();
 
         for tool_call in &tool_calls {
             match self.execute_tool(&tool_call.name, &tool_call.arguments).await {
                 Ok(result) => {
                     tools_used.push(tool_call.name.clone());
-                    tool_results.push((tool_call.name.clone(), result));
+                    tool_results.push((tool_call.name.clone(), result.clone()));
+                    // Add result to tool call
+                    tool_calls_with_results.push(ToolCall {
+                        name: tool_call.name.clone(),
+                        id: tool_call.id.clone(),
+                        arguments: tool_call.arguments.clone(),
+                        result: Some(serde_json::json!(result)),
+                    });
                 }
                 Err(e) => {
                     let error_msg = format!("Error: {}", e);
-                    tool_results.push((tool_call.name.clone(), error_msg));
+                    tool_results.push((tool_call.name.clone(), error_msg.clone()));
+                    // Add error result to tool call
+                    tool_calls_with_results.push(ToolCall {
+                        name: tool_call.name.clone(),
+                        id: tool_call.id.clone(),
+                        arguments: tool_call.arguments.clone(),
+                        result: Some(serde_json::json!({ "error": error_msg })),
+                    });
                 }
             }
         }
@@ -503,8 +518,8 @@ impl Agent {
         // This prevents excessive thinking and model looping
         let final_text = crate::agent::streaming::format_tool_results(&tool_results);
 
-        // Save a SINGLE complete message with tool_calls and final response
-        let final_message = AgentMessage::assistant_with_tools(&final_text, tool_calls.clone());
+        // Save a SINGLE complete message with tool_calls (WITH results) and final response
+        let final_message = AgentMessage::assistant_with_tools(&final_text, tool_calls_with_results);
         self.short_term_memory.write().await.push(final_message.clone());
 
         Ok(AgentResponse {

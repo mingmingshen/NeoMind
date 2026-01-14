@@ -1,6 +1,5 @@
 import type { MqttStatus, ExternalBroker, HassDiscoveryStatus, HassDiscoveredDevice } from "@/types"
 import { Badge } from "@/components/ui/badge"
-import { StatusBadge } from "@/components/shared"
 import { Server, ExternalLink, Home, Wifi, WifiOff, Sparkles, ChevronRight } from "lucide-react"
 
 type DataSourceView = "list" | "builtin" | "external" | "hass"

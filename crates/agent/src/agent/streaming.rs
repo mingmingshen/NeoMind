@@ -780,22 +780,23 @@ pub fn process_stream_events_with_safeguards(
             // we directly format and return the tool results.
             // This is faster and more reliable for simple tool queries.
 
-            // Step 1: Save the initial assistant message (with tool calls but without results yet)
+            // Step 1: Save the initial assistant message WITH tool call results
+            // This ensures frontend can display complete tool call status
             let initial_msg = if !thinking_content.is_empty() {
                 AgentMessage::assistant_with_tools_and_thinking(
                     &content_before_tools,  // Content before tool calls
-                    tool_calls.clone(),      // Tool calls without results
+                    tool_calls_with_results,  // Tool calls WITH results
                     &thinking_content,
                 )
             } else {
                 AgentMessage::assistant_with_tools(
                     &content_before_tools,
-                    tool_calls.clone(),
+                    tool_calls_with_results,  // Tool calls WITH results
                 )
             };
             short_term_memory.write().await.push(initial_msg);
 
-            // Step 2: Add tool result messages to history
+            // Step 2: Add tool result messages to history for LLM context
             for (tool_name, result_str) in &tool_call_results {
                 let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
                 short_term_memory.write().await.push(tool_result_msg);

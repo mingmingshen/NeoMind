@@ -14,7 +14,7 @@ import {
 import { Send, Bot, User, ChevronDown, ChevronUp, Settings, Copy, Check, CheckCircle2, Wrench, Loader2, Brain, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Message, ServerMessage, ToolCall } from "@/types"
-import { SessionSidebar } from "@/components/chat"
+import { SessionSidebar, MarkdownMessage } from "@/components/chat"
 
 export function DashboardPage() {
   const { t } = useTranslation(['common', 'dashboard'])
@@ -142,6 +142,9 @@ export function DashboardPage() {
     setStreamingContent("")
     setStreamingThinking("")
     setStreamingToolCalls([])
+    // Reset UI expansion states for the new session
+    setExpandedThinking(new Set())
+    setExpandedToolResults(new Set())
     // Also reset refs to ensure no stale data persists
     streamingContentRef.current = ""
     streamingThinkingRef.current = ""
@@ -481,7 +484,8 @@ export function DashboardPage() {
           )}
 
           <div className="space-y-4">
-            {messages.map((msg) => (
+            {messages.map((msg) => {
+              return (
               <div
                 key={msg.id}
                 className={cn(
@@ -610,7 +614,11 @@ export function DashboardPage() {
                         : "bg-muted"
                     )}
                   >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === "assistant" ? (
+                      <MarkdownMessage content={msg.content} />
+                    ) : (
+                      <p className="whitespace-pre-wrap">{msg.content}</p>
+                    )}
                     {msg.role === "assistant" && (
                       <button
                         onClick={() => handleCopy(msg.content, msg.id)}
@@ -628,7 +636,8 @@ export function DashboardPage() {
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
 
             {/* Streaming Message */}
             {isStreaming && (streamingContent || streamingThinking || streamingToolCalls.length > 0) && (
@@ -669,10 +678,10 @@ export function DashboardPage() {
                     </div>
                   )}
                   <div className="rounded-lg px-3 py-2 text-sm bg-muted">
-                    <p className="whitespace-pre-wrap">
-                      {streamingContent}
-                      <span className="inline-block w-1 h-4 bg-foreground animate-pulse ml-0.5" />
-                    </p>
+                    <div className="relative">
+                      <MarkdownMessage content={streamingContent} />
+                      <span className="inline-block w-1 h-4 bg-foreground animate-pulse ml-0.5 align-middle" />
+                    </div>
                   </div>
                 </div>
               </div>
