@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { useStore } from "@/store"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
+import { MobileMenuProvider, MobileMenuSheet } from "@/components/layout/mobile-menu"
 import { LoginPage } from "@/pages/login"
 import { DashboardPage } from "@/pages/dashboard"
 import { DevicesPage } from "@/pages/devices"
@@ -74,16 +75,19 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex flex-1 flex-col min-h-0">
-        <Header />
-        <main className="flex-1 overflow-y-auto">
-          {renderPage()}
-        </main>
+    <MobileMenuProvider>
+      <div className="flex h-screen bg-background">
+        <Sidebar />
+        <div className="flex flex-1 flex-col min-h-0">
+          <Header />
+          <main className="flex-1 overflow-y-auto">
+            {renderPage()}
+          </main>
+        </div>
+        <MobileMenuSheet />
+        <Toaster />
       </div>
-      <Toaster />
-    </div>
+    </MobileMenuProvider>
   )
 }
 

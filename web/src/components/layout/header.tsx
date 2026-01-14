@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher"
+import { MobileMenuTrigger } from "./mobile-menu"
 
 export function Header() {
   const { t } = useTranslation(['common', 'navigation'])
@@ -45,7 +46,8 @@ export function Header() {
   return (
     <header className="flex h-14 items-center justify-between border-b px-4 md:px-6">
       <div className="flex items-center gap-2">
-        <div className="md:hidden w-8" />
+        {/* Mobile menu trigger - aligned with header */}
+        <MobileMenuTrigger />
         <h1 className="text-base font-semibold">
           {pageTitles[currentPage]}
         </h1>

@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { ws } from "@/lib/websocket"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
@@ -12,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Send, Bot, User, ChevronDown, ChevronUp, Settings, Copy, Check, CheckCircle2, Wrench, Loader2, Brain, ChevronLeft, ChevronRight, PanelLeft } from "lucide-react"
+import { Send, Bot, User, ChevronDown, ChevronUp, Settings, Copy, Check, CheckCircle2, Wrench, Loader2, Brain, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Message, ServerMessage, ToolCall } from "@/types"
 import { SessionSidebar } from "@/components/chat"
@@ -21,6 +20,7 @@ export function DashboardPage() {
   const { t } = useTranslation(['common', 'dashboard'])
   const {
     messages,
+    sessions,
     sessionId,
     setSessionId,
     addMessage,
@@ -45,7 +45,8 @@ export function DashboardPage() {
   const [streamingThinking, setStreamingThinking] = useState("")
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCall[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
@@ -337,55 +338,48 @@ export function DashboardPage() {
   if (!llmSettings) {
     return (
       <div className="flex h-full flex-row relative">
-        {/* Desktop Sidebar - collapsible */}
-        <aside
-          className={cn(
-            "hidden lg:flex lg:flex-col transition-all duration-300 border-r",
-            sidebarCollapsed ? "w-0 opacity-0" : "w-64 opacity-100"
-          )}
-        >
+        {/* Sidebar - always expanded on desktop/tablet */}
+        <aside className="hidden md:flex w-64 flex-col border-r bg-muted/10 overflow-hidden">
           <SessionSidebar onNewChat={() => setInput("")} />
         </aside>
 
-        {/* Mobile Sidebar - overlay */}
+        {/* Mobile Sidebar - overlay drawer */}
         <div
           className={cn(
-            "fixed inset-0 z-50 lg:hidden transition-opacity duration-300",
-            sidebarCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+            "fixed inset-0 z-50 md:hidden transition-opacity duration-300",
+            sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
           )}
         >
-          <div className="absolute inset-0 bg-black/20" onClick={() => setSidebarCollapsed(true)} />
+          {/* Backdrop */}
+          <div
+            className={cn(
+              "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+              sidebarOpen ? "opacity-100" : "opacity-0"
+            )}
+            onClick={() => setSidebarOpen(false)}
+          />
+          {/* Drawer - slides from left */}
           <div className={cn(
-            "absolute left-0 top-0 bottom-0 w-64 bg-background transition-transform duration-300 border-r",
-            sidebarCollapsed ? "-translate-x-full" : "translate-x-0"
+            "absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-background shadow-2xl transition-transform duration-300 ease-in-out",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}>
-            <SessionSidebar onNewChat={() => setInput("")} />
+            <SessionSidebar onNewChat={() => setInput("")} onClose={() => setSidebarOpen(false)} />
           </div>
         </div>
 
-        {/* Desktop collapse toggle button */}
-        <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className={cn(
-            "fixed left-0 top-1/2 -translate-y-1/2 z-20 bg-background border border-r-0 rounded-r-md p-1.5 hover:bg-muted transition-all duration-300 hidden lg:flex",
-            sidebarCollapsed ? "translate-x-0" : "-translate-x-4 opacity-0 hover:translate-x-0 hover:opacity-100"
-          )}
-          aria-label={sidebarCollapsed ? t('dashboard:expandSidebar') : t('dashboard:collapseSidebar')}
-        >
-          {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </button>
-
-        {/* Mobile session list button - left center */}
-        <button
-          onClick={() => setSidebarCollapsed(false)}
-          className="lg:hidden fixed left-3 top-1/2 -translate-y-1/2 z-30 bg-primary text-primary-foreground p-2.5 rounded-lg shadow-lg hover:bg-primary/90 transition-colors"
-          aria-label={t('dashboard:openMenu')}
-        >
-          <PanelLeft className="h-5 w-5" />
-        </button>
-
         {/* Main content */}
-        <div className="flex h-full flex-1 flex-col">
+        <div className="flex h-full flex-1 flex-col relative">
+          {/* Mobile FAB - left side of chat area */}
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="md:hidden absolute left-4 top-4 z-10 bg-primary text-primary-foreground p-2 rounded-lg shadow-md hover:bg-primary/90 active:scale-95 transition-all duration-200 flex items-center gap-1.5"
+          >
+            <MessageSquare className="h-4 w-4" />
+            {sessions && sessions.length > 0 && (
+              <span className="text-xs font-medium">{sessions.length}</span>
+            )}
+          </button>
+
           <div className="flex h-[calc(100vh-100px)] items-center justify-center">
             <div className="text-center max-w-md">
               <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-muted">
@@ -408,55 +402,48 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full flex-row relative">
-      {/* Desktop Sidebar - collapsible */}
-      <aside
-        className={cn(
-          "hidden lg:flex lg:flex-col transition-all duration-300 border-r",
-          sidebarCollapsed ? "w-0 opacity-0" : "w-64 opacity-100"
-        )}
-      >
+      {/* Sidebar - always expanded on desktop/tablet */}
+      <aside className="hidden md:flex w-64 flex-col border-r bg-muted/10 overflow-hidden">
         <SessionSidebar onNewChat={() => setInput("")} />
       </aside>
 
-      {/* Mobile Sidebar - overlay */}
+      {/* Mobile Sidebar - overlay drawer */}
       <div
         className={cn(
-          "fixed inset-0 z-50 lg:hidden transition-opacity duration-300",
-          sidebarCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+          "fixed inset-0 z-50 md:hidden transition-opacity duration-300",
+          sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
         )}
       >
-        <div className="absolute inset-0 bg-black/20" onClick={() => setSidebarCollapsed(true)} />
+        {/* Backdrop */}
+        <div
+          className={cn(
+            "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
+            sidebarOpen ? "opacity-100" : "opacity-0"
+          )}
+          onClick={() => setSidebarOpen(false)}
+        />
+        {/* Drawer - slides from left */}
         <div className={cn(
-          "absolute left-0 top-0 bottom-0 w-64 bg-background transition-transform duration-300 border-r",
-          sidebarCollapsed ? "-translate-x-full" : "translate-x-0"
+          "absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-background shadow-2xl transition-transform duration-300 ease-in-out",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}>
-          <SessionSidebar onNewChat={() => setInput("")} />
+          <SessionSidebar onNewChat={() => setInput("")} onClose={() => setSidebarOpen(false)} />
         </div>
       </div>
 
-      {/* Desktop collapse toggle button */}
-      <button
-        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-        className={cn(
-          "fixed left-0 top-1/2 -translate-y-1/2 z-20 bg-background border border-r-0 rounded-r-md p-1.5 hover:bg-muted transition-all duration-300 hidden lg:flex",
-          sidebarCollapsed ? "translate-x-0" : "-translate-x-4 opacity-0 hover:translate-x-0 hover:opacity-100"
-        )}
-        aria-label={sidebarCollapsed ? t('dashboard:expandSidebar') : t('dashboard:collapseSidebar')}
-      >
-        {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      </button>
-
-      {/* Mobile session list button - left center */}
-      <button
-        onClick={() => setSidebarCollapsed(false)}
-        className="lg:hidden fixed left-3 top-1/2 -translate-y-1/2 z-30 bg-primary text-primary-foreground p-2.5 rounded-lg shadow-lg hover:bg-primary/90 transition-colors"
-        aria-label={t('dashboard:openMenu')}
-      >
-        <PanelLeft className="h-5 w-5" />
-      </button>
-
       {/* Main content */}
-      <div className="flex h-full flex-1 flex-col">
+      <div className="flex h-full flex-1 flex-col relative">
+        {/* Mobile FAB - left side of chat area */}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="md:hidden absolute left-4 top-4 z-10 bg-primary text-primary-foreground p-2 rounded-lg shadow-md hover:bg-primary/90 active:scale-95 transition-all duration-200 flex items-center gap-1.5"
+        >
+          <MessageSquare className="h-4 w-4" />
+          {sessions && sessions.length > 0 && (
+            <span className="text-xs font-medium">{sessions.length}</span>
+          )}
+        </button>
+
         <ScrollArea className="flex-1">
           <div ref={scrollRef} className="p-4">
           {messages.length === 0 && !isStreaming && (
@@ -690,97 +677,103 @@ export function DashboardPage() {
         </div>
       </ScrollArea>
 
-      <div className="border-t bg-background">
-        {/* Input row with model selector and thinking toggle */}
-        <div className="flex items-center gap-2 px-4 py-3">
-          {/* Model selector - shows current model name */}
-          <Select
-            value={llmBackends?.find(b => b.is_active)?.id || ""}
-            onValueChange={handleBackendChange}
-            disabled={isStreaming || llmBackendLoading || !llmBackends || llmBackends.length === 0}
-          >
-            <SelectTrigger className="h-9 w-[140px] text-xs shrink-0">
-              <SelectValue placeholder={t('dashboard:selectBackend')}>
-                {llmBackends?.find(b => b.is_active)?.name}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start" className="w-[200px]">
-              {llmBackends && llmBackends.length > 0 ? (
-                llmBackends.map((backend) => (
-                  <SelectItem key={backend.id} value={backend.id} className="gap-2">
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-xs truncate">{backend.name}</span>
-                      {/* Capability indicators in dropdown */}
-                      <div className="flex items-center gap-1 shrink-0 ml-auto">
-                        {backend.capabilities?.supports_thinking && (
-                          <Brain className="h-3 w-3 text-blue-500" />
-                        )}
-                        {backend.capabilities?.supports_tools && (
-                          <Wrench className="h-3 w-3 text-green-500" />
-                        )}
-                        {backend.capabilities?.supports_multimodal && (
-                          <svg className="h-3 w-3 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <polyline points="21 15 16 10 5 21" />
-                          </svg>
-                        )}
-                      </div>
+      <div className="border-t bg-background pb-3">
+        <div className="px-4 pt-3">
+          {/* Unified input container with inline divider */}
+          <div className="flex flex-col rounded-xl border border-input bg-background shadow-sm overflow-hidden">
+            {/* Text input area with embedded send button */}
+            <div className="relative">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t('dashboard:messagePlaceholder')}
+                disabled={isStreaming}
+                rows={2}
+                className="w-full px-3 py-2 pr-10 text-sm bg-transparent placeholder:text-muted-foreground focus:outline-none resize-none leading-[1.25rem]"
+                style={{ height: '42px', minHeight: '42px', maxHeight: '42px' }}
+              />
+              {/* Send button embedded in text area */}
+              <button
+                onClick={handleSend}
+                disabled={!input.trim() || isStreaming}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 shrink-0 h-7 w-7 rounded-md bg-black text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Divider line */}
+            <div className="h-px bg-border/40" />
+
+            {/* Controls area */}
+            <div className="flex items-center gap-2 px-2 py-1.5">
+              {/* Model selector */}
+              <Select
+                value={llmBackends?.find(b => b.is_active)?.id || ""}
+                onValueChange={handleBackendChange}
+                disabled={isStreaming || llmBackendLoading || !llmBackends || llmBackends.length === 0}
+              >
+                <SelectTrigger className="h-7 w-[100px] text-xs shrink-0 border-0 bg-transparent hover:bg-muted/50 focus:ring-0 focus:ring-offset-0 rounded px-2 text-foreground">
+                  <SelectValue placeholder={t('dashboard:selectBackend')}>
+                    {llmBackends?.find(b => b.is_active)?.name}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start" className="w-[160px]">
+                  {llmBackends && llmBackends.length > 0 ? (
+                    llmBackends.map((backend) => (
+                      <SelectItem key={backend.id} value={backend.id} className="gap-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-xs truncate">{backend.name}</span>
+                          <div className="flex items-center gap-1 shrink-0 ml-auto">
+                            {backend.capabilities?.supports_thinking && (
+                              <Brain className="h-3 w-3 text-blue-500" />
+                            )}
+                            {backend.capabilities?.supports_tools && (
+                              <Wrench className="h-3 w-3 text-green-500" />
+                            )}
+                            {backend.capabilities?.supports_multimodal && (
+                              <svg className="h-3 w-3 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <polyline points="21 15 16 10 5 21" />
+                            </svg>
+                            )}
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <div className="p-2 text-xs text-muted-foreground text-center">
+                      {t('dashboard:noBackends')}
                     </div>
-                  </SelectItem>
-                ))
-              ) : (
-                <div className="p-2 text-xs text-muted-foreground text-center">
-                  {t('dashboard:noBackends')}
-                </div>
-              )}
-            </SelectContent>
-          </Select>
+                  )}
+                </SelectContent>
+              </Select>
 
-          {/* Thinking toggle - subtle style */}
-          {llmBackends?.find(b => b.is_active)?.capabilities.supports_thinking && (
-            <button
-              onClick={() => {
-                const activeBackend = llmBackends?.find(b => b.is_active)
-                if (activeBackend) {
-                  handleThinkingToggle(!activeBackend.thinking_enabled)
-                }
-              }}
-              disabled={isStreaming}
-              className={cn(
-                "h-9 px-2 rounded-md flex items-center gap-1.5 text-xs font-medium transition-all shrink-0 border",
-                llmBackends?.find(b => b.is_active)?.thinking_enabled
-                  ? "bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-950 dark:border-blue-800"
-                  : "bg-transparent border-border text-muted-foreground hover:bg-muted"
+              {/* Thinking toggle */}
+              {llmBackends?.find(b => b.is_active)?.capabilities.supports_thinking && (
+                <button
+                  onClick={() => {
+                    const activeBackend = llmBackends?.find(b => b.is_active)
+                    if (activeBackend) {
+                      handleThinkingToggle(!activeBackend.thinking_enabled)
+                    }
+                  }}
+                  disabled={isStreaming}
+                  className={cn(
+                    "h-7 w-7 rounded-md flex items-center justify-center transition-all shrink-0 hover:bg-muted/50",
+                    llmBackends?.find(b => b.is_active)?.thinking_enabled
+                      ? "text-blue-600 bg-blue-50 dark:bg-blue-950/30"
+                      : "text-foreground/70 hover:text-foreground hover:bg-muted"
+                  )}
+                  title={llmBackends?.find(b => b.is_active)?.thinking_enabled ? t('dashboard:thinking') + ': ' + t('common:on') : t('dashboard:thinking') + ': ' + t('common:off')}
+                >
+                  <Brain className="h-4 w-4" />
+                </button>
               )}
-              title={llmBackends?.find(b => b.is_active)?.thinking_enabled ? t('dashboard:thinking') + ': ' + t('common:on') : t('dashboard:thinking') + ': ' + t('common:off')}
-            >
-              <Brain className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('dashboard:thinking')}</span>
-            </button>
-          )}
-
-          {/* Input field */}
-          <div className="flex-1 min-w-0 relative">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={t('dashboard:messagePlaceholder')}
-              disabled={isStreaming}
-              className="w-full"
-            />
+            </div>
           </div>
-
-          {/* Send button */}
-          <Button
-            onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
-            size="icon"
-            className="shrink-0 h-9 w-9"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
         </div>
       </div>
       </div>
