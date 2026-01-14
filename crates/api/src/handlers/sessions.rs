@@ -31,7 +31,7 @@ async fn process_stream_to_channel(
 ) {
     let mut end_event_sent = false;
     let mut event_count = 0u32;
-    let stream_timeout = Duration::from_secs(300);
+    let stream_timeout = Duration::from_secs(30);  // Match agent-level max_stream_duration
 
     loop {
         let next_event = tokio::time::timeout(stream_timeout, StreamExt::next(&mut stream)).await;

@@ -37,14 +37,12 @@ pub struct StreamSafeguards {
 impl Default for StreamSafeguards {
     fn default() -> Self {
         Self {
-            // Global timeout - 60 seconds should be enough for most queries
-            // Reduced from 120s to prevent excessive waiting on long thinking
-            max_stream_duration: Duration::from_secs(60),
+            // Reduced timeout - 30 seconds is sufficient for most queries
+            // If a query takes longer, it's likely stuck in thinking loop
+            max_stream_duration: Duration::from_secs(30),
             // IMPORTANT: Limit thinking content to prevent infinite loops
-            // Some reasoning models (like DeepSeek-R1) can generate very long thinking
-            // that doesn't converge to a decision
-            // Reduced from 8000 to 2000 to force quicker content generation
-            max_thinking_length: 2000,  // ~2000 characters of thinking
+            // Set based on actual usage - qwen3 models generate moderate thinking
+            max_thinking_length: 8000,  // Reduced from 15000 to catch loops faster
             max_content_length: usize::MAX,
             // Tool iterations limit - 3 is sufficient for most multi-step queries
             max_tool_iterations: 3,
@@ -285,6 +283,53 @@ pub fn process_stream_events_with_safeguards(
     safeguards: StreamSafeguards,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     let user_message = user_message.to_string();
+
+    // === FAST PATH: Simple greetings and common patterns ===
+    // Bypass LLM for simple, common interactions to improve speed and reliability
+    let trimmed = user_message.trim();
+    let greeting_patterns = [
+        "你好", "您好", "hi", "hello", "嗨", "在吗",
+        "早上好", "下午好", "晚上好",
+    ];
+
+    let is_greeting = greeting_patterns.iter().any(|&pat| {
+        trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat)
+    });
+
+    if is_greeting && trimmed.len() < 20 {
+        // Fast response for greetings - no LLM call needed
+        let greeting_response = AgentMessage::assistant(
+            "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
+            • 查看设备列表 - 说「列出设备」\n\
+            • 查询设备数据 - 说「查询温度」\n\
+            • 创建自动化规则 - 说「创建规则」\n\
+            • 查看所有规则 - 说「列出规则」"
+        );
+
+        // Use block_in_place for async operations in sync context
+        let state_clone = state.clone();
+        let memory_clone = short_term_memory.clone();
+        tokio::task::block_in_place(|| {
+            let handle = tokio::runtime::Handle::try_current()
+                .expect("No runtime found");
+            handle.block_on(async move {
+                memory_clone.write().await.push(greeting_response);
+                state_clone.write().await.increment_messages();
+            })
+        });
+
+        let response_content = "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
+            • 查看设备列表 - 说「列出设备」\n\
+            • 查询设备数据 - 说「查询温度」\n\
+            • 创建自动化规则 - 说「创建规则」\n\
+            • 查看所有规则 - 说「列出规则」";
+
+        return Ok(Box::pin(async_stream::stream! {
+            yield AgentEvent::content(response_content.to_string());
+            yield AgentEvent::end();
+        }));
+    }
+
     let llm_clone = llm_interface.clone();
 
     // === FIX 1: Get conversation history and pass to LLM ===
@@ -728,10 +773,11 @@ pub fn process_stream_events_with_safeguards(
                     .collect::<Vec<_>>();
                 drop(history);
 
-                // Phase 2 uses same history with tool results, no additional user prompt needed
-                // The LLM should naturally continue the conversation after seeing tool results
+                // Phase 2: Use the specialized function that disables both tools and thinking
+                // This prevents infinite thinking loops and provides faster responses
+                // The history already contains tool calls and results, so LLM knows what happened
                 handle.block_on(
-                    llm_for_followup.chat_stream_with_history("", &history_messages)
+                    llm_for_followup.chat_stream_no_tools_no_thinking_with_history("请根据工具执行结果生成简洁的回复。", &history_messages)
                 )
             });
 
@@ -755,6 +801,7 @@ pub fn process_stream_events_with_safeguards(
             // Stream the follow-up response
             let mut followup_stream = Box::pin(followup_stream);
             let mut final_response_content = String::new();
+            let mut phase2_thinking_chars = 0usize;
             let followup_start = Instant::now();
 
             while let Some(result) = StreamExt::next(&mut followup_stream).await {
@@ -770,6 +817,21 @@ pub fn process_stream_events_with_safeguards(
                             continue;
                         }
                         if is_thinking {
+                            // Track thinking characters for Phase 2
+                            phase2_thinking_chars += chunk.chars().count();
+
+                            // SAFEGUARD: Limit Phase 2 thinking to prevent infinite loops
+                            // Use a lower limit than Phase 1 since Phase 2 should be brief
+                            const MAX_PHASE2_THINKING: usize = 5000;
+                            if phase2_thinking_chars > MAX_PHASE2_THINKING {
+                                tracing::warn!(
+                                    "Phase 2 thinking exceeds limit ({} > {}), forcing content generation",
+                                    phase2_thinking_chars, MAX_PHASE2_THINKING
+                                );
+                                // Don't break - just stop sending thinking and wait for content
+                                continue;
+                            }
+
                             // Phase 2 thinking - still send it but could be limited if needed
                             yield AgentEvent::thinking(chunk.clone());
                         } else {
@@ -782,6 +844,44 @@ pub fn process_stream_events_with_safeguards(
                         break;
                     }
                 }
+            }
+
+            // === FIX: Handle empty Phase 2 response ===
+            // If Phase 2 produced no actual content (only thinking), use a fallback
+            if final_response_content.is_empty() {
+                tracing::warn!(
+                    "Phase 2 produced no content ({} chars of thinking), using fallback",
+                    phase2_thinking_chars
+                );
+
+                // Generate a meaningful fallback based on tool results
+                let fallback = if tool_call_results.len() == 1 {
+                    // Single tool result - format it nicely
+                    let (tool_name, result_str) = &tool_call_results[0];
+                    if tool_name == "list_devices" {
+                        // Try to parse and format device list
+                        if let Ok(json_val) = serde_json::from_str::<Value>(result_str) {
+                            if let Some(devices) = json_val.get("devices").and_then(|d| d.as_array()) {
+                                format!("已找到 {} 个设备。", devices.len())
+                            } else {
+                                "设备查询完成。".to_string()
+                            }
+                        } else {
+                            "设备查询完成。".to_string()
+                        }
+                    } else {
+                        format!("{} 执行完成。", tool_name)
+                    }
+                } else if tool_call_results.len() > 1 {
+                    // Multiple tools executed
+                    format!("已执行 {} 个工具操作。", tool_call_results.len())
+                } else {
+                    // No tools produced results - shouldn't happen
+                    "处理完成。".to_string()
+                };
+
+                yield AgentEvent::content(fallback.clone());
+                final_response_content = fallback;
             }
 
             // Save the final assistant response to memory

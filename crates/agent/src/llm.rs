@@ -6,7 +6,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures::Stream;
 use tokio::sync::RwLock;
@@ -306,61 +306,27 @@ impl LlmInterface {
             return self.system_prompt.clone();
         }
 
-        let mut prompt = String::with_capacity(4096);
+        // === SIMPLIFIED SYSTEM PROMPT ===
+        // The previous prompt was too complex, causing excessive thinking
+        // New design: Minimal instructions, direct tool calling
+        let mut prompt = String::with_capacity(2048);
 
-        // Clear, concise system prompt
+        // Core identity - single sentence
         prompt.push_str("你是NeoTalk物联网助手，帮助用户管理设备和查询数据。\n\n");
 
-        // CRITICAL: Tool calling instructions - MUST be followed
-        prompt.push_str("## 重要：工具调用要求\n");
-        prompt.push_str("当用户询问以下内容时，你必须调用相应工具：\n");
-        prompt.push_str("- 询问设备/装置 → 使用 list_devices 工具\n");
-        prompt.push_str("- 询问数据/传感器/温度/湿度 → 使用 query_data 工具\n");
-        prompt.push_str("- 询问控制设备/打开/关闭 → 使用 control_device 工具\n");
-        prompt.push_str("- 询问规则/自动化 → 使用 list_rules 或 create_rule 工具\n");
-        prompt.push_str("- 询问工作流/触发 → 使用 trigger_workflow 工具\n\n");
+        // Tool calling - brief and direct
+        prompt.push_str("## 工具调用\n");
+        prompt.push_str("根据用户问题，直接用XML格式调用工具：\n");
+        prompt.push_str("<tool_calls><invoke name=\"工具名称\"></invoke></tool_calls>\n\n");
 
-        prompt.push_str("## 工具调用格式\n");
-        prompt.push_str("你必须使用以下XML格式调用工具：\n\n");
-        prompt.push_str("<tool_calls>\n");
-        prompt.push_str("  <invoke name=\"工具名称\">\n");
-        prompt.push_str("    <parameter name=\"参数名\">参数值</parameter>\n");
-        prompt.push_str("  </invoke>\n");
-        prompt.push_str("</tool_calls>\n\n");
-
-        // List available tools with descriptions
-        prompt.push_str("## 可用工具列表\n");
+        // Available tools - concise list only
+        prompt.push_str("## 可用工具\n");
         for tool in tools.iter() {
-            prompt.push_str(&format!("- **{}**: {}\n", tool.name, tool.description));
-
-            // Add parameter info
-            if let Some(props) = tool.parameters.get("properties") {
-                if let Some(obj) = props.as_object() {
-                    if !obj.is_empty() {
-                        prompt.push_str("  参数: ");
-                        for (name, prop) in obj {
-                            let desc = prop.get("description").and_then(|d| d.as_str()).unwrap_or("无描述");
-                            prompt.push_str(&format!("\n    - {}: {}", name, desc));
-                        }
-                        prompt.push('\n');
-                    }
-                }
-            }
+            prompt.push_str(&format!("- {}: {}\n", tool.name, tool.description));
         }
 
-        // Usage examples
-        prompt.push_str("## 使用示例\n");
-        prompt.push_str("用户: 有哪些设备？\n");
-        prompt.push_str("助手: <tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>\n\n");
-        prompt.push_str("用户: 查询温度\n");
-        prompt.push_str("助手: <tool_calls><invoke name=\"query_data\"><parameter name=\"metric\">温度</parameter></invoke></tool_calls>\n\n");
-
-        // Critical rules
-        prompt.push_str("## 关键规则\n");
-        prompt.push_str("1. 必须使用XML格式调用工具，不要只描述要做什么\n");
-        prompt.push_str("2. 工具调用后简洁回答用户（不超过50字）\n");
-        prompt.push_str("3. 快速响应，不要过度思考\n");
-        prompt.push_str("4. 如果用户问题不明确，直接调用最相关的工具\n");
+        // Brief example
+        prompt.push_str("\n示例: 用户问「有哪些设备」→ 你调用 <tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>\n");
 
         prompt
     }
@@ -423,10 +389,37 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: Option<&[Message]>,
     ) -> Result<ChatResponse, AgentError> {
+        let user_message = user_message.into();
+
+        // === FAST PATH: Simple greetings ===
+        // Bypass LLM for simple greetings to improve response time
+        let trimmed = user_message.trim();
+        let greeting_patterns = [
+            "你好", "您好", "hi", "hello", "嗨", "在吗",
+            "早上好", "下午好", "晚上好",
+        ];
+        let is_greeting = greeting_patterns.iter().any(|&pat| {
+            trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat)
+        });
+
+        if is_greeting && trimmed.len() < 20 {
+            let greeting_response = "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
+                • 查看设备列表 - 说「列出设备」\n\
+                • 查询设备数据 - 说「查询温度」\n\
+                • 创建自动化规则 - 说「创建规则」\n\
+                • 查看所有规则 - 说「列出规则」";
+
+            return Ok(ChatResponse {
+                text: greeting_response.to_string(),
+                tokens_used: 0,
+                duration: Duration::from_millis(0),
+                finish_reason: "stop".to_string(),
+            });
+        }
+
         // Acquire permit for concurrency limiting
         let _permit = self.limiter.acquire().await;
 
-        let user_message = user_message.into();
         let start = Instant::now();
 
         let model_arc = Arc::clone(&self.model);

@@ -24,6 +24,9 @@ use edge_ai_core::message::{Content, ContentPart, Message, MessageRole};
 /// Stream timeout in seconds - prevents infinite loops
 const STREAM_TIMEOUT_SECS: u64 = 300;
 
+/// Maximum thinking characters before we consider the model stuck in a loop
+const MAX_THINKING_CHARS: usize = 10000;
+
 /// Ollama configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OllamaConfig {
@@ -602,29 +605,37 @@ impl LlmRuntime for OllamaRuntime {
         };
 
         // Thinking: user controls via thinking_enabled parameter
-        // IMPORTANT: If model doesn't support thinking, explicitly disable it
+        // IMPORTANT: Respect user's choice - if they want thinking, send it
         let model_supports_thinking = caps.supports_thinking;
+        let user_requested_thinking = input.params.thinking_enabled.unwrap_or(true);  // Default to true, matching storage default
+
+        // Determine if we should actually send thinking to the client
+        // RESPECT USER'S CHOICE: If user enabled thinking, send it regardless of model
+        // Safety mechanisms (max_thinking_chars, timeout) will prevent infinite loops
+        let should_send_thinking = user_requested_thinking;
+
         let think = match input.params.thinking_enabled {
             Some(true) => {
+                // User explicitly requested thinking - let them have it
+                // Safety mechanisms (max_thinking_chars, timeout) will prevent issues
                 if model_supports_thinking {
-                    tracing::info!("[ollama.rs] DEBUG: thinking_enabled=Some(true), setting think=None (model default)");
-                    None
+                    tracing::info!("[ollama.rs] thinking_enabled=true, model supports thinking, using model default");
                 } else {
-                    tracing::warn!("[ollama.rs] DEBUG: Model doesn't support thinking, overriding to disable");
-                    Some(OllamaThink::Bool(false))
+                    tracing::info!("[ollama.rs] thinking_enabled=true, model doesn't officially support thinking, but respecting user's choice");
                 }
+                None  // Let Ollama/model decide
             },
             Some(false) => {
-                tracing::warn!("[ollama.rs] DEBUG: thinking_enabled=Some(false), setting think=Bool(false) to DISABLE thinking");
+                tracing::info!("[ollama.rs] thinking_enabled=false, explicitly disabling thinking");
                 Some(OllamaThink::Bool(false))
             },
             None => {
                 // If not specified, check if model supports thinking
                 if model_supports_thinking {
-                    tracing::info!("[ollama.rs] DEBUG: thinking_enabled=None, model supports thinking, using default");
+                    tracing::info!("[ollama.rs] thinking_enabled not set, model supports thinking, using default");
                     None
                 } else {
-                    tracing::info!("[ollama.rs] DEBUG: thinking_enabled=None, model doesn't support thinking, disabling");
+                    tracing::info!("[ollama.rs] thinking_enabled not set, model doesn't support thinking, disabling");
                     Some(OllamaThink::Bool(false))
                 }
             },
@@ -807,21 +818,55 @@ impl LlmRuntime for OllamaRuntime {
                                                 xml_buffer.push_str("</tool_calls>");
                                                 tracing::debug!("Ollama: converted tool_calls to XML: {}", xml_buffer);
                                                 let _ = tx.send(Ok((xml_buffer, false))).await;
+
+                                                // CRITICAL: Once tool_calls are sent, the stream should end
+                                                // The agent will execute tools and then make a new request with results
+                                                // Any thinking/content after tool_calls should be ignored
+                                                println!("[ollama.rs] Tool calls sent, closing stream (thinking after tools will be ignored)");
+                                                sent_done = true;
+                                                return;
                                             }
 
                                             // IMPORTANT: Process content BEFORE checking done flag
                                             // The final chunk with done=true may still contain content that must be sent
-                                            // Send thinking content first (reasoning process)
+                                            // CRITICAL FIX: Only send thinking if user requested it AND model supports it
+                                            // qwen3 models generate thinking but we filter it out for performance
                                             if !ollama_chunk.message.thinking.is_empty() {
-                                                tracing::debug!("Ollama thinking chunk: {}", ollama_chunk.message.thinking);
-                                                println!("[ollama.rs] Sending thinking chunk (len={})", ollama_chunk.message.thinking.chars().count());
-                                                let _ = tx.send(Ok((ollama_chunk.message.thinking.clone(), true))).await;
+                                                // Track thinking characters for loop detection
+                                                thinking_chars += ollama_chunk.message.thinking.chars().count();
+                                                total_chars += ollama_chunk.message.thinking.chars().count();
+
+                                                // SAFETY CHECK: Detect if model is stuck in thinking loop
+                                                if thinking_chars > MAX_THINKING_CHARS {
+                                                    let error_msg = format!("Model appears stuck in thinking loop ({} chars thinking, {} chars total content). Terminating stream.", thinking_chars, total_chars);
+                                                    tracing::error!("[ollama.rs] {}", error_msg);
+                                                    println!("[ollama.rs] {}", error_msg);
+                                                    let _ = tx.send(Err(LlmError::Generation(error_msg))).await;
+                                                    return;
+                                                }
+
+                                                if should_send_thinking {
+                                                    tracing::debug!("Ollama thinking chunk: {}", ollama_chunk.message.thinking);
+                                                    println!("[ollama.rs] Sending thinking chunk (len={}, total_thinking={})", ollama_chunk.message.thinking.chars().count(), thinking_chars);
+                                                    let _ = tx.send(Ok((ollama_chunk.message.thinking.clone(), true))).await;
+                                                } else {
+                                                    // Skip thinking content - model generated it but we don't want it
+                                                    tracing::debug!("Ollama generated thinking (len={}, total_thinking={}) but filtering it out (user_requested={}, model_supports={})",
+                                                        ollama_chunk.message.thinking.chars().count(),
+                                                        thinking_chars,
+                                                        user_requested_thinking,
+                                                        model_supports_thinking
+                                                    );
+                                                    // Don't send thinking chunks to the client
+                                                }
                                             }
 
                                             // Then send response content (final answer)
                                             if !ollama_chunk.message.content.is_empty() {
+                                                // Track content characters
+                                                total_chars += ollama_chunk.message.content.chars().count();
                                                 tracing::debug!("Ollama content chunk: {}", ollama_chunk.message.content);
-                                                println!("[ollama.rs] Sending content chunk (len={})", ollama_chunk.message.content.chars().count());
+                                                println!("[ollama.rs] Sending content chunk (len={}, total_chars={})", ollama_chunk.message.content.chars().count(), total_chars);
                                                 let _ = tx.send(Ok((ollama_chunk.message.content.clone(), false))).await;
                                             }
 
@@ -987,15 +1032,26 @@ struct ModelCapability {
 }
 
 /// Detect model capabilities from model name
+///
+/// Based on Ollama official documentation: https://docs.ollama.com/capabilities/thinking
+/// Supported thinking models: Qwen 3, GPT-OSS, DeepSeek-v3.1, DeepSeek R1
 fn detect_model_capabilities(model_name: &str) -> ModelCapability {
     let name_lower = model_name.to_lowercase();
 
-    // Models that support thinking/reasoning
-    // NOTE: Only DeepSeek-R1 models have explicit thinking mode
-    // qwen3 models do NOT have thinking mode in Ollama
-    let supports_thinking = name_lower.contains("thinking")
+    // Models that support thinking/reasoning (from official Ollama docs)
+    // - Qwen 3 family (qwen3, qwen3-vl, qwen3:2b, etc.)
+    // - GPT-OSS (uses low/medium/high levels)
+    // - DeepSeek-v3.1
+    // - DeepSeek R1 (deepseek-r1)
+    // - Also catch models with "thinking" in the name for future compatibility
+    let supports_thinking = name_lower.starts_with("qwen3")
+        || name_lower.contains("qwen3-")
+        || name_lower.contains("gpt-oss")
         || name_lower.contains("deepseek-r1")
-        || name_lower.contains("qwq");  // QwQ models have thinking, not qwen3
+        || name_lower.contains("deepseek-r")
+        || name_lower.contains("deepseek v3.1")
+        || name_lower.contains("deepseek-v3.1")
+        || name_lower.contains("thinking");  // Future-proofing
 
     // Models that support function calling
     // Note: Smaller models like gemma3:270m do NOT support tools
