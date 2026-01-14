@@ -62,28 +62,104 @@ fn estimate_tokens(text: &str) -> usize {
     text.chars().count() / 4
 }
 
-/// Build conversation context with token-based windowing.
-fn build_context_window(messages: &[AgentMessage]) -> Vec<&AgentMessage> {
-    let mut selected_messages = Vec::new();
-    let mut current_tokens = 0;
+/// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing ===
+///
+/// Compacts old tool result messages into concise summaries.
+/// This follows Anthropic's guidance: "One of the safest lightest touch forms
+/// of compaction is tool result clearing – once a tool has been called deep
+/// in the message history, why would the agent need to see the raw result again?"
+///
+/// Rules:
+/// - Keep the most recent 2 tool results intact (for context continuity)
+/// - Older tool results are compressed to one-line summaries
+/// - User and system messages are always kept
+fn compact_tool_results(messages: &[AgentMessage]) -> Vec<AgentMessage> {
+    let mut result = Vec::new();
+    let mut tool_result_count = 0;
+    const KEEP_RECENT_TOOL_RESULTS: usize = 2;
 
     for msg in messages.iter().rev() {
-        let msg_tokens = estimate_tokens(&msg.content);
-        let thinking_tokens = msg.thinking.as_ref().map_or(0, |t| estimate_tokens(t));
+        // Always keep user and system messages
+        if msg.role == "user" || msg.role == "system" {
+            result.push(msg.clone());
+            continue;
+        }
 
-        if current_tokens + msg_tokens + thinking_tokens > MAX_CONTEXT_TOKENS {
-            if msg.role == "system" || msg.role == "user" {
+        // Check if this is a tool result message (has tool_calls)
+        if msg.tool_calls.is_some() && msg.tool_calls.as_ref().map_or(false, |t| !t.is_empty()) {
+            tool_result_count += 1;
+
+            // Keep recent tool results intact
+            if tool_result_count <= KEEP_RECENT_TOOL_RESULTS {
+                result.push(msg.clone());
+            } else {
+                // Compress old tool results to a brief summary
+                let tool_names: Vec<&str> = msg.tool_calls
+                    .as_ref()
+                    .iter()
+                    .flat_map(|calls| calls.iter().map(|t| t.name.as_str()))
+                    .collect();
+
+                // Create a compacted summary message
+                let summary = if tool_names.len() == 1 {
+                    format!("[之前调用了工具: {}]", tool_names[0])
+                } else {
+                    format!("[之前调用了工具: {}]", tool_names.join(", "))
+                };
+
+                result.push(AgentMessage {
+                    role: msg.role.clone(),
+                    content: summary,
+                    tool_calls: None, // Remove actual tool data to save tokens
+                    tool_call_id: None,
+                    tool_call_name: None,
+                    thinking: None, // Never keep thinking in compacted messages
+                    timestamp: msg.timestamp,
+                });
+            }
+        } else {
+            // Regular assistant message - keep it
+            result.push(msg.clone());
+        }
+    }
+
+    result.reverse();
+    result
+}
+
+/// === ANTHROPIC-STYLE IMPROVEMENT: Context Window with Tool Result Clearing ===
+///
+/// Builds conversation context with:
+/// 1. Tool result clearing for old messages
+/// 2. Token-based windowing
+/// 3. Always keep recent messages (minimum 4) for context continuity
+fn build_context_window(messages: &[AgentMessage]) -> Vec<AgentMessage> {
+    // First, apply tool result clearing
+    let compacted = compact_tool_results(messages);
+
+    let mut selected_messages = Vec::new();
+    let mut current_tokens = 0;
+    const MIN_RECENT_MESSAGES: usize = 4;
+
+    for msg in compacted.iter().rev() {
+        let msg_tokens = estimate_tokens(&msg.content);
+        // Note: thinking is already cleared from compacted messages
+
+        if current_tokens + msg_tokens > MAX_CONTEXT_TOKENS {
+            // Always keep user messages and recent messages within the minimum
+            let is_recent = selected_messages.len() < MIN_RECENT_MESSAGES;
+            if msg.role == "system" || msg.role == "user" || is_recent {
                 let max_len = (MAX_CONTEXT_TOKENS - current_tokens) * 4;
                 if max_len > 100 {
-                    selected_messages.push(msg);
-                    current_tokens += msg_tokens + thinking_tokens;
+                    selected_messages.push(msg.clone());
+                    current_tokens += msg_tokens;
                 }
             }
             break;
         }
 
-        selected_messages.push(msg);
-        current_tokens += msg_tokens + thinking_tokens;
+        selected_messages.push(msg.clone());
+        current_tokens += msg_tokens;
     }
 
     selected_messages.reverse();
@@ -338,9 +414,10 @@ impl Agent {
     }
 
     /// Process with real LLM.
-    /// 
+    ///
     /// ## Safeguards:
     /// - Maximum tool calls per request limited to MAX_TOOL_CALLS_PER_REQUEST
+    /// - Tool result clearing for old messages (Anthropic-style)
     /// - Token limit configured in ChatConfig
     async fn process_with_llm(&self, user_message: &str) -> Result<AgentResponse> {
         use tool_parser::parse_tool_calls;
@@ -356,8 +433,18 @@ impl Agent {
             Vec::new()
         };
 
+        // === ANTHROPIC-STYLE IMPROVEMENT: Apply context window with tool result clearing ===
+        // This prevents context bloat from old tool calls while maintaining conversation continuity
+        let compacted_history = build_context_window(&history_without_last);
+
+        tracing::debug!(
+            "Context: {} messages -> {} messages (after compaction)",
+            history_without_last.len(),
+            compacted_history.len()
+        );
+
         // Build history for LLM (convert AgentMessage to Message)
-        let core_history: Vec<Message> = history_without_last.iter()
+        let core_history: Vec<Message> = compacted_history.iter()
             .map(|msg| msg.to_core())
             .collect();
 

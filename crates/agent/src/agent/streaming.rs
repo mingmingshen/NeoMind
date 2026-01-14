@@ -190,52 +190,99 @@ struct ToolExecutionResult {
 
 /// Maximum context window size in tokens (approximate)
 /// Adjust based on model capacity (e.g., qwen3-vl:2b has ~32k context)
-/// Increased to 12000 to preserve more conversation history
 const MAX_CONTEXT_TOKENS: usize = 12000;
 
 /// Estimate token count for a string (rough approximation: 1 token ≈ 4 characters for Chinese, 1 token ≈ 4 characters for English)
 /// This is a simple heuristic - for production, consider using a proper tokenizer
 fn estimate_tokens(text: &str) -> usize {
-    // Count characters and divide by 4 (average chars per token)
-    // This works reasonably well for both Chinese and English
     text.chars().count() / 4
 }
 
-/// Build conversation context with token-based windowing.
-/// Takes the most recent messages that fit within MAX_CONTEXT_TOKENS,
-/// always including system messages and preserving conversation order.
+/// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing for Streaming ===
 ///
-/// IMPORTANT: Thinking content is NOT counted toward context tokens because:
-/// 1. Thinking is internal reasoning, not conversation context
-/// 2. Counting thinking would push out important conversation history
-/// 3. The LLM already has the thinking from previous turns in its generated responses
-fn build_context_window(messages: &[AgentMessage]) -> Vec<&AgentMessage> {
-    let mut selected_messages = Vec::new();
-    let mut current_tokens = 0;
+/// Compacts old tool result messages into concise summaries.
+/// This follows Anthropic's guidance for context engineering.
+fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
+    let mut result = Vec::new();
+    let mut tool_result_count = 0;
+    const KEEP_RECENT_TOOL_RESULTS: usize = 2;
 
-    // Always keep the last 6 messages minimum (regardless of token count)
-    // This ensures recent conversation context is preserved
-    let min_messages = 6;
+    for msg in messages.iter().rev() {
+        if msg.role == "user" || msg.role == "system" {
+            result.push(msg.clone());
+            continue;
+        }
 
-    // Iterate in reverse to prioritize recent messages
-    for (i, msg) in messages.iter().rev().enumerate() {
-        // === FIX: Don't count thinking toward context tokens ===
-        // Thinking is internal reasoning and shouldn't consume context budget
-        let msg_tokens = estimate_tokens(&msg.content);
+        if msg.tool_calls.is_some() && msg.tool_calls.as_ref().map_or(false, |t| !t.is_empty()) {
+            tool_result_count += 1;
 
-        // Always include recent messages (within min_messages limit)
-        let is_recent = i < min_messages;
-        let is_important = msg.role == "system" || msg.role == "user";
+            if tool_result_count <= KEEP_RECENT_TOOL_RESULTS {
+                result.push(msg.clone());
+            } else {
+                // Compress old tool results
+                let tool_names: Vec<&str> = msg.tool_calls
+                    .as_ref()
+                    .iter()
+                    .flat_map(|calls| calls.iter().map(|t| t.name.as_str()))
+                    .collect();
 
-        if is_recent || current_tokens + msg_tokens <= MAX_CONTEXT_TOKENS || is_important {
-            selected_messages.push(msg);
-            current_tokens += msg_tokens;
+                let summary = if tool_names.len() == 1 {
+                    format!("[之前调用了工具: {}]", tool_names[0])
+                } else {
+                    format!("[之前调用了工具: {}]", tool_names.join(", "))
+                };
+
+                result.push(AgentMessage {
+                    role: msg.role.clone(),
+                    content: summary,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    tool_call_name: None,
+                    thinking: None, // Never keep thinking in compacted messages
+                    timestamp: msg.timestamp,
+                });
+            }
         } else {
-            break;
+            result.push(msg.clone());
         }
     }
 
-    // Reverse to maintain original order
+    result.reverse();
+    result
+}
+
+/// === ANTHROPIC-STYLE IMPROVEMENT: Context Window with Tool Result Clearing ===
+///
+/// Builds conversation context with:
+/// 1. Tool result clearing for old messages
+/// 2. Token-based windowing
+/// 3. Always keep recent messages for context continuity
+fn build_context_window(messages: &[AgentMessage]) -> Vec<AgentMessage> {
+    let compacted = compact_tool_results_stream(messages);
+
+    let mut selected_messages = Vec::new();
+    let mut current_tokens = 0;
+    const MIN_RECENT_MESSAGES: usize = 4;
+
+    for msg in compacted.iter().rev() {
+        let msg_tokens = estimate_tokens(&msg.content);
+
+        if current_tokens + msg_tokens > MAX_CONTEXT_TOKENS {
+            let is_recent = selected_messages.len() < MIN_RECENT_MESSAGES;
+            if msg.role == "system" || msg.role == "user" || is_recent {
+                let max_len = (MAX_CONTEXT_TOKENS - current_tokens) * 4;
+                if max_len > 100 {
+                    selected_messages.push(msg.clone());
+                    current_tokens += msg_tokens;
+                }
+            }
+            break;
+        }
+
+        selected_messages.push(msg.clone());
+        current_tokens += msg_tokens;
+    }
+
     selected_messages.reverse();
     selected_messages
 }
