@@ -187,14 +187,12 @@ export const createSessionSlice: StateCreator<
     } catch (error: any) {
       console.error('Failed to switch session:', error)
 
-      // If session not found (404), remove it from the list
+      // If session not found (404), show error but don't auto-delete
+      // This prevents data loss when database has inconsistencies
       if (error?.error?.code === 'NOT_FOUND' || error?.status === 404) {
-        // Remove the invalid session from list
-        set((state) => ({
-          sessions: state.sessions.filter(s => s.sessionId !== sessionId),
-        }))
+        console.warn(`Session ${sessionId} not found in database. This may indicate data corruption.`)
 
-        // Try to load sessions from server to get fresh list
+        // Try to reload sessions from server to get accurate list
         try {
           const result = await api.listSessions()
           const sessionsArray = Array.isArray(result) ? result : (result as any).sessions || []
@@ -208,35 +206,21 @@ export const createSessionSlice: StateCreator<
             preview: s.preview,
           }))
 
-          set((state) => ({
-            sessions,
-            // If we still have sessions, switch to the first one
-            sessionId: sessions.length > 0 ? sessions[0].sessionId : null,
-            messages: sessions.length > 0 ? [] : state.messages,
-          }))
-
-          // Update WebSocket if we switched sessions
-          if (sessions.length > 0 && sessions[0].sessionId) {
-            const { ws } = await import('@/lib/websocket')
-            ws.setSessionId(sessions[0].sessionId)
-          }
-
-          // If no sessions left, create a new one
-          if (sessions.length === 0) {
-            const createResult = await api.createSession()
-            const newSession: ChatSession = {
-              sessionId: createResult.sessionId,
-              id: createResult.sessionId,
-              createdAt: Date.now(),
-            }
-            set({
-              sessionId: createResult.sessionId,
-              messages: [],
-              sessions: [newSession],
-            })
-
-            const { ws } = await import('@/lib/websocket')
-            ws.setSessionId(createResult.sessionId)
+          // Only update sessions if server returned a valid list
+          if (sessions.length > 0) {
+            set((state) => ({
+              sessions,
+              // Keep current session if it still exists, otherwise use first session
+              sessionId: sessions.some(s => s.sessionId === sessionId)
+                ? state.sessionId
+                : sessions[0].sessionId,
+              messages: sessions.some(s => s.sessionId === sessionId)
+                ? state.messages
+                : [],
+            }))
+          } else {
+            // No sessions on server - keep local state and notify user
+            console.error('No sessions found on server. Database may be corrupted.')
           }
         } catch (loadError) {
           console.error('Failed to reload sessions:', loadError)
@@ -244,11 +228,8 @@ export const createSessionSlice: StateCreator<
         return
       }
 
-      // For other errors, just clear messages and set the session ID
-      set({
-        sessionId,
-        messages: [],
-      })
+      // For other errors, just keep current state
+      console.error('Error switching session:', error)
     }
   },
 
@@ -283,15 +264,29 @@ export const createSessionSlice: StateCreator<
         }
 
         // If we deleted the current session, switch to the first available
+        // and load its history
         if (wasCurrentSession) {
           const firstSessionId = sessions[0].sessionId
           import('@/lib/websocket').then(({ ws }) => {
             ws.setSessionId(firstSessionId)
           })
+          // Load history for the first session asynchronously
+          api.getSessionHistory(firstSessionId).then(historyResult => {
+            const mergedMessages = mergeAssistantMessages(historyResult.messages || [])
+            set((state) => {
+              // Only update if we're still on the same session
+              if (state.sessionId === firstSessionId) {
+                return { messages: mergedMessages }
+              }
+              return {}
+            })
+          }).catch(err => {
+            console.error('Failed to load history for first session:', err)
+          })
           return {
             sessions,
             sessionId: firstSessionId,
-            messages: [],
+            messages: [], // Will be populated by the async call above
           }
         }
 
@@ -327,7 +322,7 @@ export const createSessionSlice: StateCreator<
       throw error
     }
 
-    // Clear local state
+    // Clear local state temporarily
     set({
       sessions: [],
       sessionId: null,
@@ -341,15 +336,19 @@ export const createSessionSlice: StateCreator<
         sessionId: result.sessionId,
         id: result.sessionId,
         createdAt: Date.now(),
+        messageCount: 0,
       }
-      set({
-        sessionId: result.sessionId,
-        sessions: [newSession],
-      })
 
       // Update WebSocket
       const { ws } = await import('@/lib/websocket')
       ws.setSessionId(result.sessionId)
+
+      // Set new state with empty messages (new session has no history)
+      set({
+        sessionId: result.sessionId,
+        sessions: [newSession],
+        messages: [],
+      })
     } catch (createError) {
       console.error('Failed to create new session after clearing:', createError)
     }

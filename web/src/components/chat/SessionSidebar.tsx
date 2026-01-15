@@ -85,14 +85,14 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
     if (sessionToDelete) {
       setLoading(true)
 
-      await deleteSession(sessionToDelete)
-
-      // Get updated state after deletion
-      const { sessions: updatedSessions, createSession } = useStore.getState()
-
-      // If no sessions left after deletion, create a new one
-      if (updatedSessions.length === 0) {
-        await createSession()
+      try {
+        await deleteSession(sessionToDelete)
+        // deleteSession already handles:
+        // - Reloading the session list
+        // - Switching to the first available session
+        // - Creating a new session if needed
+      } catch (error) {
+        console.error('Failed to delete session:', error)
       }
 
       setLoading(false)

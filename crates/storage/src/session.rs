@@ -188,11 +188,33 @@ impl SessionStore {
     }
 
     /// Save message history for a session.
+    /// NOTE: If messages is empty and history exists, this will NOT clear the history.
+    /// This prevents accidental data loss when called with stale/incomplete data.
     pub fn save_history(
         &self,
         session_id: &str,
         messages: &[SessionMessage],
     ) -> Result<(), Error> {
+        // If messages is empty, don't overwrite existing history
+        // This prevents accidental data loss
+        if messages.is_empty() {
+            // Check if there's existing history
+            let read_txn = self.db.begin_read()?;
+            let table = read_txn.open_table(HISTORY_TABLE);
+            if let Ok(t) = table {
+                let start_key = (session_id, 0u64);
+                let end_key = (session_id, u64::MAX);
+                let range = t.range(start_key..=end_key);
+                if let Ok(mut r) = range {
+                    if r.next().is_some() {
+                        // Existing history found, don't clear it
+                        eprintln!("[DEBUG save_history] Refusing to clear existing history for session {}", session_id);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(HISTORY_TABLE)?;
@@ -221,6 +243,35 @@ impl SessionStore {
                 let key = (session_id, index as u64);
                 let value = bincode::serialize(message)?;
                 table.insert(key, value)?;
+            }
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Clear message history for a session.
+    /// This is the ONLY method that should be used to intentionally clear history.
+    pub fn clear_history(&self, session_id: &str) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(HISTORY_TABLE)?;
+
+            let start_key = (session_id, 0u64);
+            let end_key = (session_id, u64::MAX);
+
+            // Collect keys to delete
+            let mut keys_to_delete: Vec<(String, u64)> = Vec::new();
+            let mut range = table.range(start_key..=end_key)?;
+            while let Some(result) = range.next() {
+                let (key_ref, _val_ref) = result?;
+                let sid: &str = key_ref.value().0;
+                let idx: u64 = key_ref.value().1;
+                keys_to_delete.push((sid.to_string(), idx));
+            }
+            drop(range);
+
+            for key in &keys_to_delete {
+                table.remove((key.0.as_str(), key.1))?;
             }
         }
         write_txn.commit()?;

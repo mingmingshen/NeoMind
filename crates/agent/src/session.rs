@@ -667,8 +667,8 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
         // Update in-memory cache
         self.session_messages.write().await.insert(session_id.to_string(), Vec::new());
 
-        // Clear persisted history
-        if let Err(e) = self.save_history(session_id, &[]) {
+        // Clear persisted history using the dedicated clear method
+        if let Err(e) = self.store.clear_history(session_id) {
             eprintln!("Failed to clear history for session {}: {}", session_id, e);
         }
 
