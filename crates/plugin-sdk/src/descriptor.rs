@@ -178,17 +178,32 @@ impl PluginDescriptor {
             description_len: self.description.len(),
             required_neotalk: self.required_neotalk.as_ptr(),
             required_neotalk_len: self.required_neotalk.len(),
-            author: self.author.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            author: self
+                .author
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr()),
             author_len: self.author.as_ref().map_or(0, |s| s.len()),
-            homepage: self.homepage.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            homepage: self
+                .homepage
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr()),
             homepage_len: self.homepage.as_ref().map_or(0, |s| s.len()),
-            repository: self.repository.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            repository: self
+                .repository
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr()),
             repository_len: self.repository.as_ref().map_or(0, |s| s.len()),
-            license: self.license.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            license: self
+                .license
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr()),
             license_len: self.license.as_ref().map_or(0, |s| s.len()),
             create_fn: create_fn_ptr as *const (),
             destroy_fn: destroy_fn_ptr as *const (),
-            config_schema: self.config_schema.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+            config_schema: self
+                .config_schema
+                .as_ref()
+                .map_or(std::ptr::null(), |s| s.as_ptr()),
             config_schema_len: self.config_schema.as_ref().map_or(0, |s| s.len()),
             capabilities: self.capabilities,
         }
@@ -252,8 +267,7 @@ extern "C" fn create_fn_ptr(_config_json: *const u8, _config_len: usize) -> *mut
 }
 
 /// Default destroy function (placeholder)
-extern "C" fn destroy_fn_ptr(_instance: *mut ()) {
-}
+extern "C" fn destroy_fn_ptr(_instance: *mut ()) {}
 
 #[cfg(test)]
 mod tests {

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use edge_ai_tools::{Tool, ToolOutput, ToolDefinition};
-use edge_ai_tools::tool::{object_schema, string_property, array_property, ResponseFormat};
+use edge_ai_tools::tool::{ResponseFormat, array_property, object_schema, string_property};
+use edge_ai_tools::{Tool, ToolDefinition, ToolOutput};
 
 /// Think Tool for structured reasoning.
 ///
@@ -32,7 +32,11 @@ pub trait ThinkStorage: Send + Sync {
     /// Store a thought record synchronously.
     ///
     /// The async storage operation should be handled internally.
-    fn store(&self, session_id: &str, thought: ThoughtRecord) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+    fn store(
+        &self,
+        session_id: &str,
+        thought: ThoughtRecord,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
 }
 
 /// Convenience wrapper for async storage.
@@ -130,19 +134,15 @@ impl Tool for ThinkTool {
     async fn execute(&self, args: Value) -> Result<ToolOutput, edge_ai_tools::ToolError> {
         self.validate_args(&args)?;
 
-        let thought = args["thought"]
-            .as_str()
-            .ok_or_else(|| edge_ai_tools::ToolError::InvalidArguments(
-                "thought must be a string".to_string()
-            ))?;
+        let thought = args["thought"].as_str().ok_or_else(|| {
+            edge_ai_tools::ToolError::InvalidArguments("thought must be a string".to_string())
+        })?;
 
-        let task_breakdown: Option<Vec<String>> = args["task_breakdown"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            });
+        let task_breakdown: Option<Vec<String>> = args["task_breakdown"].as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        });
 
         let formatted = self.format_thought(thought, task_breakdown.as_deref());
 
@@ -182,18 +182,16 @@ impl Tool for ThinkTool {
                 }),
                 description: "Use think tool to plan complex tasks".to_string(),
             }),
-            examples: vec![
-                edge_ai_tools::tool::ToolExample {
-                    arguments: serde_json::json!({
-                        "thought": "User wants to create a temperature alert rule. I should: 1) Check existing devices, 2) Verify temperature sensors exist, 3) Create the rule with appropriate threshold."
-                    }),
-                    result: serde_json::json!({
-                        "thought": "User wants to create a temperature alert rule...",
-                        "formatted": "🧠 Thinking: User wants to create a temperature alert rule..."
-                    }),
-                    description: "规划复杂任务".to_string(),
-                },
-            ],
+            examples: vec![edge_ai_tools::tool::ToolExample {
+                arguments: serde_json::json!({
+                    "thought": "User wants to create a temperature alert rule. I should: 1) Check existing devices, 2) Verify temperature sensors exist, 3) Create the rule with appropriate threshold."
+                }),
+                result: serde_json::json!({
+                    "thought": "User wants to create a temperature alert rule...",
+                    "formatted": "🧠 Thinking: User wants to create a temperature alert rule..."
+                }),
+                description: "规划复杂任务".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("system".to_string()),
         }
@@ -217,8 +215,16 @@ mod tests {
 
         let result = tool.execute(args).await.unwrap();
         assert!(result.success);
-        assert_eq!(result.data["thought"], "I need to analyze this request before taking action.");
-        assert!(result.data["formatted"].as_str().unwrap().contains("Thinking"));
+        assert_eq!(
+            result.data["thought"],
+            "I need to analyze this request before taking action."
+        );
+        assert!(
+            result.data["formatted"]
+                .as_str()
+                .unwrap()
+                .contains("Thinking")
+        );
     }
 
     #[tokio::test]
@@ -258,7 +264,7 @@ mod tests {
 
         let formatted = tool.format_thought(
             "Test thought",
-            Some(&["Step 1".to_string(), "Step 2".to_string()])
+            Some(&["Step 1".to_string(), "Step 2".to_string()]),
         );
         assert!(formatted.contains("Plan:"));
         assert!(formatted.contains("Step 1"));

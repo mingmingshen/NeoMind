@@ -19,14 +19,14 @@
 //! | `xai` | xAI Grok API support |
 //! | `all` | All backends |
 
-pub mod backends;
 pub mod backend_plugin;
+pub mod backends;
 pub mod config;
-pub mod tokenizer;
 pub mod factories;
-pub mod rate_limited_client;
 pub mod instance_manager;
 pub mod plugin_adapter;
+pub mod rate_limited_client;
+pub mod tokenizer;
 
 // Re-export backend types based on features
 #[cfg(feature = "ollama")]
@@ -36,36 +36,37 @@ pub use backends::ollama::{OllamaConfig, OllamaRuntime};
 pub use backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
 
 // Config and utilities
-pub use config::{LlmConfig, LlmBackendConfig, LlmRuntimeManager, GenerationParams as LlmGenerationParams};
+pub use config::{
+    GenerationParams as LlmGenerationParams, LlmBackendConfig, LlmConfig, LlmRuntimeManager,
+};
 pub use tokenizer::TokenizerWrapper;
 
 // Plugin system
-pub use backend_plugin::{BackendRegistry, LlmBackendPlugin, DynBackendPlugin};
+pub use backend_plugin::{BackendRegistry, DynBackendPlugin, LlmBackendPlugin};
 
 // Instance manager
 pub use instance_manager::{
-    LlmBackendInstanceManager, BackendTypeDefinition,
-    get_instance_manager,
+    BackendTypeDefinition, LlmBackendInstanceManager, get_instance_manager,
 };
 
 // Plugin adapter
 pub use plugin_adapter::{
-    LlmBackendUnifiedPlugin, DynLlmBackendPlugin, llm_backend_to_unified_plugin,
-    LlmBackendPluginFactory,
+    DynLlmBackendPlugin, LlmBackendPluginFactory, LlmBackendUnifiedPlugin,
+    llm_backend_to_unified_plugin,
 };
 
 #[cfg(feature = "cloud")]
 pub use backend_plugin::register_builtin_backends;
 
 // Factory exports
-#[cfg(feature = "ollama")]
-pub use factories::OllamaFactory;
 #[cfg(feature = "cloud")]
 pub use factories::CloudFactory;
 pub use factories::MockFactory;
+#[cfg(feature = "ollama")]
+pub use factories::OllamaFactory;
 
 // Backend creation utilities
-pub use backends::{create_backend, available_backends};
+pub use backends::{available_backends, create_backend};
 
 /// Re-exports.
 pub mod prelude {
@@ -75,7 +76,7 @@ pub mod prelude {
     #[cfg(feature = "openai")]
     pub use crate::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
 
-    pub use crate::config::{LlmConfig, LlmBackendConfig, LlmRuntimeManager};
+    pub use crate::config::{LlmBackendConfig, LlmConfig, LlmRuntimeManager};
     pub use crate::tokenizer::TokenizerWrapper;
 
     #[cfg(feature = "ollama")]
@@ -84,6 +85,6 @@ pub mod prelude {
     #[cfg(feature = "cloud")]
     pub use crate::factories::CloudFactory;
 
+    pub use crate::backends::{available_backends, create_backend};
     pub use crate::factories::MockFactory;
-    pub use crate::backends::{create_backend, available_backends};
 }

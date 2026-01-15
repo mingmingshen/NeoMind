@@ -118,9 +118,8 @@ macro_rules! export_plugin {
 
         // Export the descriptor
         #[no_mangle]
-        pub static neotalk_plugin_descriptor: $crate::descriptor::CPluginDescriptor = unsafe {
-            DESCRIPTOR.export()
-        };
+        pub static neotalk_plugin_descriptor: $crate::descriptor::CPluginDescriptor =
+            unsafe { DESCRIPTOR.export() };
 
         // Create function
         #[no_mangle]

@@ -6,15 +6,15 @@
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use std::sync::RwLock as StdRwLock;
+use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
-use super::dsl::{ParsedRule, RuleCondition, RuleAction, RuleError};
+use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 
 /// Unique identifier for a rule.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -113,7 +113,10 @@ impl CompiledRule {
     /// Check if the rule should trigger based on current values.
     pub fn should_trigger(&self, current_value: f64) -> bool {
         // Evaluate condition
-        let condition_met = self.condition.operator.evaluate(current_value, self.condition.threshold);
+        let condition_met = self
+            .condition
+            .operator
+            .evaluate(current_value, self.condition.threshold);
 
         if let Some(duration) = self.for_duration {
             if condition_met {
@@ -133,7 +136,10 @@ impl CompiledRule {
 
     /// Update the rule's state based on current evaluation.
     pub fn update_state(&mut self, current_value: f64) {
-        let condition_met = self.condition.operator.evaluate(current_value, self.condition.threshold);
+        let condition_met = self
+            .condition
+            .operator
+            .evaluate(current_value, self.condition.threshold);
 
         if condition_met {
             if self.state.condition_true_since.is_none() {
@@ -251,7 +257,10 @@ impl RuleEngine {
                 continue;
             }
 
-            if let Some(value) = self.value_provider.get_value(&rule.condition.device_id, &rule.condition.metric) {
+            if let Some(value) = self
+                .value_provider
+                .get_value(&rule.condition.device_id, &rule.condition.metric)
+            {
                 if rule.should_trigger(value) {
                     triggered.push(id.clone());
                 }
@@ -270,7 +279,10 @@ impl RuleEngine {
                 continue;
             }
 
-            if let Some(value) = self.value_provider.get_value(&rule.condition.device_id, &rule.condition.metric) {
+            if let Some(value) = self
+                .value_provider
+                .get_value(&rule.condition.device_id, &rule.condition.metric)
+            {
                 rule.update_state(value);
             }
         }
@@ -358,12 +370,25 @@ impl RuleEngine {
                 tracing::info!("NOTIFY: {}", message);
                 Ok(format!("NOTIFY: {}", message))
             }
-            RuleAction::Execute { device_id, command, params } => {
-                tracing::info!("EXECUTE: {}.{} with params {:?}", device_id, command, params);
+            RuleAction::Execute {
+                device_id,
+                command,
+                params,
+            } => {
+                tracing::info!(
+                    "EXECUTE: {}.{} with params {:?}",
+                    device_id,
+                    command,
+                    params
+                );
                 // Here you would integrate with the device manager
                 Ok(format!("EXECUTE: {}.{}", device_id, command))
             }
-            RuleAction::Log { level, message, severity } => {
+            RuleAction::Log {
+                level,
+                message,
+                severity,
+            } => {
                 let log_msg = if let Some(sev) = severity {
                     format!("{}: {} (severity: {})", level, message, sev)
                 } else {
@@ -384,7 +409,11 @@ impl RuleEngine {
     /// Get history for a specific rule.
     pub async fn get_rule_history(&self, rule_id: &RuleId) -> Vec<RuleExecutionResult> {
         let history = self.history.read().await;
-        history.iter().filter(|r| &r.rule_id == rule_id).cloned().collect()
+        history
+            .iter()
+            .filter(|r| &r.rule_id == rule_id)
+            .cloned()
+            .collect()
     }
 
     /// Pause a rule.
@@ -476,7 +505,10 @@ mod tests {
 
         // Set value below threshold
         let provider = engine.value_provider.clone();
-        let mem_provider = provider.as_any().downcast_ref::<InMemoryValueProvider>().unwrap();
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
         mem_provider.set_value("sensor", "temperature", 25.0);
 
         engine.update_states().await;
@@ -517,7 +549,10 @@ mod tests {
         let _rule_id = engine.add_rule_from_dsl(dsl).await.unwrap();
 
         let provider = engine.value_provider.clone();
-        let mem_provider = provider.as_any().downcast_ref::<InMemoryValueProvider>().unwrap();
+        let mem_provider = provider
+            .as_any()
+            .downcast_ref::<InMemoryValueProvider>()
+            .unwrap();
 
         mem_provider.set_value("sensor", "temperature", 75.0);
         engine.update_states().await;

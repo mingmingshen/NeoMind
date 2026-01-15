@@ -14,8 +14,7 @@ use tokio::sync::RwLock;
 use crate::Error;
 
 // Vector table: key = document_id, value = VectorDocument (serialized)
-const VECTORS_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("vectors");
+const VECTORS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("vectors");
 
 /// Vector embedding (fixed-size list of floats).
 pub type Embedding = Vec<f32>;
@@ -177,7 +176,11 @@ impl VectorStore {
         results.truncate(top_k);
         Ok(results
             .into_iter()
-            .map(|(id, score, metadata)| SearchResult { id, score, metadata })
+            .map(|(id, score, metadata)| SearchResult {
+                id,
+                score,
+                metadata,
+            })
             .collect())
     }
 
@@ -426,8 +429,14 @@ mod tests {
     async fn test_vector_store_threshold() {
         let store = VectorStore::new();
 
-        store.insert(VectorDocument::new("doc1", vec![1.0, 0.0, 0.0])).await.unwrap();
-        store.insert(VectorDocument::new("doc2", vec![0.0, 1.0, 0.0])).await.unwrap();
+        store
+            .insert(VectorDocument::new("doc1", vec![1.0, 0.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .insert(VectorDocument::new("doc2", vec![0.0, 1.0, 0.0]))
+            .await
+            .unwrap();
 
         let query = vec![1.0, 0.0, 0.0];
         let results = store.search_with_threshold(&query, 10, 0.9).await.unwrap();
@@ -439,7 +448,10 @@ mod tests {
     async fn test_vector_store_delete() {
         let store = VectorStore::new();
 
-        store.insert(VectorDocument::new("doc1", vec![1.0])).await.unwrap();
+        store
+            .insert(VectorDocument::new("doc1", vec![1.0]))
+            .await
+            .unwrap();
         assert_eq!(store.count().await, 1);
 
         let deleted = store.delete("doc1").await.unwrap();
@@ -455,12 +467,24 @@ mod tests {
         let store = VectorStore::new().with_metric(SimilarityMetric::Cosine);
 
         // Orthogonal vectors
-        store.insert(VectorDocument::new("orth1", vec![1.0, 0.0])).await.unwrap();
-        store.insert(VectorDocument::new("orth2", vec![0.0, 1.0])).await.unwrap();
+        store
+            .insert(VectorDocument::new("orth1", vec![1.0, 0.0]))
+            .await
+            .unwrap();
+        store
+            .insert(VectorDocument::new("orth2", vec![0.0, 1.0]))
+            .await
+            .unwrap();
 
         // Same direction vectors - both should have cosine similarity of 1.0
-        store.insert(VectorDocument::new("same", vec![1.0, 1.0])).await.unwrap();
-        store.insert(VectorDocument::new("same2", vec![0.5, 0.5])).await.unwrap();
+        store
+            .insert(VectorDocument::new("same", vec![1.0, 1.0]))
+            .await
+            .unwrap();
+        store
+            .insert(VectorDocument::new("same2", vec![0.5, 0.5]))
+            .await
+            .unwrap();
 
         let query = vec![1.0, 1.0];
         let results = store.search(&query, 4).await.unwrap();
@@ -472,7 +496,11 @@ mod tests {
 
         // Both should have perfect cosine similarity (1.0)
         for result in results.iter().take(2) {
-            assert!((result.score - 1.0).abs() < 0.001, "Score should be ~1.0, got {}", result.score);
+            assert!(
+                (result.score - 1.0).abs() < 0.001,
+                "Score should be ~1.0, got {}",
+                result.score
+            );
         }
     }
 
@@ -492,7 +520,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_persistent_vector_store() {
-        let temp_path = std::env::temp_dir().join(format!("vector_test_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("vector_test_{}.redb", uuid::Uuid::new_v4()));
         let store = PersistentVectorStore::open(&temp_path).unwrap();
 
         // Insert documents
@@ -517,4 +546,3 @@ mod tests {
         assert_eq!(results[0].id, "doc1");
     }
 }
-

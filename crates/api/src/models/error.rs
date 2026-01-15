@@ -1,7 +1,7 @@
 //! Unified error handling for the API.
 
-use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -56,7 +56,11 @@ impl ErrorResponse {
 
     /// Not found (404).
     pub fn not_found(resource: impl Into<String>) -> Self {
-        Self::new("NOT_FOUND", format!("{} not found", resource.into()), StatusCode::NOT_FOUND)
+        Self::new(
+            "NOT_FOUND",
+            format!("{} not found", resource.into()),
+            StatusCode::NOT_FOUND,
+        )
     }
 
     /// Conflict (409).
@@ -66,7 +70,11 @@ impl ErrorResponse {
 
     /// Validation error (422).
     pub fn validation(message: impl Into<String>) -> Self {
-        Self::new("VALIDATION_ERROR", message, StatusCode::UNPROCESSABLE_ENTITY)
+        Self::new(
+            "VALIDATION_ERROR",
+            message,
+            StatusCode::UNPROCESSABLE_ENTITY,
+        )
     }
 
     /// Internal server error (500).
@@ -76,7 +84,11 @@ impl ErrorResponse {
 
     /// Service unavailable (503).
     pub fn service_unavailable(message: impl Into<String>) -> Self {
-        Self::new("SERVICE_UNAVAILABLE", message, StatusCode::SERVICE_UNAVAILABLE)
+        Self::new(
+            "SERVICE_UNAVAILABLE",
+            message,
+            StatusCode::SERVICE_UNAVAILABLE,
+        )
     }
 }
 
@@ -195,8 +207,8 @@ mod tests {
 
     #[test]
     fn test_error_with_request_id() {
-        let err = ErrorResponse::bad_request("invalid input")
-            .with_request_id("req-123".to_string());
+        let err =
+            ErrorResponse::bad_request("invalid input").with_request_id("req-123".to_string());
         assert_eq!(err.request_id, Some("req-123".to_string()));
     }
 }

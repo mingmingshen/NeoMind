@@ -6,17 +6,15 @@
 
 use async_trait::async_trait;
 use edge_ai_core::plugin::{
-    ExtendedPluginMetadata, PluginError, PluginState, PluginStats, Result, UnifiedPlugin,
-    PluginMetadata, PluginType,
+    ExtendedPluginMetadata, PluginError, PluginMetadata, PluginState, PluginStats, PluginType,
+    Result, UnifiedPlugin,
 };
-use edge_ai_storage::{LlmBackendInstance, BackendCapabilities, LlmBackendType};
+use edge_ai_storage::{BackendCapabilities, LlmBackendInstance, LlmBackendType};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use super::instance_manager::{
-    LlmBackendInstanceManager, BackendTypeDefinition,
-};
+use super::instance_manager::{BackendTypeDefinition, LlmBackendInstanceManager};
 
 /// LLM Backend unified plugin wrapper that implements UnifiedPlugin.
 ///
@@ -44,10 +42,7 @@ pub struct LlmBackendUnifiedPlugin {
 
 impl LlmBackendUnifiedPlugin {
     /// Create a new LLM backend plugin from an instance.
-    pub fn new(
-        instance: LlmBackendInstance,
-        manager: Arc<LlmBackendInstanceManager>,
-    ) -> Self {
+    pub fn new(instance: LlmBackendInstance, manager: Arc<LlmBackendInstanceManager>) -> Self {
         let base_metadata = PluginMetadata::new(
             instance.id.clone(),
             instance.name.clone(),
@@ -102,7 +97,9 @@ impl LlmBackendUnifiedPlugin {
 
     /// Test the backend connection.
     pub async fn test_connection(&self) -> Result<bool> {
-        self.manager.test_connection(&self.config.id).await
+        self.manager
+            .test_connection(&self.config.id)
+            .await
             .map(|r| r.success)
             .map_err(|e| PluginError::ExecutionFailed(format!("Connection test failed: {}", e)))
     }
@@ -120,7 +117,8 @@ impl UnifiedPlugin for LlmBackendUnifiedPlugin {
         }
 
         // Validate the instance configuration
-        self.config.validate()
+        self.config
+            .validate()
             .map_err(|e| PluginError::InvalidConfiguration(format!("Invalid config: {}", e)))?;
 
         self.initialized = true;
@@ -134,7 +132,9 @@ impl UnifiedPlugin for LlmBackendUnifiedPlugin {
         }
 
         // Set as active in the instance manager
-        self.manager.set_active(&self.config.id).await
+        self.manager
+            .set_active(&self.config.id)
+            .await
             .map_err(|e| PluginError::ExecutionFailed(format!("Failed to activate: {}", e)))?;
 
         self.state = PluginState::Running;
@@ -166,14 +166,17 @@ impl UnifiedPlugin for LlmBackendUnifiedPlugin {
     async fn health_check(&self) -> Result<()> {
         if !matches!(self.state, PluginState::Running | PluginState::Initialized) {
             return Err(PluginError::ExecutionFailed(format!(
-                "Plugin not active: {:?}", self.state
+                "Plugin not active: {:?}",
+                self.state
             )));
         }
 
         // Check if backend is accessible
         let is_healthy = self.test_connection().await?;
         if !is_healthy {
-            return Err(PluginError::ExecutionFailed("Backend health check failed".to_string()));
+            return Err(PluginError::ExecutionFailed(
+                "Backend health check failed".to_string(),
+            ));
         }
 
         Ok(())
@@ -193,16 +196,15 @@ impl UnifiedPlugin for LlmBackendUnifiedPlugin {
                 Ok(serde_json::to_value(self.config.clone())
                     .unwrap_or_else(|_| serde_json::json!({})))
             }
-            "get_capabilities" => {
-                Ok(serde_json::to_value(self.config.capabilities.clone())
-                    .unwrap_or_else(|_| serde_json::json!({})))
-            }
+            "get_capabilities" => Ok(serde_json::to_value(self.config.capabilities.clone())
+                .unwrap_or_else(|_| serde_json::json!({}))),
             "set_active" => {
                 // This is handled by start(), but we can expose it as a command
                 Ok(serde_json::json!({"message": "Use start() to activate"}))
             }
             _ => Err(PluginError::ExecutionFailed(format!(
-                "Unknown command: {}", command
+                "Unknown command: {}",
+                command
             ))),
         }
     }
@@ -291,21 +293,30 @@ impl LlmBackendPluginFactory {
         };
 
         // Save to manager
-        self.manager.upsert_instance(instance.clone()).await
-            .map_err(|e| PluginError::InitializationFailed(format!("Failed to save instance: {}", e)))?;
+        self.manager
+            .upsert_instance(instance.clone())
+            .await
+            .map_err(|e| {
+                PluginError::InitializationFailed(format!("Failed to save instance: {}", e))
+            })?;
 
-        Ok(llm_backend_to_unified_plugin(instance, self.manager.clone()))
+        Ok(llm_backend_to_unified_plugin(
+            instance,
+            self.manager.clone(),
+        ))
     }
 
     /// Create a plugin from an existing instance ID.
-    pub async fn create_from_instance_id(
-        &self,
-        instance_id: &str,
-    ) -> Result<DynLlmBackendPlugin> {
-        let instance = self.manager.get_instance(instance_id)
+    pub async fn create_from_instance_id(&self, instance_id: &str) -> Result<DynLlmBackendPlugin> {
+        let instance = self
+            .manager
+            .get_instance(instance_id)
             .ok_or_else(|| PluginError::NotFound(format!("Instance {}", instance_id)))?;
 
-        Ok(llm_backend_to_unified_plugin(instance, self.manager.clone()))
+        Ok(llm_backend_to_unified_plugin(
+            instance,
+            self.manager.clone(),
+        ))
     }
 
     /// List all available backend types.
@@ -327,9 +338,9 @@ mod tests {
     fn test_plugin_factory() {
         // This test verifies the factory compiles
         // Full integration tests require an actual instance manager
-        let manager = Arc::new(LlmBackendInstanceManager::new(
-            Arc::new(edge_ai_storage::LlmBackendStore::open(":memory:").unwrap())
-        ));
+        let manager = Arc::new(LlmBackendInstanceManager::new(Arc::new(
+            edge_ai_storage::LlmBackendStore::open(":memory:").unwrap(),
+        )));
         let factory = LlmBackendPluginFactory::new(manager);
 
         let types = factory.available_types();
@@ -338,9 +349,9 @@ mod tests {
 
     #[test]
     fn test_get_backend_type() {
-        let manager = Arc::new(LlmBackendInstanceManager::new(
-            Arc::new(edge_ai_storage::LlmBackendStore::open(":memory:").unwrap())
-        ));
+        let manager = Arc::new(LlmBackendInstanceManager::new(Arc::new(
+            edge_ai_storage::LlmBackendStore::open(":memory:").unwrap(),
+        )));
         let factory = LlmBackendPluginFactory::new(manager);
 
         let ollama_type = factory.get_type("ollama");

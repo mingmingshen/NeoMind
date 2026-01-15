@@ -11,10 +11,14 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_rules::{
-    RuleEngine, CompiledRule, RuleId,
-    dsl::{RuleDslParser, ParsedRule, RuleError},
+    CompiledRule, RuleEngine, RuleId,
+    dsl::{ParsedRule, RuleDslParser, RuleError},
 };
-use edge_ai_tools::{Tool, ToolOutput, ToolError, error::Result as ToolResult, tool::{object_schema, string_property, array_property, boolean_property}};
+use edge_ai_tools::{
+    Tool, ToolError, ToolOutput,
+    error::Result as ToolResult,
+    tool::{array_property, boolean_property, object_schema, string_property},
+};
 
 /// GenerateRuleDsl tool - converts natural language to rule DSL.
 pub struct GenerateRuleDslTool {
@@ -126,18 +130,22 @@ impl Tool for GenerateRuleDslTool {
                 "description": string_property("Natural language description of the rule to generate"),
                 "device_ids": array_property("string", "Optional list of device IDs to include in context. If empty, all devices are included.")
             }),
-            vec!["description".to_string()]
+            vec!["description".to_string()],
         )
     }
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
-        let description = args["description"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("description must be a string".to_string()))?;
+        let description = args["description"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("description must be a string".to_string())
+        })?;
 
         let device_ids: Vec<String> = args["device_ids"]
             .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let context = self.generate_context(&device_ids).await;
@@ -207,7 +215,9 @@ impl ValidateRuleDslTool {
                 let device_types = self.device_types.read().await;
 
                 // Check if device exists
-                let device_exists = device_types.iter().any(|d| d.device_id == rule.condition.device_id);
+                let device_exists = device_types
+                    .iter()
+                    .any(|d| d.device_id == rule.condition.device_id);
                 if !device_exists {
                     warnings.push(format!(
                         "Device '{}' is not registered in the system",
@@ -216,7 +226,10 @@ impl ValidateRuleDslTool {
                 }
 
                 // Check if metric exists for device
-                if let Some(device) = device_types.iter().find(|d| d.device_id == rule.condition.device_id) {
+                if let Some(device) = device_types
+                    .iter()
+                    .find(|d| d.device_id == rule.condition.device_id)
+                {
                     if !device.metrics.contains(&rule.condition.metric) {
                         warnings.push(format!(
                             "Metric '{}' is not available for device '{}'. Available metrics: {}",
@@ -230,8 +243,12 @@ impl ValidateRuleDslTool {
                 // Validate actions
                 for (i, action) in rule.actions.iter().enumerate() {
                     match action {
-                        edge_ai_rules::RuleAction::Execute { device_id, command, .. } => {
-                            if let Some(device) = device_types.iter().find(|d| d.device_id == *device_id) {
+                        edge_ai_rules::RuleAction::Execute {
+                            device_id, command, ..
+                        } => {
+                            if let Some(device) =
+                                device_types.iter().find(|d| d.device_id == *device_id)
+                            {
                                 if !device.commands.contains(command) {
                                     warnings.push(format!(
                                         "Command '{}' is not available for device '{}'. Available commands: {}",
@@ -259,8 +276,7 @@ impl ValidateRuleDslTool {
                         if existing.name == rule.name {
                             warnings.push(format!(
                                 "A rule with name '{}' already exists (ID: {})",
-                                rule.name,
-                                existing.id
+                                rule.name, existing.id
                             ));
                         }
                     }
@@ -311,7 +327,7 @@ impl Tool for ValidateRuleDslTool {
             serde_json::json!({
                 "dsl": string_property("The rule DSL to validate")
             }),
-            vec!["dsl".to_string()]
+            vec!["dsl".to_string()],
         )
     }
 
@@ -425,7 +441,7 @@ impl Tool for CreateRuleTool {
                 "dsl": string_property("The rule DSL to create"),
                 "check_duplicates": boolean_property("Whether to check for duplicate rules. Defaults to true.")
             }),
-            vec!["dsl".to_string()]
+            vec!["dsl".to_string()],
         )
     }
 
@@ -439,9 +455,17 @@ impl Tool for CreateRuleTool {
         match self.create(dsl, check_duplicates).await {
             Ok(result) => Ok(ToolOutput::success(serde_json::to_value(result).unwrap())),
             Err(e) => match &e {
-                RuleError::Parse(msg) => Err(ToolError::InvalidArguments(format!("Parse error: {}", msg))),
-                RuleError::Validation(msg) => Err(ToolError::InvalidArguments(format!("Validation error: {}", msg))),
-                _ => Err(ToolError::Execution(format!("Failed to create rule: {}", e))),
+                RuleError::Parse(msg) => {
+                    Err(ToolError::InvalidArguments(format!("Parse error: {}", msg)))
+                }
+                RuleError::Validation(msg) => Err(ToolError::InvalidArguments(format!(
+                    "Validation error: {}",
+                    msg
+                ))),
+                _ => Err(ToolError::Execution(format!(
+                    "Failed to create rule: {}",
+                    e
+                ))),
             },
         }
     }

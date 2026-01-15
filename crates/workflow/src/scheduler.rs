@@ -44,9 +44,9 @@ impl Scheduler {
         _trigger_manager: Arc<TriggerManager>,
         _executor: Arc<Executor>,
     ) -> Result<()> {
-        let scheduler = JobScheduler::new()
-            .await
-            .map_err(|e| WorkflowError::ExecutionError(format!("Failed to create scheduler: {}", e)))?;
+        let scheduler = JobScheduler::new().await.map_err(|e| {
+            WorkflowError::ExecutionError(format!("Failed to create scheduler: {}", e))
+        })?;
 
         // Load tasks from trigger manager and register them
         // This would iterate through all cron triggers and create jobs
@@ -72,7 +72,11 @@ impl Scheduler {
         // If scheduler is running, add the job
         if let Some(_scheduler) = self.inner.read().await.as_ref() {
             // For now, just log the task - actual job creation depends on tokio_cron_scheduler API
-            tracing::info!("Would schedule task {} with cron: {}", task.id, task.cron_expression);
+            tracing::info!(
+                "Would schedule task {} with cron: {}",
+                task.id,
+                task.cron_expression
+            );
         }
 
         Ok(())

@@ -88,9 +88,15 @@ export interface DeviceControlProps {
   devices: Array<{ id: string; name?: string; deviceType: string; status: string }>
 
   /**
-   * Command definitions per device type
+   * Command definitions per device type (legacy)
+   * @deprecated Use deviceTypes instead - commands will be extracted from templates
    */
-  commandDefinitions: Record<string, CommandDefinition[]>
+  commandDefinitions?: Record<string, CommandDefinition[]>
+
+  /**
+   * Device type templates - commands will be automatically extracted from templates
+   */
+  deviceTypes?: Array<{ device_type: string; commands: Array<{ name: string; display_name?: string; payload_template: string; parameters?: Array<{ name: string; display_name?: string; data_type: string; default_value?: unknown; min?: number; max?: number; unit?: string; allowed_values?: unknown[] }> }> }>
 
   /**
    * Recent command history
@@ -132,6 +138,7 @@ export interface DeviceControlProps {
 export function DeviceControl({
   devices,
   commandDefinitions,
+  deviceTypes = [],
   commandHistory = [],
   onSendCommand,
   onRefreshDevices,
@@ -152,11 +159,38 @@ export function DeviceControl({
     return devices.find((d) => d.id === selectedDeviceId)
   }, [devices, selectedDeviceId])
 
-  // Get available commands for selected device
+  // Get available commands for selected device (from template or legacy definitions)
   const availableCommands = useMemo(() => {
     if (!selectedDevice) return []
-    return commandDefinitions[selectedDevice.deviceType] || []
-  }, [selectedDevice, commandDefinitions])
+    
+    // Try to get from device type template first (new architecture)
+    const deviceType = deviceTypes.find(dt => dt.device_type === selectedDevice.deviceType)
+    if (deviceType && deviceType.commands) {
+      return deviceType.commands.map(cmd => ({
+        name: cmd.name,
+        displayName: cmd.display_name || cmd.name,
+        topic: '', // Not needed in new architecture
+        payloadTemplate: cmd.payload_template,
+        parameters: cmd.parameters?.map(p => ({
+          name: p.name,
+          displayName: p.display_name || p.name,
+          dataType: p.data_type,
+          defaultValue: p.default_value,
+          minValue: p.min,
+          maxValue: p.max,
+          unit: p.unit,
+          allowedValues: p.allowed_values,
+        })) || [],
+      }))
+    }
+    
+    // Fallback to legacy commandDefinitions
+    if (commandDefinitions) {
+      return commandDefinitions[selectedDevice.deviceType] || []
+    }
+    
+    return []
+  }, [selectedDevice, deviceTypes, commandDefinitions])
 
   // Get current command definition
   const currentCommandDef = useMemo(() => {
@@ -615,7 +649,7 @@ export function DeviceControl({
                     <div className="flex items-center justify-between">
                       <Label className="text-sm">
                         {param.displayName || param.name}
-                        {param.required && <span className="text-red-500 ml-1">*</span>}
+                        {(param.defaultValue === undefined) && <span className="text-red-500 ml-1">*</span>}
                       </Label>
                       {(param.minValue !== undefined || param.maxValue !== undefined) && (
                         <span className="text-xs text-muted-foreground">

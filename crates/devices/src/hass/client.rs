@@ -1,8 +1,6 @@
 //! Home Assistant REST API client.
 
-use super::entities::{
-    HassConnectionConfig, HassEntityState, HassServiceCall, HassDomain,
-};
+use super::entities::{HassConnectionConfig, HassDomain, HassEntityState, HassServiceCall};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -44,8 +42,8 @@ pub struct HassClient {
 impl HassClient {
     /// Create a new Home Assistant client.
     pub fn new(config: HassConnectionConfig) -> HassResult<Self> {
-        let builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(config.timeout));
+        let builder =
+            reqwest::Client::builder().timeout(std::time::Duration::from_secs(config.timeout));
 
         let http_client = if !config.verify_ssl {
             builder
@@ -66,7 +64,11 @@ impl HassClient {
 
     /// Get the base API URL.
     fn api_url(&self, path: &str) -> String {
-        format!("{}/{}", self.config.api_base(), path.trim_start_matches('/'))
+        format!(
+            "{}/{}",
+            self.config.api_base(),
+            path.trim_start_matches('/')
+        )
     }
 
     /// Add authorization headers to a request.
@@ -109,10 +111,7 @@ impl HassClient {
     /// Get state for a specific entity.
     pub async fn get_state(&self, entity_id: &str) -> HassResult<HassEntityState> {
         let url = self.api_url(&format!("/states/{}", entity_id));
-        let response = self
-            .add_auth(self.http_client.get(&url))
-            .send()
-            .await?;
+        let response = self.add_auth(self.http_client.get(&url)).send().await?;
 
         match response.status() {
             reqwest::StatusCode::OK => {
@@ -131,7 +130,10 @@ impl HassClient {
     }
 
     /// Get entities filtered by domain.
-    pub async fn get_states_by_domain(&self, domain: HassDomain) -> HassResult<Vec<HassEntityState>> {
+    pub async fn get_states_by_domain(
+        &self,
+        domain: HassDomain,
+    ) -> HassResult<Vec<HassEntityState>> {
         let all_states = self.get_states().await?;
         let domain_str = domain.as_str();
 
@@ -172,10 +174,7 @@ impl HassClient {
 
     /// Call a service.
     pub async fn call_service(&self, call: HassServiceCall) -> HassResult<JsonValue> {
-        let url = self.api_url(&format!(
-            "/services/{}/{}",
-            call.domain, call.service
-        ));
+        let url = self.api_url(&format!("/services/{}/{}", call.domain, call.service));
 
         let response = self
             .add_auth(self.http_client.post(&url))
@@ -197,13 +196,21 @@ impl HassClient {
     pub async fn turn_on(&self, entity_id: &str) -> HassResult<()> {
         let domain = HassDomain::from_entity_id(entity_id);
         let service = match domain {
-            HassDomain::Switch | HassDomain::Light | HassDomain::Fan | HassDomain::InputBoolean
-            | HassDomain::Cover | HassDomain::Lock => "turn_on",
+            HassDomain::Switch
+            | HassDomain::Light
+            | HassDomain::Fan
+            | HassDomain::InputBoolean
+            | HassDomain::Cover
+            | HassDomain::Lock => "turn_on",
             HassDomain::MediaPlayer => "turn_on",
             _ => "turn_on",
         };
 
-        let call = HassServiceCall::new(domain.as_str().to_string(), service.to_string(), entity_id.to_string());
+        let call = HassServiceCall::new(
+            domain.as_str().to_string(),
+            service.to_string(),
+            entity_id.to_string(),
+        );
         self.call_service(call).await?;
         Ok(())
     }
@@ -212,13 +219,21 @@ impl HassClient {
     pub async fn turn_off(&self, entity_id: &str) -> HassResult<()> {
         let domain = HassDomain::from_entity_id(entity_id);
         let service = match domain {
-            HassDomain::Switch | HassDomain::Light | HassDomain::Fan | HassDomain::InputBoolean
-            | HassDomain::Cover | HassDomain::Lock => "turn_off",
+            HassDomain::Switch
+            | HassDomain::Light
+            | HassDomain::Fan
+            | HassDomain::InputBoolean
+            | HassDomain::Cover
+            | HassDomain::Lock => "turn_off",
             HassDomain::MediaPlayer => "turn_off",
             _ => "turn_off",
         };
 
-        let call = HassServiceCall::new(domain.as_str().to_string(), service.to_string(), entity_id.to_string());
+        let call = HassServiceCall::new(
+            domain.as_str().to_string(),
+            service.to_string(),
+            entity_id.to_string(),
+        );
         self.call_service(call).await?;
         Ok(())
     }
@@ -290,7 +305,11 @@ impl HassClient {
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter_map(|v| v.get("entity_id").and_then(|e| e.as_str()).map(String::from))
+                    .filter_map(|v| {
+                        v.get("entity_id")
+                            .and_then(|e| e.as_str())
+                            .map(String::from)
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -327,7 +346,10 @@ mod tests {
 
         let client = HassClient::new(config).unwrap();
 
-        assert_eq!(client.api_url("/states"), "http://localhost:8123/api/states");
+        assert_eq!(
+            client.api_url("/states"),
+            "http://localhost:8123/api/states"
+        );
         assert_eq!(client.api_url("states"), "http://localhost:8123/api/states");
         assert_eq!(
             client.api_url("/services/homeassistant/turn_on"),

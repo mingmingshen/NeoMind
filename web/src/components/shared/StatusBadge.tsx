@@ -3,7 +3,7 @@ import { getStatusColor, getStatusLabel } from '@/lib/utils/status'
 import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  'inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium transition-colors',
+  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-colors',
   {
     variants: {
       variant: {
@@ -29,6 +29,7 @@ const badgeVariants = cva(
 export interface StatusBadgeProps extends VariantProps<typeof badgeVariants> {
   status: string
   className?: string
+  showDot?: boolean
 }
 
 /**
@@ -37,14 +38,23 @@ export interface StatusBadgeProps extends VariantProps<typeof badgeVariants> {
  * @example
  * <StatusBadge status="online" />
  * <StatusBadge status="pending" />
- * <StatusBadge status="failed" size="sm" />
+ * <StatusBadge status="failed" size="sm" showDot />
  */
-export function StatusBadge({ status, className }: StatusBadgeProps) {
+export function StatusBadge({ status, className, showDot = true }: StatusBadgeProps) {
   const color = getStatusColor(status)
   const label = getStatusLabel(status)
+  const isOnline = ['online', 'connected', 'active'].includes(status.toLowerCase())
 
   return (
     <span className={cn(badgeVariants({ variant: color }), className)}>
+      {showDot && (
+        <span
+          className={cn(
+            'w-1.5 h-1.5 rounded-full',
+            isOnline ? 'bg-success animate-pulse' : 'bg-muted-foreground'
+          )}
+        />
+      )}
       {label}
     </span>
   )

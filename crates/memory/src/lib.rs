@@ -45,23 +45,19 @@
 //! ```
 
 pub mod error;
-pub mod short_term;
-pub mod mid_term;
 pub mod long_term;
+pub mod mid_term;
+pub mod short_term;
 pub mod tiered;
 
 // Re-export commonly used types
-pub use error::{MemoryError, Result, NeoTalkError};
-pub use tiered::{TieredMemory, TieredMemoryConfig, MemoryStats, MemoryQueryResult};
-pub use short_term::{ShortTermMemory, MemoryMessage, DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS};
-pub use mid_term::{MidTermMemory, ConversationEntry, SearchResult, SimpleEmbedding};
+pub use error::{MemoryError, NeoTalkError, Result};
 pub use long_term::{
-    LongTermMemory,
-    KnowledgeEntry,
-    KnowledgeCategory,
-    TroubleshootingCase,
-    SolutionStep,
+    KnowledgeCategory, KnowledgeEntry, LongTermMemory, SolutionStep, TroubleshootingCase,
 };
+pub use mid_term::{ConversationEntry, MidTermMemory, SearchResult, SimpleEmbedding};
+pub use short_term::{DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS, MemoryMessage, ShortTermMemory};
+pub use tiered::{MemoryQueryResult, MemoryStats, TieredMemory, TieredMemoryConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

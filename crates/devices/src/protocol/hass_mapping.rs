@@ -3,13 +3,12 @@
 //! Maps device capabilities to Home Assistant entities and handles
 //! the Home Assistant WebSocket/REST API.
 
+use crate::mdl::{MetricDataType, MetricValue};
+use crate::protocol::mapping::{
+    Address, MappingConfig, MappingError, MappingResult, ProtocolMapping,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::mdl::{MetricValue, MetricDataType};
-use crate::protocol::mapping::{
-    ProtocolMapping, Address, MappingConfig, MappingResult,
-    MappingError,
-};
 
 /// HASS domain (platform) types.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,7 +214,10 @@ impl HassMapping {
     }
 
     /// Parse a HASS state value (string) to appropriate MetricValue.
-    fn parse_state_value(value: &str, data_type: Option<MetricDataType>) -> MappingResult<MetricValue> {
+    fn parse_state_value(
+        value: &str,
+        data_type: Option<MetricDataType>,
+    ) -> MappingResult<MetricValue> {
         let target_type = data_type.unwrap_or(MetricDataType::String);
 
         match target_type {
@@ -226,17 +228,17 @@ impl HassMapping {
                     _ => Ok(MetricValue::Boolean(!value.is_empty())),
                 }
             }
-            MetricDataType::Integer => {
-                value.parse::<i64>()
-                    .map(MetricValue::Integer)
-                    .map_err(|_| MappingError::ParseError(format!("Not an integer: {}", value)))
-            }
-            MetricDataType::Float => {
-                value.parse::<f64>()
-                    .map(MetricValue::Float)
-                    .map_err(|_| MappingError::ParseError(format!("Not a float: {}", value)))
-            }
+            MetricDataType::Integer => value
+                .parse::<i64>()
+                .map(MetricValue::Integer)
+                .map_err(|_| MappingError::ParseError(format!("Not an integer: {}", value))),
+            MetricDataType::Float => value
+                .parse::<f64>()
+                .map(MetricValue::Float)
+                .map_err(|_| MappingError::ParseError(format!("Not a float: {}", value))),
             MetricDataType::String => Ok(MetricValue::String(value.to_string())),
+            // For Enum types, treat as String
+            MetricDataType::Enum { .. } => Ok(MetricValue::String(value.to_string())),
         }
     }
 }
@@ -251,7 +253,9 @@ impl ProtocolMapping for HassMapping {
     }
 
     fn metric_address(&self, capability_name: &str) -> Option<Address> {
-        self.config.metric_mappings.get(capability_name)
+        self.config
+            .metric_mappings
+            .get(capability_name)
             .map(|mapping| match &mapping.access {
                 HassValueAccess::State => Address::Hass {
                     entity_id: mapping.entity_id.clone(),
@@ -269,19 +273,32 @@ impl ProtocolMapping for HassMapping {
     }
 
     fn command_address(&self, command_name: &str) -> Option<Address> {
-        self.config.command_mappings.get(command_name)
+        self.config
+            .command_mappings
+            .get(command_name)
             .map(|mapping| Address::Hass {
-                entity_id: format!("service:{}/{}", mapping.service_domain.clone()
-                    .unwrap_or_else(|| {
+                entity_id: format!(
+                    "service:{}/{}",
+                    mapping.service_domain.clone().unwrap_or_else(|| {
                         // Extract domain from entity_id
-                        mapping.entity_id.split('.').next().unwrap_or("homeassistant").to_string()
-                    }), mapping.service),
+                        mapping
+                            .entity_id
+                            .split('.')
+                            .next()
+                            .unwrap_or("homeassistant")
+                            .to_string()
+                    }),
+                    mapping.service
+                ),
                 attribute: None,
             })
     }
 
     fn parse_metric(&self, capability_name: &str, raw_data: &[u8]) -> MappingResult<MetricValue> {
-        let mapping = self.config.metric_mappings.get(capability_name)
+        let mapping = self
+            .config
+            .metric_mappings
+            .get(capability_name)
             .ok_or_else(|| MappingError::CapabilityNotFound(capability_name.to_string()))?;
 
         // HASS data is typically JSON with a "state" field and "attributes" object
@@ -289,35 +306,33 @@ impl ProtocolMapping for HassMapping {
             .map_err(|e| MappingError::ParseError(format!("Invalid HASS JSON: {}", e)))?;
 
         let value_str = match &mapping.access {
-            HassValueAccess::State => {
-                json.get("state")
-                    .or_else(|| json.get("value"))
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| MappingError::ParseError("No state in HASS response".to_string()))?
-            }
-            HassValueAccess::Attribute(attr) => {
-                json.get("attributes")
-                    .and_then(|attrs| attrs.get(attr))
-                    .and_then(|v| v.as_str())
-                    .or_else(|| json.get(attr).and_then(|v| v.as_str()))
-                    .ok_or_else(|| MappingError::ParseError(
-                        format!("Attribute '{}' not found", attr)
-                    ))?
-            }
+            HassValueAccess::State => json
+                .get("state")
+                .or_else(|| json.get("value"))
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| MappingError::ParseError("No state in HASS response".to_string()))?,
+            HassValueAccess::Attribute(attr) => json
+                .get("attributes")
+                .and_then(|attrs| attrs.get(attr))
+                .and_then(|v| v.as_str())
+                .or_else(|| json.get(attr).and_then(|v| v.as_str()))
+                .ok_or_else(|| {
+                    MappingError::ParseError(format!("Attribute '{}' not found", attr))
+                })?,
             HassValueAccess::AttributePath(path) => {
                 let mut current = json.get("attributes").unwrap_or(&json);
                 for segment in path {
-                    current = current.get(segment)
-                        .ok_or_else(|| MappingError::ParseError(
-                            format!("Path segment '{}' not found", segment)
-                        ))?;
+                    current = current.get(segment).ok_or_else(|| {
+                        MappingError::ParseError(format!("Path segment '{}' not found", segment))
+                    })?;
                 }
-                current.as_str()
+                current
+                    .as_str()
                     .ok_or_else(|| MappingError::ParseError("Value is not a string".to_string()))?
             }
         };
 
-        let mut value = Self::parse_state_value(value_str, mapping.data_type)?;
+        let mut value = Self::parse_state_value(value_str, mapping.data_type.clone())?;
 
         // Apply unit conversion if configured
         if let Some(conversion) = mapping.unit_conversion {
@@ -334,7 +349,10 @@ impl ProtocolMapping for HassMapping {
         command_name: &str,
         params: &HashMap<String, MetricValue>,
     ) -> MappingResult<Vec<u8>> {
-        let mapping = self.config.command_mappings.get(command_name)
+        let mapping = self
+            .config
+            .command_mappings
+            .get(command_name)
             .ok_or_else(|| MappingError::CommandNotFound(command_name.to_string()))?;
 
         // Build service data from parameters
@@ -343,7 +361,7 @@ impl ProtocolMapping for HassMapping {
         // Add entity_id
         service_data.insert(
             "entity_id".to_string(),
-            serde_json::Value::String(mapping.entity_id.clone())
+            serde_json::Value::String(mapping.entity_id.clone()),
         );
 
         // Map parameters according to param_mapping
@@ -351,12 +369,12 @@ impl ProtocolMapping for HassMapping {
             if let Some(value) = params.get(param_key) {
                 let json_value = match value {
                     MetricValue::String(s) => serde_json::Value::String(s.clone()),
-                    MetricValue::Integer(i) => serde_json::Value::Number(
-                        serde_json::Number::from(*i)
-                    ),
+                    MetricValue::Integer(i) => {
+                        serde_json::Value::Number(serde_json::Number::from(*i))
+                    }
                     MetricValue::Float(f) => serde_json::Value::Number(
                         serde_json::Number::from_f64(*f)
-                            .unwrap_or_else(|| serde_json::Number::from(0))
+                            .unwrap_or_else(|| serde_json::Number::from(0)),
                     ),
                     MetricValue::Boolean(b) => serde_json::Value::Bool(*b),
                     MetricValue::Null => serde_json::Value::Null,
@@ -371,12 +389,12 @@ impl ProtocolMapping for HassMapping {
             for (key, value) in params {
                 let json_value = match value {
                     MetricValue::String(s) => serde_json::Value::String(s.clone()),
-                    MetricValue::Integer(i) => serde_json::Value::Number(
-                        serde_json::Number::from(*i)
-                    ),
+                    MetricValue::Integer(i) => {
+                        serde_json::Value::Number(serde_json::Number::from(*i))
+                    }
                     MetricValue::Float(f) => serde_json::Value::Number(
                         serde_json::Number::from_f64(*f)
-                            .unwrap_or_else(|| serde_json::Number::from(0))
+                            .unwrap_or_else(|| serde_json::Number::from(0)),
                     ),
                     MetricValue::Boolean(b) => serde_json::Value::Bool(*b),
                     MetricValue::Null => serde_json::Value::Null,
@@ -417,11 +435,7 @@ impl HassMappingBuilder {
     }
 
     /// Add a sensor entity mapping.
-    pub fn add_sensor(
-        mut self,
-        name: impl Into<String>,
-        entity_id: impl Into<String>,
-    ) -> Self {
+    pub fn add_sensor(mut self, name: impl Into<String>, entity_id: impl Into<String>) -> Self {
         self.metric_mappings.insert(
             name.into(),
             HassMetricMapping {
@@ -528,14 +542,19 @@ mod tests {
     fn test_hass_entity_id_attribute() {
         let entity = HassEntityId::new(HassDomain::Sensor, "temperature_1");
         let addr = entity.attribute("unit_of_measurement");
-        assert!(matches!(addr, Address::Hass { entity_id, attribute: Some(_) }
-            if entity_id == "sensor.temperature_1"));
+        assert!(
+            matches!(addr, Address::Hass { entity_id, attribute: Some(_) }
+            if entity_id == "sensor.temperature_1")
+        );
     }
 
     #[test]
     fn test_hass_domain_from_str() {
         assert_eq!(HassDomain::from_str("sensor"), Some(HassDomain::Sensor));
-        assert_eq!(HassDomain::from_str("binary_sensor"), Some(HassDomain::BinarySensor));
+        assert_eq!(
+            HassDomain::from_str("binary_sensor"),
+            Some(HassDomain::BinarySensor)
+        );
         assert_eq!(HassDomain::from_str("switch"), Some(HassDomain::Switch));
         assert_eq!(HassDomain::from_str("unknown"), None);
     }
@@ -588,7 +607,9 @@ mod tests {
             .add_switch_command("toggle", "switch.test", "toggle")
             .build();
 
-        let result = mapping.serialize_command("toggle", &HashMap::new()).unwrap();
+        let result = mapping
+            .serialize_command("toggle", &HashMap::new())
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["entity_id"], "switch.test");
     }
@@ -608,7 +629,9 @@ mod tests {
             )
             .build();
 
-        let result = mapping.serialize_command("set_brightness", &param_map).unwrap();
+        let result = mapping
+            .serialize_command("set_brightness", &param_map)
+            .unwrap();
         let json: serde_json::Value = serde_json::from_slice(&result).unwrap();
         assert_eq!(json["entity_id"], "light.test");
         assert_eq!(json["brightness"], 255);

@@ -47,27 +47,26 @@
 //! }
 //! ```
 
-pub mod entities;
 pub mod client;
-pub mod websocket;
+pub mod entities;
 pub mod mapper;
 pub mod templates;
+pub mod websocket;
 
 // Re-exports for convenience
-pub use entities::{
-    HassAuth, HassConnectionConfig, HassEntityState, HassEntityAttributes,
-    HassDeviceInfo, HassDomain, HassDeviceClass, HassServiceCall, HassEvent,
-};
 pub use client::{HassClient, HassClientError, HassResult};
-pub use websocket::{
-    HassWebSocketClient, HassWsError, HassWsResult, HassWsEventData,
-    HassSubscription,
+pub use entities::{
+    HassAuth, HassConnectionConfig, HassDeviceClass, HassDeviceInfo, HassDomain,
+    HassEntityAttributes, HassEntityState, HassEvent, HassServiceCall,
 };
 pub use mapper::{
-    HassEntityMapper, EntityMapping, MetricMapping, CommandMapping,
-    MappedDevice, MappedDeviceInfo, MappingError, MappingResult,
+    CommandMapping, EntityMapping, HassEntityMapper, MappedDevice, MappedDeviceInfo, MappingError,
+    MappingResult, MetricMapping,
 };
-pub use templates::{HassDeviceTemplate, TemplateMetric, TemplateCommand, builtin_templates};
+pub use templates::{HassDeviceTemplate, TemplateCommand, TemplateMetric, builtin_templates};
+pub use websocket::{
+    HassSubscription, HassWebSocketClient, HassWsError, HassWsEventData, HassWsResult,
+};
 
 use serde::{Deserialize, Serialize};
 

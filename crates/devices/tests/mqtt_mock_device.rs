@@ -4,9 +4,9 @@
 //! device management system. Supports various device types including image
 //! capture devices.
 
-use std::time::Duration;
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use serde_json::json;
+use std::time::Duration;
 use tokio::time::sleep;
 
 /// Mock MQTT device simulator
@@ -80,7 +80,9 @@ impl MqttMockDevice {
 
         let topic = "neotalk/discovery/announce";
         let payload: Vec<u8> = serde_json::to_vec(&announcement)?;
-        self.client.publish(topic, QoS::AtLeastOnce, false, payload).await?;
+        self.client
+            .publish(topic, QoS::AtLeastOnce, false, payload)
+            .await?;
 
         println!("Mock device {} announced", self.device_id);
         Ok(())
@@ -94,27 +96,45 @@ impl MqttMockDevice {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let topic = self.build_metric_topic(metric_name);
         let payload = value.to_string().into_bytes();
-        self.client.publish(&topic, QoS::AtLeastOnce, false, payload).await?;
+        self.client
+            .publish(&topic, QoS::AtLeastOnce, false, payload)
+            .await?;
         Ok(())
     }
 
     /// Publish numeric metric
-    pub async fn publish_float(&self, metric_name: &str, value: f64) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish_float(
+        &self,
+        metric_name: &str,
+        value: f64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.publish_metric(metric_name, json!(value)).await
     }
 
     /// Publish integer metric
-    pub async fn publish_int(&self, metric_name: &str, value: i64) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish_int(
+        &self,
+        metric_name: &str,
+        value: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.publish_metric(metric_name, json!(value)).await
     }
 
     /// Publish boolean metric
-    pub async fn publish_bool(&self, metric_name: &str, value: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish_bool(
+        &self,
+        metric_name: &str,
+        value: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.publish_metric(metric_name, json!(value)).await
     }
 
     /// Publish string metric
-    pub async fn publish_string(&self, metric_name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish_string(
+        &self,
+        metric_name: &str,
+        value: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.publish_metric(metric_name, json!(value)).await
     }
 
@@ -137,9 +157,15 @@ impl MqttMockDevice {
         });
 
         let payload: Vec<u8> = serde_json::to_vec(&payload_json)?;
-        self.client.publish(&topic, QoS::AtLeastOnce, false, payload).await?;
+        self.client
+            .publish(&topic, QoS::AtLeastOnce, false, payload)
+            .await?;
 
-        println!("Mock device {} published image: {} bytes", self.device_id, image_data.len());
+        println!(
+            "Mock device {} published image: {} bytes",
+            self.device_id,
+            image_data.len()
+        );
         Ok(())
     }
 
@@ -159,7 +185,9 @@ impl MqttMockDevice {
         });
 
         let payload: Vec<u8> = serde_json::to_vec(&payload_json)?;
-        self.client.publish(&topic, QoS::AtLeastOnce, false, payload).await?;
+        self.client
+            .publish(&topic, QoS::AtLeastOnce, false, payload)
+            .await?;
 
         Ok(())
     }
@@ -195,8 +223,13 @@ pub struct Dht22MockDevice {
 }
 
 impl Dht22MockDevice {
-    pub async fn new(device_id: impl Into<String>, broker: &str, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        let device = MqttMockDevice::new(device_id, "dht22_sensor", broker, port).await?
+    pub async fn new(
+        device_id: impl Into<String>,
+        broker: &str,
+        port: u16,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let device = MqttMockDevice::new(device_id, "dht22_sensor", broker, port)
+            .await?
             .with_name("DHT22 温湿度传感器");
         Ok(Self { device })
     }
@@ -205,8 +238,14 @@ impl Dht22MockDevice {
         self.device.announce().await
     }
 
-    pub async fn publish_reading(&self, temperature: f64, humidity: f64) -> Result<(), Box<dyn std::error::Error>> {
-        self.device.publish_float("temperature", temperature).await?;
+    pub async fn publish_reading(
+        &self,
+        temperature: f64,
+        humidity: f64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.device
+            .publish_float("temperature", temperature)
+            .await?;
         self.device.publish_float("humidity", humidity).await?;
         Ok(())
     }
@@ -223,10 +262,18 @@ pub struct IpCameraMockDevice {
 }
 
 impl IpCameraMockDevice {
-    pub async fn new(device_id: impl Into<String>, broker: &str, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        let device = MqttMockDevice::new(device_id, "ip_camera", broker, port).await?
+    pub async fn new(
+        device_id: impl Into<String>,
+        broker: &str,
+        port: u16,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let device = MqttMockDevice::new(device_id, "ip_camera", broker, port)
+            .await?
             .with_name("IP 摄像头");
-        Ok(Self { device, image_counter: 0 })
+        Ok(Self {
+            device,
+            image_counter: 0,
+        })
     }
 
     pub async fn announce(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -239,9 +286,15 @@ impl IpCameraMockDevice {
         let image_size = 1024 + (self.image_counter % 10) * 512;
         let mock_image_data = vec![0xFFu8; image_size]; // JPEG SOI marker + padding
 
-        self.device.publish_image("image", &mock_image_data, "image/jpeg").await?;
-        self.device.publish_image_metadata(1920, 1080, "jpeg").await?;
-        self.device.publish_string("resolution", "1920x1080").await?;
+        self.device
+            .publish_image("image", &mock_image_data, "image/jpeg")
+            .await?;
+        self.device
+            .publish_image_metadata(1920, 1080, "jpeg")
+            .await?;
+        self.device
+            .publish_string("resolution", "1920x1080")
+            .await?;
         self.device.publish_float("fps", 30.0).await?;
 
         Ok(())
@@ -264,10 +317,18 @@ pub struct ImageSensorMockDevice {
 }
 
 impl ImageSensorMockDevice {
-    pub async fn new(device_id: impl Into<String>, broker: &str, port: u16) -> Result<Self, Box<dyn std::error::Error>> {
-        let device = MqttMockDevice::new(device_id, "image_sensor", broker, port).await?
+    pub async fn new(
+        device_id: impl Into<String>,
+        broker: &str,
+        port: u16,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let device = MqttMockDevice::new(device_id, "image_sensor", broker, port)
+            .await?
             .with_name("图像传感器");
-        Ok(Self { device, image_counter: 0 })
+        Ok(Self {
+            device,
+            image_counter: 0,
+        })
     }
 
     pub async fn announce(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -282,12 +343,18 @@ impl ImageSensorMockDevice {
         let mut full_image = mock_image_data;
         full_image.resize(image_size, 0);
 
-        self.device.publish_image("image_data", &full_image, "image/png").await?;
-        self.device.publish_int("image_timestamp", chrono::Utc::now().timestamp()).await?;
+        self.device
+            .publish_image("image_data", &full_image, "image/png")
+            .await?;
+        self.device
+            .publish_int("image_timestamp", chrono::Utc::now().timestamp())
+            .await?;
         self.device.publish_int("image_width", 640).await?;
         self.device.publish_int("image_height", 480).await?;
         self.device.publish_string("image_format", "png").await?;
-        self.device.publish_int("image_size", image_size as i64).await?;
+        self.device
+            .publish_int("image_size", image_size as i64)
+            .await?;
 
         Ok(())
     }
@@ -311,7 +378,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_dht22_mock_device() {
-        let sensor = Dht22MockDevice::new("dht22_001", "localhost", 1883).await.unwrap();
+        let sensor = Dht22MockDevice::new("dht22_001", "localhost", 1883)
+            .await
+            .unwrap();
         sensor.announce().await.unwrap();
         sensor.publish_reading(25.5, 60.0).await.unwrap();
     }
@@ -319,7 +388,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_ip_camera_mock_device() {
-        let camera = IpCameraMockDevice::new("cam_001", "localhost", 1883).await.unwrap();
+        let camera = IpCameraMockDevice::new("cam_001", "localhost", 1883)
+            .await
+            .unwrap();
         camera.announce().await.unwrap();
         camera.capture_image().await.unwrap();
         camera.publish_motion(true).await.unwrap();
@@ -328,7 +399,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_image_sensor_mock_device() {
-        let sensor = ImageSensorMockDevice::new("img_sensor_001", "localhost", 1883).await.unwrap();
+        let sensor = ImageSensorMockDevice::new("img_sensor_001", "localhost", 1883)
+            .await
+            .unwrap();
         sensor.announce().await.unwrap();
         sensor.trigger_capture().await.unwrap();
     }

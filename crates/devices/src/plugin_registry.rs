@@ -3,18 +3,21 @@
 //! This module provides a registry for managing device adapters as plugins,
 //! bridging between the adapter system and the unified plugin system.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 use crate::adapter::DeviceAdapter;
 use crate::plugin_adapter::{
-    DeviceAdapterPlugin, DeviceAdapterPluginFactory,
-    AdapterPluginInfo, DeviceAdapterStats,
+    AdapterPluginInfo, DeviceAdapterPlugin, DeviceAdapterPluginFactory, DeviceAdapterStats,
 };
-use edge_ai_core::{EventBus, plugin::{PluginType, PluginLoadOptions, UnifiedPlugin}};
+use crate::service::DeviceService;
 use anyhow::Result;
+use edge_ai_core::{
+    EventBus,
+    plugin::{PluginLoadOptions, PluginType, UnifiedPlugin},
+};
 
 /// Configuration for registering a device adapter plugin.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -118,9 +121,20 @@ pub struct DeviceAdapterPluginRegistry {
     event_bus: EventBus,
     /// NeoTalk version for compatibility
     neotalk_version: String,
+    /// Optional DeviceService for automatic adapter registration
+    device_service: RwLock<Option<Arc<DeviceService>>>,
 }
 
 impl DeviceAdapterPluginRegistry {
+    /// Try to get the global device adapter plugin registry without initializing.
+    /// Returns None if the registry hasn't been initialized yet.
+    pub fn try_get() -> Option<Arc<Self>> {
+        use std::sync::OnceLock;
+        static REGISTRY: OnceLock<Arc<DeviceAdapterPluginRegistry>> = OnceLock::new();
+
+        REGISTRY.get().cloned()
+    }
+
     /// Get the global device adapter plugin registry.
     /// This will initialize the registry on first call with the provided event bus.
     /// Subsequent calls will return the same instance.
@@ -128,22 +142,23 @@ impl DeviceAdapterPluginRegistry {
         use std::sync::OnceLock;
         static REGISTRY: OnceLock<Arc<DeviceAdapterPluginRegistry>> = OnceLock::new();
 
-        REGISTRY.get_or_init(|| {
-            Arc::new(Self {
-                plugins: RwLock::new(HashMap::new()),
-                configs: RwLock::new(HashMap::new()),
-                event_bus,
-                neotalk_version: env!("CARGO_PKG_VERSION").to_string(),
+        REGISTRY
+            .get_or_init(|| {
+                Arc::new(Self {
+                    plugins: RwLock::new(HashMap::new()),
+                    configs: RwLock::new(HashMap::new()),
+                    event_bus,
+                    neotalk_version: env!("CARGO_PKG_VERSION").to_string(),
+                    device_service: RwLock::new(None),
+                })
             })
-        }).clone()
+            .clone()
     }
 
-    /// Try to get the global registry without initializing.
-    /// Returns None if the registry hasn't been initialized yet.
-    pub fn try_get() -> Option<Arc<Self>> {
-        use std::sync::OnceLock;
-        static REGISTRY: OnceLock<Arc<DeviceAdapterPluginRegistry>> = OnceLock::new();
-        REGISTRY.get().cloned()
+    /// Set the DeviceService for automatic adapter registration.
+    /// When adapters are registered, they will also be registered with DeviceService.
+    pub async fn set_device_service(&self, device_service: Arc<DeviceService>) {
+        *self.device_service.write().await = Some(device_service);
     }
 
     /// Create a new device adapter plugin registry.
@@ -155,37 +170,49 @@ impl DeviceAdapterPluginRegistry {
             configs: RwLock::new(HashMap::new()),
             event_bus,
             neotalk_version: env!("CARGO_PKG_VERSION").to_string(),
+            device_service: RwLock::new(None),
         }
     }
 
     /// Register a device adapter as a plugin.
+    /// Automatically registers the adapter with DeviceService if available.
     pub async fn register_adapter(
         &self,
         adapter: Arc<dyn DeviceAdapter>,
         config: AdapterPluginConfig,
     ) -> Result<()> {
-        let plugin = DeviceAdapterPluginFactory::create_plugin(adapter, self.event_bus.clone());
+        let adapter_id = config.id.clone();
+        let plugin =
+            DeviceAdapterPluginFactory::create_plugin(adapter.clone(), self.event_bus.clone());
 
         // Store the plugin
         {
             let mut plugins = self.plugins.write().await;
-            plugins.insert(config.id.clone(), plugin);
+            plugins.insert(adapter_id.clone(), plugin);
         }
 
         // Store the configuration
         {
             let mut configs = self.configs.write().await;
-            configs.insert(config.id.clone(), config);
+            configs.insert(adapter_id.clone(), config);
+        }
+
+        // Also register with DeviceService for unified access
+        if let Some(device_service) = self.device_service.read().await.as_ref() {
+            device_service
+                .register_adapter(adapter_id.clone(), adapter)
+                .await;
+            tracing::debug!(
+                "Adapter '{}' also registered with DeviceService",
+                adapter_id
+            );
         }
 
         Ok(())
     }
 
     /// Create and register an adapter from configuration.
-    pub async fn register_from_config(
-        &self,
-        config: AdapterPluginConfig,
-    ) -> Result<()> {
+    pub async fn register_from_config(&self, config: AdapterPluginConfig) -> Result<()> {
         // Create the adapter based on type
         let adapter = self.create_adapter(&config).await?;
 
@@ -196,10 +223,7 @@ impl DeviceAdapterPluginRegistry {
     }
 
     /// Create an adapter from configuration.
-    async fn create_adapter(
-        &self,
-        config: &AdapterPluginConfig,
-    ) -> Result<Arc<dyn DeviceAdapter>> {
+    async fn create_adapter(&self, config: &AdapterPluginConfig) -> Result<Arc<dyn DeviceAdapter>> {
         use crate::adapters::create_adapter;
 
         match config.adapter_type.as_str() {
@@ -236,7 +260,10 @@ impl DeviceAdapterPluginRegistry {
                     Err(anyhow::anyhow!("HASS feature not enabled"))
                 }
             }
-            _ => Err(anyhow::anyhow!("Unknown adapter type: {}", config.adapter_type)),
+            _ => Err(anyhow::anyhow!(
+                "Unknown adapter type: {}",
+                config.adapter_type
+            )),
         }
     }
 
@@ -255,7 +282,10 @@ impl DeviceAdapterPluginRegistry {
     }
 
     /// Get a plugin by ID.
-    pub async fn get_plugin(&self, id: &str) -> Option<Arc<tokio::sync::RwLock<DeviceAdapterPlugin>>> {
+    pub async fn get_plugin(
+        &self,
+        id: &str,
+    ) -> Option<Arc<tokio::sync::RwLock<DeviceAdapterPlugin>>> {
         self.plugins.read().await.get(id).cloned()
     }
 
@@ -303,11 +333,14 @@ impl DeviceAdapterPluginRegistry {
 
     /// Start a device adapter plugin.
     pub async fn start_plugin(&self, id: &str) -> Result<()> {
-        let plugin = self.get_plugin(id).await
+        let plugin = self
+            .get_plugin(id)
+            .await
             .ok_or_else(|| anyhow::anyhow!("Plugin not found: {}", id))?;
 
         let mut p = plugin.write().await;
-        p.start().await
+        p.start()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to start plugin: {}", e))?;
 
         Ok(())
@@ -315,11 +348,14 @@ impl DeviceAdapterPluginRegistry {
 
     /// Stop a device adapter plugin.
     pub async fn stop_plugin(&self, id: &str) -> Result<()> {
-        let plugin = self.get_plugin(id).await
+        let plugin = self
+            .get_plugin(id)
+            .await
             .ok_or_else(|| anyhow::anyhow!("Plugin not found: {}", id))?;
 
         let mut p = plugin.write().await;
-        p.stop().await
+        p.stop()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to stop plugin: {}", e))?;
 
         Ok(())
@@ -327,7 +363,9 @@ impl DeviceAdapterPluginRegistry {
 
     /// Get devices managed by a specific adapter plugin.
     pub async fn get_adapter_devices(&self, id: &str) -> Result<Vec<String>> {
-        let plugin = self.get_plugin(id).await
+        let plugin = self
+            .get_plugin(id)
+            .await
             .ok_or_else(|| anyhow::anyhow!("Plugin not found: {}", id))?;
 
         let p = plugin.read().await;
@@ -404,6 +442,7 @@ impl Clone for DeviceAdapterPluginRegistry {
             configs: RwLock::new(HashMap::new()),
             event_bus: self.event_bus.clone(),
             neotalk_version: self.neotalk_version.clone(),
+            device_service: RwLock::new(None),
         }
     }
 }
@@ -438,13 +477,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_adapter_config_modbus() {
-        let config = AdapterPluginConfig::modbus(
-            "test-modbus",
-            "Test Modbus",
-            "192.168.1.100",
-            502,
-            1,
-        );
+        let config =
+            AdapterPluginConfig::modbus("test-modbus", "Test Modbus", "192.168.1.100", 502, 1);
 
         assert_eq!(config.id, "test-modbus");
         assert_eq!(config.adapter_type, "modbus");
@@ -464,7 +498,10 @@ mod tests {
             serde_json::json!({}),
         );
 
-        registry.register_adapter(mock_adapter, config).await.unwrap();
+        registry
+            .register_adapter(mock_adapter, config)
+            .await
+            .unwrap();
 
         assert_eq!(registry.count().await, 1);
         assert!(registry.contains("test-adapter").await);
@@ -483,7 +520,10 @@ mod tests {
             serde_json::json!({}),
         );
 
-        registry.register_adapter(mock_adapter, config).await.unwrap();
+        registry
+            .register_adapter(mock_adapter, config)
+            .await
+            .unwrap();
         assert_eq!(registry.count().await, 1);
 
         registry.unregister("test-adapter").await.unwrap();
@@ -495,9 +535,11 @@ mod tests {
         let event_bus = EventBus::new();
         let registry = DeviceAdapterPluginRegistry::new(event_bus);
 
-        let mock_adapter = Arc::new(MockAdapter::new("test-adapter")
-            .with_device("sensor1")
-            .with_device("sensor2"));
+        let mock_adapter = Arc::new(
+            MockAdapter::new("test-adapter")
+                .with_device("sensor1")
+                .with_device("sensor2"),
+        );
 
         let config = AdapterPluginConfig::new(
             "test-adapter",
@@ -506,7 +548,10 @@ mod tests {
             serde_json::json!({}),
         );
 
-        registry.register_adapter(mock_adapter, config).await.unwrap();
+        registry
+            .register_adapter(mock_adapter, config)
+            .await
+            .unwrap();
 
         let devices = registry.get_adapter_devices("test-adapter").await.unwrap();
         assert_eq!(devices.len(), 2);
@@ -519,8 +564,7 @@ mod tests {
         let event_bus = EventBus::new();
         let registry = DeviceAdapterPluginRegistry::new(event_bus);
 
-        let mock_adapter = Arc::new(MockAdapter::new("test-adapter")
-            .with_device("sensor1"));
+        let mock_adapter = Arc::new(MockAdapter::new("test-adapter").with_device("sensor1"));
 
         let config = AdapterPluginConfig::new(
             "test-adapter",
@@ -529,7 +573,10 @@ mod tests {
             serde_json::json!({}),
         );
 
-        registry.register_adapter(mock_adapter, config).await.unwrap();
+        registry
+            .register_adapter(mock_adapter, config)
+            .await
+            .unwrap();
 
         let stats = registry.get_stats().await;
         assert_eq!(stats.total_adapters, 1);
@@ -549,11 +596,19 @@ mod tests {
             serde_json::json!({}),
         );
 
-        registry.register_adapter(mock_adapter, config).await.unwrap();
+        registry
+            .register_adapter(mock_adapter, config)
+            .await
+            .unwrap();
 
         // Initialize the plugin first (via UnifiedPluginRegistry would do this)
         let plugin = registry.get_plugin("test-adapter").await.unwrap();
-        plugin.write().await.initialize(&serde_json::json!({})).await.unwrap();
+        plugin
+            .write()
+            .await
+            .initialize(&serde_json::json!({}))
+            .await
+            .unwrap();
 
         // Start the plugin
         registry.start_plugin("test-adapter").await.unwrap();

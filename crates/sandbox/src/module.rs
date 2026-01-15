@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use wasmtime::{Engine, Module};
 
-use super::{SandboxError};
+use super::SandboxError;
 
 /// Configuration for loading a sandbox module.
 #[derive(Debug, Clone)]

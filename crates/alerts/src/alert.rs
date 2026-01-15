@@ -3,9 +3,9 @@
 //! This module defines the core alert structures used throughout
 //! the NeoTalk platform.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// Unique identifier for an alert.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -169,12 +169,7 @@ pub struct Alert {
 
 impl Alert {
     /// Create a new alert.
-    pub fn new(
-        severity: AlertSeverity,
-        title: String,
-        message: String,
-        source: String,
-    ) -> Self {
+    pub fn new(severity: AlertSeverity, title: String, message: String, source: String) -> Self {
         let now = Utc::now();
         Self {
             id: AlertId::new(),
@@ -206,12 +201,7 @@ impl Alert {
     }
 
     /// Create a rule alert.
-    pub fn rule(
-        severity: AlertSeverity,
-        title: String,
-        message: String,
-        rule_id: String,
-    ) -> Self {
+    pub fn rule(severity: AlertSeverity, title: String, message: String, rule_id: String) -> Self {
         let mut alert = Self::new(severity, title, message, rule_id.clone());
         alert.source_type = "rule".to_string();
         alert.tags.push("rule".to_string());
@@ -379,9 +369,18 @@ mod tests {
     #[test]
     fn test_severity_from_str() {
         assert_eq!(AlertSeverity::from_str("info"), Some(AlertSeverity::Info));
-        assert_eq!(AlertSeverity::from_str("warning"), Some(AlertSeverity::Warning));
-        assert_eq!(AlertSeverity::from_str("critical"), Some(AlertSeverity::Critical));
-        assert_eq!(AlertSeverity::from_str("emergency"), Some(AlertSeverity::Emergency));
+        assert_eq!(
+            AlertSeverity::from_str("warning"),
+            Some(AlertSeverity::Warning)
+        );
+        assert_eq!(
+            AlertSeverity::from_str("critical"),
+            Some(AlertSeverity::Critical)
+        );
+        assert_eq!(
+            AlertSeverity::from_str("emergency"),
+            Some(AlertSeverity::Emergency)
+        );
         assert_eq!(AlertSeverity::from_str("invalid"), None);
     }
 

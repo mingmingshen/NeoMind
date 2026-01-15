@@ -6,10 +6,10 @@
 //! - Command routing to specific integrations
 //! - Health monitoring and automatic reconnection
 
-use crate::{DynIntegration, IntegrationEvent, IntegrationCommand, IntegrationResponse};
+use crate::{DynIntegration, IntegrationCommand, IntegrationEvent, IntegrationResponse};
+use edge_ai_core::event::{MetricValue, NeoTalkEvent};
 use edge_ai_core::eventbus::EventBus;
 use edge_ai_core::integration::IntegrationType;
-use edge_ai_core::event::{MetricValue, NeoTalkEvent};
 use futures::StreamExt;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -63,7 +63,11 @@ pub enum RegistryEvent {
     Stopped { id: String, timestamp: i64 },
 
     /// Integration error.
-    Error { id: String, error: String, timestamp: i64 },
+    Error {
+        id: String,
+        error: String,
+        timestamp: i64,
+    },
 }
 
 impl RegistryEvent {
@@ -138,11 +142,14 @@ impl IntegrationRegistry {
                 return Err(RegistryError::AlreadyRegistered(id));
             }
 
-            integrations.insert(id.clone(), RuntimeState {
-                integration,
-                running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                task_handle: None,
-            });
+            integrations.insert(
+                id.clone(),
+                RuntimeState {
+                    integration,
+                    running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                    task_handle: None,
+                },
+            );
         }
 
         // Emit registry event
@@ -199,8 +206,15 @@ impl IntegrationRegistry {
                 return Ok(()); // Already running
             }
 
-            state.running.store(true, std::sync::atomic::Ordering::Relaxed);
-            (state.integration.clone(), self.event_bus.clone(), state.running.clone(), id.to_string())
+            state
+                .running
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            (
+                state.integration.clone(),
+                self.event_bus.clone(),
+                state.running.clone(),
+                id.to_string(),
+            )
         };
 
         // Start the integration
@@ -269,7 +283,9 @@ impl IntegrationRegistry {
                 return Ok(()); // Already stopped
             }
 
-            state.running.store(false, std::sync::atomic::Ordering::Relaxed);
+            state
+                .running
+                .store(false, std::sync::atomic::Ordering::Relaxed);
 
             // Abort the event stream task
             if let Some(handle) = state.task_handle.take() {
@@ -295,12 +311,7 @@ impl IntegrationRegistry {
 
     /// Start all registered integrations.
     pub async fn start_all(&self) -> Result<()> {
-        let ids: Vec<String> = self
-            .integrations
-            .read()
-            .keys()
-            .cloned()
-            .collect();
+        let ids: Vec<String> = self.integrations.read().keys().cloned().collect();
 
         for id in ids {
             if let Err(e) = self.start(&id).await {
@@ -313,12 +324,7 @@ impl IntegrationRegistry {
 
     /// Stop all running integrations.
     pub async fn stop_all(&self) -> Result<()> {
-        let ids: Vec<String> = self
-            .integrations
-            .read()
-            .keys()
-            .cloned()
-            .collect();
+        let ids: Vec<String> = self.integrations.read().keys().cloned().collect();
 
         for id in ids {
             let _ = self.stop(&id).await;
@@ -359,11 +365,7 @@ impl IntegrationRegistry {
 
     /// List all integration IDs.
     pub fn list(&self) -> Vec<String> {
-        self.integrations
-            .read()
-            .keys()
-            .cloned()
-            .collect()
+        self.integrations.read().keys().cloned().collect()
     }
 
     /// Get integrations by type.
@@ -371,9 +373,7 @@ impl IntegrationRegistry {
         self.integrations
             .read()
             .values()
-            .filter(|state| {
-                &state.integration.metadata().integration_type == integration_type
-            })
+            .filter(|state| &state.integration.metadata().integration_type == integration_type)
             .map(|state| state.integration.clone())
             .collect()
     }
@@ -572,7 +572,10 @@ mod tests {
             Box::pin(futures::stream::empty())
         }
 
-        async fn send_command(&self, _command: IntegrationCommand) -> crate::IntegrationResult<IntegrationResponse> {
+        async fn send_command(
+            &self,
+            _command: IntegrationCommand,
+        ) -> crate::IntegrationResult<IntegrationResponse> {
             Ok(IntegrationResponse::success(serde_json::json!({})))
         }
     }
@@ -597,16 +600,12 @@ mod tests {
 
         let metadata = IntegrationMetadata::new("test1", "Test 1", IntegrationType::Mqtt);
         let _ = registry
-            .register(std::sync::Arc::new(MockIntegration {
-                metadata,
-            }))
+            .register(std::sync::Arc::new(MockIntegration { metadata }))
             .await;
 
         let metadata = IntegrationMetadata::new("test2", "Test 2", IntegrationType::Hass);
         let _ = registry
-            .register(std::sync::Arc::new(MockIntegration {
-                metadata,
-            }))
+            .register(std::sync::Arc::new(MockIntegration { metadata }))
             .await;
 
         let ids = registry.list();

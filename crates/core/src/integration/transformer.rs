@@ -129,10 +129,7 @@ pub struct TransformationContext {
 
 impl TransformationContext {
     /// Create a new transformation context.
-    pub fn new(
-        source_system: impl Into<String>,
-        source_type: impl Into<String>,
-    ) -> Self {
+    pub fn new(source_system: impl Into<String>, source_type: impl Into<String>) -> Self {
         Self {
             source_system: source_system.into(),
             source_type: source_type.into(),
@@ -169,7 +166,8 @@ impl TransformationContext {
 
     /// Get a metadata value by key.
     pub fn get_metadata<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
-        self.metadata.get(key)
+        self.metadata
+            .get(key)
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
@@ -272,7 +270,9 @@ pub enum TransformType {
     Scale { scale: f64, offset: f64 },
 
     /// Enum mapping.
-    Enum { mapping: HashMap<String, serde_json::Value> },
+    Enum {
+        mapping: HashMap<String, serde_json::Value>,
+    },
 
     /// Format string.
     Format { template: String },
@@ -400,10 +400,7 @@ pub struct BaseTransformer {
 
 impl BaseTransformer {
     /// Create a new base transformer.
-    pub fn new(
-        input_formats: Vec<String>,
-        output_formats: Vec<String>,
-    ) -> Self {
+    pub fn new(input_formats: Vec<String>, output_formats: Vec<String>) -> Self {
         Self {
             input_formats,
             output_formats,
@@ -447,22 +444,29 @@ impl BaseTransformer {
     }
 
     /// Apply value transformation.
-    pub fn apply_transform(&self, value: &serde_json::Value, transform: &ValueTransform) -> Result<serde_json::Value> {
+    pub fn apply_transform(
+        &self,
+        value: &serde_json::Value,
+        transform: &ValueTransform,
+    ) -> Result<serde_json::Value> {
         match &transform.transform_type {
             TransformType::Direct => Ok(value.clone()),
             TransformType::Scale { scale, offset } => {
-                let num = value.as_f64()
-                    .ok_or_else(|| TransformationError::ConversionFailed(
-                        "Cannot apply scale to non-numeric value".to_string()
-                    ))?;
+                let num = value.as_f64().ok_or_else(|| {
+                    TransformationError::ConversionFailed(
+                        "Cannot apply scale to non-numeric value".to_string(),
+                    )
+                })?;
                 Ok(serde_json::json!(num * scale + offset))
             }
             TransformType::Enum { mapping } => {
-                let key = value.as_str()
-                    .ok_or_else(|| TransformationError::ConversionFailed(
-                        "Cannot apply enum mapping to non-string value".to_string()
-                    ))?;
-                mapping.get(key)
+                let key = value.as_str().ok_or_else(|| {
+                    TransformationError::ConversionFailed(
+                        "Cannot apply enum mapping to non-string value".to_string(),
+                    )
+                })?;
+                mapping
+                    .get(key)
                     .cloned()
                     .ok_or_else(|| TransformationError::MappingNotFound(key.to_string()))
             }
@@ -526,14 +530,21 @@ mod tests {
         let transform = ValueTransform {
             source: "value".to_string(),
             target: "scaled".to_string(),
-            transform_type: TransformType::Scale { scale: 1.8, offset: 32.0 },
+            transform_type: TransformType::Scale {
+                scale: 1.8,
+                offset: 32.0,
+            },
             params: serde_json::json!({}),
         };
 
-        let result = transformer.apply_transform(&serde_json::json!(0.0), &transform).unwrap();
+        let result = transformer
+            .apply_transform(&serde_json::json!(0.0), &transform)
+            .unwrap();
         assert_eq!(result, serde_json::json!(32.0));
 
-        let result = transformer.apply_transform(&serde_json::json!(100.0), &transform).unwrap();
+        let result = transformer
+            .apply_transform(&serde_json::json!(100.0), &transform)
+            .unwrap();
         assert_eq!(result, serde_json::json!(212.0));
     }
 
@@ -552,10 +563,14 @@ mod tests {
             params: serde_json::json!({}),
         };
 
-        let result = transformer.apply_transform(&serde_json::json!("on"), &transform).unwrap();
+        let result = transformer
+            .apply_transform(&serde_json::json!("on"), &transform)
+            .unwrap();
         assert_eq!(result, serde_json::json!(true));
 
-        let result = transformer.apply_transform(&serde_json::json!("off"), &transform).unwrap();
+        let result = transformer
+            .apply_transform(&serde_json::json!("off"), &transform)
+            .unwrap();
         assert_eq!(result, serde_json::json!(false));
     }
 

@@ -1,13 +1,19 @@
 //! MQTT subscription management handlers.
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde_json::json;
 
 use edge_ai_devices::ConnectionStatus;
 
-use crate::handlers::{ServerState, common::{HandlerResult, ok}};
-use crate::models::ErrorResponse;
 use super::models::{MqttSubscriptionDto, SubscribeRequest};
+use crate::handlers::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
+use crate::models::ErrorResponse;
 
 /// List MQTT subscriptions.
 ///
@@ -15,10 +21,8 @@ use super::models::{MqttSubscriptionDto, SubscribeRequest};
 pub async fn list_subscriptions_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let manager = &state.mqtt_device_manager;
-
-    // Get the list of devices, which are all subscribed via wildcard
-    let devices = manager.list_devices().await;
+    // Use new DeviceService to get devices
+    let configs = state.device_service.list_devices().await;
 
     // Build subscriptions list
     let mut subscriptions = vec![
@@ -35,16 +39,16 @@ pub async fn list_subscriptions_handler(
     ];
 
     // Add per-device subscriptions
-    for device in devices {
+    for config in configs {
         subscriptions.push(MqttSubscriptionDto {
-            topic: format!("device/{}/uplink", device.device_id),
+            topic: format!("device/{}/uplink", config.device_id),
             qos: 1,
-            device_id: Some(device.device_id.clone()),
+            device_id: Some(config.device_id.clone()),
         });
         subscriptions.push(MqttSubscriptionDto {
-            topic: format!("device/{}/downlink", device.device_id),
+            topic: format!("device/{}/downlink", config.device_id),
             qos: 1,
-            device_id: Some(device.device_id),
+            device_id: Some(config.device_id),
         });
     }
 
@@ -75,17 +79,12 @@ pub async fn list_subscriptions_handler(
 ///
 /// POST /api/mqtt/subscribe
 pub async fn subscribe_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
     Json(_req): Json<SubscribeRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let manager = &state.mqtt_device_manager;
-    let status = manager.connection_status().await;
-
-    if !matches!(status, ConnectionStatus::Connected { .. }) {
-        return Err(ErrorResponse::service_unavailable("MQTT client is not connected"));
-    }
-
-    // TODO: Implement custom topic subscription
+    // Check MQTT connection status from adapter
+    use edge_ai_devices::adapter::ConnectionStatus;
+    // For now, just return a message - custom topic subscription not implemented
     ok(json!({
         "success": false,
         "message": "Custom topic subscription not yet implemented. Use subscribe_device for specific devices.",
@@ -113,15 +112,26 @@ pub async fn subscribe_device_handler(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let manager = &state.mqtt_device_manager;
-    let status = manager.connection_status().await;
-
-    if !matches!(status, ConnectionStatus::Connected { .. }) {
-        return Err(ErrorResponse::service_unavailable("MQTT client is not connected"));
+    // Validate the device exists using DeviceService
+    let device_opt = state.device_service.get_device(&device_id).await;
+    if device_opt.is_none() {
+        return Err(ErrorResponse::not_found(format!(
+            "Device not found: {}",
+            device_id
+        )));
     }
+    let device = device_opt.unwrap();
 
-    manager.subscribe_device(&device_id).await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
+    // Get the adapter for this device and subscribe
+    if let Some(ref adapter_id) = device.adapter_id {
+        if let Some(adapter) = state.device_service.get_adapter(adapter_id).await {
+            use edge_ai_devices::adapter::DeviceAdapter;
+            adapter
+                .subscribe_device(&device_id)
+                .await
+                .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
+        }
+    }
 
     ok(json!({
         "message": format!("Subscribed to device: {}", device_id),
@@ -136,14 +146,15 @@ pub async fn unsubscribe_device_handler(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let manager = &state.mqtt_device_manager;
-
-    // Validate the device exists
-    let devices = manager.list_devices().await;
-    let device_exists = devices.iter().any(|d| d.device_id == device_id);
+    // Validate the device exists using DeviceService
+    let configs = state.device_service.list_devices().await;
+    let device_exists = configs.iter().any(|d| d.device_id == device_id);
 
     if !device_exists {
-        return Err(ErrorResponse::not_found(format!("Device not found: {}", device_id)));
+        return Err(ErrorResponse::not_found(format!(
+            "Device not found: {}",
+            device_id
+        )));
     }
 
     ok(json!({

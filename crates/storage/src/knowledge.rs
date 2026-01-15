@@ -8,7 +8,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::{vector::{VectorStore, VectorDocument, Embedding}, Error};
+use crate::{
+    Error,
+    vector::{Embedding, VectorDocument, VectorStore},
+};
 
 /// Knowledge entry type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,11 +138,7 @@ impl LlmKnowledgeBase {
     ) -> Result<(), Error> {
         let id = format!("dsl:{}", rule_id);
 
-        let content = format!(
-            "When {}, then: {}.",
-            condition,
-            actions.join(", ")
-        );
+        let content = format!("When {}, then: {}.", condition, actions.join(", "));
 
         let entry = KnowledgeEntry::new(id.clone(), KnowledgeType::DslRule, name, content)
             .with_metadata("rule_id", rule_id)
@@ -156,8 +155,8 @@ impl LlmKnowledgeBase {
         // Generate a simple hash-based embedding (in production, use a real embedding model)
         let embedding = self.generate_embedding(&entry.to_embedding_text()).await;
 
-        let doc = VectorDocument::new(entry.id.clone(), embedding)
-            .with_metadata(serde_json::json!({
+        let doc =
+            VectorDocument::new(entry.id.clone(), embedding).with_metadata(serde_json::json!({
                 "entry_type": format!("{:?}", entry.entry_type),
                 "title": entry.title,
                 "metadata": entry.metadata,
@@ -235,20 +234,34 @@ impl LlmKnowledgeBase {
         }
 
         // Sort by score and limit to top_k
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(top_k);
 
         Ok(results)
     }
 
     /// Search only MDL device types.
-    pub async fn search_mdl(&self, query: &str, top_k: usize) -> Result<Vec<KnowledgeSearchResult>, Error> {
-        self.search(query, top_k, Some(KnowledgeType::MdlDevice)).await
+    pub async fn search_mdl(
+        &self,
+        query: &str,
+        top_k: usize,
+    ) -> Result<Vec<KnowledgeSearchResult>, Error> {
+        self.search(query, top_k, Some(KnowledgeType::MdlDevice))
+            .await
     }
 
     /// Search only DSL rules.
-    pub async fn search_dsl(&self, query: &str, top_k: usize) -> Result<Vec<KnowledgeSearchResult>, Error> {
-        self.search(query, top_k, Some(KnowledgeType::DslRule)).await
+    pub async fn search_dsl(
+        &self,
+        query: &str,
+        top_k: usize,
+    ) -> Result<Vec<KnowledgeSearchResult>, Error> {
+        self.search(query, top_k, Some(KnowledgeType::DslRule))
+            .await
     }
 
     /// Get an entry by ID.
@@ -276,7 +289,10 @@ impl LlmKnowledgeBase {
     /// Get the count by type.
     pub async fn count_by_type(&self, entry_type: KnowledgeType) -> usize {
         let entries = self.entries.read().await;
-        entries.values().filter(|e| e.entry_type == entry_type).count()
+        entries
+            .values()
+            .filter(|e| e.entry_type == entry_type)
+            .count()
     }
 
     /// Clear all entries.
@@ -348,7 +364,9 @@ mod tests {
             "Temperature and humidity sensor",
             &["temperature".to_string(), "humidity".to_string()],
             &["reset".to_string()],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert_eq!(kb.count().await, 1);
         assert_eq!(kb.count_by_type(KnowledgeType::MdlDevice).await, 1);
@@ -363,7 +381,9 @@ mod tests {
             "High Temperature Alert",
             "temperature > 50",
             &["notify".to_string(), "log".to_string()],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         assert_eq!(kb.count().await, 1);
         assert_eq!(kb.count_by_type(KnowledgeType::DslRule).await, 1);
@@ -379,14 +399,18 @@ mod tests {
             "Temperature and humidity sensor",
             &["temperature".to_string(), "humidity".to_string()],
             &["reset".to_string()],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         kb.index_dsl_rule(
             "rule-1",
             "High Temperature Alert",
             "temperature > 50",
             &["notify".to_string()],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Search for temperature related
         let results = kb.search("temperature sensor", 10, None).await.unwrap();
@@ -403,14 +427,18 @@ mod tests {
             "Temperature sensor",
             &["temperature".to_string()],
             &[],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         kb.index_dsl_rule(
             "rule-1",
             "High Temp Alert",
             "temperature > 50",
             &["notify".to_string()],
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // Search only MDL
         let mdl_results = kb.search_mdl("temperature", 10).await.unwrap();
@@ -437,7 +465,9 @@ mod tests {
     async fn test_knowledge_base_delete() {
         let kb = LlmKnowledgeBase::new();
 
-        kb.index_mdl("dht22", "DHT22", "Sensor", &[], &[]).await.unwrap();
+        kb.index_mdl("dht22", "DHT22", "Sensor", &[], &[])
+            .await
+            .unwrap();
         assert_eq!(kb.count().await, 1);
 
         let deleted = kb.delete("mdl:dht22").await.unwrap();
@@ -452,7 +482,9 @@ mod tests {
     async fn test_knowledge_base_get() {
         let kb = LlmKnowledgeBase::new();
 
-        kb.index_mdl("dht22", "DHT22", "Sensor", &[], &[]).await.unwrap();
+        kb.index_mdl("dht22", "DHT22", "Sensor", &[], &[])
+            .await
+            .unwrap();
 
         let entry = kb.get("mdl:dht22").await;
         assert!(entry.is_some());

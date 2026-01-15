@@ -5,16 +5,17 @@
 //! 2. config.toml (TOML format - preferred for static config)
 //! 3. Environment variables (fallback)
 
-use serde::Deserialize;
 use edge_ai_agent::LlmBackend;
-use edge_ai_storage::{LlmSettings, LlmBackendType, Error as StorageError};
-use edge_ai_core::config::{self, endpoints, models, env_vars,
-                            normalize_ollama_endpoint, normalize_openai_endpoint};
+use edge_ai_core::config::{
+    self, endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
+};
+use edge_ai_storage::{Error as StorageError, LlmBackendType, LlmSettings};
+use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{info, warn};
 
 // Re-export types for convenience
-pub use edge_ai_devices::{EmbeddedBrokerConfig};
+pub use edge_ai_devices::EmbeddedBrokerConfig;
 
 /// Path to the settings database.
 const SETTINGS_DB_PATH: &str = "data/settings.redb";
@@ -40,7 +41,10 @@ impl ConfigSource {
         // Try redb database first (highest priority - Web UI saved settings)
         if let Ok(store) = get_settings_store() {
             if store.has_llm_settings() {
-                info!(category = "config", "Loading config from: {} (redb database)", SETTINGS_DB_PATH);
+                info!(
+                    category = "config",
+                    "Loading config from: {} (redb database)", SETTINGS_DB_PATH
+                );
                 return ConfigSource::Database;
             }
         }
@@ -52,7 +56,10 @@ impl ConfigSource {
         }
 
         // Fall back to environment
-        info!(category = "config", "Loading config from environment variables");
+        info!(
+            category = "config",
+            "Loading config from environment variables"
+        );
         ConfigSource::Env
     }
 
@@ -72,39 +79,63 @@ impl ConfigSource {
 
         match settings.backend {
             LlmBackendType::Ollama => {
-                let endpoint = settings.endpoint
+                let endpoint = settings
+                    .endpoint
                     .unwrap_or_else(|| endpoints::OLLAMA.to_string());
                 let endpoint = normalize_ollama_endpoint(endpoint);
                 info!(category = "ai", backend = "ollama", endpoint = %endpoint, model = %settings.model, "DB config: Ollama");
-                Some(LlmBackend::Ollama { endpoint, model: settings.model })
+                Some(LlmBackend::Ollama {
+                    endpoint,
+                    model: settings.model,
+                })
             }
             LlmBackendType::OpenAi => {
-                let endpoint = settings.endpoint
+                let endpoint = settings
+                    .endpoint
                     .unwrap_or_else(|| endpoints::OPENAI.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "openai", endpoint = %endpoint, model = %settings.model, "DB config: OpenAI");
-                Some(LlmBackend::OpenAi { api_key, endpoint, model: settings.model })
+                Some(LlmBackend::OpenAi {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
             }
             LlmBackendType::Anthropic => {
-                let endpoint = settings.endpoint
+                let endpoint = settings
+                    .endpoint
                     .unwrap_or_else(|| endpoints::ANTHROPIC.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "anthropic", endpoint = %endpoint, model = %settings.model, "DB config: Anthropic");
-                Some(LlmBackend::OpenAi { api_key, endpoint, model: settings.model })
+                Some(LlmBackend::OpenAi {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
             }
             LlmBackendType::Google => {
-                let endpoint = settings.endpoint
+                let endpoint = settings
+                    .endpoint
                     .unwrap_or_else(|| endpoints::GOOGLE.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "google", endpoint = %endpoint, model = %settings.model, "DB config: Google");
-                Some(LlmBackend::OpenAi { api_key, endpoint, model: settings.model })
+                Some(LlmBackend::OpenAi {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
             }
             LlmBackendType::XAi => {
-                let endpoint = settings.endpoint
+                let endpoint = settings
+                    .endpoint
                     .unwrap_or_else(|| endpoints::XAI.to_string());
                 let api_key = settings.api_key.unwrap_or_default();
                 info!(category = "ai", backend = "xai", endpoint = %endpoint, model = %settings.model, "DB config: xAI");
-                Some(LlmBackend::OpenAi { api_key, endpoint, model: settings.model })
+                Some(LlmBackend::OpenAi {
+                    api_key,
+                    endpoint,
+                    model: settings.model,
+                })
             }
         }
     }
@@ -116,19 +147,27 @@ impl ConfigSource {
         let llm_config = config.llm?;
         match llm_config.backend.as_str() {
             "ollama" => {
-                let endpoint = llm_config.endpoint.unwrap_or_else(|| endpoints::OLLAMA.to_string());
+                let endpoint = llm_config
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::OLLAMA.to_string());
                 let endpoint = normalize_ollama_endpoint(endpoint);
                 Some(LlmBackend::Ollama {
                     endpoint,
-                    model: llm_config.model.unwrap_or_else(|| models::OLLAMA_DEFAULT.to_string())
+                    model: llm_config
+                        .model
+                        .unwrap_or_else(|| models::OLLAMA_DEFAULT.to_string()),
                 })
             }
             "openai" => {
-                let endpoint = llm_config.endpoint.unwrap_or_else(|| endpoints::OPENAI.to_string());
+                let endpoint = llm_config
+                    .endpoint
+                    .unwrap_or_else(|| endpoints::OPENAI.to_string());
                 Some(LlmBackend::OpenAi {
                     api_key: llm_config.api_key.unwrap_or_default(),
                     endpoint,
-                    model: llm_config.model.unwrap_or_else(|| models::OPENAI_DEFAULT.to_string())
+                    model: llm_config
+                        .model
+                        .unwrap_or_else(|| models::OPENAI_DEFAULT.to_string()),
                 })
             }
             _ => {
@@ -157,10 +196,17 @@ impl ConfigSource {
             let model = std::env::var(env_vars::LLM_MODEL)
                 .unwrap_or_else(|_| models::OPENAI_DEFAULT.to_string());
             info!(category = "ai", backend = "openai", endpoint = %endpoint, model = %model, "Env config: OpenAI");
-            return Some(LlmBackend::OpenAi { api_key, endpoint, model });
+            return Some(LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            });
         }
 
-        warn!(category = "ai", "No LLM backend configured. Set OLLAMA_ENDPOINT or OPENAI_API_KEY to enable.");
+        warn!(
+            category = "ai",
+            "No LLM backend configured. Set OLLAMA_ENDPOINT or OPENAI_API_KEY to enable."
+        );
         None
     }
 }
@@ -181,13 +227,15 @@ pub async fn save_llm_settings(settings: &LlmSettings) -> Result<(), Box<dyn std
 }
 
 /// Load LLM settings from the database (called from Web UI).
-pub async fn load_llm_settings_from_db() -> Result<Option<LlmSettings>, Box<dyn std::error::Error>> {
+pub async fn load_llm_settings_from_db() -> Result<Option<LlmSettings>, Box<dyn std::error::Error>>
+{
     let store = get_settings_store()?;
     Ok(store.load_llm_settings()?)
 }
 
 /// Get the settings store (for advanced usage).
-pub fn open_settings_store() -> Result<Arc<edge_ai_storage::SettingsStore>, Box<dyn std::error::Error>> {
+pub fn open_settings_store()
+-> Result<Arc<edge_ai_storage::SettingsStore>, Box<dyn std::error::Error>> {
     get_settings_store()
 }
 
@@ -222,14 +270,22 @@ struct TomlMqttConfig {
     #[serde(default = "default_mqtt_discovery_prefix")]
     discovery_prefix: String,
     #[serde(default = "default_mqtt_auto_discovery")]
-    #[allow(dead_code)]  // Reserved for future auto-discovery feature
+    #[allow(dead_code)] // Reserved for future auto-discovery feature
     auto_discovery: bool,
 }
 
-fn default_mqtt_listen() -> String { "0.0.0.0".to_string() }
-fn default_mqtt_port() -> u16 { 1883 }
-fn default_mqtt_discovery_prefix() -> String { "neotalk/discovery".to_string() }
-fn default_mqtt_auto_discovery() -> bool { true }
+fn default_mqtt_listen() -> String {
+    "0.0.0.0".to_string()
+}
+fn default_mqtt_port() -> u16 {
+    1883
+}
+fn default_mqtt_discovery_prefix() -> String {
+    "neotalk/discovery".to_string()
+}
+fn default_mqtt_auto_discovery() -> bool {
+    true
+}
 
 /// LLM settings request (for Web UI).
 #[derive(Debug, Deserialize)]
@@ -243,8 +299,7 @@ pub struct LlmSettingsRequest {
 impl LlmSettingsRequest {
     /// Convert to LlmSettings.
     pub fn to_llm_settings(&self) -> LlmSettings {
-        let backend = LlmSettings::from_backend_name(&self.backend)
-            .unwrap_or_default();
+        let backend = LlmSettings::from_backend_name(&self.backend).unwrap_or_default();
 
         LlmSettings {
             backend: backend.backend,
@@ -284,7 +339,10 @@ pub fn get_embedded_broker_config() -> EmbeddedBrokerConfig {
     }
 
     // Default configuration
-    info!(category = "mqtt", "Using default embedded broker configuration: 0.0.0.0:1883");
+    info!(
+        category = "mqtt",
+        "Using default embedded broker configuration: 0.0.0.0:1883"
+    );
     EmbeddedBrokerConfig::default()
 }
 

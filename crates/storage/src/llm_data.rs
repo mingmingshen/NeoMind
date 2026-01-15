@@ -10,13 +10,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use chrono::Utc;
 
+use crate::vector::{VectorDocument, VectorStore};
 use crate::{Error, Result};
-use crate::vector::{VectorStore, VectorDocument};
 
 // Table definitions
 const MEMORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("llm_memory");
@@ -54,12 +54,7 @@ pub struct MemoryEntry {
 
 impl MemoryEntry {
     /// Create a new memory entry.
-    pub fn new(
-        id: String,
-        memory_type: String,
-        content: String,
-        source: String,
-    ) -> Self {
+    pub fn new(id: String, memory_type: String, content: String, source: String) -> Self {
         let now = Utc::now().timestamp();
         Self {
             id,
@@ -287,15 +282,15 @@ impl LongTermMemoryStore {
         {
             let mut index = self.keyword_index.write().await;
             for keyword in &memory.keywords {
-                index.entry(keyword.clone())
+                index
+                    .entry(keyword.clone())
                     .or_insert_with(HashSet::new)
                     .insert(memory.id.clone());
             }
         }
 
         // Update vector store if available
-        if let (Some(vector_store), Some(embedding)) =
-            (&self.vector_store, &memory.embedding) {
+        if let (Some(vector_store), Some(embedding)) = (&self.vector_store, &memory.embedding) {
             let vs = vector_store.write().await;
             let doc = VectorDocument {
                 id: memory.id.clone(),
@@ -405,7 +400,9 @@ impl LongTermMemoryStore {
         query_embedding: &[f32],
         limit: usize,
     ) -> Result<Vec<MemoryEntry>> {
-        let vector_store = self.vector_store.as_ref()
+        let vector_store = self
+            .vector_store
+            .as_ref()
             .ok_or_else(|| Error::NotFound("Vector store not configured".to_string()))?;
 
         let vs = vector_store.read().await;
@@ -433,9 +430,7 @@ impl LongTermMemoryStore {
 
     /// Get memories by keyword.
     pub async fn get_by_keyword(&self, keyword: &str, limit: usize) -> Result<Vec<MemoryEntry>> {
-        let filter = MemoryFilter::new()
-            .with_keyword(keyword)
-            .with_limit(limit);
+        let filter = MemoryFilter::new().with_keyword(keyword).with_limit(limit);
         self.query(&filter).await
     }
 
@@ -537,9 +532,12 @@ impl LongTermMemoryStore {
             Ok(txn) => match txn.open_table(MEMORY_TABLE) {
                 Ok(table) => {
                     let mut count = 0;
-                    let _ = table.iter().map(|x| { count += 1; x });
+                    let _ = table.iter().map(|x| {
+                        count += 1;
+                        x
+                    });
                     count
-                },
+                }
                 Err(_) => 0,
             },
             Err(_) => 0,
@@ -568,7 +566,8 @@ impl LongTermMemoryStore {
             if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value()) {
                 *type_index.entry(memory.memory_type.clone()).or_insert(0) += 1;
                 for keyword in &memory.keywords {
-                    keyword_index.entry(keyword.clone())
+                    keyword_index
+                        .entry(keyword.clone())
                         .or_insert_with(HashSet::new)
                         .insert(memory.id.clone());
                 }
@@ -628,7 +627,9 @@ impl LongTermMemoryStore {
 
         // Check keywords
         if !filter.keywords.is_empty() {
-            let has_keyword = filter.keywords.iter()
+            let has_keyword = filter
+                .keywords
+                .iter()
                 .any(|k| memory.keywords.contains(k) || memory.content.contains(k));
             if !has_keyword {
                 return false;

@@ -46,9 +46,9 @@ pub type Result<T> = std::result::Result<T, MemoryError>;
 impl From<MemoryError> for NeoTalkError {
     fn from(e: MemoryError) -> Self {
         match e {
-            MemoryError::ShortTermMemory(s) | MemoryError::MidTermMemory(s) | MemoryError::LongTermMemory(s) => {
-                NeoTalkError::Memory(s)
-            }
+            MemoryError::ShortTermMemory(s)
+            | MemoryError::MidTermMemory(s)
+            | MemoryError::LongTermMemory(s) => NeoTalkError::Memory(s),
             MemoryError::NotFound(s) => NeoTalkError::NotFound(s),
             MemoryError::CapacityExceeded(s) => NeoTalkError::Validation(s),
             MemoryError::InvalidFormat(s) => NeoTalkError::Validation(s),

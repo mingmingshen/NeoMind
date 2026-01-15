@@ -1,10 +1,16 @@
 //! Decision history API handlers.
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use edge_ai_storage::decisions::{
-    DecisionStore, DecisionFilter, DecisionType, DecisionPriority, DecisionStatus,
+    DecisionFilter, DecisionPriority, DecisionStatus, DecisionStore, DecisionType,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -99,7 +105,11 @@ impl From<edge_ai_storage::decisions::StoredDecision> for DecisionDto {
             title: dec.title,
             description: dec.description,
             reasoning: dec.reasoning,
-            actions: dec.actions.into_iter().map(DecisionActionDto::from).collect(),
+            actions: dec
+                .actions
+                .into_iter()
+                .map(DecisionActionDto::from)
+                .collect(),
             confidence: dec.confidence,
             decision_type: format!("{:?}", dec.decision_type),
             priority: format!("{:?}", dec.priority).to_lowercase(),
@@ -138,7 +148,9 @@ impl From<edge_ai_storage::decisions::ExecutionResult> for ExecutionResultDto {
 
 /// Get decision store from server state.
 fn get_decision_store(state: &ServerState) -> Result<Arc<DecisionStore>, ErrorResponse> {
-    state.decision_store.as_ref()
+    state
+        .decision_store
+        .as_ref()
         .cloned()
         .ok_or_else(|| ErrorResponse::service_unavailable("Decision store not initialized"))
 }
@@ -164,7 +176,9 @@ pub async fn list_decisions_handler(
         offset: params.offset,
     };
 
-    let decisions = store.query(filter).await
+    let decisions = store
+        .query(filter)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to query decisions: {}", e)))?;
 
     let dtos: Vec<DecisionDto> = decisions.into_iter().map(DecisionDto::from).collect();
@@ -185,7 +199,9 @@ pub async fn get_decision_handler(
 ) -> HandlerResult<serde_json::Value> {
     let store = get_decision_store(&state)?;
 
-    let decision = store.get(&id).await
+    let decision = store
+        .get(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get decision: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Decision not found: {}", id)))?;
 
@@ -205,7 +221,9 @@ pub async fn execute_decision_handler(
     let store = get_decision_store(&state)?;
 
     // First get the decision to verify it exists
-    let decision = store.get(&id).await
+    let decision = store
+        .get(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get decision: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Decision not found: {}", id)))?;
 
@@ -219,25 +237,33 @@ pub async fn execute_decision_handler(
     }
 
     // Update status to approved (execution will happen asynchronously)
-    store.update_status(&id, DecisionStatus::Approved).await
+    store
+        .update_status(&id, DecisionStatus::Approved)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update decision: {}", e)))?;
 
     // Publish an event to trigger execution
     if let Some(event_bus) = &state.event_bus {
-        let actions = decision.actions.into_iter().map(|a| edge_ai_core::event::ProposedAction {
-            action_type: a.action_type,
-            description: a.description,
-            parameters: a.parameters,
-        }).collect();
-        let _ = event_bus.publish(edge_ai_core::NeoTalkEvent::LlmDecisionProposed {
-            decision_id: id.clone(),
-            title: decision.title,
-            description: decision.description,
-            reasoning: decision.reasoning,
-            actions,
-            confidence: decision.confidence,
-            timestamp: chrono::Utc::now().timestamp(),
-        }).await;
+        let actions = decision
+            .actions
+            .into_iter()
+            .map(|a| edge_ai_core::event::ProposedAction {
+                action_type: a.action_type,
+                description: a.description,
+                parameters: a.parameters,
+            })
+            .collect();
+        let _ = event_bus
+            .publish(edge_ai_core::NeoTalkEvent::LlmDecisionProposed {
+                decision_id: id.clone(),
+                title: decision.title,
+                description: decision.description,
+                reasoning: decision.reasoning,
+                actions,
+                confidence: decision.confidence,
+                timestamp: chrono::Utc::now().timestamp(),
+            })
+            .await;
     }
 
     ok(json!({
@@ -255,7 +281,9 @@ pub async fn approve_decision_handler(
 ) -> HandlerResult<serde_json::Value> {
     let store = get_decision_store(&state)?;
 
-    store.update_status(&id, DecisionStatus::Approved).await
+    store
+        .update_status(&id, DecisionStatus::Approved)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to approve decision: {}", e)))?;
 
     ok(json!({
@@ -273,7 +301,9 @@ pub async fn reject_decision_handler(
 ) -> HandlerResult<serde_json::Value> {
     let store = get_decision_store(&state)?;
 
-    store.update_status(&id, DecisionStatus::Rejected).await
+    store
+        .update_status(&id, DecisionStatus::Rejected)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to reject decision: {}", e)))?;
 
     ok(json!({
@@ -291,7 +321,9 @@ pub async fn delete_decision_handler(
 ) -> HandlerResult<serde_json::Value> {
     let store = get_decision_store(&state)?;
 
-    store.delete(&id).await
+    store
+        .delete(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete decision: {}", e)))?;
 
     ok(json!({
@@ -308,7 +340,9 @@ pub async fn get_decision_stats_handler(
 ) -> HandlerResult<serde_json::Value> {
     let store = get_decision_store(&state)?;
 
-    let stats = store.stats().await
+    let stats = store
+        .stats()
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get stats: {}", e)))?;
 
     ok(json!({
@@ -333,13 +367,16 @@ pub async fn cleanup_decisions_handler(
     let store = get_decision_store(&state)?;
 
     // Get cleanup age (default 30 days)
-    let older_than_days = body.get("older_than_days")
+    let older_than_days = body
+        .get("older_than_days")
         .and_then(|v| v.as_i64())
         .unwrap_or(30);
 
     let expire_before = chrono::Utc::now().timestamp() - (older_than_days * 24 * 60 * 60);
 
-    let count = store.cleanup_expired(expire_before).await
+    let count = store
+        .cleanup_expired(expire_before)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to cleanup: {}", e)))?;
 
     ok(json!({
@@ -393,21 +430,36 @@ mod tests {
     #[test]
     fn test_parse_decision_type() {
         assert_eq!(parse_decision_type(Some("rule")), Some(DecisionType::Rule));
-        assert_eq!(parse_decision_type(Some("alert")), Some(DecisionType::Alert));
+        assert_eq!(
+            parse_decision_type(Some("alert")),
+            Some(DecisionType::Alert)
+        );
         assert_eq!(parse_decision_type(Some("invalid")), None);
     }
 
     #[test]
     fn test_parse_decision_priority() {
-        assert_eq!(parse_decision_priority(Some("high")), Some(DecisionPriority::High));
-        assert_eq!(parse_decision_priority(Some("critical")), Some(DecisionPriority::Critical));
+        assert_eq!(
+            parse_decision_priority(Some("high")),
+            Some(DecisionPriority::High)
+        );
+        assert_eq!(
+            parse_decision_priority(Some("critical")),
+            Some(DecisionPriority::Critical)
+        );
         assert_eq!(parse_decision_priority(Some("invalid")), None);
     }
 
     #[test]
     fn test_parse_decision_status() {
-        assert_eq!(parse_decision_status(Some("proposed")), Some(DecisionStatus::Proposed));
-        assert_eq!(parse_decision_status(Some("executed")), Some(DecisionStatus::Executed));
+        assert_eq!(
+            parse_decision_status(Some("proposed")),
+            Some(DecisionStatus::Proposed)
+        );
+        assert_eq!(
+            parse_decision_status(Some("executed")),
+            Some(DecisionStatus::Executed)
+        );
         assert_eq!(parse_decision_status(Some("invalid")), None);
     }
 

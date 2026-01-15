@@ -8,10 +8,10 @@ use std::fmt::{self, Display, Formatter};
 use async_trait::async_trait;
 use serde_json::Value;
 
-use super::descriptor::{PluginDestroyFn, ParsedPluginDescriptor};
+use super::descriptor::{ParsedPluginDescriptor, PluginDestroyFn};
 use crate::plugin::{
-    ExtendedPluginMetadata, PluginError, PluginMetadata, PluginState, PluginStats,
-    PluginType, Result, UnifiedPlugin,
+    ExtendedPluginMetadata, PluginError, PluginMetadata, PluginState, PluginStats, PluginType,
+    Result, UnifiedPlugin,
 };
 
 /// Wrapper for a dynamically loaded plugin instance.
@@ -52,17 +52,23 @@ impl DynamicPluginWrapper {
     /// Create a new wrapper from a parsed descriptor.
     pub fn new(mut descriptor: ParsedPluginDescriptor) -> Result<Self> {
         // Create base metadata
-        let base = PluginMetadata::new(&descriptor.id, &descriptor.name, &descriptor.version, &descriptor.required_neotalk)
-            .with_description(descriptor.description.clone())
-            .with_author(descriptor.author.clone().unwrap_or_default())
-            .with_type(&descriptor.plugin_type);
+        let base = PluginMetadata::new(
+            &descriptor.id,
+            &descriptor.name,
+            &descriptor.version,
+            &descriptor.required_neotalk,
+        )
+        .with_description(descriptor.description.clone())
+        .with_author(descriptor.author.clone().unwrap_or_default())
+        .with_type(&descriptor.plugin_type);
 
         // Determine plugin type
         let plugin_type = plugin_type_from_str(&descriptor.plugin_type)?;
 
         // Parse version requirement to get minimum version
         // Extract version number from requirement (e.g., ">=1.0.0" -> "1.0.0")
-        let version_str = descriptor.required_neotalk
+        let version_str = descriptor
+            .required_neotalk
             .trim_start_matches(">=")
             .trim_start_matches("^")
             .trim_start_matches("~")
@@ -90,7 +96,7 @@ impl DynamicPluginWrapper {
         let destroy_fn = unsafe {
             if descriptor.destroy_fn.is_null() {
                 return Err(PluginError::InitializationFailed(
-                    "Plugin destroy function is null".into()
+                    "Plugin destroy function is null".into(),
                 ));
             }
             std::mem::transmute::<*const (), PluginDestroyFn>(descriptor.destroy_fn)
@@ -122,7 +128,7 @@ impl DynamicPluginWrapper {
     pub fn load(&mut self, config: &Value) -> Result<()> {
         if self.instance.is_some() {
             return Err(PluginError::InitializationFailed(
-                "Plugin already loaded".into()
+                "Plugin already loaded".into(),
             ));
         }
 
@@ -140,7 +146,7 @@ impl DynamicPluginWrapper {
 
         if instance_ptr.is_null() {
             return Err(PluginError::InitializationFailed(
-                "Plugin create function returned null".into()
+                "Plugin create function returned null".into(),
             ));
         }
 
@@ -177,9 +183,7 @@ impl Display for DynamicPluginWrapper {
         write!(
             f,
             "{} v{} ({})",
-            self.descriptor.name,
-            self.descriptor.version,
-            self.descriptor.id
+            self.descriptor.name, self.descriptor.version, self.descriptor.id
         )
     }
 }
@@ -234,7 +238,7 @@ impl UnifiedPlugin for DynamicPluginWrapper {
     async fn health_check(&self) -> Result<()> {
         if !self.initialized {
             return Err(PluginError::ExecutionFailed(
-                "Plugin not initialized".into()
+                "Plugin not initialized".into(),
             ));
         }
 

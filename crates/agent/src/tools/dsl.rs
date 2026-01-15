@@ -11,11 +11,14 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_rules::{
-    RuleEngine, CompiledRule, RuleId, RuleStatus,
-    RuleHistoryStorage, HistoryFilter,
-    dsl::{RuleDslParser, ComparisonOperator, RuleAction},
+    CompiledRule, HistoryFilter, RuleEngine, RuleHistoryStorage, RuleId, RuleStatus,
+    dsl::{ComparisonOperator, RuleAction, RuleDslParser},
 };
-use edge_ai_tools::{Tool, ToolOutput, ToolError, error::Result as ToolResult, tool::{object_schema, string_property, boolean_property, number_property, array_property}};
+use edge_ai_tools::{
+    Tool, ToolError, ToolOutput,
+    error::Result as ToolResult,
+    tool::{array_property, boolean_property, number_property, object_schema, string_property},
+};
 
 /// ListRules tool - queries all rules with filtering.
 pub struct ListRulesTool {
@@ -38,7 +41,11 @@ impl ListRulesTool {
     }
 
     /// Get rule summaries with optional filtering.
-    async fn get_summaries(&self, status: Option<&str>, device_id: Option<&str>) -> Vec<RuleSummary> {
+    async fn get_summaries(
+        &self,
+        status: Option<&str>,
+        device_id: Option<&str>,
+    ) -> Vec<RuleSummary> {
         let guard = self.engine.read().await;
         let engine = match guard.as_ref() {
             Some(e) => e,
@@ -96,7 +103,7 @@ impl Tool for ListRulesTool {
                 "status": string_property("Filter by rule status: 'active', 'paused', 'triggered', or 'disabled'. Optional."),
                 "device_id": string_property("Filter by device ID that the rule monitors. Optional.")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -175,18 +182,27 @@ impl GetRuleTool {
                 RuleAction::Notify { message } => {
                     dsl.push_str(&format!("    NOTIFY \"{}\"\n", message));
                 }
-                RuleAction::Execute { device_id, command, params } => {
+                RuleAction::Execute {
+                    device_id,
+                    command,
+                    params,
+                } => {
                     dsl.push_str(&format!("    EXECUTE {}.{}(", device_id, command));
-                    let param_strs: Vec<String> = params
-                        .iter()
-                        .map(|(k, v)| format!("{}={}", k, v))
-                        .collect();
+                    let param_strs: Vec<String> =
+                        params.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
                     dsl.push_str(&param_strs.join(", "));
                     dsl.push_str(")\n");
                 }
-                RuleAction::Log { level, message, severity } => {
+                RuleAction::Log {
+                    level,
+                    message,
+                    severity,
+                } => {
                     if let Some(sev) = severity {
-                        dsl.push_str(&format!("    LOG {}, \"{}\", severity=\"{}\"\n", level, message, sev));
+                        dsl.push_str(&format!(
+                            "    LOG {}, \"{}\", severity=\"{}\"\n",
+                            level, message, sev
+                        ));
                     } else {
                         dsl.push_str(&format!("    LOG {}, \"{}\"\n", level, message));
                     }
@@ -220,7 +236,7 @@ impl Tool for GetRuleTool {
             serde_json::json!({
                 "rule_id": string_property("Rule ID (UUID format)")
             }),
-            vec!["rule_id".to_string()]
+            vec!["rule_id".to_string()],
         )
     }
 
@@ -229,7 +245,8 @@ impl Tool for GetRuleTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("rule_id must be a string".to_string()))?;
 
-        let rule = self.find_rule(rule_id)
+        let rule = self
+            .find_rule(rule_id)
             .await
             .ok_or_else(|| ToolError::NotFound(format!("Rule '{}' not found", rule_id)))?;
 
@@ -348,10 +365,7 @@ impl ExplainRuleTool {
 
         format!(
             "当设备'{}'的指标'{}'{}时，{}触发。",
-            rule.condition.device_id,
-            rule.condition.metric,
-            operator_desc,
-            duration_desc
+            rule.condition.device_id, rule.condition.metric, operator_desc, duration_desc
         )
     }
 
@@ -373,18 +387,19 @@ impl ExplainRuleTool {
         let operator_desc = match rule.condition.operator {
             ComparisonOperator::GreaterThan => format!("greater than {}", rule.condition.threshold),
             ComparisonOperator::LessThan => format!("less than {}", rule.condition.threshold),
-            ComparisonOperator::GreaterEqual => format!("greater than or equal to {}", rule.condition.threshold),
-            ComparisonOperator::LessEqual => format!("less than or equal to {}", rule.condition.threshold),
+            ComparisonOperator::GreaterEqual => {
+                format!("greater than or equal to {}", rule.condition.threshold)
+            }
+            ComparisonOperator::LessEqual => {
+                format!("less than or equal to {}", rule.condition.threshold)
+            }
             ComparisonOperator::Equal => format!("equal to {}", rule.condition.threshold),
             ComparisonOperator::NotEqual => format!("not equal to {}", rule.condition.threshold),
         };
 
         format!(
             "When metric '{}' on device '{}' is {}, trigger {}.",
-            rule.condition.metric,
-            rule.condition.device_id,
-            operator_desc,
-            duration_desc
+            rule.condition.metric, rule.condition.device_id, operator_desc, duration_desc
         )
     }
 
@@ -399,13 +414,23 @@ impl ExplainRuleTool {
                 RuleAction::Notify { message } => {
                     parts.push(format!("{}. 发送通知：{}", i + 1, message));
                 }
-                RuleAction::Execute { device_id, command, params } => {
+                RuleAction::Execute {
+                    device_id,
+                    command,
+                    params,
+                } => {
                     let param_str = if params.is_empty() {
                         String::new()
                     } else {
                         format!("，参数：{:?}", params)
                     };
-                    parts.push(format!("{}. 执行设备命令：{}.{}{}", i + 1, device_id, command, param_str));
+                    parts.push(format!(
+                        "{}. 执行设备命令：{}.{}{}",
+                        i + 1,
+                        device_id,
+                        command,
+                        param_str
+                    ));
                 }
                 RuleAction::Log { level, .. } => {
                     parts.push(format!("{}. 记录日志，级别：{}", i + 1, level));
@@ -420,19 +445,32 @@ impl ExplainRuleTool {
             return "This rule does not execute any actions".to_string();
         }
 
-        let mut parts = vec![format!("This rule executes {} actions when triggered:", rule.actions.len())];
+        let mut parts = vec![format!(
+            "This rule executes {} actions when triggered:",
+            rule.actions.len()
+        )];
         for (i, action) in rule.actions.iter().enumerate() {
             match action {
                 RuleAction::Notify { message } => {
                     parts.push(format!("{}. Send notification: {}", i + 1, message));
                 }
-                RuleAction::Execute { device_id, command, params } => {
+                RuleAction::Execute {
+                    device_id,
+                    command,
+                    params,
+                } => {
                     let param_str = if params.is_empty() {
                         String::new()
                     } else {
                         format!(" with params {:?}", params)
                     };
-                    parts.push(format!("{}. Execute command: {}.{}{}", i + 1, device_id, command, param_str));
+                    parts.push(format!(
+                        "{}. Execute command: {}.{}{}",
+                        i + 1,
+                        device_id,
+                        command,
+                        param_str
+                    ));
                 }
                 RuleAction::Log { level, .. } => {
                     parts.push(format!("{}. Log message at level: {}", i + 1, level));
@@ -445,16 +483,14 @@ impl ExplainRuleTool {
     fn example_usage_zh(&self, rule: &CompiledRule) -> String {
         format!(
             "示例：规则'{}'已触发{}次。",
-            rule.name,
-            rule.state.trigger_count
+            rule.name, rule.state.trigger_count
         )
     }
 
     fn example_usage_en(&self, rule: &CompiledRule) -> String {
         format!(
             "Example: Rule '{}' has been triggered {} times.",
-            rule.name,
-            rule.state.trigger_count
+            rule.name, rule.state.trigger_count
         )
     }
 }
@@ -481,7 +517,7 @@ impl Tool for ExplainRuleTool {
                 "rule_id": string_property("Rule ID (UUID format)"),
                 "language": string_property("Output language: 'zh' for Chinese, 'en' for English. Defaults to 'zh'.")
             }),
-            vec!["rule_id".to_string()]
+            vec!["rule_id".to_string()],
         )
     }
 
@@ -492,13 +528,16 @@ impl Tool for ExplainRuleTool {
 
         let language = args["language"].as_str().unwrap_or("zh");
 
-        let rule = self.find_rule(rule_id)
+        let rule = self
+            .find_rule(rule_id)
             .await
             .ok_or_else(|| ToolError::NotFound(format!("Rule '{}' not found", rule_id)))?;
 
         let explanation = self.explain(&rule, language);
 
-        Ok(ToolOutput::success(serde_json::to_value(explanation).unwrap()))
+        Ok(ToolOutput::success(
+            serde_json::to_value(explanation).unwrap(),
+        ))
     }
 }
 
@@ -551,7 +590,10 @@ impl GetRuleHistoryTool {
         }
 
         match storage.query(&filter).await {
-            Ok(entries) => entries.into_iter().map(HistoryEntry::from_storage).collect(),
+            Ok(entries) => entries
+                .into_iter()
+                .map(HistoryEntry::from_storage)
+                .collect(),
             Err(_) => Vec::new(),
         }
     }
@@ -561,7 +603,11 @@ impl GetRuleHistoryTool {
         let guard = self.history.read().await;
         let storage = guard.as_ref()?;
         let id = RuleId::from_string(rule_id).ok()?;
-        storage.get_stats(&id).await.ok().map(RuleStatistics::from_storage)
+        storage
+            .get_stats(&id)
+            .await
+            .ok()
+            .map(RuleStatistics::from_storage)
     }
 }
 
@@ -590,7 +636,7 @@ impl Tool for GetRuleHistoryTool {
                 "offset": number_property("Offset for pagination. Optional."),
                 "include_stats": boolean_property("Include statistics for the rule. Optional.")
             }),
-            vec![]
+            vec![],
         )
     }
 

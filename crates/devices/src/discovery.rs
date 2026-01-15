@@ -8,7 +8,7 @@
 //! - IP range scanning
 
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use futures::stream::{self, StreamExt};
@@ -16,17 +16,21 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 
 use super::mdl::{DeviceId, DeviceType, MetricDefinition};
-use super::mqtt::{MqttDevice, MqttConfig};
-use super::modbus::{ModbusDevice, ModbusConfig, RegisterDefinition};
+use super::modbus::{ModbusConfig, ModbusDevice, RegisterDefinition};
+use super::mqtt::{MqttConfig, MqttDevice};
 
 // Re-export HASS discovery types
 pub use super::hass_discovery::{
-    HassDiscoveryConfig, HassDiscoveryMessage, HassDiscoveryError, HassTopicParts,
-    parse_discovery_message, is_discovery_topic, is_supported_component,
-    discovery_subscription_pattern, component_to_device_type,
+    HassDiscoveryConfig, HassDiscoveryError, HassDiscoveryMessage, HassTopicParts,
+    component_to_device_type, discovery_subscription_pattern, is_discovery_topic,
+    is_supported_component, parse_discovery_message,
 };
-pub use super::hass_discovery_mapper::{map_hass_to_mdl, register_hass_device_type, generate_uplink_config};
-pub use super::hass_discovery_listener::{HassDiscoveryListener, HassDiscoveryConfig as HassDiscoveryListenerConfig};
+pub use super::hass_discovery_listener::{
+    HassDiscoveryConfig as HassDiscoveryListenerConfig, HassDiscoveryListener,
+};
+pub use super::hass_discovery_mapper::{
+    generate_uplink_config, map_hass_to_mdl, register_hass_device_type,
+};
 
 /// Discovery method type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,7 +97,9 @@ pub struct MqttDiscoveryConfig {
     pub timeout_secs: u64,
 }
 
-fn default_discovery_timeout() -> u64 { 30 }
+fn default_discovery_timeout() -> u64 {
+    30
+}
 
 impl MqttDiscoveryConfig {
     pub fn new(broker: impl Into<String>) -> Self {
@@ -135,10 +141,18 @@ pub struct ModbusDiscoveryConfig {
     pub concurrent: usize,
 }
 
-fn default_modbus_port() -> u16 { 502 }
-fn default_slave_ids() -> Vec<u8> { vec![1, 2, 3, 4, 5] }
-fn default_scan_timeout() -> u64 { 500 }
-fn default_concurrent_scans() -> usize { 50 }
+fn default_modbus_port() -> u16 {
+    502
+}
+fn default_slave_ids() -> Vec<u8> {
+    vec![1, 2, 3, 4, 5]
+}
+fn default_scan_timeout() -> u64 {
+    500
+}
+fn default_concurrent_scans() -> usize {
+    50
+}
 
 impl ModbusDiscoveryConfig {
     pub fn new(ip_range: impl Into<String>) -> Self {
@@ -206,7 +220,10 @@ impl DeviceDiscovery {
     }
 
     /// Discover devices using Modbus TCP scanning.
-    pub async fn scan_modbus(&self, config: ModbusDiscoveryConfig) -> Result<DiscoveryResult, DiscoveryError> {
+    pub async fn scan_modbus(
+        &self,
+        config: ModbusDiscoveryConfig,
+    ) -> Result<DiscoveryResult, DiscoveryError> {
         let start = std::time::Instant::now();
         let mut devices = Vec::new();
         let mut errors = Vec::new();
@@ -220,9 +237,7 @@ impl DeviceDiscovery {
                 let port = config.port;
                 let timeout = config.timeout_ms;
                 let slave_ids = config.slave_ids.clone();
-                async move {
-                    self.scan_modbus_host(addr, port, &slave_ids, timeout).await
-                }
+                async move { self.scan_modbus_host(addr, port, &slave_ids, timeout).await }
             })
             .buffer_unordered(config.concurrent)
             .collect::<Vec<_>>()
@@ -231,7 +246,7 @@ impl DeviceDiscovery {
         for result in results {
             match result {
                 Ok(Some(device)) => devices.push(device),
-                Ok(None) => {},
+                Ok(None) => {}
                 Err(e) => errors.push(e.to_string()),
             }
         }
@@ -255,11 +270,9 @@ impl DeviceDiscovery {
         let addr = SocketAddr::new(host, port);
 
         // Try to connect
-        let timeout_result = tokio::time::timeout(
-            Duration::from_millis(timeout_ms),
-            TcpStream::connect(&addr),
-        )
-        .await;
+        let timeout_result =
+            tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(&addr))
+                .await;
 
         let _conn = match timeout_result {
             Ok(Ok(stream)) => stream,
@@ -369,16 +382,18 @@ impl DeviceDiscovery {
         registers: Vec<RegisterDefinition>,
     ) -> Result<ModbusDevice, DiscoveryError> {
         match &discovered.connection {
-            DeviceConnection::Modbus { host, port, slave_id } => {
+            DeviceConnection::Modbus {
+                host,
+                port,
+                slave_id,
+            } => {
                 let config = ModbusConfig::new(host)
                     .with_port(*port)
                     .with_slave_id(*slave_id);
 
                 Ok(ModbusDevice::new(name, config, registers))
             }
-            _ => Err(DiscoveryError::Protocol(
-                "Not a Modbus device".to_string(),
-            )),
+            _ => Err(DiscoveryError::Protocol("Not a Modbus device".to_string())),
         }
     }
 
@@ -398,9 +413,7 @@ impl DeviceDiscovery {
                 let config = MqttConfig::new(broker, topic_prefix).with_port(*port);
                 Ok(MqttDevice::new(name, config, metrics))
             }
-            _ => Err(DiscoveryError::Protocol(
-                "Not an MQTT device".to_string(),
-            )),
+            _ => Err(DiscoveryError::Protocol("Not an MQTT device".to_string())),
         }
     }
 
@@ -439,7 +452,10 @@ impl DeviceDiscovery {
     }
 
     /// Discover common service ports.
-    pub async fn discover_services(&self, host: &str) -> Result<Vec<DiscoveredDevice>, DiscoveryError> {
+    pub async fn discover_services(
+        &self,
+        host: &str,
+    ) -> Result<Vec<DiscoveredDevice>, DiscoveryError> {
         let common_ports = vec![
             21,   // FTP
             22,   // SSH
@@ -489,8 +505,7 @@ impl DeviceDiscovery {
         topic: &str,
         payload: &[u8],
     ) -> Result<HassDiscoveryMessage, DiscoveryError> {
-        parse_discovery_message(topic, payload)
-            .map_err(|e| DiscoveryError::Protocol(e.to_string()))
+        parse_discovery_message(topic, payload).map_err(|e| DiscoveryError::Protocol(e.to_string()))
     }
 
     /// Convert HASS discovery message to MDL device type definition
@@ -498,8 +513,7 @@ impl DeviceDiscovery {
         &self,
         msg: &HassDiscoveryMessage,
     ) -> Result<super::mdl_format::DeviceTypeDefinition, DiscoveryError> {
-        map_hass_to_mdl(msg)
-            .map_err(|e| DiscoveryError::Protocol(e.to_string()))
+        map_hass_to_mdl(msg).map_err(|e| DiscoveryError::Protocol(e.to_string()))
     }
 }
 
@@ -511,7 +525,8 @@ impl DeviceDiscovery {
             if comps.is_empty() {
                 "homeassistant/+/config".to_string()
             } else {
-                comps.iter()
+                comps
+                    .iter()
                     .map(|c| format!("homeassistant/{}/+/config", c))
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -529,8 +544,17 @@ impl DeviceDiscovery {
     /// Get supported HASS components
     pub fn hass_supported_components() -> Vec<&'static str> {
         vec![
-            "sensor", "binary_sensor", "switch", "light", "cover",
-            "climate", "fan", "lock", "camera", "vacuum", "media_player",
+            "sensor",
+            "binary_sensor",
+            "switch",
+            "light",
+            "cover",
+            "climate",
+            "fan",
+            "lock",
+            "camera",
+            "vacuum",
+            "media_player",
         ]
     }
 

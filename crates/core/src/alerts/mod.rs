@@ -2,7 +2,6 @@
 //!
 //! This module defines the foundational traits for alert notification
 /// channels.
-
 use async_trait::async_trait;
 
 /// Result type for alert operations.

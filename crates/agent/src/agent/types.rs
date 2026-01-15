@@ -40,8 +40,49 @@ pub enum AgentEvent {
         /// Error message
         message: String,
     },
+    /// Warning message (non-fatal)
+    Warning {
+        /// Warning message
+        message: String,
+    },
     /// Stream ended
     End,
+    /// Intent classification result
+    Intent {
+        /// Intent category (e.g., "Device", "Rule", "Workflow")
+        category: String,
+        /// Display name (e.g., "设备管理", "自动化规则")
+        display_name: String,
+        /// Confidence score
+        #[serde(skip_serializing_if = "Option::is_none")]
+        confidence: Option<f32>,
+        /// Keywords that matched
+        #[serde(skip_serializing_if = "Option::is_none")]
+        keywords: Option<Vec<String>>,
+    },
+    /// Execution plan step
+    Plan {
+        /// Step description
+        step: String,
+        /// Stage name
+        stage: String,
+    },
+    /// Heartbeat to keep connection alive
+    Heartbeat {
+        /// Timestamp when heartbeat was sent
+        timestamp: i64,
+    },
+    /// Progress update
+    Progress {
+        /// Progress message
+        message: String,
+        /// Stage name
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stage: Option<String>,
+        /// Elapsed time in ms
+        #[serde(rename = "elapsedMs", skip_serializing_if = "Option::is_none")]
+        elapsed_ms: Option<u64>,
+    },
 }
 
 impl AgentEvent {
@@ -68,7 +109,11 @@ impl AgentEvent {
     }
 
     /// Create a tool call end event.
-    pub fn tool_call_end(tool: impl Into<String>, result: impl Into<String>, success: bool) -> Self {
+    pub fn tool_call_end(
+        tool: impl Into<String>,
+        result: impl Into<String>,
+        success: bool,
+    ) -> Self {
         Self::ToolCallEnd {
             tool: tool.into(),
             result: result.into(),
@@ -83,9 +128,59 @@ impl AgentEvent {
         }
     }
 
+    /// Create a warning event.
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self::Warning {
+            message: message.into(),
+        }
+    }
+
     /// Create an end event.
     pub fn end() -> Self {
         Self::End
+    }
+
+    /// Create an intent event.
+    pub fn intent(
+        category: impl Into<String>,
+        display_name: impl Into<String>,
+        confidence: impl Into<Option<f32>>,
+        keywords: impl Into<Option<Vec<String>>>,
+    ) -> Self {
+        Self::Intent {
+            category: category.into(),
+            display_name: display_name.into(),
+            confidence: confidence.into(),
+            keywords: keywords.into(),
+        }
+    }
+
+    /// Create a plan event.
+    pub fn plan(step: impl Into<String>, stage: impl Into<String>) -> Self {
+        Self::Plan {
+            step: step.into(),
+            stage: stage.into(),
+        }
+    }
+
+    /// Create a heartbeat event.
+    pub fn heartbeat() -> Self {
+        Self::Heartbeat {
+            timestamp: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Create a progress event.
+    pub fn progress(
+        message: impl Into<String>,
+        stage: impl Into<String>,
+        elapsed: u64,
+    ) -> Self {
+        Self::Progress {
+            message: message.into(),
+            stage: Some(stage.into()),
+            elapsed_ms: Some(elapsed),
+        }
     }
 
     /// Check if this event ends the stream.
@@ -130,13 +225,15 @@ impl Default for AgentConfig {
             // Long prompts can trigger infinite thinking loops in reasoning models
             system_prompt: r#"你是NeoTalk物联网助手。帮助用户管理设备、查询数据和配置规则。
 
-回复要求：简洁明了，直接回答问题。"#.to_string(),
+回复要求：简洁明了，直接回答问题。"#
+                .to_string(),
             max_context_tokens: 8000,
             temperature: 0.4,
             enable_tools: true,
             enable_memory: true,
             model: "qwen3-vl:2b".to_string(),
-            api_endpoint: std::env::var("OLLAMA_ENDPOINT").ok()
+            api_endpoint: std::env::var("OLLAMA_ENDPOINT")
+                .ok()
                 .or_else(|| std::env::var("OPENAI_ENDPOINT").ok())
                 .or_else(|| Some("http://localhost:11434/v1".to_string())),
             api_key: std::env::var("OPENAI_API_KEY").ok(),
@@ -193,7 +290,10 @@ impl AgentMessage {
     }
 
     /// Create an assistant message with thinking.
-    pub fn assistant_with_thinking(content: impl Into<String>, thinking: impl Into<String>) -> Self {
+    pub fn assistant_with_thinking(
+        content: impl Into<String>,
+        thinking: impl Into<String>,
+    ) -> Self {
         Self {
             role: "assistant".to_string(),
             content: content.into(),
@@ -291,7 +391,7 @@ impl AgentMessage {
                 } else {
                     Message::assistant(&self.content)
                 }
-            },
+            }
             "system" => Message::system(&self.content),
             "tool" => {
                 // Tool result messages - include which tool was called
@@ -301,7 +401,7 @@ impl AgentMessage {
                 } else {
                     Message::user(&self.content)
                 }
-            },
+            }
             _ => Message::user(&self.content),
         }
     }
@@ -389,14 +489,64 @@ impl SessionState {
     }
 }
 
+/// Unified internal state for the agent.
+/// Combines session state with LLM readiness and other runtime state.
+#[derive(Debug, Clone)]
+pub struct AgentInternalState {
+    /// Session ID
+    pub session_id: String,
+    /// Whether LLM is ready
+    pub llm_ready: bool,
+    /// Session state
+    pub session: SessionState,
+    /// Message history for this session
+    pub memory: Vec<AgentMessage>,
+}
+
+impl AgentInternalState {
+    /// Create a new internal state.
+    pub fn new(session_id: String) -> Self {
+        let session = SessionState::new(session_id.clone());
+        Self {
+            session_id,
+            llm_ready: false,
+            session,
+            memory: Vec::new(),
+        }
+    }
+
+    /// Update LLM readiness.
+    pub fn set_llm_ready(&mut self, ready: bool) {
+        self.llm_ready = ready;
+    }
+
+    /// Touch the session (update activity).
+    pub fn touch(&mut self) {
+        self.session.touch();
+    }
+
+    /// Push a message to the memory.
+    pub fn push_message(&mut self, message: AgentMessage) {
+        self.memory.push(message);
+        self.session.increment_messages();
+    }
+
+    /// Restore memory from a list of messages.
+    pub fn restore_memory(&mut self, messages: Vec<AgentMessage>) {
+        self.memory = messages;
+    }
+
+    /// Clear the memory.
+    pub fn clear_memory(&mut self) {
+        self.memory.clear();
+    }
+}
+
 /// LLM backend type with configuration.
 #[derive(Debug, Clone)]
 pub enum LlmBackend {
     /// Ollama (local)
-    Ollama {
-        endpoint: String,
-        model: String,
-    },
+    Ollama { endpoint: String, model: String },
     /// OpenAI-compatible API
     OpenAi {
         api_key: String,

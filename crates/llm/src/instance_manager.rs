@@ -7,10 +7,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
-use edge_ai_core::llm::backend::{LlmRuntime, LlmError, LlmInput, LlmOutput, GenerationParams};
+use edge_ai_core::llm::backend::{GenerationParams, LlmError, LlmInput, LlmOutput, LlmRuntime};
 use edge_ai_storage::{
-    LlmBackendStore, LlmBackendInstance, ConnectionTestResult,
-    LlmBackendType, BackendCapabilities,
+    BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
 };
 
 /// Detect model capabilities from model name (for Ollama instances)
@@ -23,9 +22,8 @@ fn detect_ollama_capabilities(model_name: &str) -> BackendCapabilities {
         || name_lower.starts_with("qwen3");
 
     // Multimodal support: vl, vision models
-    let supports_multimodal = name_lower.contains("vl")
-        || name_lower.contains("vision")
-        || name_lower.contains("mm");
+    let supports_multimodal =
+        name_lower.contains("vl") || name_lower.contains("vision") || name_lower.contains("mm");
 
     // Tools support: exclude very small models
     let supports_tools = !name_lower.contains("270m")
@@ -83,18 +81,21 @@ impl LlmBackendInstanceManager {
     /// Create a new instance manager
     pub fn new(storage: Arc<LlmBackendStore>) -> Self {
         // Load instances from storage
-        let instances = storage.load_all_instances()
+        let instances = storage
+            .load_all_instances()
             .unwrap_or_default()
             .into_iter()
             .map(|inst| (inst.id.clone(), inst))
             .collect();
 
         // Get active backend ID
-        let active_id = storage.get_active_backend_id()
+        let active_id = storage
+            .get_active_backend_id()
             .unwrap_or_default()
             .or_else(|| {
                 // If no active backend, try to get or create default
-                storage.get_or_create_active_backend()
+                storage
+                    .get_or_create_active_backend()
                     .ok()
                     .map(|inst| inst.id.clone())
             });
@@ -149,9 +150,8 @@ impl LlmBackendInstanceManager {
             instances.get(id).cloned()
         };
 
-        let instance = instance.ok_or_else(|| {
-            LlmError::BackendUnavailable(format!("Backend instance {}", id))
-        })?;
+        let instance = instance
+            .ok_or_else(|| LlmError::BackendUnavailable(format!("Backend instance {}", id)))?;
 
         // Create runtime from instance
         let runtime = self.create_runtime(&instance).await?;
@@ -166,7 +166,10 @@ impl LlmBackendInstanceManager {
     }
 
     /// Create a runtime from an instance configuration
-    async fn create_runtime(&self, instance: &LlmBackendInstance) -> Result<Arc<dyn LlmRuntime>, LlmError> {
+    async fn create_runtime(
+        &self,
+        instance: &LlmBackendInstance,
+    ) -> Result<Arc<dyn LlmRuntime>, LlmError> {
         use crate::backends::create_backend;
 
         let config = serde_json::json!({
@@ -186,7 +189,10 @@ impl LlmBackendInstanceManager {
         {
             let instances = self.instances.read().unwrap();
             if !instances.contains_key(id) {
-                return Err(LlmError::BackendUnavailable(format!("Backend instance {}", id)));
+                return Err(LlmError::BackendUnavailable(format!(
+                    "Backend instance {}",
+                    id
+                )));
             }
         }
 
@@ -197,7 +203,8 @@ impl LlmBackendInstanceManager {
         }
 
         // Update storage
-        self.storage.set_active_backend(id)
+        self.storage
+            .set_active_backend(id)
             .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
 
         // Update in-memory state
@@ -212,13 +219,13 @@ impl LlmBackendInstanceManager {
     /// Add or update an instance
     pub async fn upsert_instance(&self, instance: LlmBackendInstance) -> Result<(), LlmError> {
         // Validate
-        instance.validate()
-            .map_err(|e| LlmError::InvalidInput(e))?;
+        instance.validate().map_err(|e| LlmError::InvalidInput(e))?;
 
         let id = instance.id.clone();
 
         // Save to storage
-        self.storage.save_instance(&instance)
+        self.storage
+            .save_instance(&instance)
             .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
 
         // Update in-memory cache
@@ -240,12 +247,15 @@ impl LlmBackendInstanceManager {
         {
             let active_id = self.active_id.read().unwrap();
             if active_id.as_ref().map(|a| a == id).unwrap_or(false) {
-                return Err(LlmError::InvalidInput("Cannot remove active backend".to_string()));
+                return Err(LlmError::InvalidInput(
+                    "Cannot remove active backend".to_string(),
+                ));
             }
         }
 
         // Remove from storage
-        self.storage.delete_instance(id)
+        self.storage
+            .delete_instance(id)
             .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
 
         // Update in-memory
@@ -290,7 +300,8 @@ impl LlmBackendInstanceManager {
         let start = Instant::now();
 
         // Get instance
-        let instance = self.get_instance(id)
+        let instance = self
+            .get_instance(id)
             .ok_or_else(|| LlmError::BackendUnavailable(format!("Backend instance {}", id)))?;
 
         // Try to create runtime and test with a simple request
@@ -336,7 +347,9 @@ impl LlmBackendInstanceManager {
 
     /// Refresh instances from storage
     pub fn refresh(&self) -> Result<(), LlmError> {
-        let instances = self.storage.load_all_instances()
+        let instances = self
+            .storage
+            .load_all_instances()
             .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
 
         let instances_map: HashMap<String, LlmBackendInstance> = instances
@@ -344,8 +357,7 @@ impl LlmBackendInstanceManager {
             .map(|inst| (inst.id.clone(), inst))
             .collect();
 
-        let active_id = self.storage.get_active_backend_id()
-            .unwrap_or_default();
+        let active_id = self.storage.get_active_backend_id().unwrap_or_default();
 
         // Update in-memory state
         {
@@ -402,7 +414,9 @@ impl LlmBackendInstanceManager {
                 name: "Google".to_string(),
                 description: "Google Gemini API".to_string(),
                 default_model: "gemini-1.5-flash".to_string(),
-                default_endpoint: Some("https://generativelanguage.googleapis.com/v1beta".to_string()),
+                default_endpoint: Some(
+                    "https://generativelanguage.googleapis.com/v1beta".to_string(),
+                ),
                 requires_api_key: true,
                 supports_streaming: true,
                 supports_thinking: false,
@@ -429,7 +443,11 @@ impl LlmBackendInstanceManager {
         // Build required fields array
         let required: Vec<&str> = vec!["id", "name", "model"]
             .into_iter()
-            .chain(if requires_api_key { Some("api_key") } else { None })
+            .chain(if requires_api_key {
+                Some("api_key")
+            } else {
+                None
+            })
             .collect();
 
         serde_json::json!({
@@ -539,7 +557,8 @@ impl LlmBackendInstanceManager {
     /// Get health check status (cached)
     pub fn get_health_status(&self, id: &str) -> Option<bool> {
         let health_cache = self.health_cache.read().unwrap();
-        health_cache.get(id)
+        health_cache
+            .get(id)
             .filter(|(_, timestamp)| timestamp.elapsed() < std::time::Duration::from_secs(60))
             .map(|(healthy, _)| *healthy)
     }
@@ -612,19 +631,17 @@ mod tests {
 
     #[test]
     fn test_backend_type_definition() {
-        let types = vec![
-            BackendTypeDefinition {
-                id: "ollama".to_string(),
-                name: "Ollama".to_string(),
-                description: "本地 Ollama".to_string(),
-                default_model: "qwen3-vl:2b".to_string(),
-                default_endpoint: Some("http://localhost:11434".to_string()),
-                requires_api_key: false,
-                supports_streaming: true,
-                supports_thinking: true,
-                supports_multimodal: true,
-            },
-        ];
+        let types = vec![BackendTypeDefinition {
+            id: "ollama".to_string(),
+            name: "Ollama".to_string(),
+            description: "本地 Ollama".to_string(),
+            default_model: "qwen3-vl:2b".to_string(),
+            default_endpoint: Some("http://localhost:11434".to_string()),
+            requires_api_key: false,
+            supports_streaming: true,
+            supports_thinking: true,
+            supports_multimodal: true,
+        }];
 
         let json = serde_json::to_string(&types[0]).unwrap();
         assert!(json.contains("ollama"));
@@ -632,9 +649,8 @@ mod tests {
 
     #[test]
     fn test_config_schema_generation() {
-        let manager = LlmBackendInstanceManager::new(
-            Arc::new(LlmBackendStore::open(":memory:").unwrap())
-        );
+        let manager =
+            LlmBackendInstanceManager::new(Arc::new(LlmBackendStore::open(":memory:").unwrap()));
 
         let schema = manager.get_config_schema("ollama");
         assert_eq!(schema["type"], "object");

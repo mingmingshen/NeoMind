@@ -334,7 +334,10 @@ impl EmailChannel {
                 String::new()
             },
             if alert.occurrence_count > 1 {
-                format!("<p><strong>发生次数:</strong> {}</p>", alert.occurrence_count)
+                format!(
+                    "<p><strong>发生次数:</strong> {}</p>",
+                    alert.occurrence_count
+                )
             } else {
                 String::new()
             }
@@ -356,7 +359,9 @@ impl EmailChannel {
         let subject = format!("[{}] {}", alert.severity, alert.title);
 
         // Parse from address
-        let from_mailbox: lettre::message::Mailbox = self.from_address.parse()
+        let from_mailbox: lettre::message::Mailbox = self
+            .from_address
+            .parse()
             .map_err(|e| Error::SendError(format!("Invalid from address: {}", e)))?;
 
         // Build email with recipients
@@ -366,7 +371,8 @@ impl EmailChannel {
 
         // Add all recipients
         for to_addr in &self.to_addresses {
-            let mailbox: lettre::message::Mailbox = to_addr.parse()
+            let mailbox: lettre::message::Mailbox = to_addr
+                .parse()
                 .map_err(|e| Error::SendError(format!("Invalid to address: {}", e)))?;
             email_builder = email_builder.to(mailbox);
         }
@@ -378,13 +384,13 @@ impl EmailChannel {
                     .singlepart(
                         lettre::message::SinglePart::builder()
                             .header(lettre::message::header::ContentType::TEXT_PLAIN)
-                            .body(format!("{}\n\n{}", alert.title, alert.message))
+                            .body(format!("{}\n\n{}", alert.title, alert.message)),
                     )
                     .singlepart(
                         lettre::message::SinglePart::builder()
                             .header(lettre::message::header::ContentType::TEXT_HTML)
-                            .body(html_body)
-                    )
+                            .body(html_body),
+                    ),
             )
             .map_err(|e| Error::SendError(format!("Failed to build email: {}", e)))?;
 
@@ -397,10 +403,8 @@ impl EmailChannel {
         // Configure and send via tokio executor
         tokio::task::spawn_blocking(move || {
             // Configure SMTP transport
-            let creds = lettre::transport::smtp::authentication::Credentials::new(
-                username,
-                password,
-            );
+            let creds =
+                lettre::transport::smtp::authentication::Credentials::new(username, password);
             let relay = format!("{}:{}", smtp_server, smtp_port);
             let mailer = lettre::SmtpTransport::relay(&relay)
                 .map_err(|e| Error::SendError(format!("Invalid SMTP server: {}", e)))?
@@ -433,7 +437,9 @@ impl EmailChannel {
         }
 
         // Parse from address
-        let from_mailbox: lettre::message::Mailbox = self.from_address.parse()
+        let from_mailbox: lettre::message::Mailbox = self
+            .from_address
+            .parse()
             .map_err(|e| Error::SendError(format!("Invalid from address: {}", e)))?;
 
         // Build email with recipients
@@ -443,7 +449,8 @@ impl EmailChannel {
 
         // Add all recipients
         for to_addr in &self.to_addresses {
-            let mailbox: lettre::message::Mailbox = to_addr.parse()
+            let mailbox: lettre::message::Mailbox = to_addr
+                .parse()
                 .map_err(|e| Error::SendError(format!("Invalid to address: {}", e)))?;
             email_builder = email_builder.to(mailbox);
         }
@@ -462,10 +469,8 @@ impl EmailChannel {
         // Configure and send via tokio executor
         tokio::task::spawn_blocking(move || {
             // Configure SMTP transport
-            let creds = lettre::transport::smtp::authentication::Credentials::new(
-                username,
-                password,
-            );
+            let creds =
+                lettre::transport::smtp::authentication::Credentials::new(username, password);
             let relay = format!("{}:{}", smtp_server, smtp_port);
             let mailer = lettre::SmtpTransport::relay(&relay)
                 .map_err(|e| Error::SendError(format!("Invalid SMTP server: {}", e)))?
@@ -621,8 +626,8 @@ impl Default for ChannelRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::alert::{Alert, AlertSeverity};
+    use super::*;
 
     #[tokio::test]
     async fn test_memory_channel() {

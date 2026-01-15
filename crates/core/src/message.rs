@@ -47,9 +47,11 @@ impl Content {
     pub fn as_text(&self) -> String {
         match self {
             Self::Text(s) => s.clone(),
-            Self::Parts(parts) => {
-                parts.iter().map(|p| p.to_string()).collect::<Vec<_>>().join("\n")
-            }
+            Self::Parts(parts) => parts
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 }
@@ -260,10 +262,7 @@ impl Message {
                 parts.push(part);
             }
             Content::Text(text) => {
-                self.content = Content::Parts(vec![
-                    ContentPart::text(std::mem::take(text)),
-                    part,
-                ]);
+                self.content = Content::Parts(vec![ContentPart::text(std::mem::take(text)), part]);
             }
         }
         self

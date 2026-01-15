@@ -38,3 +38,7 @@ xai = ["cloud"]
 
 # All backends
 all = ["ollama", "cloud", "openai", "anthropic", "google", "xai"]
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = { workspace = true }

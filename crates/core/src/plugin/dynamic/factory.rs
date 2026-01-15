@@ -79,7 +79,9 @@ impl DynamicPluginFactory {
     /// Create a factory with a custom security context.
     pub fn with_security(security: SecurityContext) -> Self {
         Self {
-            loader: Arc::new(TokioRwLock::new(DynamicPluginLoader::with_security(security))),
+            loader: Arc::new(TokioRwLock::new(DynamicPluginLoader::with_security(
+                security,
+            ))),
             libraries: Arc::new(TokioRwLock::new(HashMap::new())),
             plugins: Arc::new(TokioRwLock::new(HashMap::new())),
             event_callback: Arc::new(TokioRwLock::new(None)),
@@ -266,7 +268,10 @@ impl DynamicPluginFactory {
     }
 
     /// Get a plugin wrapper by ID.
-    pub async fn get_plugin(&self, plugin_id: &str) -> Result<Arc<TokioRwLock<DynamicPluginWrapper>>> {
+    pub async fn get_plugin(
+        &self,
+        plugin_id: &str,
+    ) -> Result<Arc<TokioRwLock<DynamicPluginWrapper>>> {
         let plugins = self.plugins.read().await;
         let entry = plugins
             .get(plugin_id)
@@ -385,9 +390,7 @@ impl Default for DynamicPluginFactory {
 ///
 /// This is a convenience function for when you need to pass a dynamic plugin
 /// to code that expects a DynUnifiedPlugin.
-pub fn wrapper_to_unified(
-    wrapper: Arc<TokioRwLock<DynamicPluginWrapper>>,
-) -> DynUnifiedPlugin {
+pub fn wrapper_to_unified(wrapper: Arc<TokioRwLock<DynamicPluginWrapper>>) -> DynUnifiedPlugin {
     wrapper
 }
 

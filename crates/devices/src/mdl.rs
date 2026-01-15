@@ -3,11 +3,11 @@
 //! Provides a unified interface for interacting with various types of devices
 //! regardless of their underlying communication protocol.
 
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_trait::async_trait;
 
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 // Custom serialization module for binary data as base64
@@ -208,13 +208,18 @@ pub struct MetricDefinition {
 }
 
 /// Data type for metrics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MetricDataType {
     Integer,
     Float,
     String,
     Boolean,
     Binary,
+    /// Enum type with fixed set of string options
+    Enum {
+        options: Vec<String>,
+    },
 }
 
 impl Default for MetricDataType {
@@ -253,10 +258,13 @@ impl Command {
     }
 
     pub fn with_param(mut self, key: impl Into<String>, value: impl Into<MetricValue>) -> Self {
-        self.parameters.insert(key.into(), CommandParameter {
-            value: value.into(),
-            data_type: None,
-        });
+        self.parameters.insert(
+            key.into(),
+            CommandParameter {
+                value: value.into(),
+                data_type: None,
+            },
+        );
         self
     }
 
@@ -266,15 +274,9 @@ impl Command {
     }
 }
 
-/// Connection status of a device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ConnectionStatus {
-    Disconnected,
-    Connecting,
-    Connected,
-    Reconnecting,
-    Error,
-}
+/// Device state information.
+// Note: ConnectionStatus is now defined in the adapter module
+pub use crate::adapter::ConnectionStatus;
 
 /// Device state information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,82 +364,10 @@ pub enum DeviceError {
     /// Serialization error
     #[error("Serialization error: {0}")]
     Serialization(String),
-}
 
-/// Core device trait - all devices must implement this.
-#[async_trait]
-pub trait Device: Send + Sync {
-    /// Get the unique device identifier.
-    fn id(&self) -> &DeviceId;
-
-    /// Get the human-readable device name.
-    fn name(&self) -> &str;
-
-    /// Get the device type.
-    fn device_type(&self) -> DeviceType;
-
-    /// Get the device's capabilities.
-    fn capabilities(&self) -> Vec<DeviceCapability> {
-        Vec::new()
-    }
-
-    /// Get available metric definitions.
-    fn metrics(&self) -> Vec<MetricDefinition> {
-        Vec::new()
-    }
-
-    /// Get available command names.
-    fn commands(&self) -> Vec<String> {
-        Vec::new()
-    }
-
-    /// Read a metric value from the device.
-    async fn read_metric(&self, metric: &str) -> Result<MetricValue, DeviceError>;
-
-    /// Read multiple metrics at once.
-    async fn read_metrics(&self, metrics: &[&str]) -> Result<HashMap<String, MetricValue>, DeviceError> {
-        let mut result = HashMap::new();
-        for metric in metrics {
-            let value = self.read_metric(metric).await?;
-            result.insert(metric.to_string(), value);
-        }
-        Ok(result)
-    }
-
-    /// Write a command to the device.
-    async fn write_command(&self, command: &Command) -> Result<Option<MetricValue>, DeviceError>;
-
-    /// Connect to the device.
-    async fn connect(&mut self) -> Result<(), DeviceError>;
-
-    /// Disconnect from the device.
-    async fn disconnect(&mut self) -> Result<(), DeviceError>;
-
-    /// Check if the device is currently connected.
-    async fn is_connected(&self) -> bool;
-
-    /// Get the current device state.
-    async fn state(&self) -> DeviceState;
-
-    /// Get device information.
-    fn info(&self) -> DeviceInfo;
-}
-
-/// Dynamic device wrapper for heterogeneous device storage.
-pub type DynDevice = Arc<dyn Device>;
-
-/// Helper trait for downcasting device references.
-pub trait DeviceDowncast {
-    /// Attempt to downcast to a specific device type.
-    fn downcast_ref<T: Device + 'static>(&self) -> Option<&T>;
-
-    /// Attempt to downcast mutably to a specific device type.
-    fn downcast_mut<T: Device + 'static>(&mut self) -> Option<&mut T>;
-}
-
-/// Convert any Device implementer into a DeviceInfo.
-pub fn device_to_info(device: &DynDevice) -> DeviceInfo {
-    device.info()
+    /// Storage error
+    #[error("Storage error: {0}")]
+    Storage(String),
 }
 
 #[cfg(test)]

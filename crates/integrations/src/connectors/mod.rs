@@ -9,6 +9,6 @@ pub mod mqtt;
 pub mod base;
 
 // Re-exports
-#[cfg(feature = "mqtt")]
-pub use mqtt::{MqttConnector, MqttConfig};
 pub use base::{StreamConnector, StreamConnectorConfig};
+#[cfg(feature = "mqtt")]
+pub use mqtt::{MqttConfig, MqttConnector};

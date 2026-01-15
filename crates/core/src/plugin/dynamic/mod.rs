@@ -11,8 +11,8 @@ pub mod wrapper;
 
 // Re-exports for convenience
 pub use descriptor::{
-    DescriptorError, PluginCapabilities, PluginDescriptor, PluginCreateFn,
-    PluginDestroyFn, ParsedPluginDescriptor, PLUGIN_ABI_VERSION,
+    DescriptorError, PLUGIN_ABI_VERSION, ParsedPluginDescriptor, PluginCapabilities,
+    PluginCreateFn, PluginDescriptor, PluginDestroyFn,
 };
 pub use factory::{DynamicPluginFactory, PluginFactoryEvent, wrapper_to_unified};
 pub use loader::{DynamicPluginLoader, LoadedPlugin};

@@ -6,8 +6,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use edge_ai_devices::mdl_format::{DeviceTypeDefinition, MetricDefinition, CommandDefinition};
-use edge_ai_rules::dsl::{ParsedRule, ComparisonOperator, RuleAction};
+use edge_ai_devices::mdl_format::{CommandDefinition, DeviceTypeDefinition, MetricDefinition};
+use edge_ai_rules::dsl::{ComparisonOperator, ParsedRule, RuleAction};
 
 /// Supported languages for translation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,21 +51,40 @@ impl MdlTranslator {
             language: language.code().to_string(),
             natural_description: description,
             capabilities,
-            metrics: device.uplink.metrics.iter().map(|m| MetricInfo {
-                name: m.name.clone(),
-                display_name: m.display_name.clone(),
-                unit: m.unit.clone(),
-                description: format!("{:?}", m.data_type),
-            }).collect(),
-            commands: device.downlink.commands.iter().map(|c| CommandInfo {
-                name: c.name.clone(),
-                display_name: c.display_name.clone(),
-                parameters: c.parameters.iter().map(|p| ParamInfo {
-                    name: p.name.clone(),
-                    display_name: p.display_name.clone(),
-                    default_value: p.default_value.as_ref().map(|v| format!("{:?}", v)).unwrap_or_default().into(),
-                }).collect(),
-            }).collect(),
+            metrics: device
+                .uplink
+                .metrics
+                .iter()
+                .map(|m| MetricInfo {
+                    name: m.name.clone(),
+                    display_name: m.display_name.clone(),
+                    unit: m.unit.clone(),
+                    description: format!("{:?}", m.data_type),
+                })
+                .collect(),
+            commands: device
+                .downlink
+                .commands
+                .iter()
+                .map(|c| CommandInfo {
+                    name: c.name.clone(),
+                    display_name: c.display_name.clone(),
+                    parameters: c
+                        .parameters
+                        .iter()
+                        .map(|p| ParamInfo {
+                            name: p.name.clone(),
+                            display_name: p.display_name.clone(),
+                            default_value: p
+                                .default_value
+                                .as_ref()
+                                .map(|v| format!("{:?}", v))
+                                .unwrap_or_default()
+                                .into(),
+                        })
+                        .collect(),
+                })
+                .collect(),
         }
     }
 
@@ -79,8 +98,10 @@ impl MdlTranslator {
 
         // Add metrics info
         if !device.uplink.metrics.is_empty() {
-            desc.push_str(&format!("，支持上报{}个指标：",
-                device.uplink.metrics.len()));
+            desc.push_str(&format!(
+                "，支持上报{}个指标：",
+                device.uplink.metrics.len()
+            ));
             for (i, metric) in device.uplink.metrics.iter().enumerate() {
                 if i > 0 {
                     desc.push_str("、");
@@ -91,8 +112,10 @@ impl MdlTranslator {
 
         // Add commands info
         if !device.downlink.commands.is_empty() {
-            desc.push_str(&format!("，支持接收{}个命令：",
-                device.downlink.commands.len()));
+            desc.push_str(&format!(
+                "，支持接收{}个命令：",
+                device.downlink.commands.len()
+            ));
             for (i, cmd) in device.downlink.commands.iter().enumerate() {
                 if i > 0 {
                     desc.push_str("、");
@@ -115,8 +138,10 @@ impl MdlTranslator {
 
         // Add metrics info
         if !device.uplink.metrics.is_empty() {
-            desc.push_str(&format!(" that reports {} metrics: ",
-                device.uplink.metrics.len()));
+            desc.push_str(&format!(
+                " that reports {} metrics: ",
+                device.uplink.metrics.len()
+            ));
             for (i, metric) in device.uplink.metrics.iter().enumerate() {
                 if i > 0 {
                     desc.push_str(", ");
@@ -127,8 +152,10 @@ impl MdlTranslator {
 
         // Add commands info
         if !device.downlink.commands.is_empty() {
-            desc.push_str(&format!(" and supports {} commands: ",
-                device.downlink.commands.len()));
+            desc.push_str(&format!(
+                " and supports {} commands: ",
+                device.downlink.commands.len()
+            ));
             for (i, cmd) in device.downlink.commands.iter().enumerate() {
                 if i > 0 {
                     desc.push_str(", ");
@@ -150,7 +177,10 @@ impl MdlTranslator {
                     caps.push(format!("分类：{}", category));
                 }
                 for metric in &device.uplink.metrics {
-                    caps.push(format!("可上报指标：{} (单位：{})", metric.display_name, metric.unit));
+                    caps.push(format!(
+                        "可上报指标：{} (单位：{})",
+                        metric.display_name, metric.unit
+                    ));
                 }
                 for cmd in &device.downlink.commands {
                     caps.push(format!("可执行命令：{}", cmd.display_name));
@@ -161,7 +191,10 @@ impl MdlTranslator {
                     caps.push(format!("Category: {}", category));
                 }
                 for metric in &device.uplink.metrics {
-                    caps.push(format!("Reports metric: {} (unit: {})", metric.display_name, metric.unit));
+                    caps.push(format!(
+                        "Reports metric: {} (unit: {})",
+                        metric.display_name, metric.unit
+                    ));
                 }
                 for cmd in &device.downlink.commands {
                     caps.push(format!("Supports command: {}", cmd.display_name));
@@ -280,11 +313,35 @@ impl DslTranslator {
         let duration_text = if let Some(duration) = rule.for_duration {
             let secs = duration.as_secs();
             let time_str = if secs % 3600 == 0 {
-                format!("{} {}", secs / 3600, if language == Language::Chinese { "小时" } else { "hours" })
+                format!(
+                    "{} {}",
+                    secs / 3600,
+                    if language == Language::Chinese {
+                        "小时"
+                    } else {
+                        "hours"
+                    }
+                )
             } else if secs % 60 == 0 {
-                format!("{} {}", secs / 60, if language == Language::Chinese { "分钟" } else { "minutes" })
+                format!(
+                    "{} {}",
+                    secs / 60,
+                    if language == Language::Chinese {
+                        "分钟"
+                    } else {
+                        "minutes"
+                    }
+                )
             } else {
-                format!("{} {}", secs, if language == Language::Chinese { "秒" } else { "seconds" })
+                format!(
+                    "{} {}",
+                    secs,
+                    if language == Language::Chinese {
+                        "秒"
+                    } else {
+                        "seconds"
+                    }
+                )
             };
 
             if language == Language::Chinese {
@@ -321,8 +378,10 @@ impl DslTranslator {
     }
 
     fn describe_actions(actions: &[RuleAction], language: Language) -> Vec<String> {
-        actions.iter().enumerate().map(|(i, action)| {
-            match action {
+        actions
+            .iter()
+            .enumerate()
+            .map(|(i, action)| match action {
                 RuleAction::Notify { message } => {
                     if language == Language::Chinese {
                         format!("{}. 发送通知：{}", i + 1, message)
@@ -330,16 +389,32 @@ impl DslTranslator {
                         format!("{}. Send notification: {}", i + 1, message)
                     }
                 }
-                RuleAction::Execute { device_id, command, params } => {
+                RuleAction::Execute {
+                    device_id,
+                    command,
+                    params,
+                } => {
                     let param_str = if params.is_empty() {
                         String::new()
                     } else {
                         format!(" {}", serde_json::to_string(params).unwrap_or_default())
                     };
                     if language == Language::Chinese {
-                        format!("{}. 执行命令：{}.{}{}", i + 1, device_id, command, param_str)
+                        format!(
+                            "{}. 执行命令：{}.{}{}",
+                            i + 1,
+                            device_id,
+                            command,
+                            param_str
+                        )
                     } else {
-                        format!("{}. Execute command: {}.{}{}", i + 1, device_id, command, param_str)
+                        format!(
+                            "{}. Execute command: {}.{}{}",
+                            i + 1,
+                            device_id,
+                            command,
+                            param_str
+                        )
                     }
                 }
                 RuleAction::Log { level, message, .. } => {
@@ -349,8 +424,8 @@ impl DslTranslator {
                         format!("{}. Log: [{}] {}", i + 1, level, message)
                     }
                 }
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     fn summarize_rule(rule: &ParsedRule, language: Language) -> String {
@@ -436,7 +511,15 @@ impl NlToDslConverter {
         // Detect actions
         let actions = Self::extract_actions(&desc_lower, &device_id, context);
 
-        let dsl = Self::format_dsl(&name, &device_id, &metric, operator, threshold, for_duration.as_ref(), &actions);
+        let dsl = Self::format_dsl(
+            &name,
+            &device_id,
+            &metric,
+            operator,
+            threshold,
+            for_duration.as_ref(),
+            &actions,
+        );
 
         Ok(DslGeneration {
             dsl,
@@ -457,14 +540,18 @@ impl NlToDslConverter {
 
         if let Some(start) = desc_lower.find("规则名为") {
             let start = start + "规则名为".len();
-            if let Some(end) = description[start..].find(|c: char| c == '，' || c == '。' || c == ',') {
+            if let Some(end) =
+                description[start..].find(|c: char| c == '，' || c == '。' || c == ',')
+            {
                 return Some(description[start..start + end].trim().to_string());
             }
         }
 
         if let Some(start) = desc_lower.find("名为") {
             let start = start + "名为".len();
-            if let Some(end) = description[start..].find(|c: char| c == ' ' || c == '，' || c == '。' || c == ',') {
+            if let Some(end) =
+                description[start..].find(|c: char| c == ' ' || c == '，' || c == '。' || c == ',')
+            {
                 return Some(description[start..start + end].trim().to_string());
             }
         }
@@ -499,7 +586,9 @@ impl NlToDslConverter {
             if let Some(pos) = text.find(pattern) {
                 let after = text[pos + pattern.len()..].trim();
                 // Try to parse number - if we find a non-digit char, use up to that point
-                let num_str = if let Some(end) = after.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-') {
+                let num_str = if let Some(end) =
+                    after.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+                {
                     &after[..end]
                 } else {
                     after // Use entire remaining string if no separator found
@@ -532,7 +621,11 @@ impl NlToDslConverter {
                 let before = &text[..pos];
                 let trimmed = before.trim();
                 // Find the last number
-                if let Some(num_end) = trimmed.chars().rev().position(|c| !c.is_ascii_digit() && c != '.' && c != ' ') {
+                if let Some(num_end) = trimmed
+                    .chars()
+                    .rev()
+                    .position(|c| !c.is_ascii_digit() && c != '.' && c != ' ')
+                {
                     let num_start = trimmed.len() - num_end;
                     let num_str = &trimmed[num_start..];
                     if let Ok(val) = num_str.trim().parse::<u64>() {
@@ -545,11 +638,19 @@ impl NlToDslConverter {
         None
     }
 
-    fn extract_actions(text: &str, _device_id: &str, context: &ConversionContext) -> Vec<RuleAction> {
+    fn extract_actions(
+        text: &str,
+        _device_id: &str,
+        context: &ConversionContext,
+    ) -> Vec<RuleAction> {
         let mut actions = Vec::new();
 
         // Check for notification intent
-        if text.contains("通知") || text.contains("告警") || text.contains("提醒") || text.contains("notify") {
+        if text.contains("通知")
+            || text.contains("告警")
+            || text.contains("提醒")
+            || text.contains("notify")
+        {
             let message = if let Some(start) = text.find("通知") {
                 // Extract message content
                 let after = &text[start + "通知".len()..];
@@ -576,7 +677,10 @@ impl NlToDslConverter {
         // If no actions found, add a default notification
         if actions.is_empty() {
             actions.push(RuleAction::Notify {
-                message: format!("规则 '{}' 已触发", context.default_rule_name.as_deref().unwrap_or("规则")),
+                message: format!(
+                    "规则 '{}' 已触发",
+                    context.default_rule_name.as_deref().unwrap_or("规则")
+                ),
             });
         }
 
@@ -593,7 +697,13 @@ impl NlToDslConverter {
         actions: &[RuleAction],
     ) -> String {
         let mut dsl = format!("RULE \"{}\"\n", name);
-        dsl.push_str(&format!("WHEN {}.{} {} {}\n", device_id, metric, operator.as_str(), threshold));
+        dsl.push_str(&format!(
+            "WHEN {}.{} {} {}\n",
+            device_id,
+            metric,
+            operator.as_str(),
+            threshold
+        ));
 
         if let Some(duration) = for_duration {
             let secs = duration.as_secs();
@@ -627,25 +737,33 @@ impl NlToDslConverter {
         let mut confidence: f32 = 0.5;
 
         // Higher confidence if we found known devices
-        if context.known_devices.iter().any(|d| text.contains(&d.to_lowercase())) {
+        if context
+            .known_devices
+            .iter()
+            .any(|d| text.contains(&d.to_lowercase()))
+        {
             confidence += 0.1;
         }
 
         // Higher confidence if we found known metrics
-        if context.known_metrics.iter().any(|m| text.contains(&m.to_lowercase())) {
+        if context
+            .known_metrics
+            .iter()
+            .any(|m| text.contains(&m.to_lowercase()))
+        {
             confidence += 0.1;
         }
 
         // Higher confidence if we found operator
-        if text.contains(">") || text.contains("<") || text.contains("大于") || text.contains("小于") {
+        if text.contains(">")
+            || text.contains("<")
+            || text.contains("大于")
+            || text.contains("小于")
+        {
             confidence += 0.2;
         }
 
-        if confidence > 1.0 {
-            1.0
-        } else {
-            confidence
-        }
+        if confidence > 1.0 { 1.0 } else { confidence }
     }
 }
 
@@ -722,10 +840,7 @@ mod tests {
             default_rule_name: Some("测试规则".to_string()),
         };
 
-        let result = NlToDslConverter::convert(
-            "当传感器温度大于50时发送通知",
-            &context,
-        ).unwrap();
+        let result = NlToDslConverter::convert("当传感器温度大于50时发送通知", &context).unwrap();
 
         assert!(result.dsl.contains("RULE"));
         assert!(result.dsl.contains("WHEN"));
@@ -767,10 +882,7 @@ mod tests {
             NlToDslConverter::find_match("temperature太高", &options),
             Some("temperature".to_string())
         );
-        assert_eq!(
-            NlToDslConverter::find_match("unknown", &options),
-            None
-        );
+        assert_eq!(NlToDslConverter::find_match("unknown", &options), None);
     }
 
     #[test]
@@ -802,21 +914,17 @@ mod tests {
             description: "A test sensor".to_string(),
             categories: vec!["sensor".to_string()],
             uplink: edge_ai_devices::mdl_format::UplinkConfig {
-                metrics: vec![
-                    MetricDefinition {
-                        name: "temperature".to_string(),
-                        display_name: "温度".to_string(),
-                        unit: "°C".to_string(),
-                        data_type: MetricDataType::Float,
-                        min: Some(-40.0),
-                        max: Some(120.0),
-                        required: false,
-                    }
-                ],
+                metrics: vec![MetricDefinition {
+                    name: "temperature".to_string(),
+                    display_name: "温度".to_string(),
+                    unit: "°C".to_string(),
+                    data_type: MetricDataType::Float,
+                    min: Some(-40.0),
+                    max: Some(120.0),
+                    required: false,
+                }],
             },
-            downlink: edge_ai_devices::mdl_format::DownlinkConfig {
-                commands: vec![],
-            },
+            downlink: edge_ai_devices::mdl_format::DownlinkConfig { commands: vec![] },
         };
 
         let desc = MdlTranslator::translate_device(&device, Language::Chinese);

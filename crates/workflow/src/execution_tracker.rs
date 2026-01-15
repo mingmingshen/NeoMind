@@ -4,7 +4,7 @@
 //! including the ability to cancel running workflows.
 
 use crate::error::{Result, WorkflowError};
-use crate::store::{ExecutionRecord, ExecutionStatus, StepResult, ExecutionLog};
+use crate::store::{ExecutionLog, ExecutionRecord, ExecutionStatus, StepResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -210,9 +210,9 @@ impl RunningExecution {
 
     /// Wait for the execution to complete.
     pub async fn wait(self) -> Result<()> {
-        self.handle.await.map_err(|e| {
-            WorkflowError::ExecutionError(format!("Join error: {}", e))
-        })?
+        self.handle
+            .await
+            .map_err(|e| WorkflowError::ExecutionError(format!("Join error: {}", e)))?
     }
 }
 
@@ -261,9 +261,11 @@ impl ExecutionTracker {
 
         // Acquire semaphore permit - we forget it to extend lifetime
         // The permit will be released when execution completes via complete_execution/fail_execution
-        let _permit = self.semaphore.acquire().await.map_err(|e| {
-            WorkflowError::ExecutionError(format!("Semaphore error: {}", e))
-        })?;
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
+            .map_err(|e| WorkflowError::ExecutionError(format!("Semaphore error: {}", e)))?;
         std::mem::forget(_permit);
 
         // Create initial state
@@ -284,7 +286,10 @@ impl ExecutionTracker {
         let mut running = self.running.write().await;
         running.insert(execution_id.clone(), running_exec);
 
-        info!("Started execution {} for workflow {}", execution_id, workflow_id);
+        info!(
+            "Started execution {} for workflow {}",
+            execution_id, workflow_id
+        );
 
         Ok(ExecutionPermit::new(execution_id, workflow_id))
     }
@@ -308,7 +313,10 @@ impl ExecutionTracker {
 
             Ok(())
         } else {
-            warn!("Execution {} not found when registering handle", execution_id);
+            warn!(
+                "Execution {} not found when registering handle",
+                execution_id
+            );
             Err(WorkflowError::ExecutionError(format!(
                 "Execution {} not found",
                 execution_id
@@ -596,14 +604,17 @@ mod tests {
     async fn test_execution_state_progress() {
         let mut state = ExecutionState::new("exec1", "workflow1");
 
-        state.step_results.insert("step1".to_string(), StepResult {
-            step_id: "step1".to_string(),
-            started_at: 1000,
-            completed_at: Some(1100),
-            status: ExecutionStatus::Completed,
-            output: None,
-            error: None,
-        });
+        state.step_results.insert(
+            "step1".to_string(),
+            StepResult {
+                step_id: "step1".to_string(),
+                started_at: 1000,
+                completed_at: Some(1100),
+                status: ExecutionStatus::Completed,
+                output: None,
+                error: None,
+            },
+        );
 
         assert_eq!(state.progress(5), 20.0); // 1/5 = 20%
     }
@@ -613,7 +624,10 @@ mod tests {
         let tracker = ExecutionTracker::new(5);
 
         // Start an execution
-        let permit = tracker.start_execution("exec1", "workflow1", 3).await.unwrap();
+        let permit = tracker
+            .start_execution("exec1", "workflow1", 3)
+            .await
+            .unwrap();
 
         assert_eq!(tracker.running_count().await, 1);
 
@@ -636,7 +650,10 @@ mod tests {
     async fn test_cancel_execution() {
         let tracker = ExecutionTracker::new(5);
 
-        tracker.start_execution("exec1", "workflow1", 3).await.unwrap();
+        tracker
+            .start_execution("exec1", "workflow1", 3)
+            .await
+            .unwrap();
 
         // Cancel execution
         let cancelled = tracker.cancel_execution("exec1").await.unwrap();
@@ -651,8 +668,14 @@ mod tests {
     async fn test_list_running() {
         let tracker = ExecutionTracker::new(5);
 
-        tracker.start_execution("exec1", "workflow1", 3).await.unwrap();
-        tracker.start_execution("exec2", "workflow1", 3).await.unwrap();
+        tracker
+            .start_execution("exec1", "workflow1", 3)
+            .await
+            .unwrap();
+        tracker
+            .start_execution("exec2", "workflow1", 3)
+            .await
+            .unwrap();
 
         let running = tracker.list_running().await;
         assert_eq!(running.len(), 2);
@@ -662,8 +685,14 @@ mod tests {
     async fn test_workflow_executions() {
         let tracker = ExecutionTracker::new(5);
 
-        tracker.start_execution("exec1", "workflow1", 3).await.unwrap();
-        tracker.start_execution("exec2", "workflow2", 3).await.unwrap();
+        tracker
+            .start_execution("exec1", "workflow1", 3)
+            .await
+            .unwrap();
+        tracker
+            .start_execution("exec2", "workflow2", 3)
+            .await
+            .unwrap();
 
         // Complete exec1
         tracker.complete_execution("exec1").await.unwrap();
@@ -683,7 +712,10 @@ mod tests {
     async fn test_record_step_result() {
         let tracker = ExecutionTracker::new(5);
 
-        tracker.start_execution("exec1", "workflow1", 3).await.unwrap();
+        tracker
+            .start_execution("exec1", "workflow1", 3)
+            .await
+            .unwrap();
 
         let result = StepResult {
             step_id: "step1".to_string(),
@@ -694,7 +726,10 @@ mod tests {
             error: None,
         };
 
-        tracker.record_step_result("exec1", "step1".to_string(), result).await.unwrap();
+        tracker
+            .record_step_result("exec1", "step1".to_string(), result)
+            .await
+            .unwrap();
 
         let exec = tracker.get_execution("exec1").await.unwrap();
         assert!(exec.is_some());

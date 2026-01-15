@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-use crate::command::{CommandStatus, CommandResult};
-use crate::queue::CommandQueue;
 use crate::adapter::DownlinkAdapterRegistry;
+use crate::command::{CommandResult, CommandStatus};
+use crate::queue::CommandQueue;
 
 /// Processor configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

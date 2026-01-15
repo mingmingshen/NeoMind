@@ -3,11 +3,11 @@
 //! This module provides shared utilities for API handlers including
 //! unified error handling, response builders, and common patterns.
 
-use axum::response::{IntoResponse, Response, Json};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Json, Response};
 use serde::Deserialize;
 
-use crate::models::{error::ErrorResponse, common::ApiResponse, pagination::PaginationMeta};
+use crate::models::{common::ApiResponse, error::ErrorResponse, pagination::PaginationMeta};
 
 /// Unified Result type for all API handlers.
 ///
@@ -108,9 +108,9 @@ where
 {
     match value {
         Some(v) => {
-            let parsed = v
-                .parse::<T>()
-                .map_err(|_| ErrorResponse::bad_request(format!("Invalid query parameter: {}", v)))?;
+            let parsed = v.parse::<T>().map_err(|_| {
+                ErrorResponse::bad_request(format!("Invalid query parameter: {}", v))
+            })?;
             Ok(Some(parsed))
         }
         None => Ok(None),
@@ -124,10 +124,13 @@ where
     T::Err: std::fmt::Display,
 {
     match value {
-        Some(v) => v
-            .parse::<T>()
-            .map_err(|_| ErrorResponse::bad_request(format!("Invalid query parameter '{}': {}", name, v))),
-        None => Err(ErrorResponse::bad_request(format!("Missing required query parameter: {}", name))),
+        Some(v) => v.parse::<T>().map_err(|_| {
+            ErrorResponse::bad_request(format!("Invalid query parameter '{}': {}", name, v))
+        }),
+        None => Err(ErrorResponse::bad_request(format!(
+            "Missing required query parameter: {}",
+            name
+        ))),
     }
 }
 
@@ -137,10 +140,7 @@ pub fn ok<T: serde::Serialize>(data: T) -> HandlerResult<T> {
 }
 
 /// Create a successful response with data and metadata (for pagination).
-pub fn ok_with_meta<T: serde::Serialize>(
-    data: T,
-    meta: PaginationMeta,
-) -> HandlerResult<T> {
+pub fn ok_with_meta<T: serde::Serialize>(data: T, meta: PaginationMeta) -> HandlerResult<T> {
     Ok(Json(ApiResponse::paginated(data, meta)))
 }
 
@@ -225,7 +225,7 @@ mod tests {
     fn test_ok_helper() {
         let result: HandlerResult<String> = ok("test".to_string());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0 .data, "test");
+        assert_eq!(result.unwrap().0.data, Some("test".to_string()));
     }
 
     #[test]
@@ -235,9 +235,11 @@ mod tests {
             page_size: 10,
             total_count: 100,
             total_pages: 10,
+            has_next: true,
+            has_prev: false,
         };
         let result: HandlerResult<String> = ok_with_meta("test".to_string(), meta);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().0 .data, "test");
+        assert_eq!(result.unwrap().0.data, Some("test".to_string()));
     }
 }

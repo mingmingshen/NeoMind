@@ -2,13 +2,13 @@
 //!
 //! Maps device capabilities to MQTT topics and handles JSON/binary payload parsing.
 
+use crate::mdl::{MetricDataType, MetricValue};
+use crate::protocol::mapping::{
+    Address, CommandMappingConfig, MappingConfig, MappingError, MappingResult, MetricMappingConfig,
+    ProtocolMapping,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::mdl::{MetricValue, MetricDataType};
-use crate::protocol::mapping::{
-    ProtocolMapping, Address, MappingConfig, MetricMappingConfig,
-    CommandMappingConfig, MappingResult, MappingError,
-};
 
 /// MQTT protocol mapping configuration.
 #[derive(Debug, Clone)]
@@ -87,7 +87,9 @@ pub struct MqttMapping {
 impl MqttMapping {
     /// Create a new MQTT mapping from configuration.
     pub fn new(config: MqttMappingConfig) -> Self {
-        let capabilities = config.metric_topics.iter()
+        let capabilities = config
+            .metric_topics
+            .iter()
             .map(|(k, _)| (k.clone(), MetricDataType::Float))
             .collect();
 
@@ -102,7 +104,10 @@ impl MqttMapping {
         config: MqttMappingConfig,
         capabilities: HashMap<String, MetricDataType>,
     ) -> Self {
-        Self { config, capabilities }
+        Self {
+            config,
+            capabilities,
+        }
     }
 
     /// Create from a generic MappingConfig.
@@ -140,19 +145,24 @@ impl MqttMapping {
 
     /// Get the MQTT topic for a metric.
     pub fn metric_topic(&self, device_id: &str, capability_name: &str) -> Option<String> {
-        self.config.metric_topics.get(capability_name)
+        self.config
+            .metric_topics
+            .get(capability_name)
             .map(|template| Self::render_topic(template, device_id))
     }
 
     /// Get the MQTT topic for a command.
     pub fn command_topic(&self, device_id: &str, command_name: &str) -> Option<String> {
-        self.config.command_topics.get(command_name)
+        self.config
+            .command_topics
+            .get(command_name)
             .map(|template| Self::render_topic(template, device_id))
     }
 
     /// Render a topic template with device ID.
     fn render_topic(template: &str, device_id: &str) -> String {
-        template.replace("${device_id}", device_id)
+        template
+            .replace("${device_id}", device_id)
             .replace("${id}", device_id)
     }
 
@@ -174,14 +184,16 @@ impl MqttMapping {
         for part in parts {
             match current {
                 serde_json::Value::Object(map) => {
-                    current = map.get(part)
-                        .ok_or_else(|| MappingError::ParseError(
-                            format!("Key '{}' not found in JSON", part)
-                        ))?;
+                    current = map.get(part).ok_or_else(|| {
+                        MappingError::ParseError(format!("Key '{}' not found in JSON", part))
+                    })?;
                 }
-                _ => return Err(MappingError::ParseError(
-                    format!("Cannot access '{}' on non-object", part)
-                )),
+                _ => {
+                    return Err(MappingError::ParseError(format!(
+                        "Cannot access '{}' on non-object",
+                        part
+                    )));
+                }
             }
         }
 
@@ -199,7 +211,9 @@ impl MqttMapping {
                 } else if let Some(f) = n.as_f64() {
                     Ok(MetricValue::Float(f))
                 } else {
-                    Err(MappingError::ParseError("Invalid number format".to_string()))
+                    Err(MappingError::ParseError(
+                        "Invalid number format".to_string(),
+                    ))
                 }
             }
             serde_json::Value::String(s) => Ok(MetricValue::String(s.clone())),
@@ -213,20 +227,18 @@ impl MqttMapping {
     }
 
     /// Parse binary data according to format.
-    fn parse_binary_data(
-        data: &[u8],
-        format: &BinaryFormat,
-    ) -> MappingResult<MetricValue> {
+    fn parse_binary_data(data: &[u8], format: &BinaryFormat) -> MappingResult<MetricValue> {
         match format {
             BinaryFormat::Raw => {
                 // Base64 decode if it's encoded
-                let decoded = base64::decode(data)
-                    .unwrap_or_else(|_| data.to_vec());
+                let decoded = base64::decode(data).unwrap_or_else(|_| data.to_vec());
                 Ok(MetricValue::Binary(decoded))
             }
             BinaryFormat::Float32Le => {
                 if data.len() < 4 {
-                    return Err(MappingError::ParseError("Insufficient data for f32".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for f32".to_string(),
+                    ));
                 }
                 let bytes: [u8; 4] = [data[0], data[1], data[2], data[3]];
                 let value = f32::from_le_bytes(bytes);
@@ -234,18 +246,21 @@ impl MqttMapping {
             }
             BinaryFormat::Float64Le => {
                 if data.len() < 8 {
-                    return Err(MappingError::ParseError("Insufficient data for f64".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for f64".to_string(),
+                    ));
                 }
                 let bytes: [u8; 8] = [
-                    data[0], data[1], data[2], data[3],
-                    data[4], data[5], data[6], data[7],
+                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
                 ];
                 let value = f64::from_le_bytes(bytes);
                 Ok(MetricValue::Float(value))
             }
             BinaryFormat::Int16Le => {
                 if data.len() < 2 {
-                    return Err(MappingError::ParseError("Insufficient data for i16".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for i16".to_string(),
+                    ));
                 }
                 let bytes: [u8; 2] = [data[0], data[1]];
                 let value = i16::from_le_bytes(bytes);
@@ -253,7 +268,9 @@ impl MqttMapping {
             }
             BinaryFormat::Int32Le => {
                 if data.len() < 4 {
-                    return Err(MappingError::ParseError("Insufficient data for i32".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for i32".to_string(),
+                    ));
                 }
                 let bytes: [u8; 4] = [data[0], data[1], data[2], data[3]];
                 let value = i32::from_le_bytes(bytes);
@@ -261,7 +278,9 @@ impl MqttMapping {
             }
             BinaryFormat::Float32Be => {
                 if data.len() < 4 {
-                    return Err(MappingError::ParseError("Insufficient data for f32 BE".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for f32 BE".to_string(),
+                    ));
                 }
                 let bytes: [u8; 4] = [data[0], data[1], data[2], data[3]];
                 let value = f32::from_be_bytes(bytes);
@@ -269,11 +288,12 @@ impl MqttMapping {
             }
             BinaryFormat::Float64Be => {
                 if data.len() < 8 {
-                    return Err(MappingError::ParseError("Insufficient data for f64 BE".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for f64 BE".to_string(),
+                    ));
                 }
                 let bytes: [u8; 8] = [
-                    data[0], data[1], data[2], data[3],
-                    data[4], data[5], data[6], data[7],
+                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
                 ];
                 let value = f64::from_be_bytes(bytes);
                 Ok(MetricValue::Float(value))
@@ -323,7 +343,9 @@ impl ProtocolMapping for MqttMapping {
     }
 
     fn metric_address(&self, capability_name: &str) -> Option<Address> {
-        self.config.metric_topics.get(capability_name)
+        self.config
+            .metric_topics
+            .get(capability_name)
             .map(|topic| Address::MQTT {
                 topic: topic.clone(),
                 qos: self.config.default_qos,
@@ -332,7 +354,9 @@ impl ProtocolMapping for MqttMapping {
     }
 
     fn command_address(&self, command_name: &str) -> Option<Address> {
-        self.config.command_topics.get(command_name)
+        self.config
+            .command_topics
+            .get(command_name)
             .map(|topic| Address::MQTT {
                 topic: topic.clone(),
                 qos: self.config.default_qos,
@@ -341,7 +365,9 @@ impl ProtocolMapping for MqttMapping {
     }
 
     fn parse_metric(&self, capability_name: &str, raw_data: &[u8]) -> MappingResult<MetricValue> {
-        let parser = self.config.metric_parsers
+        let parser = self
+            .config
+            .metric_parsers
             .get(capability_name)
             .cloned()
             .unwrap_or_default();
@@ -353,16 +379,12 @@ impl ProtocolMapping for MqttMapping {
                     Self::json_value_to_metric(&json)
                 } else {
                     Ok(MetricValue::String(
-                        String::from_utf8_lossy(raw_data).to_string()
+                        String::from_utf8_lossy(raw_data).to_string(),
                     ))
                 }
             }
-            MqttValueParser::JsonPath(ref path) => {
-                Self::parse_json_value(raw_data, path)
-            }
-            MqttValueParser::Binary { format } => {
-                Self::parse_binary_data(raw_data, &format)
-            }
+            MqttValueParser::JsonPath(ref path) => Self::parse_json_value(raw_data, path),
+            MqttValueParser::Binary { format } => Self::parse_binary_data(raw_data, &format),
         }
     }
 
@@ -371,7 +393,10 @@ impl ProtocolMapping for MqttMapping {
         command_name: &str,
         params: &HashMap<String, MetricValue>,
     ) -> MappingResult<Vec<u8>> {
-        let template = self.config.payload_templates.get(command_name)
+        let template = self
+            .config
+            .payload_templates
+            .get(command_name)
             .ok_or_else(|| MappingError::CommandNotFound(command_name.to_string()))?;
 
         let payload = Self::render_payload_template(template, params)?;
@@ -420,11 +445,7 @@ impl MqttMappingBuilder {
     }
 
     /// Add a metric mapping.
-    pub fn add_metric(
-        mut self,
-        name: impl Into<String>,
-        topic: impl Into<String>,
-    ) -> Self {
+    pub fn add_metric(mut self, name: impl Into<String>, topic: impl Into<String>) -> Self {
         self.metric_topics.insert(name.into(), topic.into());
         self
     }
@@ -443,11 +464,7 @@ impl MqttMappingBuilder {
     }
 
     /// Add a command mapping.
-    pub fn add_command(
-        mut self,
-        name: impl Into<String>,
-        topic: impl Into<String>,
-    ) -> Self {
+    pub fn add_command(mut self, name: impl Into<String>, topic: impl Into<String>) -> Self {
         self.command_topics.insert(name.into(), topic.into());
         self
     }
@@ -503,7 +520,7 @@ mod tests {
             .add_command_with_payload(
                 "set_interval",
                 "sensor/${id}/command",
-                r#"{"action": "set_interval", "interval": ${interval}}"#
+                r#"{"action": "set_interval", "interval": ${interval}}"#,
             )
             .build();
 
@@ -560,7 +577,7 @@ mod tests {
             .add_command_with_payload(
                 "set_interval",
                 "cmd",
-                r#"{"action": "set", "interval": ${interval}}"#
+                r#"{"action": "set", "interval": ${interval}}"#,
             )
             .build();
 
@@ -568,13 +585,20 @@ mod tests {
         params.insert("interval".to_string(), MetricValue::Integer(60));
 
         let payload = mapping.serialize_command("set_interval", &params).unwrap();
-        assert_eq!(String::from_utf8_lossy(&payload), r#"{"action": "set", "interval": 60}"#);
+        assert_eq!(
+            String::from_utf8_lossy(&payload),
+            r#"{"action": "set", "interval": 60}"#
+        );
     }
 
     #[test]
     fn test_parse_binary_float32_le() {
         let mapping = MqttMappingBuilder::new("test")
-            .add_metric_with_parser("value", "test", MqttValueParser::binary(BinaryFormat::Float32Le))
+            .add_metric_with_parser(
+                "value",
+                "test",
+                MqttValueParser::binary(BinaryFormat::Float32Le),
+            )
             .build();
 
         // 23.5 as f32 little-endian bytes
@@ -586,7 +610,11 @@ mod tests {
     #[test]
     fn test_parse_binary_int16_le() {
         let mapping = MqttMappingBuilder::new("test")
-            .add_metric_with_parser("value", "test", MqttValueParser::binary(BinaryFormat::Int16Le))
+            .add_metric_with_parser(
+                "value",
+                "test",
+                MqttValueParser::binary(BinaryFormat::Int16Le),
+            )
             .build();
 
         // 1000 as i16 little-endian bytes

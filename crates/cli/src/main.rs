@@ -5,9 +5,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use edge_ai_agent::{SessionManager, LlmBackend};
-use edge_ai_core::config::{endpoints, models, env_vars,
-                            normalize_ollama_endpoint, normalize_openai_endpoint};
+use edge_ai_agent::{LlmBackend, SessionManager};
+use edge_ai_core::config::{
+    endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
+};
 
 /// Edge AI Agent - Run LLMs on edge devices.
 #[derive(Parser, Debug)]
@@ -130,12 +131,11 @@ async fn main() -> Result<()> {
         .unwrap_or(false);
 
     // Build the env filter for log level control
-    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| {
-            tracing_subscriber::EnvFilter::new("edge_ai=info")
-                .add_directive(tracing::Level::INFO.into())
-                .add_directive(tracing::Level::WARN.into())
-        });
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        tracing_subscriber::EnvFilter::new("edge_ai=info")
+            .add_directive(tracing::Level::INFO.into())
+            .add_directive(tracing::Level::WARN.into())
+    });
 
     if json_logging {
         // JSON format for production/container environments
@@ -159,25 +159,15 @@ async fn main() -> Result<()> {
 
     // Run the appropriate command
     match args.command {
-        Command::Serve { host, port } => {
-            run_server(host, port).await
-        }
+        Command::Serve { host, port } => run_server(host, port).await,
         Command::Prompt {
             prompt,
             max_tokens: _,
             temperature: _,
-        } => {
-            run_prompt(&prompt).await
-        }
-        Command::Chat { session } => {
-            run_chat(session).await
-        }
-        Command::ListModels { endpoint } => {
-            list_models(endpoint).await
-        }
-        Command::Plugin { plugin_cmd } => {
-            run_plugin_cmd(plugin_cmd).await
-        }
+        } => run_prompt(&prompt).await,
+        Command::Chat { session } => run_chat(session).await,
+        Command::ListModels { endpoint } => list_models(endpoint).await,
+        Command::Plugin { plugin_cmd } => run_plugin_cmd(plugin_cmd).await,
     }
 }
 
@@ -185,7 +175,9 @@ async fn main() -> Result<()> {
 async fn init_llm_backend(session_manager: &SessionManager) -> Result<()> {
     // Try config.toml, then llm_config.json, then environment variables
     let backend = load_llm_backend_from_env()?;
-    session_manager.set_llm_backend(backend).await
+    session_manager
+        .set_llm_backend(backend)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to set LLM backend: {}", e))?;
     Ok(())
 }
@@ -209,7 +201,11 @@ fn load_llm_backend_from_env() -> Result<LlmBackend> {
         let model = std::env::var(env_vars::LLM_MODEL)
             .unwrap_or_else(|_| models::OPENAI_DEFAULT.to_string());
         eprintln!("Using OpenAI: endpoint={}, model={}", endpoint, model);
-        return Ok(LlmBackend::OpenAi { api_key, endpoint, model });
+        return Ok(LlmBackend::OpenAi {
+            api_key,
+            endpoint,
+            model,
+        });
     }
 
     Err(anyhow::anyhow!(
@@ -232,11 +228,15 @@ async fn run_prompt(prompt: &str) -> Result<()> {
     init_llm_backend(&session_manager).await?;
 
     // Create a temporary session
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 
     // Process the prompt
-    let response = session_manager.process_message(&session_id, prompt).await
+    let response = session_manager
+        .process_message(&session_id, prompt)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to process message: {}", e))?;
 
     println!("{}", response.message.content);
@@ -265,7 +265,9 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
         println!("Resuming session: {}", sid);
         sid
     } else {
-        let sid = session_manager.create_session().await
+        let sid = session_manager
+            .create_session()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
         println!("New session: {}", sid);
         sid
@@ -307,7 +309,10 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
         println!();
 
         // Process with streaming events
-        match session_manager.process_message_events(&session_id, input).await {
+        match session_manager
+            .process_message_events(&session_id, input)
+            .await
+        {
             Ok(mut stream) => {
                 use futures::stream::StreamExt;
                 let mut response_text = String::new();
@@ -324,7 +329,8 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
                         edge_ai_agent::AgentEvent::Content { content } => {
                             if !response_text.is_empty() && response_text != content {
                                 // Print incremental content
-                                let added = content.strip_prefix(&response_text).unwrap_or(&content);
+                                let added =
+                                    content.strip_prefix(&response_text).unwrap_or(&content);
                                 print!("{}", added);
                                 use std::io::Write;
                                 std::io::stdout().flush()?;
@@ -343,6 +349,29 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
                         }
                         edge_ai_agent::AgentEvent::Error { message } => {
                             eprintln!("\nError: {}", message);
+                        }
+                        edge_ai_agent::AgentEvent::Intent {
+                            display_name,
+                            confidence,
+                            ..
+                        } => {
+                            println!(
+                                "\n[Intent: {} (confidence: {:.0}%)]",
+                                display_name,
+                                confidence.unwrap_or(0.0) * 100.0
+                            );
+                        }
+                        edge_ai_agent::AgentEvent::Plan { step, stage } => {
+                            println!("[Plan: {} - {}]", stage, step);
+                        }
+                        edge_ai_agent::AgentEvent::Progress { message, .. } => {
+                            println!("[Progress: {}]", message);
+                        }
+                        edge_ai_agent::AgentEvent::Heartbeat { .. } => {
+                            // Ignore heartbeat events in CLI
+                        }
+                        edge_ai_agent::AgentEvent::Warning { message } => {
+                            eprintln!("[Warning] {}", message);
                         }
                         edge_ai_agent::AgentEvent::End => {
                             break;
@@ -372,7 +401,8 @@ async fn list_models(endpoint: String) -> Result<()> {
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     let client = reqwest::Client::new();
 
-    let response = client.get(&url)
+    let response = client
+        .get(&url)
         .timeout(std::time::Duration::from_secs(5))
         .send()
         .await
@@ -420,7 +450,8 @@ async fn list_models(endpoint: String) -> Result<()> {
 
 /// Run the web server.
 async fn run_server(host: String, port: u16) -> Result<()> {
-    let addr: SocketAddr = format!("{}:{}", host, port).parse()
+    let addr: SocketAddr = format!("{}:{}", host, port)
+        .parse()
         .map_err(|_| anyhow::anyhow!("Invalid address: {}:{}", host, port))?;
 
     edge_ai_api::run(addr).await
@@ -450,7 +481,11 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
             std::process::exit(result.exit_code());
         }
 
-        PluginCommand::Create { name, plugin_type, output } => {
+        PluginCommand::Create {
+            name,
+            plugin_type,
+            output,
+        } => {
             create_plugin_scaffold(&name, &plugin_type, output)?;
             Ok(())
         }
@@ -470,9 +505,14 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
 /// Create a new plugin scaffold.
 fn create_plugin_scaffold(name: &str, plugin_type: &str, _output: Option<PathBuf>) -> Result<()> {
     let valid_types = [
-        "tool", "llm_backend", "storage_backend",
-        "device_adapter", "integration", "alert_channel",
-        "rule_engine", "workflow_engine",
+        "tool",
+        "llm_backend",
+        "storage_backend",
+        "device_adapter",
+        "integration",
+        "alert_channel",
+        "rule_engine",
+        "workflow_engine",
     ];
 
     if !valid_types.contains(&plugin_type) {
@@ -527,15 +567,14 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
 
             // Check for WASM plugins
             if path.extension().map_or(false, |e| e == "wasm") {
-                let plugin_name = path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("?");
+                let plugin_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
 
                 if let Some(ref filter_type) = ty {
                     let json_path = path.with_extension("json");
                     if let Ok(content) = fs::read_to_string(&json_path) {
                         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if json.get("type")
+                            if json
+                                .get("type")
                                 .and_then(|v| v.as_str())
                                 .map_or(true, |t| t != filter_type)
                             {
@@ -559,9 +598,7 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
             if let Some(ext) = path.extension() {
                 match ext.to_str() {
                     Some("so") | Some("dylib") | Some("dll") => {
-                        let plugin_name = path.file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("?");
+                        let plugin_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
 
                         println!("  Native: {}", plugin_name);
                         println!("          Path: {}", path.display());
@@ -612,7 +649,10 @@ async fn show_plugin_info(path: &PathBuf) -> Result<()> {
                 println!("Version:         {}", meta.version);
                 println!("Type:            {:?}", meta.plugin_type);
                 println!("Description:     {}", meta.base.description);
-                println!("Author:          {}", meta.base.author.as_ref().unwrap_or(&"Unknown".to_string()));
+                println!(
+                    "Author:          {}",
+                    meta.base.author.as_ref().unwrap_or(&"Unknown".to_string())
+                );
 
                 if let Some(homepage) = &meta.homepage {
                     println!("Homepage:        {}", homepage);

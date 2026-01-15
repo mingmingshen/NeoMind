@@ -96,7 +96,11 @@ pub struct DeviceState {
 
 impl DeviceState {
     /// Create a new device state.
-    pub fn new(device_id: impl Into<String>, metric: impl Into<String>, expected_value: f64) -> Self {
+    pub fn new(
+        device_id: impl Into<String>,
+        metric: impl Into<String>,
+        expected_value: f64,
+    ) -> Self {
         Self {
             device_id: device_id.into(),
             metric: metric.into(),
@@ -185,9 +189,7 @@ impl DeviceWorkflowIntegration {
 
         let value = cache.get(&key).copied();
 
-        let aggregated_value = value.and_then(|v| {
-            aggregation.apply(&[v])
-        });
+        let aggregated_value = value.and_then(|v| aggregation.apply(&[v]));
 
         Ok(DeviceQueryResult {
             device_id: device_id.to_string(),
@@ -213,14 +215,18 @@ impl DeviceWorkflowIntegration {
         let command_clone = command.to_string();
 
         // Subscribe to command results before sending
-        let mut rx = self.event_bus.filter()
-            .custom(move |event| {
-                if let NeoTalkEvent::DeviceCommandResult { device_id: d, command: cmd, .. } = event {
-                    d == &device_id_clone && cmd == &command_clone
-                } else {
-                    false
-                }
-            });
+        let mut rx = self.event_bus.filter().custom(move |event| {
+            if let NeoTalkEvent::DeviceCommandResult {
+                device_id: d,
+                command: cmd,
+                ..
+            } = event
+            {
+                d == &device_id_clone && cmd == &command_clone
+            } else {
+                false
+            }
+        });
 
         // Publish the command request
         // Note: In a full implementation, there would be a DeviceCommandRequest event
@@ -239,13 +245,16 @@ impl DeviceWorkflowIntegration {
         };
 
         // Publish command result event
-        let _ = self.event_bus.publish(NeoTalkEvent::DeviceCommandResult {
-            device_id: device_id.to_string(),
-            command: command.to_string(),
-            success: true,
-            result: result.result.clone(),
-            timestamp: result.timestamp,
-        }).await;
+        let _ = self
+            .event_bus
+            .publish(NeoTalkEvent::DeviceCommandResult {
+                device_id: device_id.to_string(),
+                command: command.to_string(),
+                success: true,
+                result: result.result.clone(),
+                timestamp: result.timestamp,
+            })
+            .await;
 
         // Try to wait for confirmation (with timeout)
         let timeout = Duration::from_secs(5);
@@ -273,18 +282,24 @@ impl DeviceWorkflowIntegration {
 
         while start.elapsed() < timeout {
             // Query current value
-            let result = self.query_device(&state.device_id, &state.metric, None).await?;
+            let result = self
+                .query_device(&state.device_id, &state.metric, None)
+                .await?;
 
             if let Some(value) = result.value {
                 if state.matches(value) {
-                    info!("Device {} reached expected state: {} = {}",
-                          state.device_id, state.metric, value);
+                    info!(
+                        "Device {} reached expected state: {} = {}",
+                        state.device_id, state.metric, value
+                    );
                     return Ok(state.clone());
                 }
             }
 
-            debug!("Waiting for state: device={}, metric={}, expected={}, current={:?}",
-                   state.device_id, state.metric, state.expected_value, result.value);
+            debug!(
+                "Waiting for state: device={}, metric={}, expected={}, current={:?}",
+                state.device_id, state.metric, state.expected_value, result.value
+            );
 
             tokio::time::sleep(poll_interval).await;
         }
@@ -307,9 +322,13 @@ impl DeviceWorkflowIntegration {
     }
 
     /// Get all cached values for a device.
-    pub async fn get_device_metrics(&self, device_id: &str) -> std::collections::HashMap<String, f64> {
+    pub async fn get_device_metrics(
+        &self,
+        device_id: &str,
+    ) -> std::collections::HashMap<String, f64> {
         let cache = self.cached_values.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|((d, _), _)| d == device_id)
             .map(|((_, m), v)| (m.clone(), *v))
             .collect()
@@ -319,20 +338,32 @@ impl DeviceWorkflowIntegration {
     ///
     /// Subscribes to DeviceMetric events and updates the cache.
     pub fn start_listening(&self) -> tokio::task::JoinHandle<()> {
-        let mut rx = self.event_bus.filter()
-            .custom(|event| {
-                matches!(event, NeoTalkEvent::DeviceMetric { .. })
-            });
+        let mut rx = self
+            .event_bus
+            .filter()
+            .custom(|event| matches!(event, NeoTalkEvent::DeviceMetric { .. }));
 
         let cached_values = self.cached_values.clone();
 
         tokio::spawn(async move {
             while let Some((event, _)) = rx.recv().await {
-                if let NeoTalkEvent::DeviceMetric { device_id, metric, value, .. } = event {
+                if let NeoTalkEvent::DeviceMetric {
+                    device_id,
+                    metric,
+                    value,
+                    ..
+                } = event
+                {
                     let float_value = match value {
                         MetricValue::Float(f) => f,
                         MetricValue::Integer(i) => i as f64,
-                        MetricValue::Boolean(b) => if b { 1.0 } else { 0.0 },
+                        MetricValue::Boolean(b) => {
+                            if b {
+                                1.0
+                            } else {
+                                0.0
+                            }
+                        }
                         MetricValue::String(_) | MetricValue::Json(_) => continue,
                     };
 
@@ -431,8 +462,7 @@ mod tests {
 
     #[test]
     fn test_device_state_matches_tolerance() {
-        let state = DeviceState::new("device1", "temperature", 25.0)
-            .with_tolerance(1.0);
+        let state = DeviceState::new("device1", "temperature", 25.0).with_tolerance(1.0);
         assert!(state.matches(25.0));
         assert!(state.matches(25.5));
         assert!(state.matches(24.5));
@@ -446,10 +476,15 @@ mod tests {
         let integration = DeviceWorkflowIntegration::new(event_bus);
 
         // Update a metric first
-        integration.update_metric("sensor1", "temperature", 25.0).await;
+        integration
+            .update_metric("sensor1", "temperature", 25.0)
+            .await;
 
         // Query the metric
-        let result = integration.query_device("sensor1", "temperature", None).await.unwrap();
+        let result = integration
+            .query_device("sensor1", "temperature", None)
+            .await
+            .unwrap();
 
         assert_eq!(result.device_id, "sensor1");
         assert_eq!(result.metric, "temperature");
@@ -462,13 +497,14 @@ mod tests {
         let event_bus = EventBus::new();
         let integration = DeviceWorkflowIntegration::new(event_bus);
 
-        integration.update_metric("sensor1", "temperature", 25.0).await;
+        integration
+            .update_metric("sensor1", "temperature", 25.0)
+            .await;
 
-        let result = integration.query_aggregated(
-            "sensor1",
-            "temperature",
-            AggregationType::Avg,
-        ).await.unwrap();
+        let result = integration
+            .query_aggregated("sensor1", "temperature", AggregationType::Avg)
+            .await
+            .unwrap();
 
         assert_eq!(result.value, Some(25.0));
     }
@@ -478,11 +514,10 @@ mod tests {
         let event_bus = EventBus::new();
         let integration = DeviceWorkflowIntegration::new(event_bus);
 
-        let result = integration.send_command(
-            "device1",
-            "turn_on",
-            &std::collections::HashMap::new(),
-        ).await.unwrap();
+        let result = integration
+            .send_command("device1", "turn_on", &std::collections::HashMap::new())
+            .await
+            .unwrap();
 
         assert_eq!(result.device_id, "device1");
         assert_eq!(result.command, "turn_on");
@@ -494,9 +529,13 @@ mod tests {
         let event_bus = EventBus::new();
         let integration = DeviceWorkflowIntegration::new(event_bus);
 
-        integration.update_metric("sensor1", "temperature", 25.0).await;
+        integration
+            .update_metric("sensor1", "temperature", 25.0)
+            .await;
         integration.update_metric("sensor1", "humidity", 60.0).await;
-        integration.update_metric("sensor2", "temperature", 20.0).await;
+        integration
+            .update_metric("sensor2", "temperature", 20.0)
+            .await;
 
         let metrics = integration.get_device_metrics("sensor1").await;
 
@@ -510,7 +549,9 @@ mod tests {
         let event_bus = EventBus::new();
         let integration = DeviceWorkflowIntegration::new(event_bus);
 
-        integration.update_metric("sensor1", "temperature", 25.0).await;
+        integration
+            .update_metric("sensor1", "temperature", 25.0)
+            .await;
 
         let state = DeviceState::new("sensor1", "temperature", 25.0);
 
@@ -527,7 +568,9 @@ mod tests {
         let event_bus = EventBus::new();
         let integration = DeviceWorkflowIntegration::new(event_bus);
 
-        integration.update_metric("sensor1", "temperature", 20.0).await;
+        integration
+            .update_metric("sensor1", "temperature", 20.0)
+            .await;
 
         let state = DeviceState::new("sensor1", "temperature", 25.0);
 

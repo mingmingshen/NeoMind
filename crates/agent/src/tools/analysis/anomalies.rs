@@ -7,7 +7,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use edge_ai_storage::TimeSeriesStore;
-use edge_ai_tools::{Tool, ToolOutput, ToolError, error::Result as ToolResult, tool::{object_schema, string_property, number_property, array_property}};
+use edge_ai_tools::{
+    Tool, ToolError, ToolOutput,
+    error::Result as ToolResult,
+    tool::{array_property, number_property, object_schema, string_property},
+};
 
 /// Anomaly detection result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,9 +120,7 @@ impl DetectAnomaliesTool {
         }
 
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance = values.iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>() / values.len() as f64;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
         let std_dev = variance.sqrt();
 
         if std_dev == 0.0 {
@@ -210,17 +212,11 @@ impl Tool for DetectAnomaliesTool {
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        let start_time = args["start_time"]
-            .as_i64()
-            .unwrap_or(end_time - 86400); // Default 24 hours
+        let start_time = args["start_time"].as_i64().unwrap_or(end_time - 86400); // Default 24 hours
 
-        let threshold = args["threshold"]
-            .as_f64()
-            .unwrap_or(self.default_threshold);
+        let threshold = args["threshold"].as_f64().unwrap_or(self.default_threshold);
 
-        let _method = args["method"]
-            .as_str()
-            .unwrap_or("z_score");
+        let _method = args["method"].as_str().unwrap_or("z_score");
 
         // Query data from storage
         let result = self
@@ -236,12 +232,16 @@ impl Tool for DetectAnomaliesTool {
                     "metric": metric,
                     "message": "No data available for the specified time range"
                 }),
-                serde_json::json!({"has_data": false})
+                serde_json::json!({"has_data": false}),
             ));
         }
 
         // Extract values and timestamps
-        let values: Vec<f64> = result.points.iter().map(|p| p.value.as_f64().unwrap_or(0.0)).collect();
+        let values: Vec<f64> = result
+            .points
+            .iter()
+            .map(|p| p.value.as_f64().unwrap_or(0.0))
+            .collect();
         let timestamps: Vec<i64> = result.points.iter().map(|p| p.timestamp).collect();
 
         // Detect anomalies
@@ -284,7 +284,7 @@ impl Tool for DetectAnomaliesTool {
             serde_json::json!({
                 "has_data": true,
                 "anomalies_found": !detection_result.anomalies.is_empty()
-            })
+            }),
         ))
     }
 }
@@ -295,14 +295,13 @@ mod tests {
 
     #[test]
     fn test_detect_anomalies() {
-        let tool = DetectAnomaliesTool::new(
-            edge_ai_storage::TimeSeriesStore::memory().unwrap()
-        );
+        let tool = DetectAnomaliesTool::new(edge_ai_storage::TimeSeriesStore::memory().unwrap());
 
-        let values = vec
-![10.0, 11.0, 10.5, 10.2, 10.8, // Normal
-                           25.0, // Anomaly
-                           10.3, 10.7, 10.1];
+        let values = vec![
+            10.0, 11.0, 10.5, 10.2, 10.8, // Normal
+            25.0, // Anomaly
+            10.3, 10.7, 10.1,
+        ];
         let timestamps: Vec<i64> = (0..values.len() as i64).map(|i| 1000 + i * 100).collect();
 
         let anomalies = tool.detect_z_score(&values, &timestamps, 2.0);
@@ -313,12 +312,9 @@ mod tests {
 
     #[test]
     fn test_no_anomalies() {
-        let tool = DetectAnomaliesTool::new(
-            edge_ai_storage::TimeSeriesStore::memory().unwrap()
-        );
+        let tool = DetectAnomaliesTool::new(edge_ai_storage::TimeSeriesStore::memory().unwrap());
 
-        let values = vec
-![10.0, 11.0, 10.5, 10.2, 10.8, 10.3, 10.7, 10.1];
+        let values = vec![10.0, 11.0, 10.5, 10.2, 10.8, 10.3, 10.7, 10.1];
         let timestamps: Vec<i64> = (0..values.len() as i64).map(|i| 1000 + i * 100).collect();
 
         let anomalies = tool.detect_z_score(&values, &timestamps, 2.0);
@@ -328,17 +324,14 @@ mod tests {
 
     #[test]
     fn test_severity_classification() {
-        let tool = DetectAnomaliesTool::new(
-            edge_ai_storage::TimeSeriesStore::memory().unwrap()
-        );
+        let tool = DetectAnomaliesTool::new(edge_ai_storage::TimeSeriesStore::memory().unwrap());
 
         // Many normal values with extreme outlier
         // With 30 values of 10.0 and one 60.0, z-score ≈ 5.3 (Critical)
-        let values = vec
-![10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,
-                           10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,
-                           10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,
-                           60.0, // Extreme outlier
+        let values = vec![
+            10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,
+            10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0,
+            10.0, 10.0, 60.0, // Extreme outlier
         ];
         let timestamps: Vec<i64> = (0..values.len() as i64).map(|i| 1000 + i * 100).collect();
 

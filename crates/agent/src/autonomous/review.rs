@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use edge_ai_core::eventbus::EventBus;
 use edge_ai_core::event::NeoTalkEvent;
+use edge_ai_core::eventbus::EventBus;
 
 use super::config::ReviewType;
 
@@ -480,7 +480,9 @@ impl SystemReview for TrendAnalysisReview {
     async fn review(&self, context: &mut ReviewContext) -> ReviewResult {
         // Trend analysis would examine historical data patterns
         ReviewResult::NoFindings {
-            message: "Insufficient data for trend analysis. Need at least 10 data points per metric.".to_string(),
+            message:
+                "Insufficient data for trend analysis. Need at least 10 data points per metric."
+                    .to_string(),
         }
     }
 }

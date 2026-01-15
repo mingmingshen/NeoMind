@@ -2,23 +2,23 @@
 //!
 //! Provides integration with Modbus TCP networks for industrial device communication.
 
-use crate::{Integration, IntegrationMetadata, IntegrationType, IntegrationState};
 use crate::protocols::BaseIntegration;
+use crate::{Integration, IntegrationMetadata, IntegrationState, IntegrationType};
+use async_trait::async_trait;
 use edge_ai_core::integration::{
-    IntegrationEvent, IntegrationCommand, IntegrationResponse, IntegrationError,
+    IntegrationCommand, IntegrationError, IntegrationEvent, IntegrationResponse,
     Result as IntegrationResult,
 };
-use async_trait::async_trait;
 use futures::Stream;
-use tokio::sync::mpsc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::time::{timeout, Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc;
+use tokio::time::{Duration, timeout};
 
 /// Modbus function codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,9 +76,15 @@ pub struct ModbusConfig {
     pub registers: Vec<ModbusRegisterConfig>,
 }
 
-fn default_port() -> u16 { 502 }
-fn default_timeout() -> u64 { 5000 }
-fn default_poll_interval() -> u64 { 1000 }
+fn default_port() -> u16 {
+    502
+}
+fn default_timeout() -> u64 {
+    5000
+}
+fn default_poll_interval() -> u64 {
+    1000
+}
 
 impl ModbusConfig {
     /// Create a new Modbus configuration.
@@ -141,8 +147,12 @@ pub struct ModbusRegisterConfig {
     pub offset: f64,
 }
 
-fn default_scale() -> f64 { 1.0 }
-fn default_offset() -> f64 { 0.0 }
+fn default_scale() -> f64 {
+    1.0
+}
+fn default_offset() -> f64 {
+    0.0
+}
 
 /// Modbus data type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -197,18 +207,24 @@ impl ModbusClient {
     }
 
     /// Read holding registers.
-    pub async fn read_holding_registers(&mut self, address: u16, count: u16) -> IntegrationResult<Vec<u16>> {
-        let stream = self.stream.as_mut()
+    pub async fn read_holding_registers(
+        &mut self,
+        address: u16,
+        count: u16,
+    ) -> IntegrationResult<Vec<u16>> {
+        let stream = self
+            .stream
+            .as_mut()
             .ok_or_else(|| IntegrationError::Stopped)?;
 
         // Build Modbus request
         let request = vec![
-            self.slave_id,           // Slave ID
+            self.slave_id, // Slave ID
             ModbusFunction::ReadHoldingRegisters.code(),
-            (address >> 8) as u8,     // Address high
-            (address & 0xFF) as u8,    // Address low
-            (count >> 8) as u8,        // Count high
-            (count & 0xFF) as u8,       // Count low
+            (address >> 8) as u8,   // Address high
+            (address & 0xFF) as u8, // Address low
+            (count >> 8) as u8,     // Count high
+            (count & 0xFF) as u8,   // Count low
         ];
 
         // Calculate CRC
@@ -217,13 +233,15 @@ impl ModbusClient {
         full_request.extend_from_slice(&crc.to_le_bytes());
 
         // Send request
-        stream.write_all(&full_request)
+        stream
+            .write_all(&full_request)
             .await
             .map_err(|e| IntegrationError::ConnectionFailed(e.to_string()))?;
 
         // Read response
         let mut response = vec![0u8; 5 + count as usize * 2]; // Header + data + CRC
-        stream.read_exact(&mut response)
+        stream
+            .read_exact(&mut response)
             .await
             .map_err(|e| IntegrationError::ConnectionFailed(e.to_string()))?;
 
@@ -239,8 +257,14 @@ impl ModbusClient {
     }
 
     /// Write single register.
-    pub async fn write_single_register(&mut self, address: u16, value: u16) -> IntegrationResult<()> {
-        let stream = self.stream.as_mut()
+    pub async fn write_single_register(
+        &mut self,
+        address: u16,
+        value: u16,
+    ) -> IntegrationResult<()> {
+        let stream = self
+            .stream
+            .as_mut()
             .ok_or_else(|| IntegrationError::Stopped)?;
 
         let request = vec![
@@ -256,7 +280,8 @@ impl ModbusClient {
         let mut full_request = request;
         full_request.extend_from_slice(&crc.to_le_bytes());
 
-        stream.write_all(&full_request)
+        stream
+            .write_all(&full_request)
             .await
             .map_err(|e| IntegrationError::ConnectionFailed(e.to_string()))?;
 
@@ -323,7 +348,10 @@ impl ModbusIntegration {
 
     /// Read a register value.
     pub async fn read_register(&self, name: &str) -> IntegrationResult<f64> {
-        let config = self.config.registers.iter()
+        let config = self
+            .config
+            .registers
+            .iter()
             .find(|r| r.name == name)
             .ok_or_else(|| IntegrationError::NotFound(name.to_string()))?;
 
@@ -335,7 +363,9 @@ impl ModbusIntegration {
         let addr = self.config.socket_addr()?;
         client.connect(addr).await?;
 
-        let values: Vec<u16> = client.read_holding_registers(config.address, config.count).await?;
+        let values: Vec<u16> = client
+            .read_holding_registers(config.address, config.count)
+            .await?;
         client.disconnect();
 
         let value = if values.len() == 1 {
@@ -355,7 +385,10 @@ impl ModbusIntegration {
 
     /// Write a register value.
     pub async fn write_register(&self, name: &str, value: f64) -> IntegrationResult<()> {
-        let config = self.config.registers.iter()
+        let config = self
+            .config
+            .registers
+            .iter()
             .find(|r| r.name == name)
             .ok_or_else(|| IntegrationError::NotFound(name.to_string()))?;
 
@@ -370,7 +403,9 @@ impl ModbusIntegration {
 
         let addr = self.config.socket_addr()?;
         client.connect(addr).await?;
-        client.write_single_register(config.address, raw_value).await?;
+        client
+            .write_single_register(config.address, raw_value)
+            .await?;
         client.disconnect();
 
         Ok(())
@@ -410,7 +445,8 @@ impl Integration for ModbusIntegration {
         client.connect(addr).await?;
         client.disconnect();
 
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.base.set_running(true);
 
         // Start polling task
@@ -429,10 +465,17 @@ impl Integration for ModbusIntegration {
                     let mut client = ModbusClient::new(slave_id, timeout);
                     if let Ok(()) = client.connect(socket_addr).await {
                         for reg in &registers {
-                            if let Ok(values) = client.read_holding_registers(reg.address, reg.count).await {
+                            if let Ok(values) =
+                                client.read_holding_registers(reg.address, reg.count).await
+                            {
                                 let values_vec: Vec<u16> = values;
-                                let raw: u16 = if !values_vec.is_empty() { values_vec[0] } else { 0 };
-                                let value = apply_data_type(raw, reg.data_type) * reg.scale + reg.offset;
+                                let raw: u16 = if !values_vec.is_empty() {
+                                    values_vec[0]
+                                } else {
+                                    0
+                                };
+                                let value =
+                                    apply_data_type(raw, reg.data_type) * reg.scale + reg.offset;
 
                                 cache.lock().insert(reg.name.clone(), value);
 
@@ -462,7 +505,8 @@ impl Integration for ModbusIntegration {
     }
 
     async fn stop(&self) -> IntegrationResult<()> {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         self.base.set_running(false);
         Ok(())
     }
@@ -475,31 +519,42 @@ impl Integration for ModbusIntegration {
         Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx))
     }
 
-    async fn send_command(&self, command: IntegrationCommand) -> IntegrationResult<IntegrationResponse> {
+    async fn send_command(
+        &self,
+        command: IntegrationCommand,
+    ) -> IntegrationResult<IntegrationResponse> {
         match command {
             IntegrationCommand::Query { target, .. } => {
                 let value = self.read_register(&target).await?;
-                Ok(IntegrationResponse::success(serde_json::json!({ "value": value })))
+                Ok(IntegrationResponse::success(
+                    serde_json::json!({ "value": value }),
+                ))
             }
-            IntegrationCommand::CallService { service, params, .. } => {
+            IntegrationCommand::CallService {
+                service, params, ..
+            } => {
                 // Parse service as "read:<register>" or "write:<register>"
                 if let Some(rest) = service.strip_prefix("read:") {
                     let value = self.read_register(rest).await?;
-                    Ok(IntegrationResponse::success(serde_json::json!({ "value": value })))
+                    Ok(IntegrationResponse::success(
+                        serde_json::json!({ "value": value }),
+                    ))
                 } else if let Some(rest) = service.strip_prefix("write:") {
-                    let value = params["value"].as_f64()
-                        .ok_or_else(|| IntegrationError::TransformationFailed("Invalid value".to_string()))?;
+                    let value = params["value"].as_f64().ok_or_else(|| {
+                        IntegrationError::TransformationFailed("Invalid value".to_string())
+                    })?;
                     self.write_register(rest, value).await?;
                     Ok(IntegrationResponse::success(serde_json::json!({})))
                 } else {
-                    Err(IntegrationError::CommandFailed(format!("Unknown service: {}", service)))
+                    Err(IntegrationError::CommandFailed(format!(
+                        "Unknown service: {}",
+                        service
+                    )))
                 }
             }
-            IntegrationCommand::SendData { .. } => {
-                Err(IntegrationError::CommandFailed(
-                    "SendData not supported for Modbus".to_string()
-                ))
-            }
+            IntegrationCommand::SendData { .. } => Err(IntegrationError::CommandFailed(
+                "SendData not supported for Modbus".to_string(),
+            )),
         }
     }
 }
@@ -556,7 +611,10 @@ mod tests {
     fn test_modbus_integration() {
         let config = ModbusConfig::new("localhost", 1);
         let integration = ModbusIntegration::new(config);
-        assert_eq!(integration.metadata().integration_type, IntegrationType::Modbus);
+        assert_eq!(
+            integration.metadata().integration_type,
+            IntegrationType::Modbus
+        );
         assert!(!integration.base.is_running());
     }
 }

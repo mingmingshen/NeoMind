@@ -204,9 +204,7 @@ impl HassTopicParts {
         let component = parts[1];
         let (object_id, suffix) = match parts.len() {
             // Standard format: homeassistant/<component>/<object_id>/config
-            4 if parts[3] == "config" => {
-                (parts[2].to_string(), parts[3].to_string())
-            }
+            4 if parts[3] == "config" => (parts[2].to_string(), parts[3].to_string()),
             // Extended format: homeassistant/<component>/<device_id>/<entity_id>/config
             5 if parts[4] == "config" => {
                 // Combine device_id and entity_id for unique object_id
@@ -230,7 +228,10 @@ impl HassTopicParts {
 }
 
 /// Parse a HASS discovery message from topic and payload.
-pub fn parse_discovery_message(topic: &str, payload: &[u8]) -> HassDiscoveryResult<HassDiscoveryMessage> {
+pub fn parse_discovery_message(
+    topic: &str,
+    payload: &[u8],
+) -> HassDiscoveryResult<HassDiscoveryMessage> {
     // Parse topic
     let topic_parts = HassTopicParts::parse(topic)
         .ok_or_else(|| HassDiscoveryError::InvalidMessage(format!("Invalid topic: {}", topic)))?;
@@ -268,12 +269,12 @@ pub fn is_discovery_topic(topic: &str) -> bool {
 pub fn discovery_subscription_patterns(component: Option<&str>) -> Vec<String> {
     match component {
         Some(comp) => vec![
-            format!("homeassistant/{}/+/+/config", comp),  // 4-part format
+            format!("homeassistant/{}/+/+/config", comp), // 4-part format
             format!("homeassistant/{}/+/+/+/config", comp), // 5-part format
         ],
         None => vec![
-            "homeassistant/+/+/config".to_string(),      // 4-part format
-            "homeassistant/+/+/+/config".to_string(),    // 5-part format
+            "homeassistant/+/+/config".to_string(),   // 4-part format
+            "homeassistant/+/+/+/config".to_string(), // 5-part format
         ],
     }
 }
@@ -291,9 +292,19 @@ pub fn discovery_subscription_pattern(component: Option<&str>) -> String {
 
 /// Supported HASS components that we can map to MDL.
 pub fn is_supported_component(component: &str) -> bool {
-    matches!(component,
-        "sensor" | "binary_sensor" | "switch" | "light" | "cover" | "climate" |
-        "fan" | "lock" | "camera" | "vacuum" | "media_player"
+    matches!(
+        component,
+        "sensor"
+            | "binary_sensor"
+            | "switch"
+            | "light"
+            | "cover"
+            | "climate"
+            | "fan"
+            | "lock"
+            | "camera"
+            | "vacuum"
+            | "media_player"
     )
 }
 
@@ -336,7 +347,10 @@ mod tests {
         assert_eq!(parts_ext.prefix, "homeassistant");
         assert_eq!(parts_ext.component, "sensor");
         assert_eq!(parts_ext.object_id, "hass-simulator-001_temperature");
-        assert_eq!(parts_ext.entity_id(), "sensor.hass-simulator-001_temperature");
+        assert_eq!(
+            parts_ext.entity_id(),
+            "sensor.hass-simulator-001_temperature"
+        );
     }
 
     #[test]
@@ -346,8 +360,12 @@ mod tests {
         assert!(is_discovery_topic("homeassistant/switch/light1/config"));
 
         // Extended format (used by some simulators)
-        assert!(is_discovery_topic("homeassistant/sensor/hass-simulator-001/temperature/config"));
-        assert!(is_discovery_topic("homeassistant/switch/hass-simulator-001/switch/config"));
+        assert!(is_discovery_topic(
+            "homeassistant/sensor/hass-simulator-001/temperature/config"
+        ));
+        assert!(is_discovery_topic(
+            "homeassistant/switch/hass-simulator-001/switch/config"
+        ));
 
         // Not discovery topics
         assert!(!is_discovery_topic("homeassistant/sensor/temp/state"));
@@ -357,9 +375,18 @@ mod tests {
     #[test]
     fn test_subscription_patterns() {
         // Test the legacy pattern function (returns 5-part format for compatibility)
-        assert_eq!(discovery_subscription_pattern(None), "homeassistant/+/+/+/config");
-        assert_eq!(discovery_subscription_pattern(Some("sensor")), "homeassistant/sensor/+/+/+/config");
-        assert_eq!(discovery_subscription_pattern(Some("switch")), "homeassistant/switch/+/+/+/config");
+        assert_eq!(
+            discovery_subscription_pattern(None),
+            "homeassistant/+/+/+/config"
+        );
+        assert_eq!(
+            discovery_subscription_pattern(Some("sensor")),
+            "homeassistant/sensor/+/+/+/config"
+        );
+        assert_eq!(
+            discovery_subscription_pattern(Some("switch")),
+            "homeassistant/switch/+/+/+/config"
+        );
 
         // Test the new patterns function (returns both formats)
         let patterns = discovery_subscription_patterns(None);
@@ -399,14 +426,18 @@ mod tests {
             "state_topic": "tele/sensor/SENSOR",
             "unit_of_measurement": "°C",
             "value_template": "{{ value_json.TEMP }}"
-        }"#.as_bytes();
+        }"#
+        .as_bytes();
 
         let msg = parse_discovery_message(topic, payload).unwrap();
 
         assert_eq!(msg.topic_parts.component, "sensor");
         assert_eq!(msg.topic_parts.object_id, "temperature");
         assert_eq!(msg.config.name, Some("Living Room Temperature".to_string()));
-        assert_eq!(msg.config.state_topic, Some("tele/sensor/SENSOR".to_string()));
+        assert_eq!(
+            msg.config.state_topic,
+            Some("tele/sensor/SENSOR".to_string())
+        );
         assert_eq!(msg.config.unit, Some("°C".to_string()));
     }
 }

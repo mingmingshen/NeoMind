@@ -3,11 +3,11 @@
 //! This module provides persistent storage for rule execution history,
 //! enabling historical analysis and statistics.
 
-use crate::engine::{RuleId, RuleExecutionResult};
+use crate::engine::{RuleExecutionResult, RuleId};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
 
 /// Rule execution history entry with metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,7 +174,10 @@ impl RuleHistoryStorage {
     }
 
     /// Query history with filters.
-    pub async fn query(&self, filter: &HistoryFilter) -> Result<Vec<RuleHistoryEntry>, HistoryError> {
+    pub async fn query(
+        &self,
+        filter: &HistoryFilter,
+    ) -> Result<Vec<RuleHistoryEntry>, HistoryError> {
         let entries = self.entries.read().await;
 
         let mut results: Vec<_> = entries
@@ -456,7 +459,11 @@ mod tests {
                 rule_name: "Test Rule".to_string(),
                 success: i % 2 == 0,
                 actions_executed: vec![],
-                error: if i % 2 == 0 { None } else { Some("Error".to_string()) },
+                error: if i % 2 == 0 {
+                    None
+                } else {
+                    Some("Error".to_string())
+                },
                 duration_ms: 100 + (i as u64 * 10),
                 timestamp: Utc::now(),
                 metadata: None,

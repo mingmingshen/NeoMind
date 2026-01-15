@@ -2,18 +2,18 @@
 //!
 //! Provides HTTP/gRPC API endpoints for command management.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
+use crate::ack::{AckHandler, AckStatus};
 use crate::command::{
-    CommandRequest, CommandId, DeviceId, CommandSource, CommandPriority,
-    CommandStatus, CommandResult, RetryPolicy,
+    CommandId, CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus,
+    DeviceId, RetryPolicy,
 };
 use crate::queue::{CommandQueue, QueueError};
 use crate::state::{CommandManager, CommandStateStore, StateError, StoreStats};
-use crate::ack::{AckHandler, AckStatus};
 
 /// API request for submitting a command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,11 +152,11 @@ pub struct CommandApi {
 
 impl CommandApi {
     /// Create a new command API.
-    pub fn new(
-        manager: Arc<CommandManager>,
-        ack_handler: Arc<AckHandler>,
-    ) -> Self {
-        Self { manager, ack_handler }
+    pub fn new(manager: Arc<CommandManager>, ack_handler: Arc<AckHandler>) -> Self {
+        Self {
+            manager,
+            ack_handler,
+        }
     }
 
     /// Submit a command.
@@ -169,15 +169,11 @@ impl CommandApi {
         let priority = self.parse_priority(request.priority.as_deref());
         let retry_policy = RetryPolicy::default();
 
-        let mut command = CommandRequest::new(
-            request.device_id,
-            request.command_name,
-            source,
-        )
-        .with_parameters(request.parameters)
-        .with_priority(priority)
-        .with_timeout(request.timeout_secs.unwrap_or(30))
-        .with_retry_policy(retry_policy);
+        let mut command = CommandRequest::new(request.device_id, request.command_name, source)
+            .with_parameters(request.parameters)
+            .with_priority(priority)
+            .with_timeout(request.timeout_secs.unwrap_or(30))
+            .with_retry_policy(retry_policy);
 
         if let Some(scheduled) = request.scheduled_at {
             command = command.with_schedule(scheduled);
@@ -188,11 +184,17 @@ impl CommandApi {
         }
 
         // Submit through manager
-        let id = self.manager.submit(command).await
+        let id = self
+            .manager
+            .submit(command)
+            .await
             .map_err(|e| ApiError::SubmissionFailed(e.to_string()))?;
 
         // Get status
-        let status = self.manager.get_status(&id).await
+        let status = self
+            .manager
+            .get_status(&id)
+            .await
             .map_err(|e| ApiError::Internal(e.to_string()))?;
 
         Ok(SubmitCommandResponse {
@@ -207,7 +209,11 @@ impl CommandApi {
         &self,
         command_id: &CommandId,
     ) -> Result<CommandStatusResponse, ApiError> {
-        let cmd = self.manager.state.get(command_id).await
+        let cmd = self
+            .manager
+            .state
+            .get(command_id)
+            .await
             .map_err(|e| ApiError::NotFound(command_id.clone()))?;
 
         let ack_status = self.ack_handler.get_status(command_id).await;
@@ -261,14 +267,18 @@ impl CommandApi {
 
     /// Cancel a command.
     pub async fn cancel_command(&self, command_id: &CommandId) -> Result<(), ApiError> {
-        self.manager.cancel(command_id).await
+        self.manager
+            .cancel(command_id)
+            .await
             .map_err(|e| ApiError::CancelFailed(e.to_string()))?;
         Ok(())
     }
 
     /// Retry a failed command.
     pub async fn retry_command(&self, command_id: &CommandId) -> Result<(), ApiError> {
-        self.manager.retry(command_id).await
+        self.manager
+            .retry(command_id)
+            .await
             .map_err(|e| ApiError::RetryFailed(e.to_string()))?;
         Ok(())
     }
@@ -282,7 +292,9 @@ impl CommandApi {
         Ok(StatisticsResponse {
             queue_stats: QueueStatistics {
                 total_count: queue_stats.total_count,
-                by_priority: queue_stats.by_priority.iter()
+                by_priority: queue_stats
+                    .by_priority
+                    .iter()
                     .map(|(k, v)| (k.clone(), *v))
                     .collect(),
                 processed_count: queue_stats.processed_count,
@@ -290,7 +302,9 @@ impl CommandApi {
             },
             state_stats: StateStatistics {
                 total_count: state_stats.total_count,
-                by_status: state_stats.by_status.iter()
+                by_status: state_stats
+                    .by_status
+                    .iter()
                     .map(|(s, c)| (format!("{:?}", s), *c))
                     .collect(),
                 cache_size: state_stats.cache_size,
@@ -326,7 +340,8 @@ impl CommandApi {
                 rule_name: "api_rule".to_string(),
             },
             "workflow" => {
-                let step_id = info.context
+                let step_id = info
+                    .context
                     .as_ref()
                     .and_then(|c| c.get("step_id"))
                     .and_then(|v| v.as_str())
@@ -336,7 +351,7 @@ impl CommandApi {
                     workflow_id: info.source_id.unwrap_or_default(),
                     step_id,
                 }
-            },
+            }
             "schedule" => CommandSource::Schedule {
                 schedule_id: info.source_id.unwrap_or_default(),
             },

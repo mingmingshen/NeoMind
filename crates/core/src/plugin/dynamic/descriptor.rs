@@ -169,16 +169,18 @@ impl ParsedPluginDescriptor {
             String::from_utf8(slice.to_vec()).ok()
         };
 
-        let extract_required_string = |ptr: *const u8, len: usize, field: &str| -> Result<String, DescriptorError> {
-            if ptr.is_null() || len == 0 {
-                return Err(DescriptorError::MissingField(field.to_string()));
-            }
-            let slice = std::slice::from_raw_parts(ptr, len);
-            String::from_utf8(slice.to_vec())
-                .map_err(|e| DescriptorError::InvalidUtf8(field.to_string(), e))
-        };
+        let extract_required_string =
+            |ptr: *const u8, len: usize, field: &str| -> Result<String, DescriptorError> {
+                if ptr.is_null() || len == 0 {
+                    return Err(DescriptorError::MissingField(field.to_string()));
+                }
+                let slice = std::slice::from_raw_parts(ptr, len);
+                String::from_utf8(slice.to_vec())
+                    .map_err(|e| DescriptorError::InvalidUtf8(field.to_string(), e))
+            };
 
-        let plugin_type = extract_required_string(raw.plugin_type, raw.plugin_type_len, "plugin_type")?;
+        let plugin_type =
+            extract_required_string(raw.plugin_type, raw.plugin_type_len, "plugin_type")?;
         let id = extract_required_string(raw.id, raw.id_len, "id")?;
         let name = extract_required_string(raw.name, raw.name_len, "name")?;
         let version = extract_required_string(raw.version, raw.version_len, "version")?;
@@ -187,7 +189,8 @@ impl ParsedPluginDescriptor {
             .unwrap_or_else(|| ">=1.0.0".to_string());
 
         let config_schema = if !raw.config_schema.is_null() && raw.config_schema_len > 0 {
-            let schema_str = extract_string(raw.config_schema, raw.config_schema_len).unwrap_or_default();
+            let schema_str =
+                extract_string(raw.config_schema, raw.config_schema_len).unwrap_or_default();
             serde_json::from_str(&schema_str).ok()
         } else {
             None
@@ -236,7 +239,8 @@ pub enum DescriptorError {
 
 /// Function type for creating a plugin instance.
 /// Takes a JSON config string and its length, returns a pointer to the instance.
-pub type PluginCreateFn = unsafe extern "C" fn(config_json: *const u8, config_len: usize) -> *mut ();
+pub type PluginCreateFn =
+    unsafe extern "C" fn(config_json: *const u8, config_len: usize) -> *mut ();
 
 /// Function type for destroying a plugin instance.
 /// Takes the instance pointer and frees all resources.

@@ -1,13 +1,16 @@
 //! MQTT settings handlers.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde_json::json;
 
 use edge_ai_storage::MqttSettings;
 
-use crate::handlers::{ServerState, common::{HandlerResult, ok}};
-use crate::models::ErrorResponse;
 use super::models::{MqttSettingsDto, MqttSettingsRequest};
+use crate::handlers::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
+use crate::models::ErrorResponse;
 
 /// Get current MQTT settings.
 ///
@@ -21,7 +24,10 @@ pub async fn get_mqtt_settings_handler() -> HandlerResult<serde_json::Value> {
         Ok(None) => MqttSettings::default(),
         Err(e) => {
             tracing::warn!(category = "mqtt", error = %e, "Failed to load MQTT settings");
-            return Err(ErrorResponse::internal(format!("Failed to load settings: {}", e)));
+            return Err(ErrorResponse::internal(format!(
+                "Failed to load settings: {}",
+                e
+            )));
         }
     };
 
@@ -58,7 +64,8 @@ pub async fn set_mqtt_settings_handler(
     settings.touch();
 
     // Save to database
-    store.save_mqtt_settings(&settings)
+    store
+        .save_mqtt_settings(&settings)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save settings: {}", e)))?;
 
     tracing::info!(category = "mqtt", listen = %settings.listen, port = settings.port, discovery = %settings.discovery_prefix, "Saved MQTT settings");

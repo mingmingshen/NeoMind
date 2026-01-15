@@ -28,8 +28,8 @@ pub use mqtt::{MqttAdapter, MqttAdapterConfig, create_mqtt_adapter};
 pub mod modbus;
 #[cfg(feature = "modbus")]
 pub use modbus::{
-    ModbusAdapter, ModbusAdapterConfig, ModbusDeviceConfig, RegisterDefinition,
-    RegisterType, ModbusDataType, create_modbus_adapter,
+    ModbusAdapter, ModbusAdapterConfig, ModbusDataType, ModbusDeviceConfig, RegisterDefinition,
+    RegisterType, create_modbus_adapter,
 };
 
 // Home Assistant adapter (feature-gated)
@@ -37,8 +37,8 @@ pub use modbus::{
 pub mod hass;
 #[cfg(feature = "hass")]
 pub use hass::{
-    HassAdapter, HassAdapterConfig, HassDiscoveryMessage, HassDeviceInfo,
-    create_hass_adapter, map_hass_component_to_device_type,
+    HassAdapter, HassAdapterConfig, HassDeviceInfo, HassDiscoveryMessage, create_hass_adapter,
+    map_hass_component_to_device_type,
 };
 
 use crate::adapter::{AdapterResult, DeviceAdapter};
@@ -77,34 +77,35 @@ pub fn create_adapter(
     match adapter_type {
         #[cfg(feature = "mqtt")]
         "mqtt" => {
-            let cfg: MqttAdapterConfig = serde_json::from_value(config.clone())
-                .map_err(|e| crate::adapter::AdapterError::Configuration(
-                    format!("Invalid MQTT config: {}", e)
-                ))?;
-            Ok(create_mqtt_adapter(cfg, event_bus))
+            let cfg: MqttAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                crate::adapter::AdapterError::Configuration(format!("Invalid MQTT config: {}", e))
+            })?;
+            // Create a new device registry for the adapter
+            let device_registry = Arc::new(crate::registry::DeviceRegistry::new());
+            Ok(create_mqtt_adapter(cfg, event_bus, device_registry))
         }
 
         #[cfg(feature = "modbus")]
         "modbus" => {
-            let cfg: ModbusAdapterConfig = serde_json::from_value(config.clone())
-                .map_err(|e| crate::adapter::AdapterError::Configuration(
-                    format!("Invalid Modbus config: {}", e)
-                ))?;
+            let cfg: ModbusAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                crate::adapter::AdapterError::Configuration(format!("Invalid Modbus config: {}", e))
+            })?;
             Ok(create_modbus_adapter(cfg, event_bus))
         }
 
         #[cfg(feature = "hass")]
         "hass" => {
-            let cfg: HassAdapterConfig = serde_json::from_value(config.clone())
-                .map_err(|e| crate::adapter::AdapterError::Configuration(
-                    format!("Invalid HASS config: {}", e)
-                ))?;
+            let cfg: HassAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                crate::adapter::AdapterError::Configuration(format!("Invalid HASS config: {}", e))
+            })?;
             Ok(create_hass_adapter(cfg, event_bus))
         }
 
-        _ => Err(crate::adapter::AdapterError::Configuration(
-            format!("Unknown adapter type: {}. Available adapters: {}", adapter_type, available_adapters().join(", "))
-        )),
+        _ => Err(crate::adapter::AdapterError::Configuration(format!(
+            "Unknown adapter type: {}. Available adapters: {}",
+            adapter_type,
+            available_adapters().join(", ")
+        ))),
     }
 }
 

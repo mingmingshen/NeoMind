@@ -42,10 +42,10 @@ impl Default for MaintenanceConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            interval_secs: 3600, // 1 hour
+            interval_secs: 3600,                      // 1 hour
             timeseries_retention_hours: Some(24 * 7), // 7 days
-            memory_retention_hours: Some(24 * 30), // 30 days
-            event_log_retention_hours: Some(24 * 7), // 7 days
+            memory_retention_hours: Some(24 * 30),    // 30 days
+            event_log_retention_hours: Some(24 * 7),  // 7 days
             max_history_entries: 1000,
         }
     }
@@ -224,34 +224,26 @@ impl MaintenanceScheduler {
     }
 
     /// Cleanup old timeseries data.
-    async fn cleanup_timeseries(
-        _storage: &UnifiedStorage,
-        _retention_hours: u64,
-    ) -> Result<usize> {
+    async fn cleanup_timeseries(_storage: &UnifiedStorage, _retention_hours: u64) -> Result<usize> {
         // This would integrate with TimeSeriesStore's retention cleanup
         // For now, return a placeholder
         Ok(0)
     }
 
     /// Cleanup expired memory entries.
-    async fn cleanup_memories(
-        _storage: &UnifiedStorage,
-        _retention_hours: u64,
-    ) -> Result<usize> {
+    async fn cleanup_memories(_storage: &UnifiedStorage, _retention_hours: u64) -> Result<usize> {
         // This would integrate with LongTermMemoryStore's cleanup
         // For now, return a placeholder
         Ok(0)
     }
 
     /// Cleanup old event logs.
-    async fn cleanup_event_logs(
-        _storage: &UnifiedStorage,
-        retention_hours: u64,
-    ) -> Result<usize> {
+    async fn cleanup_event_logs(_storage: &UnifiedStorage, retention_hours: u64) -> Result<usize> {
         let _cutoff = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
-            .unwrap_or(0) as i64 - (retention_hours * 3600) as i64;
+            .unwrap_or(0) as i64
+            - (retention_hours * 3600) as i64;
 
         // This would scan and delete old event logs
         Ok(0)
@@ -276,7 +268,8 @@ impl CleanupUtils {
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|d| d.as_secs())
-            .unwrap_or(0) as i64 - (retention_hours * 3600) as i64
+            .unwrap_or(0) as i64
+            - (retention_hours * 3600) as i64
     }
 
     /// Check if a timestamp is within the retention period.

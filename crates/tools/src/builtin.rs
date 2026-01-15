@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::error::{Result, ToolError};
-use super::tool::{object_schema, string_property, number_property, boolean_property, array_property, Tool, ToolOutput};
+use super::tool::{
+    Tool, ToolOutput, array_property, boolean_property, number_property, object_schema,
+    string_property,
+};
 
 /// Mock time series store for testing (replace with real storage in production)
 pub struct MockTimeSeriesStore;
@@ -15,7 +18,13 @@ pub struct MockTimeSeriesStore;
 impl MockTimeSeriesStore {
     /// Query time series data for a specific metric or all metrics.
     /// If metric is None, returns data for all available metrics.
-    pub async fn query(&self, _device_id: &str, metric: Option<&str>, start: i64, end: i64) -> Result<Vec<MetricDataPoint>> {
+    pub async fn query(
+        &self,
+        _device_id: &str,
+        metric: Option<&str>,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<MetricDataPoint>> {
         // If specific metric requested, return only that metric's data
         if let Some(m) = metric {
             Ok(vec![
@@ -142,9 +151,7 @@ impl Tool for QueryDataTool {
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        let start_time = args["start_time"]
-            .as_i64()
-            .unwrap_or(end_time - 86400); // Default 24 hours
+        let start_time = args["start_time"].as_i64().unwrap_or(end_time - 86400); // Default 24 hours
 
         // Query the data
         let data_points = self
@@ -170,7 +177,7 @@ impl Tool for QueryDataTool {
             }),
             serde_json::json!({
                 "query_type": "time_series_range"
-            })
+            }),
         ))
     }
 }
@@ -183,7 +190,12 @@ impl MockDeviceManager {
         Ok(25.0)
     }
 
-    pub async fn write_command(&self, device_id: &str, command: &str, _args: Value) -> Result<Value> {
+    pub async fn write_command(
+        &self,
+        device_id: &str,
+        command: &str,
+        _args: Value,
+    ) -> Result<Value> {
         Ok(serde_json::json!({
             "status": "success",
             "device_id": device_id,
@@ -346,7 +358,7 @@ impl Tool for ListDevicesTool {
             }),
             serde_json::json!({
                 "filtered": args["filter_type"] != Value::Null || args["filter_status"] != Value::Null
-            })
+            }),
         ))
     }
 }
@@ -360,14 +372,12 @@ impl MockRuleEngine {
     }
 
     pub async fn list_rules(&self) -> Result<Vec<RuleInfo>> {
-        Ok(vec![
-            RuleInfo {
-                id: "rule_1".to_string(),
-                name: "High Temperature Alert".to_string(),
-                enabled: true,
-                trigger_count: 5,
-            },
-        ])
+        Ok(vec![RuleInfo {
+            id: "rule_1".to_string(),
+            name: "High Temperature Alert".to_string(),
+            enabled: true,
+            trigger_count: 5,
+        }])
     }
 
     pub async fn enable_rule(&self, _rule_id: &str) -> Result<bool> {
@@ -552,9 +562,9 @@ impl Tool for TriggerWorkflowTool {
     async fn execute(&self, args: serde_json::Value) -> Result<ToolOutput> {
         self.validate_args(&args)?;
 
-        let workflow_id = args["workflow_id"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("workflow_id must be a string".to_string()))?;
+        let workflow_id = args["workflow_id"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("workflow_id must be a string".to_string())
+        })?;
 
         // Check if workflow exists
         let store = self.workflow_store.read().await;
@@ -562,7 +572,10 @@ impl Tool for TriggerWorkflowTool {
         drop(store);
 
         if !exists {
-            return Err(ToolError::Execution(format!("Workflow '{}' not found", workflow_id)));
+            return Err(ToolError::Execution(format!(
+                "Workflow '{}' not found",
+                workflow_id
+            )));
         }
 
         // Generate execution ID
@@ -628,14 +641,12 @@ impl MockDeviceTypeRegistry {
                     description: "当前相对湿度".to_string(),
                 },
             ],
-            commands: vec![
-                CommandInfo {
-                    name: "refresh".to_string(),
-                    display_name: "刷新数据".to_string(),
-                    description: "请求设备刷新数据".to_string(),
-                    parameters: vec![],
-                },
-            ],
+            commands: vec![CommandInfo {
+                name: "refresh".to_string(),
+                display_name: "刷新数据".to_string(),
+                description: "请求设备刷新数据".to_string(),
+                parameters: vec![],
+            }],
         })
     }
 
@@ -757,7 +768,7 @@ impl Tool for GetDeviceMetricsTool {
             serde_json::json!({
                 "query_type": "device_metrics",
                 "includes_history_capability": include_history
-            })
+            }),
         ))
     }
 }
@@ -795,7 +806,7 @@ impl Tool for GetDeviceTypeSchemaTool {
                 "device_type": string_property("设备类型名称（如'DHT22'、'Relay'），不指定则返回所有类型"),
                 "include_examples": boolean_property("是否包含使用示例，默认为false")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -867,7 +878,7 @@ impl Tool for ListDeviceTypesTool {
             serde_json::json!({
                 "category": string_property("可选的类别过滤（如'sensor'、'actuator'）")
             }),
-            vec![]
+            vec![],
         )
     }
 

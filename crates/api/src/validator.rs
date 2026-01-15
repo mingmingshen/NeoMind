@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::models::{ErrorResponse, ErrorCode};
+use crate::models::{ErrorCode, ErrorResponse};
 
 /// Validation error details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,40 +136,23 @@ pub fn validate_length(
 ) -> Result<(), ValidationErrors> {
     let len = value.len();
     if len < min {
-        Err(ValidationErrors::new().add(
-            field,
-            format!("must be at least {} characters", min),
-        ))
+        Err(ValidationErrors::new().add(field, format!("must be at least {} characters", min)))
     } else if len > max {
-        Err(ValidationErrors::new().add(
-            field,
-            format!("must be at most {} characters", max),
-        ))
+        Err(ValidationErrors::new().add(field, format!("must be at most {} characters", max)))
     } else {
         Ok(())
     }
 }
 
 /// Validate that a value is within a range.
-pub fn validate_range<T>(
-    field: &str,
-    value: T,
-    min: T,
-    max: T,
-) -> Result<(), ValidationErrors>
+pub fn validate_range<T>(field: &str, value: T, min: T, max: T) -> Result<(), ValidationErrors>
 where
     T: PartialOrd + std::fmt::Display + Copy,
 {
     if value < min {
-        Err(ValidationErrors::new().add(
-            field,
-            format!("must be at least {}", min),
-        ))
+        Err(ValidationErrors::new().add(field, format!("must be at least {}", min)))
     } else if value > max {
-        Err(ValidationErrors::new().add(
-            field,
-            format!("must be at most {}", max),
-        ))
+        Err(ValidationErrors::new().add(field, format!("must be at most {}", max)))
     } else {
         Ok(())
     }
@@ -183,7 +166,10 @@ pub fn validate_device_id(id: &str) -> Result<(), ValidationErrors> {
     if id.len() > 100 {
         return Err(ValidationErrors::new().add("device_id", "ID too long (max 100 characters)"));
     }
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return Err(ValidationErrors::new().add(
             "device_id",
             "can only contain alphanumeric characters, hyphens, and underscores",
@@ -199,10 +185,7 @@ pub fn validate_session_id(id: &str) -> Result<(), ValidationErrors> {
     }
     // Session IDs should be valid UUIDs
     if uuid::Uuid::parse_str(id).is_err() {
-        return Err(ValidationErrors::new().add(
-            "session_id",
-            "must be a valid UUID",
-        ));
+        return Err(ValidationErrors::new().add("session_id", "must be a valid UUID"));
     }
     Ok(())
 }
@@ -362,7 +345,8 @@ impl Validate for DeviceQuery {
             page_size: self.page_size,
             sort_by: None,
             sort_order: None,
-        }.validate()
+        }
+        .validate()
     }
 }
 
@@ -391,7 +375,8 @@ impl Validate for RuleQuery {
             page_size: self.page_size,
             sort_by: None,
             sort_order: None,
-        }.validate()
+        }
+        .validate()
     }
 }
 
@@ -423,7 +408,8 @@ impl Validate for AlertQuery {
             page_size: self.page_size,
             sort_by: None,
             sort_order: None,
-        }.validate()
+        }
+        .validate()
     }
 }
 
@@ -468,7 +454,8 @@ impl Validate for TimeRangeQuery {
 /// ```
 pub fn validation_middleware(
     max_size: usize,
-) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>> + Clone {
+) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
++ Clone {
     move |req: Request, next: Next| {
         Box::pin(async move {
             // Check Content-Length header

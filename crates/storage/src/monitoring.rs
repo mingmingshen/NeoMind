@@ -8,8 +8,8 @@
 //! - Alerting for storage issues
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
@@ -234,10 +234,10 @@ impl Default for AlertThresholds {
     fn default() -> Self {
         Self {
             max_db_size_bytes: 10 * 1024 * 1024 * 1024, // 10 GB
-            max_read_latency_ms: 1000, // 1 second
-            max_write_latency_ms: 5000, // 5 seconds
-            min_disk_space_bytes: 1024 * 1024 * 1024, // 1 GB
-            max_error_rate: 0.01, // 1%
+            max_read_latency_ms: 1000,                  // 1 second
+            max_write_latency_ms: 5000,                 // 5 seconds
+            min_disk_space_bytes: 1024 * 1024 * 1024,   // 1 GB
+            max_error_rate: 0.01,                       // 1%
         }
     }
 }
@@ -246,7 +246,7 @@ impl Default for MonitoringConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            metrics_interval_secs: 60, // 1 minute
+            metrics_interval_secs: 60,      // 1 minute
             health_check_interval_secs: 30, // 30 seconds
             alerts: AlertThresholds::default(),
             metrics_retention_hours: 24,
@@ -308,7 +308,8 @@ impl StorageMonitor {
     /// Record a write operation.
     pub fn record_write(&self, duration_ms: u64) {
         self.write_count.fetch_add(1, Ordering::Relaxed);
-        self.total_write_ms.fetch_add(duration_ms, Ordering::Relaxed);
+        self.total_write_ms
+            .fetch_add(duration_ms, Ordering::Relaxed);
     }
 
     /// Record a delete operation.

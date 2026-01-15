@@ -1,8 +1,14 @@
 //! Home Assistant integration API handlers.
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use edge_ai_storage::HassSettings;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -127,7 +133,8 @@ pub async fn connect_hass_handler(
 
     settings.touch();
 
-    store.save_hass_settings(&settings)
+    store
+        .save_hass_settings(&settings)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save settings: {}", e)))?;
 
     // TODO: Initialize HASS client and test connection
@@ -155,7 +162,8 @@ pub async fn disconnect_hass_handler(
     settings.enabled = false;
     settings.touch();
 
-    store.save_hass_settings(&settings)
+    store
+        .save_hass_settings(&settings)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save settings: {}", e)))?;
 
     // TODO: Close WebSocket connection
@@ -177,7 +185,9 @@ pub async fn get_hass_entities_handler(
     let settings = store.get_hass_settings();
 
     if !settings.enabled || settings.token.is_none() {
-        return Err(ErrorResponse::service_unavailable("HASS integration is not connected"));
+        return Err(ErrorResponse::service_unavailable(
+            "HASS integration is not connected",
+        ));
     }
 
     // TODO: Fetch entities from HASS using the client
@@ -202,7 +212,9 @@ pub async fn import_hass_entities_handler(
     let settings = store.get_hass_settings();
 
     if !settings.enabled || settings.token.is_none() {
-        return Err(ErrorResponse::service_unavailable("HASS integration is not connected"));
+        return Err(ErrorResponse::service_unavailable(
+            "HASS integration is not connected",
+        ));
     }
 
     // TODO:

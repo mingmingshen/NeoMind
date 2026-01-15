@@ -14,6 +14,7 @@ import type {
   DeviceType,
   DiscoveredDevice,
   AdapterPluginDto,
+  AddDeviceRequest,
 } from '@/types'
 import { api } from '@/lib/api'
 
@@ -31,7 +32,7 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
 
   fetchDevices: () => Promise<void>
   fetchDeviceTypes: () => Promise<void>
-  addDevice: (deviceType: string, deviceId?: string, name?: string) => Promise<boolean>
+  addDevice: (request: AddDeviceRequest) => Promise<boolean>
   deleteDevice: (id: string) => Promise<boolean>
   sendCommand: (deviceId: string, command: string, params?: Record<string, unknown>) => Promise<boolean>
 
@@ -124,9 +125,9 @@ export const createDeviceSlice: StateCreator<
     }
   },
 
-  addDevice: async (deviceType, deviceId, name) => {
+  addDevice: async (request: AddDeviceRequest) => {
     try {
-      const result = await api.addDevice({ device_type: deviceType, device_id: deviceId, name })
+      const result = await api.addDevice(request)
       // Backend returns { device_id, added: true } after unwrap
       if (result.added || result.device_id) {
         await get().fetchDevices()

@@ -30,7 +30,7 @@ interface OllamaModel {
   size?: number
   family: string
   parameter_size: string
-  capabilities: {
+  capabilities?: {
     supports_thinking: boolean
     supports_tools: boolean
     supports_multimodal: boolean
@@ -360,10 +360,10 @@ export function LlmBackendDialog({ open, onClose, onSubmit, editing }: LlmBacken
                           <span className="text-xs truncate">{model.name}</span>
                           <span className="text-muted-foreground text-xs whitespace-nowrap">{model.parameter_size}</span>
                           <div className="flex items-center gap-1 shrink-0 ml-auto">
-                            {model.capabilities.supports_thinking && (
+                            {model.capabilities?.supports_thinking && (
                               <Brain className="h-3 w-3 text-info" />
                             )}
-                            {model.capabilities.supports_tools && (
+                            {model.capabilities?.supports_tools && (
                               <Wrench className="h-3 w-3 text-success" />
                             )}
                           </div>

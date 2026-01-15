@@ -4,7 +4,7 @@
 //! enabling workflows to be triggered by LLM-generated decisions.
 
 use crate::engine::WorkflowEngine;
-use crate::error::{Result as WorkflowResult};
+use crate::error::Result as WorkflowResult;
 use edge_ai_core::{EventBus, EventMetadata, NeoTalkEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -76,7 +76,11 @@ impl LlmDecisionTriggerConfig {
     }
 
     /// Add a parameter mapping.
-    pub fn with_parameter_mapping(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_parameter_mapping(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         self.parameter_mapping.insert(key.into(), value.into());
         self
     }
@@ -161,7 +165,15 @@ impl LlmDecisionTrigger {
                     timestamp: _,
                 } = event
                 {
-                    if Self::matches_config(&decision_id, &title, &description, &reasoning, &actions, confidence, &config) {
+                    if Self::matches_config(
+                        &decision_id,
+                        &title,
+                        &description,
+                        &reasoning,
+                        &actions,
+                        confidence,
+                        &config,
+                    ) {
                         // Build workflow input from decision data
                         let mut workflow_input = serde_json::json!({
                             "decision_id": decision_id,
@@ -179,15 +191,24 @@ impl LlmDecisionTrigger {
                             }
                         }
 
-                        debug!("Triggering workflow {} from LLM decision {}", workflow_id, decision_id);
+                        debug!(
+                            "Triggering workflow {} from LLM decision {}",
+                            workflow_id, decision_id
+                        );
 
                         // Trigger the workflow
                         match engine.execute_workflow(&workflow_id).await {
                             Ok(_) => {
-                                info!("Workflow {} triggered by LLM decision {}", workflow_id, decision_id);
+                                info!(
+                                    "Workflow {} triggered by LLM decision {}",
+                                    workflow_id, decision_id
+                                );
                             }
                             Err(e) => {
-                                error!("Failed to trigger workflow {} from LLM decision {}: {}", workflow_id, decision_id, e);
+                                error!(
+                                    "Failed to trigger workflow {} from LLM decision {}: {}",
+                                    workflow_id, decision_id, e
+                                );
                             }
                         }
                     }
@@ -226,7 +247,11 @@ impl LlmDecisionTrigger {
         // Check action types
         if !config.action_types.is_empty() {
             let action_types: Vec<&str> = actions.iter().map(|a| a.action_type.as_str()).collect();
-            if !config.action_types.iter().any(|t| action_types.contains(&t.as_str())) {
+            if !config
+                .action_types
+                .iter()
+                .any(|t| action_types.contains(&t.as_str()))
+            {
                 return false;
             }
         }
@@ -265,10 +290,7 @@ pub struct LlmDecisionTriggerManager {
 
 impl LlmDecisionTriggerManager {
     /// Create a new LLM decision trigger manager.
-    pub fn new(
-        event_bus: Arc<EventBus>,
-        engine: Arc<WorkflowEngine>,
-    ) -> Self {
+    pub fn new(event_bus: Arc<EventBus>, engine: Arc<WorkflowEngine>) -> Self {
         Self {
             event_bus,
             engine,
@@ -335,8 +357,8 @@ impl LlmDecisionTriggerManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::ProposedAction;
+    use edge_ai_core::eventbus::EventBus;
 
     #[test]
     fn test_config_creation() {
@@ -374,32 +396,37 @@ mod tests {
             LlmDecisionTrigger::extract_value(&value, "actions.0"),
             Some(serde_json::json!("action1"))
         );
-        assert_eq!(
-            LlmDecisionTrigger::extract_value(&value, "actions.5"),
-            None
-        );
+        assert_eq!(LlmDecisionTrigger::extract_value(&value, "actions.5"), None);
     }
 
     #[test]
     fn test_matches_config() {
-        let actions = vec![
-            ProposedAction::new("notify_user".to_string(), "Notify".to_string(), serde_json::json!({})),
-        ];
+        let actions = vec![ProposedAction::new(
+            "notify_user".to_string(),
+            "Notify".to_string(),
+            serde_json::json!({}),
+        )];
 
         let config = LlmDecisionTriggerConfig::new()
             .with_min_confidence(80.0)
             .with_action_type("notify_user");
 
         // Should match - confidence is 85% (> 80%) and has notify_user action
-        assert!(LlmDecisionTrigger::matches_config("dec-1", "Test", "Desc", "Reason", &actions, 0.85, &config));
+        assert!(LlmDecisionTrigger::matches_config(
+            "dec-1", "Test", "Desc", "Reason", &actions, 0.85, &config
+        ));
 
         // Should not match - confidence is too low
-        assert!(!LlmDecisionTrigger::matches_config("dec-1", "Test", "Desc", "Reason", &actions, 0.70, &config));
+        assert!(!LlmDecisionTrigger::matches_config(
+            "dec-1", "Test", "Desc", "Reason", &actions, 0.70, &config
+        ));
 
         // Should not match - wrong action type
         let config2 = LlmDecisionTriggerConfig::new()
             .with_min_confidence(50.0)
             .with_action_type("control_device");
-        assert!(!LlmDecisionTrigger::matches_config("dec-1", "Test", "Desc", "Reason", &actions, 0.85, &config2));
+        assert!(!LlmDecisionTrigger::matches_config(
+            "dec-1", "Test", "Desc", "Reason", &actions, 0.85, &config2
+        ));
     }
 }

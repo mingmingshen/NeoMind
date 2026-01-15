@@ -23,12 +23,11 @@ mod session_fix_tests {
             Err(_) => {
                 // For testing without Ollama, we'd need a mock backend
                 // For now, skip if Ollama is not available
-                LlmBackend::Ollama  // Will fail gracefully if not available
+                LlmBackend::Ollama // Will fail gracefully if not available
             }
         };
 
-        SessionManager::new(A::new(event_bus), backend)
-            .expect("Failed to create SessionManager")
+        SessionManager::new(A::new(event_bus), backend).expect("Failed to create SessionManager")
     }
 
     #[tokio::test]
@@ -36,7 +35,9 @@ mod session_fix_tests {
         let manager = create_test_manager().await;
 
         // Create a session
-        let session_id = manager.create_session().await
+        let session_id = manager
+            .create_session()
+            .await
             .expect("Failed to create session");
 
         // Get initial session count
@@ -45,13 +46,17 @@ mod session_fix_tests {
         // Send multiple messages to the same session
         for i in 1..=3 {
             // Note: This may fail if Ollama is not running
-            let _ = manager.process_message(&session_id, &format!("Message {}", i)).await;
+            let _ = manager
+                .process_message(&session_id, &format!("Message {}", i))
+                .await;
         }
 
         // Verify session count hasn't increased
         let final_count = manager.session_count().await;
-        assert_eq!(final_count, initial_count,
-                   "Session count should not increase when sending messages to existing session");
+        assert_eq!(
+            final_count, initial_count,
+            "Session count should not increase when sending messages to existing session"
+        );
     }
 
     #[tokio::test]
@@ -59,7 +64,9 @@ mod session_fix_tests {
         let manager = create_test_manager().await;
 
         // Create initial session
-        let _session1 = manager.create_session().await
+        let _session1 = manager
+            .create_session()
+            .await
             .expect("Failed to create first session");
 
         let count_after_first = manager.session_count().await;
@@ -74,8 +81,10 @@ mod session_fix_tests {
 
         if result.is_ok() {
             let count_after = manager.session_count().await;
-            assert!(count_after > count_after_first,
-                    "Empty session_id should either create new session or fail");
+            assert!(
+                count_after > count_after_first,
+                "Empty session_id should either create new session or fail"
+            );
         }
     }
 
@@ -84,23 +93,31 @@ mod session_fix_tests {
         let manager = create_test_manager().await;
 
         // Create a valid session
-        let valid_id = manager.create_session().await
+        let valid_id = manager
+            .create_session()
+            .await
             .expect("Failed to create session");
 
         let count_before = manager.session_count().await;
 
         // Try to send message to invalid session
-        let result = manager.process_message("invalid-session-id-12345", "test").await;
+        let result = manager
+            .process_message("invalid-session-id-12345", "test")
+            .await;
 
         // Should fail without creating a new session
         assert!(result.is_err(), "Invalid session ID should cause error");
 
         let count_after = manager.session_count().await;
-        assert_eq!(count_after, count_before,
-                   "Invalid session ID should not create new session");
+        assert_eq!(
+            count_after, count_before,
+            "Invalid session ID should not create new session"
+        );
 
         // Verify the original session still exists
-        assert!(manager.get_session(&valid_id).await.is_ok(),
-                "Original session should still be accessible");
+        assert!(
+            manager.get_session(&valid_id).await.is_ok(),
+            "Original session should still be accessible"
+        );
     }
 }

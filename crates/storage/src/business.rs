@@ -10,17 +10,18 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use chrono::Utc;
 
 use crate::Result;
 
 // Table definitions
 const EVENT_LOG_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("event_log");
 const RULE_HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rule_history");
-const WORKFLOW_HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("workflow_history");
+const WORKFLOW_HISTORY_TABLE: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("workflow_history");
 const ALERT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("alerts");
 
 // Default retention period: 7 days
@@ -283,7 +284,10 @@ pub enum RuleExecutionResult {
     /// Rule passed and actions executed
     Success { actions_executed: u32 },
     /// Rule passed but actions failed
-    PartialSuccess { actions_executed: u32, actions_failed: u32 },
+    PartialSuccess {
+        actions_executed: u32,
+        actions_failed: u32,
+    },
     /// Rule evaluation failed
     EvaluationFailed,
     /// Rule did not pass
@@ -503,9 +507,7 @@ impl WorkflowHistoryStore {
             Database::create(path_ref)?
         };
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     /// Record a workflow execution.
@@ -548,7 +550,11 @@ impl WorkflowHistoryStore {
     }
 
     /// Get a specific execution by ID.
-    pub fn get_execution(&self, workflow_id: &str, execution_id: &str) -> Result<Option<WorkflowExecution>> {
+    pub fn get_execution(
+        &self,
+        workflow_id: &str,
+        execution_id: &str,
+    ) -> Result<Option<WorkflowExecution>> {
         let txn = self.db.begin_read()?;
         let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
 
@@ -719,9 +725,7 @@ impl AlertStore {
             Database::create(path_ref)?
         };
 
-        Ok(Self {
-            db: Arc::new(db),
-        })
+        Ok(Self { db: Arc::new(db) })
     }
 
     /// Create a new alert.
@@ -787,15 +791,13 @@ impl AlertStore {
 
     /// Get active alerts.
     pub fn get_active(&self) -> Result<Vec<Alert>> {
-        let filter = AlertFilter::new()
-            .with_status(AlertStatus::Active);
+        let filter = AlertFilter::new().with_status(AlertStatus::Active);
         self.query(&filter)
     }
 
     /// Get alerts by source.
     pub fn get_by_source(&self, source: &str) -> Result<Vec<Alert>> {
-        let filter = AlertFilter::new()
-            .with_source(source);
+        let filter = AlertFilter::new().with_source(source);
         self.query(&filter)
     }
 

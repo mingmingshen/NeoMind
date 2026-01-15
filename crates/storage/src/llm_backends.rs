@@ -7,15 +7,14 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
+use chrono::{DateTime, Utc};
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
 
 use crate::{Error, settings::LlmBackendType};
 
 // LLM backend instances table: key = instance_id, value = LlmBackendInstance (serialized)
-const LLM_BACKENDS_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("llm_backends");
+const LLM_BACKENDS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("llm_backends");
 
 // Active backend tracking: key = "active_backend", value = instance_id
 const ACTIVE_BACKEND_TABLE: TableDefinition<&str, &str> =
@@ -157,11 +156,7 @@ fn default_max_context() -> usize {
 
 impl LlmBackendInstance {
     /// Create a new LLM backend instance
-    pub fn new(
-        id: String,
-        name: String,
-        backend_type: LlmBackendType,
-    ) -> Self {
+    pub fn new(id: String, name: String, backend_type: LlmBackendType) -> Self {
         let (endpoint, model, capabilities) = match &backend_type {
             LlmBackendType::Ollama => (
                 Some("http://localhost:11434".to_string()),
@@ -273,7 +268,10 @@ impl LlmBackendInstance {
                     return Err("Ollama endpoint must be specified".to_string());
                 }
             }
-            LlmBackendType::OpenAi | LlmBackendType::Anthropic | LlmBackendType::Google | LlmBackendType::XAi => {
+            LlmBackendType::OpenAi
+            | LlmBackendType::Anthropic
+            | LlmBackendType::Google
+            | LlmBackendType::XAi => {
                 if self.api_key.as_ref().map_or(true, |k| k.is_empty()) {
                     return Err(format!("{:?} requires an API key", self.backend_type));
                 }
@@ -353,14 +351,15 @@ impl LlmBackendStore {
 
     /// Save an LLM backend instance
     pub fn save_instance(&self, instance: &LlmBackendInstance) -> Result<(), Error> {
-        instance.validate()
+        instance
+            .validate()
             .map_err(|e| Error::InvalidInput(e.to_string()))?;
 
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(LLM_BACKENDS_TABLE)?;
-            let value = serde_json::to_vec(instance)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(instance).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(instance.id.as_str(), value.as_slice())?;
         }
         write_txn.commit()?;
@@ -403,7 +402,9 @@ impl LlmBackendStore {
         // Check if it's the active backend
         if let Ok(Some(active_id)) = self.get_active_backend_id() {
             if active_id == id {
-                return Err(Error::InvalidInput("Cannot delete the active backend".to_string()));
+                return Err(Error::InvalidInput(
+                    "Cannot delete the active backend".to_string(),
+                ));
             }
         }
 
@@ -505,7 +506,11 @@ impl LlmBackendStore {
 
     /// Generate a unique ID for a new instance
     pub fn generate_id(prefix: &str) -> String {
-        format!("{}_{}", prefix, uuid::Uuid::new_v4().to_string().split_at(8).0)
+        format!(
+            "{}_{}",
+            prefix,
+            uuid::Uuid::new_v4().to_string().split_at(8).0
+        )
     }
 
     /// Export all backend instances
@@ -523,7 +528,9 @@ impl LlmBackendStore {
     pub fn import_instances(&self, data: serde_json::Value) -> Result<(), Error> {
         if let Some(instances) = data.get("instances").and_then(|v| v.as_array()) {
             for instance_value in instances {
-                if let Ok(instance) = serde_json::from_value::<LlmBackendInstance>(instance_value.clone()) {
+                if let Ok(instance) =
+                    serde_json::from_value::<LlmBackendInstance>(instance_value.clone())
+                {
                     self.save_instance(&instance)?;
                 }
             }
@@ -543,11 +550,13 @@ impl LlmBackendStore {
         let instances = self.load_all_instances()?;
         let active_id = self.get_active_backend_id()?;
 
-        let total_by_type = instances.iter()
-            .fold(std::collections::HashMap::new(), |mut acc, inst| {
-                *acc.entry(inst.backend_name().to_string()).or_insert(0) += 1;
-                acc
-            });
+        let total_by_type =
+            instances
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, inst| {
+                    *acc.entry(inst.backend_name().to_string()).or_insert(0) += 1;
+                    acc
+                });
 
         Ok(LlmBackendStats {
             total_instances: instances.len(),

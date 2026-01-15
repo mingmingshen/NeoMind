@@ -2,8 +2,10 @@
 //!
 //! Provides a foundation for building stream-based connectors.
 
-use edge_ai_core::integration::connector::{Connector, ConnectorError, Result, BaseConnector as CoreBaseConnector};
-use futures::{channel::mpsc, SinkExt, Stream, StreamExt};
+use edge_ai_core::integration::connector::{
+    BaseConnector as CoreBaseConnector, Connector, ConnectorError, Result,
+};
+use futures::{SinkExt, Stream, StreamExt, channel::mpsc};
 use parking_lot::Mutex;
 use std::pin::Pin;
 use std::sync::Arc;

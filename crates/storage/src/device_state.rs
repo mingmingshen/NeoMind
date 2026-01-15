@@ -257,8 +257,16 @@ impl DeviceStateStore {
     /// Save or update device state.
     pub async fn save_state(&self, state: &DeviceState) -> Result<()> {
         let device_id = state.device_id.clone();
-        let old_online = self.get_state(&device_id).await.ok().and_then(|s| if s.online { Some(true) } else { Some(false) });
-        let old_type = self.get_state(&device_id).await.ok().map(|s| s.device_type.clone());
+        let old_online = self
+            .get_state(&device_id)
+            .await
+            .ok()
+            .and_then(|s| if s.online { Some(true) } else { Some(false) });
+        let old_type = self
+            .get_state(&device_id)
+            .await
+            .ok()
+            .map(|s| s.device_type.clone());
 
         // Save to storage
         let key = format!("device:{}", device_id);
@@ -268,7 +276,8 @@ impl DeviceStateStore {
         self.cache_device(state.clone()).await;
 
         // Update indexes
-        self.update_indexes(&device_id, state, old_online.as_ref(), old_type.as_deref()).await;
+        self.update_indexes(&device_id, state, old_online.as_ref(), old_type.as_deref())
+            .await;
 
         Ok(())
     }
@@ -291,7 +300,9 @@ impl DeviceStateStore {
 
         // Load from storage
         let key = format!("device:{}", device_id);
-        let state: DeviceState = self.storage.read_json("device_state", &key)?
+        let state: DeviceState = self
+            .storage
+            .read_json("device_state", &key)?
             .ok_or_else(|| Error::NotFound(format!("Device not found: {}", device_id)))?;
 
         // Cache the state
@@ -317,14 +328,19 @@ impl DeviceStateStore {
 
         // Update online index
         if old_online != online {
-            self.update_online_index(device_id, old_online, online).await;
+            self.update_online_index(device_id, old_online, online)
+                .await;
         }
 
         Ok(())
     }
 
     /// Update device metric snapshot.
-    pub async fn update_metrics(&self, device_id: &str, metrics: HashMap<String, MetricValue>) -> Result<()> {
+    pub async fn update_metrics(
+        &self,
+        device_id: &str,
+        metrics: HashMap<String, MetricValue>,
+    ) -> Result<()> {
         let mut state = self.get_state(device_id).await?;
         state.metrics = metrics;
         state.last_updated = chrono::Utc::now().timestamp_millis();
@@ -333,7 +349,12 @@ impl DeviceStateStore {
     }
 
     /// Update a single metric.
-    pub async fn update_metric(&self, device_id: &str, name: String, value: MetricValue) -> Result<()> {
+    pub async fn update_metric(
+        &self,
+        device_id: &str,
+        name: String,
+        value: MetricValue,
+    ) -> Result<()> {
         let mut state = self.get_state(device_id).await?;
         state.metrics.insert(name, value);
         state.last_updated = chrono::Utc::now().timestamp_millis();
@@ -371,10 +392,11 @@ impl DeviceStateStore {
     pub async fn query(&self, filter: &DeviceFilter) -> Result<Vec<DeviceState>> {
         let all = self.list_devices().await?;
 
-        Ok(all.into_iter()
+        Ok(all
+            .into_iter()
             .filter(|state| filter.matches(state))
             .collect())
-        }
+    }
 
     /// List devices by type.
     pub async fn list_by_type(&self, device_type: &str) -> Result<Vec<DeviceState>> {
@@ -425,7 +447,8 @@ impl DeviceStateStore {
             self.cache.write().await.remove(device_id);
 
             // Update indexes
-            self.remove_from_indexes(device_id, &state.device_type, state.online).await;
+            self.remove_from_indexes(device_id, &state.device_type, state.online)
+                .await;
         }
 
         Ok(removed)
@@ -455,7 +478,8 @@ impl DeviceStateStore {
 
         let total_accesses: usize = cache.values().map(|e| e.access_count).sum();
 
-        let stale_count = cache.values()
+        let stale_count = cache
+            .values()
             .filter(|e| e.cached_at.elapsed() >= self.cache_ttl)
             .count();
 
@@ -485,11 +509,13 @@ impl DeviceStateStore {
         let mut online_index = HashMap::new();
 
         for device in &devices {
-            type_index.entry(device.device_type.clone())
+            type_index
+                .entry(device.device_type.clone())
                 .or_insert_with(HashSet::new)
                 .insert(device.device_id.clone());
 
-            online_index.entry(device.online)
+            online_index
+                .entry(device.online)
                 .or_insert_with(HashSet::new)
                 .insert(device.device_id.clone());
         }
@@ -511,17 +537,20 @@ impl DeviceStateStore {
         }
 
         let device_id = state.device_id.clone();
-        let entry = cache.entry(device_id.clone()).or_insert_with(|| CacheEntry {
-            state: state.clone(),
-            cached_at: Instant::now(),
-            access_count: 0,
-        });
+        let entry = cache
+            .entry(device_id.clone())
+            .or_insert_with(|| CacheEntry {
+                state: state.clone(),
+                cached_at: Instant::now(),
+                access_count: 0,
+            });
         entry.state = state;
         entry.cached_at = Instant::now();
     }
 
     async fn evict_lru(&self, cache: &mut HashMap<String, CacheEntry>) {
-        if let Some((lru_key, _)) = cache.iter()
+        if let Some((lru_key, _)) = cache
+            .iter()
             .min_by_key(|(_, e)| e.access_count)
             .map(|(k, v)| (k.clone(), v.cached_at))
         {
@@ -536,18 +565,25 @@ impl DeviceStateStore {
         }
     }
 
-    async fn update_indexes(&self, device_id: &str, state: &DeviceState,
-                          old_online: Option<&bool>, old_type: Option<&str>) {
+    async fn update_indexes(
+        &self,
+        device_id: &str,
+        state: &DeviceState,
+        old_online: Option<&bool>,
+        old_type: Option<&str>,
+    ) {
         // Update type index
         let mut type_index = self.type_index.write().await;
         if let Some(old_type) = old_type {
             if old_type != state.device_type {
-                type_index.entry(old_type.to_string())
+                type_index
+                    .entry(old_type.to_string())
                     .or_insert_with(HashSet::new)
                     .remove(device_id);
             }
         }
-        type_index.entry(state.device_type.clone())
+        type_index
+            .entry(state.device_type.clone())
             .or_insert_with(HashSet::new)
             .insert(device_id.to_string());
         drop(type_index);
@@ -555,32 +591,38 @@ impl DeviceStateStore {
         // Update online index
         if let Some(old_online) = old_online {
             if *old_online != state.online {
-                self.update_online_index(device_id, *old_online, state.online).await;
+                self.update_online_index(device_id, *old_online, state.online)
+                    .await;
             }
         } else {
-            self.update_online_index(device_id, !state.online, state.online).await;
+            self.update_online_index(device_id, !state.online, state.online)
+                .await;
         }
     }
 
     async fn update_online_index(&self, device_id: &str, old_online: bool, new_online: bool) {
         let mut online_index = self.online_index.write().await;
-        online_index.entry(old_online)
+        online_index
+            .entry(old_online)
             .or_insert_with(HashSet::new)
             .remove(device_id);
-        online_index.entry(new_online)
+        online_index
+            .entry(new_online)
             .or_insert_with(HashSet::new)
             .insert(device_id.to_string());
     }
 
     async fn remove_from_indexes(&self, device_id: &str, device_type: &str, was_online: bool) {
         let mut type_index = self.type_index.write().await;
-        type_index.entry(device_type.to_string())
+        type_index
+            .entry(device_type.to_string())
             .or_insert_with(HashSet::new)
             .remove(device_id);
         drop(type_index);
 
         let mut online_index = self.online_index.write().await;
-        online_index.entry(was_online)
+        online_index
+            .entry(was_online)
             .or_insert_with(HashSet::new)
             .remove(device_id);
     }
@@ -706,8 +748,7 @@ mod tests {
     async fn test_device_state_store_basic() {
         let store = DeviceStateStore::with_memory();
 
-        let state = DeviceState::new("sensor-1".to_string(), "dht22".to_string())
-            .with_online(true);
+        let state = DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(true);
 
         store.save_state(&state).await.unwrap();
 
@@ -721,8 +762,8 @@ mod tests {
     async fn test_update_online_status() {
         let store = DeviceStateStore::with_memory();
 
-        let state = DeviceState::new("sensor-1".to_string(), "dht22".to_string())
-            .with_online(false);
+        let state =
+            DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(false);
 
         store.save_state(&state).await.unwrap();
 
@@ -737,17 +778,19 @@ mod tests {
     async fn test_update_metrics() {
         let store = DeviceStateStore::with_memory();
 
-        let state = DeviceState::new("sensor-1".to_string(), "dht22".to_string())
-            .with_online(true);
+        let state = DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(true);
 
         store.save_state(&state).await.unwrap();
 
         let mut metrics = HashMap::new();
-        metrics.insert("temperature".to_string(), MetricValue {
-            value: serde_json::json!(23.5),
-            timestamp: chrono::Utc::now().timestamp_millis(),
-            quality: MetricQuality::Good,
-        });
+        metrics.insert(
+            "temperature".to_string(),
+            MetricValue {
+                value: serde_json::json!(23.5),
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                quality: MetricQuality::Good,
+            },
+        );
 
         store.update_metrics("sensor-1", metrics).await.unwrap();
 
@@ -759,9 +802,27 @@ mod tests {
     async fn test_list_devices() {
         let store = DeviceStateStore::with_memory();
 
-        store.save_state(&DeviceState::new("sensor-1".to_string(), "dht22".to_string())).await.unwrap();
-        store.save_state(&DeviceState::new("sensor-2".to_string(), "dht22".to_string())).await.unwrap();
-        store.save_state(&DeviceState::new("light-1".to_string(), "smart_light".to_string())).await.unwrap();
+        store
+            .save_state(&DeviceState::new(
+                "sensor-1".to_string(),
+                "dht22".to_string(),
+            ))
+            .await
+            .unwrap();
+        store
+            .save_state(&DeviceState::new(
+                "sensor-2".to_string(),
+                "dht22".to_string(),
+            ))
+            .await
+            .unwrap();
+        store
+            .save_state(&DeviceState::new(
+                "light-1".to_string(),
+                "smart_light".to_string(),
+            ))
+            .await
+            .unwrap();
 
         let all = store.list_devices().await.unwrap();
         assert_eq!(all.len(), 3);
@@ -774,12 +835,18 @@ mod tests {
     async fn test_online_offline() {
         let store = DeviceStateStore::with_memory();
 
-        store.save_state(
-            &DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(true)
-        ).await.unwrap();
-        store.save_state(
-            &DeviceState::new("sensor-2".to_string(), "dht22".to_string()).with_online(false)
-        ).await.unwrap();
+        store
+            .save_state(
+                &DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(true),
+            )
+            .await
+            .unwrap();
+        store
+            .save_state(
+                &DeviceState::new("sensor-2".to_string(), "dht22".to_string()).with_online(false),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(store.online_count().await.unwrap(), 1);
         assert_eq!(store.offline_count().await.unwrap(), 1);
@@ -789,14 +856,23 @@ mod tests {
     async fn test_query_filter() {
         let store = DeviceStateStore::with_memory();
 
-        store.save_state(
-            &DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(true)
-        ).await.unwrap();
-        store.save_state(
-            &DeviceState::new("sensor-2".to_string(), "dht22".to_string()).with_online(false)
-        ).await.unwrap();
+        store
+            .save_state(
+                &DeviceState::new("sensor-1".to_string(), "dht22".to_string()).with_online(true),
+            )
+            .await
+            .unwrap();
+        store
+            .save_state(
+                &DeviceState::new("sensor-2".to_string(), "dht22".to_string()).with_online(false),
+            )
+            .await
+            .unwrap();
 
-        let online = store.query(&DeviceFilter::new().with_online(true)).await.unwrap();
+        let online = store
+            .query(&DeviceFilter::new().with_online(true))
+            .await
+            .unwrap();
         assert_eq!(online.len(), 1);
         assert_eq!(online[0].device_id, "sensor-1");
     }
@@ -808,16 +884,14 @@ mod tests {
         let mdl = DeviceCapabilities {
             name: "DHT22 Sensor".to_string(),
             description: "Temperature and humidity sensor".to_string(),
-            metrics: vec![
-                MetricSpec {
-                    name: "temperature".to_string(),
-                    data_type: "number".to_string(),
-                    unit: Some("°C".to_string()),
-                    min: Some(-40.0),
-                    max: Some(80.0),
-                    description: Some("Temperature in Celsius".to_string()),
-                }
-            ],
+            metrics: vec![MetricSpec {
+                name: "temperature".to_string(),
+                data_type: "number".to_string(),
+                unit: Some("°C".to_string()),
+                min: Some(-40.0),
+                max: Some(80.0),
+                description: Some("Temperature in Celsius".to_string()),
+            }],
             commands: vec![],
             config: vec![],
         };
@@ -833,7 +907,13 @@ mod tests {
     async fn test_cache_stats() {
         let store = DeviceStateStore::with_memory();
 
-        store.save_state(&DeviceState::new("sensor-1".to_string(), "dht22".to_string())).await.unwrap();
+        store
+            .save_state(&DeviceState::new(
+                "sensor-1".to_string(),
+                "dht22".to_string(),
+            ))
+            .await
+            .unwrap();
 
         // Access to populate cache
         store.get_state("sensor-1").await.unwrap();

@@ -1,6 +1,9 @@
 //! Global search handlers.
 
-use axum::{extract::{Query, State}, response::Json};
+use axum::{
+    extract::{Query, State},
+    response::Json,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -20,8 +23,12 @@ pub struct SearchQuery {
     pub limit: usize,
 }
 
-fn default_targets() -> String { "all".to_string() }
-fn default_limit() -> usize { 10 }
+fn default_targets() -> String {
+    "all".to_string()
+}
+fn default_limit() -> usize {
+    10
+}
 
 /// Search result item.
 #[derive(Debug, Clone, Serialize)]
@@ -69,7 +76,12 @@ pub async fn global_search_handler(
     let targets = if query.targets == "all" {
         vec!["devices", "sessions", "rules", "alerts", "workflows"]
     } else {
-        query.targets.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect()
+        query
+            .targets
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect()
     };
 
     // Search devices
@@ -113,7 +125,11 @@ pub async fn global_search_handler(
     }
 
     // Sort by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let total_count = results.len();
 
@@ -134,24 +150,26 @@ pub async fn search_suggestions_handler(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
     let query = match params.get("q") {
         Some(q) if !q.is_empty() => q.to_lowercase(),
-        _ => return Ok(Json(ApiResponse::success(json!({
-            "suggestions": [],
-        })))),
+        _ => {
+            return Ok(Json(ApiResponse::success(json!({
+                "suggestions": [],
+            }))));
+        }
     };
 
     let mut suggestions = Vec::new();
 
-    // Device name suggestions
-    let devices = state.mqtt_device_manager.list_devices().await;
-    for device in devices {
-        if device.device_id.to_lowercase().contains(&query)
-            || device.name.as_ref().map(|n| n.to_lowercase().contains(&query)).unwrap_or(false)
+    // Device name suggestions using DeviceService
+    let configs = state.device_service.list_devices().await;
+    for config in configs {
+        if config.device_id.to_lowercase().contains(&query)
+            || config.name.to_lowercase().contains(&query)
         {
             suggestions.push(json!({
                 "type": "device",
-                "id": device.device_id,
-                "title": device.name.as_ref().unwrap_or(&device.device_id),
-                "url": format!("/api/devices/{}", device.device_id),
+                "id": config.device_id,
+                "title": &config.name,
+                "url": format!("/api/devices/{}", config.device_id),
             }));
         }
     }
@@ -164,22 +182,18 @@ pub async fn search_suggestions_handler(
     }))))
 }
 
-async fn search_devices(
-    state: &ServerState,
-    query: &str,
-    limit: usize,
-) -> Vec<SearchResultItem> {
-    let devices = state.mqtt_device_manager.list_devices().await;
+async fn search_devices(state: &ServerState, query: &str, limit: usize) -> Vec<SearchResultItem> {
+    let configs = state.device_service.list_devices().await;
     let mut results = Vec::new();
 
-    for device in devices {
+    for config in configs {
         if results.len() >= limit {
             break;
         }
 
-        let device_id_lower = device.device_id.to_lowercase();
-        let name_lower = device.name.as_ref().map(|n| n.to_lowercase()).unwrap_or_default();
-        let device_type_lower = device.device_type.to_lowercase();
+        let device_id_lower = config.device_id.to_lowercase();
+        let name_lower = config.name.to_lowercase();
+        let device_type_lower = config.device_type.to_lowercase();
 
         let (matches, score) = if device_id_lower.contains(query) || name_lower.contains(query) {
             let score = if device_id_lower == query || name_lower == query {
@@ -199,9 +213,9 @@ async fn search_devices(
         if matches {
             results.push(SearchResultItem {
                 result_type: "device".to_string(),
-                id: device.device_id.clone(),
-                title: device.name.clone().unwrap_or_else(|| device.device_id.clone()),
-                description: Some(format!("Type: {}", device.device_type)),
+                id: config.device_id.clone(),
+                title: config.name.clone(),
+                description: Some(format!("Type: {}", config.device_type)),
                 score,
                 highlights: None,
             });
@@ -211,11 +225,7 @@ async fn search_devices(
     results
 }
 
-async fn search_sessions(
-    state: &ServerState,
-    query: &str,
-    limit: usize,
-) -> Vec<SearchResultItem> {
+async fn search_sessions(state: &ServerState, query: &str, limit: usize) -> Vec<SearchResultItem> {
     let sessions = state.session_manager.list_sessions().await;
     let mut results = Vec::new();
 
@@ -237,11 +247,7 @@ async fn search_sessions(
     results
 }
 
-async fn search_rules(
-    state: &ServerState,
-    query: &str,
-    limit: usize,
-) -> Vec<SearchResultItem> {
+async fn search_rules(state: &ServerState, query: &str, limit: usize) -> Vec<SearchResultItem> {
     let rules = state.rule_engine.list_rules().await;
     let mut results = Vec::new();
 
@@ -250,9 +256,13 @@ async fn search_rules(
         let id_lower = rule.id.to_string().to_lowercase();
 
         let (matches, score) = if name_lower.contains(query) {
-            let score = if name_lower == query { 1.0 }
-            else if name_lower.starts_with(query) { 0.9 }
-            else { 0.7 };
+            let score = if name_lower == query {
+                1.0
+            } else if name_lower.starts_with(query) {
+                0.9
+            } else {
+                0.7
+            };
             (true, score)
         } else if id_lower.contains(query) {
             (true, 0.5)
@@ -275,11 +285,7 @@ async fn search_rules(
     results
 }
 
-async fn search_alerts(
-    state: &ServerState,
-    query: &str,
-    limit: usize,
-) -> Vec<SearchResultItem> {
+async fn search_alerts(state: &ServerState, query: &str, limit: usize) -> Vec<SearchResultItem> {
     let alerts = state.alert_manager.list_alerts().await;
     let mut results = Vec::new();
 
@@ -288,9 +294,13 @@ async fn search_alerts(
         let message_lower = alert.message.to_lowercase();
 
         let (matches, score) = if title_lower.contains(query) {
-            let score = if title_lower == query { 1.0 }
-            else if title_lower.starts_with(query) { 0.9 }
-            else { 0.7 };
+            let score = if title_lower == query {
+                1.0
+            } else if title_lower.starts_with(query) {
+                0.9
+            } else {
+                0.7
+            };
             (true, score)
         } else if message_lower.contains(query) {
             (true, 0.5)

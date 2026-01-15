@@ -1,8 +1,12 @@
 //! Mapper from HASS MQTT Discovery config to MDL DeviceTypeDefinition.
 
-use super::hass_discovery::{HassDiscoveryConfig, HassTopicParts, HassDiscoveryError, HassDiscoveryMessage};
-use super::mdl_format::{DeviceTypeDefinition, UplinkConfig, DownlinkConfig, MetricDefinition, CommandDefinition};
+use super::hass_discovery::{
+    HassDiscoveryConfig, HassDiscoveryError, HassDiscoveryMessage, HassTopicParts,
+};
 use super::mdl::MetricDataType;
+use super::mdl_format::{
+    CommandDefinition, DeviceTypeDefinition, DownlinkConfig, MetricDefinition, UplinkConfig,
+};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
@@ -18,10 +22,16 @@ pub fn map_hass_to_mdl(
         .ok_or_else(|| HassDiscoveryError::UnsupportedComponent(topic_parts.component.clone()))?;
 
     // Build device type definition
-    let display_name = config.name.clone().unwrap_or_else(|| topic_parts.object_id.clone());
-    let description = format!("HASS {} device from {}",
+    let display_name = config
+        .name
+        .clone()
+        .unwrap_or_else(|| topic_parts.object_id.clone());
+    let description = format!(
+        "HASS {} device from {}",
         config.component_type,
-        config.device.as_ref()
+        config
+            .device
+            .as_ref()
             .and_then(|d| d.name.clone())
             .unwrap_or_else(|| "Unknown".to_string())
     );
@@ -37,6 +47,7 @@ pub fn map_hass_to_mdl(
         name: display_name.clone(),
         description,
         categories: vec![device_type.to_string(), "hass_discovery".to_string()],
+        mode: crate::mdl_format::DeviceTypeMode::Full,
         uplink,
         downlink,
     })
@@ -82,7 +93,10 @@ fn build_uplink(
         }
     }
 
-    Ok(UplinkConfig { metrics })
+    Ok(UplinkConfig {
+        metrics,
+        samples: vec![],
+    })
 }
 
 /// Build downlink config (commands) from HASS config.
@@ -95,8 +109,14 @@ fn build_downlink(
     // Only switchable devices have commands
     if is_switchable(&topic_parts.component) {
         if config.command_topic.is_some() {
-            let payload_on = config.payload_on.clone().unwrap_or_else(|| "ON".to_string());
-            let payload_off = config.payload_off.clone().unwrap_or_else(|| "OFF".to_string());
+            let payload_on = config
+                .payload_on
+                .clone()
+                .unwrap_or_else(|| "ON".to_string());
+            let payload_off = config
+                .payload_off
+                .clone()
+                .unwrap_or_else(|| "OFF".to_string());
 
             // Turn on
             commands.push(CommandDefinition {
@@ -104,6 +124,8 @@ fn build_downlink(
                 display_name: "Turn On".to_string(),
                 payload_template: payload_on.clone(),
                 parameters: vec![],
+                samples: vec![],
+                llm_hints: String::new(),
             });
 
             // Turn off
@@ -112,6 +134,8 @@ fn build_downlink(
                 display_name: "Turn Off".to_string(),
                 payload_template: payload_off.clone(),
                 parameters: vec![],
+                samples: vec![],
+                llm_hints: String::new(),
             });
 
             // Toggle (if supported by component)
@@ -121,6 +145,8 @@ fn build_downlink(
                     display_name: "Toggle".to_string(),
                     payload_template: "TOGGLE".to_string(),
                     parameters: vec![],
+                    samples: vec![],
+                    llm_hints: String::new(),
                 });
             }
         }
@@ -134,6 +160,8 @@ fn build_downlink(
                 display_name: "Open".to_string(),
                 payload_template: "OPEN".to_string(),
                 parameters: vec![],
+                samples: vec![],
+                llm_hints: String::new(),
             });
 
             commands.push(CommandDefinition {
@@ -141,6 +169,8 @@ fn build_downlink(
                 display_name: "Close".to_string(),
                 payload_template: "CLOSE".to_string(),
                 parameters: vec![],
+                samples: vec![],
+                llm_hints: String::new(),
             });
 
             commands.push(CommandDefinition {
@@ -148,6 +178,8 @@ fn build_downlink(
                 display_name: "Stop".to_string(),
                 payload_template: "STOP".to_string(),
                 parameters: vec![],
+                samples: vec![],
+                llm_hints: String::new(),
             });
         }
     }
@@ -160,22 +192,23 @@ fn infer_metric_type(config: &HassDiscoveryConfig) -> (MetricDataType, Option<St
     let unit = config.unit.clone();
 
     let data_type = match config.device_class.as_deref() {
-        Some("temperature") | Some("humidity") | Some("pressure") |
-        Some("power") | Some("energy") | Some("current") |
-        Some("voltage") | Some("illuminance") => MetricDataType::Float,
+        Some("temperature") | Some("humidity") | Some("pressure") | Some("power")
+        | Some("energy") | Some("current") | Some("voltage") | Some("illuminance") => {
+            MetricDataType::Float
+        }
 
         Some("battery") | Some("signal_strength") => MetricDataType::Integer,
 
-        Some("occupancy") | Some("motion") | Some("opening") |
-        Some("window") | Some("door") | Some("lock") |
-        Some("plug") => MetricDataType::Boolean,
+        Some("occupancy") | Some("motion") | Some("opening") | Some("window") | Some("door")
+        | Some("lock") | Some("plug") => MetricDataType::Boolean,
 
         _ => {
             // Try to infer from unit
             match unit.as_deref() {
-                Some("°C") | Some("°F") | Some("hPa") | Some("Pa") |
-                Some("W") | Some("kW") | Some("kWh") | Some("V") |
-                Some("A") | Some("Hz") | Some("lx") | Some("lux") => MetricDataType::Float,
+                Some("°C") | Some("°F") | Some("hPa") | Some("Pa") | Some("W") | Some("kW")
+                | Some("kWh") | Some("V") | Some("A") | Some("Hz") | Some("lx") | Some("lux") => {
+                    MetricDataType::Float
+                }
 
                 Some("%") => MetricDataType::Integer,
 
@@ -201,8 +234,10 @@ fn parse_json_template(template: &str) -> Result<HashMap<String, String>, HassDi
             let target = "value_json.";
             let start_byte = pos + target.len();
             // Find the end: closing brace or space
-            if let Some(end_byte) = template[start_byte..].find('}')
-                .or_else(|| template[start_byte..].find(' ')) {
+            if let Some(end_byte) = template[start_byte..]
+                .find('}')
+                .or_else(|| template[start_byte..].find(' '))
+            {
                 let attr_bytes = &template[start_byte..start_byte + end_byte];
                 let attr_name = attr_bytes.trim().to_string();
                 if !attr_name.is_empty() {
@@ -216,8 +251,10 @@ fn parse_json_template(template: &str) -> Result<HashMap<String, String>, HassDi
         if let Some(pos) = template.find("value.") {
             let target = "value.";
             let start_byte = pos + target.len();
-            if let Some(end_byte) = template[start_byte..].find('}')
-                .or_else(|| template[start_byte..].find(' ')) {
+            if let Some(end_byte) = template[start_byte..]
+                .find('}')
+                .or_else(|| template[start_byte..].find(' '))
+            {
                 let attr_bytes = &template[start_byte..start_byte + end_byte];
                 let attr_name = attr_bytes.trim().to_string();
                 if !attr_name.is_empty() {
@@ -247,7 +284,10 @@ fn parse_json_template(template: &str) -> Result<HashMap<String, String>, HassDi
 
 /// Check if a component is switchable.
 fn is_switchable(component: &str) -> bool {
-    matches!(component, "switch" | "light" | "cover" | "fan" | "lock" | "media_player")
+    matches!(
+        component,
+        "switch" | "light" | "cover" | "fan" | "lock" | "media_player"
+    )
 }
 
 /// Register a discovered HASS device type with the MDL registry.
@@ -258,16 +298,16 @@ pub async fn register_hass_device_type(
     let def = map_hass_to_mdl(msg)?;
 
     let device_id = def.device_type.clone();
-    registry.register(def).await
+    registry
+        .register(def)
+        .await
         .map_err(|e| HassDiscoveryError::MappingError(format!("Failed to register: {}", e)))?;
 
     Ok(device_id)
 }
 
 /// Generate MDL uplink config from HASS discovery.
-pub fn generate_uplink_config(
-    msg: &HassDiscoveryMessage,
-) -> Result<JsonValue, HassDiscoveryError> {
+pub fn generate_uplink_config(msg: &HassDiscoveryMessage) -> Result<JsonValue, HassDiscoveryError> {
     let config = &msg.config;
 
     let uplink = serde_json::json!({
@@ -292,8 +332,8 @@ pub fn generate_uplink_config(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::hass_discovery::parse_discovery_message;
+    use super::*;
 
     #[test]
     fn test_infer_metric_type() {
@@ -329,7 +369,11 @@ mod tests {
         let template = r#"{{ value_json.TEMP }}"#;
         let attrs = parse_json_template(template).unwrap();
         // Check that TEMP was extracted (key check)
-        assert!(attrs.contains_key("TEMP"), "Expected key 'TEMP' not found. Got keys: {:?}", attrs.keys().collect::<Vec<_>>());
+        assert!(
+            attrs.contains_key("TEMP"),
+            "Expected key 'TEMP' not found. Got keys: {:?}",
+            attrs.keys().collect::<Vec<_>>()
+        );
         assert_eq!(attrs.get("TEMP"), Some(&"json".to_string()));
     }
 
@@ -340,7 +384,8 @@ mod tests {
             "name": "Temperature",
             "state_topic": "tele/sensor/SENSOR",
             "unit_of_measurement": "°C"
-        }"#.as_bytes();
+        }"#
+        .as_bytes();
 
         let msg = parse_discovery_message(topic, payload).unwrap();
         let uplink = generate_uplink_config(&msg).unwrap();

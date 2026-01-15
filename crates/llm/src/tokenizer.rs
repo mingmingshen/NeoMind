@@ -3,8 +3,8 @@
 //! Note: For cloud backends (Ollama, OpenAI), tokenization is handled by the server.
 //! This module provides a simple placeholder interface for compatibility.
 
-use std::path::Path;
 use anyhow::Result as AnyhowResult;
+use std::path::Path;
 
 /// Wrapper around tokenizer with common interface.
 ///

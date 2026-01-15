@@ -1,14 +1,14 @@
 //! Bulk device operations.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde_json::json;
 use std::collections::HashMap;
 
 use edge_ai_devices::{DeviceError, MetricValue};
 
-use crate::handlers::{ServerState, common::ok};
-use super::models::{BulkOperationResult, BulkDeleteDeviceTypesRequest};
+use super::models::{BulkDeleteDeviceTypesRequest, BulkOperationResult};
 use crate::handlers::common::HandlerResult;
+use crate::handlers::{ServerState, common::ok};
 
 /// Bulk delete device types.
 ///
@@ -22,7 +22,7 @@ pub async fn bulk_delete_device_types_handler(
     let mut failed = 0;
 
     for (index, type_id) in req.type_ids.into_iter().enumerate() {
-        match state.mqtt_device_manager.mdl_registry().unregister(&type_id).await {
+        match state.device_service.unregister_template(&type_id).await {
             Ok(_) => {
                 results.push(BulkOperationResult {
                     index,
@@ -32,22 +32,23 @@ pub async fn bulk_delete_device_types_handler(
                 });
                 succeeded += 1;
             }
-            Err(DeviceError::NotFound(_)) => {
-                results.push(BulkOperationResult {
-                    index,
-                    success: false,
-                    id: Some(type_id.clone()),
-                    error: Some("Device type not found".to_string()),
-                });
-                failed += 1;
-            }
-            Err(e) => {
-                results.push(BulkOperationResult {
-                    index,
-                    success: false,
-                    id: Some(type_id.clone()),
-                    error: Some(e.to_string()),
-                });
+            Err(_) => {
+                // Check if template exists
+                if state.device_service.get_template(&type_id).await.is_none() {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(type_id.clone()),
+                        error: Some("Device type not found".to_string()),
+                    });
+                } else {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(type_id.clone()),
+                        error: Some("Failed to unregister device type".to_string()),
+                    });
+                }
                 failed += 1;
             }
         }
@@ -73,7 +74,7 @@ pub async fn bulk_delete_devices_handler(
     let mut failed = 0;
 
     for (index, device_id) in req.device_ids.into_iter().enumerate() {
-        match state.mqtt_device_manager.remove_device(&device_id).await {
+        match state.device_service.unregister_device(&device_id).await {
             Ok(_) => {
                 results.push(BulkOperationResult {
                     index,
@@ -83,22 +84,25 @@ pub async fn bulk_delete_devices_handler(
                 });
                 succeeded += 1;
             }
-            Err(DeviceError::NotFound(_)) => {
-                results.push(BulkOperationResult {
-                    index,
-                    success: false,
-                    id: Some(device_id.clone()),
-                    error: Some("Device not found".to_string()),
-                });
-                failed += 1;
-            }
-            Err(e) => {
-                results.push(BulkOperationResult {
-                    index,
-                    success: false,
-                    id: Some(device_id.clone()),
-                    error: Some(e.to_string()),
-                });
+            Err(_) => {
+                // Check if device exists
+                let device_exists = state.device_service.get_device(&device_id).await.is_some();
+
+                if !device_exists {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(device_id.clone()),
+                        error: Some("Device not found".to_string()),
+                    });
+                } else {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(device_id.clone()),
+                        error: Some("Failed to remove device".to_string()),
+                    });
+                }
                 failed += 1;
             }
         }
@@ -153,12 +157,30 @@ pub async fn bulk_device_command_handler(
         }
     };
 
+    // Convert MetricValue params to serde_json::Value for DeviceService
+    let json_params: HashMap<String, serde_json::Value> = params
+        .into_iter()
+        .map(|(k, v)| {
+            let json_val = match v {
+                MetricValue::Integer(i) => serde_json::Value::Number(i.into()),
+                MetricValue::Float(f) => serde_json::Value::Number(
+                    serde_json::Number::from_f64(f).unwrap_or(serde_json::Number::from(0)),
+                ),
+                MetricValue::String(s) => serde_json::Value::String(s),
+                MetricValue::Boolean(b) => serde_json::Value::Bool(b),
+                MetricValue::Binary(_) => serde_json::Value::String("binary".to_string()),
+                MetricValue::Null => serde_json::Value::Null,
+            };
+            (k, json_val)
+        })
+        .collect();
+
     for (index, device_id) in req.device_ids.into_iter().enumerate() {
-        match state.mqtt_device_manager.send_command(
-            &device_id,
-            &req.command,
-            params.clone(),
-        ).await {
+        match state
+            .device_service
+            .send_command(&device_id, &req.command, json_params.clone())
+            .await
+        {
             Ok(_) => {
                 results.push(BulkOperationResult {
                     index,
@@ -168,22 +190,25 @@ pub async fn bulk_device_command_handler(
                 });
                 succeeded += 1;
             }
-            Err(DeviceError::NotFound(_)) => {
-                results.push(BulkOperationResult {
-                    index,
-                    success: false,
-                    id: Some(device_id.clone()),
-                    error: Some("Device not found".to_string()),
-                });
-                failed += 1;
-            }
-            Err(e) => {
-                results.push(BulkOperationResult {
-                    index,
-                    success: false,
-                    id: Some(device_id.clone()),
-                    error: Some(e.to_string()),
-                });
+            Err(_) => {
+                // Check if device exists
+                let device_exists = state.device_service.get_device(&device_id).await.is_some();
+
+                if !device_exists {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(device_id.clone()),
+                        error: Some("Device not found".to_string()),
+                    });
+                } else {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(device_id.clone()),
+                        error: Some("Failed to send command".to_string()),
+                    });
+                }
                 failed += 1;
             }
         }

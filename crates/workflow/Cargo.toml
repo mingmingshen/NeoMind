@@ -40,6 +40,9 @@ redb = "2.1"
 # Logging
 tracing = { workspace = true }
 
+# Async utilities
+futures = { workspace = true }
+
 # Image processing (optional)
 image = { version = "0.25", optional = true }
 

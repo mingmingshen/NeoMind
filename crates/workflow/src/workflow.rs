@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use crate::error::{Result, WorkflowError};
 
 // Re-export types from other modules
-pub use crate::store::{StepResult, ExecutionStatus, ExecutionLog};
+pub use crate::store::{ExecutionLog, ExecutionStatus, StepResult};
 
 /// A workflow definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,11 +44,19 @@ pub struct Workflow {
     pub updated_at: i64,
 }
 
-fn default_enabled() -> bool { true }
-fn default_timeout() -> u64 { 300 }
+fn default_enabled() -> bool {
+    true
+}
+fn default_timeout() -> u64 {
+    300
+}
 
-fn default_timeout_secs() -> u64 { 60 }
-fn default_poll_interval_secs() -> u64 { 5 }
+fn default_timeout_secs() -> u64 {
+    60
+}
+fn default_poll_interval_secs() -> u64 {
+    5
+}
 
 impl Workflow {
     /// Create a new workflow
@@ -124,15 +132,21 @@ impl Workflow {
     /// Validate the workflow
     pub fn validate(&self) -> Result<()> {
         if self.id.is_empty() {
-            return Err(WorkflowError::InvalidDefinition("Workflow ID cannot be empty".into()));
+            return Err(WorkflowError::InvalidDefinition(
+                "Workflow ID cannot be empty".into(),
+            ));
         }
 
         if self.name.is_empty() {
-            return Err(WorkflowError::InvalidDefinition("Workflow name cannot be empty".into()));
+            return Err(WorkflowError::InvalidDefinition(
+                "Workflow name cannot be empty".into(),
+            ));
         }
 
         if self.steps.is_empty() {
-            return Err(WorkflowError::InvalidDefinition("Workflow must have at least one step".into()));
+            return Err(WorkflowError::InvalidDefinition(
+                "Workflow must have at least one step".into(),
+            ));
         }
 
         // Validate step IDs are unique
@@ -140,7 +154,10 @@ impl Workflow {
         for step in &self.steps {
             let step_id = step.id();
             if !step_ids.insert(step_id.clone()) {
-                return Err(WorkflowError::InvalidDefinition(format!("Duplicate step ID: {}", step_id)));
+                return Err(WorkflowError::InvalidDefinition(format!(
+                    "Duplicate step ID: {}",
+                    step_id
+                )));
             }
         }
 
@@ -198,9 +215,7 @@ pub enum Trigger {
         filters: Option<HashMap<String, serde_json::Value>>,
     },
     #[serde(rename = "manual")]
-    Manual {
-        id: String,
-    },
+    Manual { id: String },
     #[serde(rename = "device")]
     Device {
         id: String,
@@ -323,10 +338,7 @@ pub enum Step {
 
     /// Delay step
     #[serde(rename = "delay")]
-    Delay {
-        id: String,
-        duration_seconds: u64,
-    },
+    Delay { id: String, duration_seconds: u64 },
 
     /// HTTP request step
     #[serde(rename = "http_request")]
@@ -413,7 +425,12 @@ pub enum ImageOperation {
     #[serde(rename = "resize")]
     Resize { width: u32, height: u32 },
     #[serde(rename = "crop")]
-    Crop { x: u32, y: u32, width: u32, height: u32 },
+    Crop {
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    },
     #[serde(rename = "rotate")]
     Rotate { angle: f64 },
     #[serde(rename = "filter")]
@@ -436,10 +453,7 @@ pub enum QueryType {
         end: i64,
     },
     #[serde(rename = "latest")]
-    Latest {
-        device_id: String,
-        metric: String,
-    },
+    Latest { device_id: String, metric: String },
     #[serde(rename = "aggregate")]
     Aggregate {
         device_id: String,
@@ -474,12 +488,11 @@ mod tests {
     #[test]
     fn test_workflow_validation() {
         // Empty ID should fail
-        let workflow = Workflow::new("", "Test")
-            .with_step(Step::Log {
-                id: "log1".to_string(),
-                message: "test".to_string(),
-                level: "info".to_string(),
-            });
+        let workflow = Workflow::new("", "Test").with_step(Step::Log {
+            id: "log1".to_string(),
+            message: "test".to_string(),
+            level: "info".to_string(),
+        });
         assert!(workflow.validate().is_err());
 
         // No steps should fail

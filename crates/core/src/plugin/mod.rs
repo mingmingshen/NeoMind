@@ -22,27 +22,27 @@ use serde_json::Value;
 use std::sync::Arc;
 
 // Core plugin types and traits
-pub mod native;
-pub mod wasm;
 pub mod dynamic;
-pub mod types;
-pub mod watcher;
+pub mod native;
 pub mod registry;
+pub mod types;
+pub mod wasm;
+pub mod watcher;
 
 // Re-exports
-pub use native::{NativePluginLoader, LoadedNativePlugin, NativePluginWrapper};
-pub use wasm::{WasmPluginLoader, WasmPlugin, LoadedWasmPlugin, ValidationResult};
 pub use dynamic::{
-    DynamicPluginLoader, LoadedPlugin, DynamicPluginWrapper, SecurityContext,
-    PluginDescriptor, PluginCapabilities, PLUGIN_ABI_VERSION,
+    DynamicPluginLoader, DynamicPluginWrapper, LoadedPlugin, PLUGIN_ABI_VERSION,
+    PluginCapabilities, PluginDescriptor, SecurityContext,
 };
+pub use native::{LoadedNativePlugin, NativePluginLoader, NativePluginWrapper};
+pub use registry::{PluginInfo, PluginInstance, PluginLoadOptions, UnifiedPluginRegistry};
 pub use types::{
-    PluginType, PluginState, ExtendedPluginMetadata, PluginDependency, ResourceLimits,
-    PluginPermission, StateMachine, UnifiedPlugin, DynUnifiedPlugin, PluginStats,
-    PluginRegistryEvent,
+    DynUnifiedPlugin, ExtendedPluginMetadata, PluginDependency, PluginPermission,
+    PluginRegistryEvent, PluginState, PluginStats, PluginType, ResourceLimits, StateMachine,
+    UnifiedPlugin,
 };
-pub use watcher::{ConfigWatcher, ConfigChangeCallback, HotConfig, ConfigReloadManager};
-pub use registry::{UnifiedPluginRegistry, PluginInstance, PluginInfo, PluginLoadOptions};
+pub use wasm::{LoadedWasmPlugin, ValidationResult, WasmPlugin, WasmPluginLoader};
+pub use watcher::{ConfigChangeCallback, ConfigReloadManager, ConfigWatcher, HotConfig};
 
 /// Result type for plugin operations.
 pub type Result<T> = std::result::Result<T, PluginError>;
@@ -330,10 +330,7 @@ impl PluginRegistry {
     /// 3. Create a WASM plugin wrapper
     /// 4. Register the plugin
     #[allow(dead_code)]
-    async fn load_wasm_plugin(
-        &mut self,
-        _wasm_path: impl AsRef<std::path::Path>,
-    ) -> Result<()> {
+    async fn load_wasm_plugin(&mut self, _wasm_path: impl AsRef<std::path::Path>) -> Result<()> {
         // TODO: Implement WASM plugin loading
         Err(PluginError::Other(anyhow::anyhow!(
             "WASM plugin loading not yet implemented"

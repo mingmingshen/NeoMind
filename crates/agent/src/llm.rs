@@ -9,16 +9,20 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::Stream;
+use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_core::{
-    SessionId, Message,
-    llm::backend::{LlmRuntime, LlmInput},
+    Message, SessionId,
+    llm::backend::{LlmInput, LlmRuntime},
 };
+
+// Import intent classifier for staged processing
+use crate::agent::staged::{IntentCategory, IntentClassifier, IntentResult, ToolFilter};
 
 /// Re-export the instance manager types for convenience
 pub use edge_ai_llm::instance_manager::{
-    LlmBackendInstanceManager, get_instance_manager, BackendTypeDefinition,
+    BackendTypeDefinition, LlmBackendInstanceManager, get_instance_manager,
 };
 
 /// Default concurrent LLM request limit.
@@ -49,10 +53,17 @@ impl ConcurrencyLimiter {
             if current >= self.max {
                 return None;
             }
-            match self.current.compare_exchange_weak(current, current + 1, Ordering::Relaxed, Ordering::Relaxed) {
-                Ok(_) => return Some(ConcurrencyPermit {
-                    limiter: self.current.clone(),
-                }),
+            match self.current.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    return Some(ConcurrencyPermit {
+                        limiter: self.current.clone(),
+                    });
+                }
                 Err(new_current) => current = new_current,
             }
         }
@@ -140,6 +151,10 @@ pub struct LlmInterface {
     /// Whether thinking mode is enabled (for direct mode when not using instance manager).
     /// Defaults to false for faster responses.
     thinking_enabled: Arc<RwLock<Option<bool>>>,
+    /// Intent classifier for staged processing.
+    intent_classifier: IntentClassifier,
+    /// Tool filter for reducing tools sent to LLM.
+    tool_filter: ToolFilter,
 }
 
 impl LlmInterface {
@@ -158,11 +173,16 @@ impl LlmInterface {
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(0)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Use backend default (from storage)
+            intent_classifier: IntentClassifier::default(),
+            tool_filter: ToolFilter::default(),
         }
     }
 
     /// Create a new LLM interface with instance manager integration.
-    pub fn with_instance_manager(config: ChatConfig, manager: Arc<LlmBackendInstanceManager>) -> Self {
+    pub fn with_instance_manager(
+        config: ChatConfig,
+        manager: Arc<LlmBackendInstanceManager>,
+    ) -> Self {
         let concurrent_limit = config.concurrent_limit;
         Self {
             llm: Arc::new(RwLock::new(None)),
@@ -176,6 +196,8 @@ impl LlmInterface {
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(1)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Will use instance manager setting
+            intent_classifier: IntentClassifier::default(),
+            tool_filter: ToolFilter::default(),
         }
     }
 
@@ -191,13 +213,13 @@ impl LlmInterface {
 
     /// Enable or disable instance manager mode.
     pub async fn set_use_instance_manager(&self, use_manager: bool) {
-        self.use_instance_manager.store(if use_manager { 1 } else { 0 }, Ordering::Relaxed);
+        self.use_instance_manager
+            .store(if use_manager { 1 } else { 0 }, Ordering::Relaxed);
     }
 
     /// Check if instance manager mode is enabled.
     pub fn uses_instance_manager(&self) -> bool {
-        self.use_instance_manager.load(Ordering::Relaxed) == 1
-            && self.instance_manager.is_some()
+        self.use_instance_manager.load(Ordering::Relaxed) == 1 && self.instance_manager.is_some()
     }
 
     /// Get the instance manager if available.
@@ -219,14 +241,17 @@ impl LlmInterface {
         // Try instance manager first if enabled
         if self.uses_instance_manager() {
             if let Some(manager) = &self.instance_manager {
-                return manager.get_active_runtime().await
+                return manager
+                    .get_active_runtime()
+                    .await
                     .map_err(|e| AgentError::Generation(e.to_string()));
             }
         }
 
         // Fall back to direct runtime
         let llm_guard = self.llm.read().await;
-        llm_guard.as_ref()
+        llm_guard
+            .as_ref()
             .map(Arc::clone)
             .ok_or_else(|| AgentError::LlmNotReady)
     }
@@ -256,11 +281,15 @@ impl LlmInterface {
     }
     pub async fn switch_backend(&self, backend_id: &str) -> Result<(), AgentError> {
         if let Some(manager) = &self.instance_manager {
-            manager.set_active(backend_id).await
+            manager
+                .set_active(backend_id)
+                .await
                 .map_err(|e| AgentError::Generation(e.to_string()))?;
             Ok(())
         } else {
-            Err(AgentError::Generation("No instance manager configured".to_string()))
+            Err(AgentError::Generation(
+                "No instance manager configured".to_string(),
+            ))
         }
     }
 
@@ -280,7 +309,9 @@ impl LlmInterface {
 
     /// Get the number of available permit slots.
     pub fn available_permits(&self) -> usize {
-        self.limiter.max.saturating_sub(self.limiter.current.load(Ordering::Relaxed))
+        self.limiter
+            .max
+            .saturating_sub(self.limiter.current.load(Ordering::Relaxed))
     }
 
     /// Set the system prompt.
@@ -290,7 +321,10 @@ impl LlmInterface {
     }
 
     /// Set tool definitions for function calling.
-    pub async fn set_tool_definitions(&self, tools: Vec<edge_ai_core::llm::backend::ToolDefinition>) {
+    pub async fn set_tool_definitions(
+        &self,
+        tools: Vec<edge_ai_core::llm::backend::ToolDefinition>,
+    ) {
         *self.tool_definitions.write().await = tools;
     }
 
@@ -299,20 +333,109 @@ impl LlmInterface {
         self.tool_definitions.read().await.clone()
     }
 
+    /// Classify user intent from message.
+    pub fn classify_intent(&self, message: &str) -> IntentResult {
+        self.intent_classifier.classify(message)
+    }
+
+    /// Get intent-specific system prompt.
+    pub fn get_intent_prompt(&self, intent: &IntentResult) -> String {
+        self.tool_filter.intent_prompt(intent)
+    }
+
+    /// Filter tools by user message (intent-based).
+    /// Returns only relevant tools (3-5 max) to reduce thinking.
+    pub async fn filter_tools_by_intent(
+        &self,
+        user_message: &str,
+    ) -> Vec<edge_ai_core::llm::backend::ToolDefinition> {
+        let all_tools = self.tool_definitions.read().await;
+        if all_tools.is_empty() {
+            return Vec::new();
+        }
+
+        // Classify intent from user message
+        let intent = self.intent_classifier.classify(user_message);
+        let target_namespace = intent.category.namespace();
+
+        // Helper to derive namespace from tool name
+        let derive_namespace = |name: &str| -> &str {
+            if name.starts_with("list_")
+                || name.starts_with("get_")
+                || name == "control_device"
+                || name.contains("device")
+            {
+                "device"
+            } else if name.contains("rule") || name.contains("automation") {
+                "rule"
+            } else if name.contains("workflow")
+                || name.contains("scenario")
+                || name.contains("trigger")
+            {
+                "workflow"
+            } else if name.contains("data") || name.contains("query") || name.contains("metrics") {
+                "data"
+            } else if name == "think" || name == "tool_search" {
+                "system"
+            } else {
+                "general"
+            }
+        };
+
+        // Filter tools by namespace (always include system tools)
+        let mut filtered: Vec<edge_ai_core::llm::backend::ToolDefinition> = all_tools
+            .iter()
+            .filter(|t| {
+                let ns = derive_namespace(&t.name);
+                ns == "system" || ns == target_namespace
+            })
+            .cloned()
+            .collect();
+
+        // If no tools found or general intent, include list_* tools
+        if filtered.is_empty() || intent.category == IntentCategory::General {
+            let list_tools: Vec<edge_ai_core::llm::backend::ToolDefinition> = all_tools
+                .iter()
+                .filter(|t| t.name.starts_with("list_") || t.name.starts_with("query_"))
+                .take(3)
+                .cloned()
+                .collect();
+            filtered.extend(list_tools);
+        }
+
+        // Limit to 5 tools max
+        filtered.truncate(5);
+        filtered
+    }
+
     /// Build system prompt with tool descriptions.
-    async fn build_system_prompt_with_tools(&self) -> String {
-        let tools = self.tool_definitions.read().await;
+    /// If user_message is provided, uses intent-based filtering.
+    async fn build_system_prompt_with_tools(&self, user_message: Option<&str>) -> String {
+        let tools = if let Some(msg) = user_message {
+            // Use intent-based filtering
+            self.filter_tools_by_intent(msg).await
+        } else {
+            // No filtering - return all tools
+            self.tool_definitions.read().await.clone()
+        };
+
         if tools.is_empty() {
             return self.system_prompt.clone();
         }
 
-        // === SIMPLIFIED SYSTEM PROMPT ===
-        // The previous prompt was too complex, causing excessive thinking
-        // New design: Minimal instructions, direct tool calling
         let mut prompt = String::with_capacity(2048);
 
         // Core identity - single sentence
         prompt.push_str("你是NeoTalk物联网助手，帮助用户管理设备和查询数据。\n\n");
+
+        // Add intent-specific guidance if user message provided
+        if let Some(msg) = user_message {
+            let intent = self.intent_classifier.classify(msg);
+            prompt.push_str(&format!(
+                "## 当前任务\n{}\n\n",
+                self.tool_filter.intent_prompt(&intent)
+            ));
+        }
 
         // Tool calling - brief and direct
         prompt.push_str("## 工具调用\n");
@@ -349,10 +472,7 @@ impl LlmInterface {
     }
 
     /// Send a chat message and get a response.
-    pub async fn chat(
-        &self,
-        user_message: impl Into<String>,
-    ) -> Result<ChatResponse, AgentError> {
+    pub async fn chat(&self, user_message: impl Into<String>) -> Result<ChatResponse, AgentError> {
         self.chat_internal(user_message, None).await
     }
 
@@ -395,12 +515,19 @@ impl LlmInterface {
         // Bypass LLM for simple greetings to improve response time
         let trimmed = user_message.trim();
         let greeting_patterns = [
-            "你好", "您好", "hi", "hello", "嗨", "在吗",
-            "早上好", "下午好", "晚上好",
+            "你好",
+            "您好",
+            "hi",
+            "hello",
+            "嗨",
+            "在吗",
+            "早上好",
+            "下午好",
+            "晚上好",
         ];
-        let is_greeting = greeting_patterns.iter().any(|&pat| {
-            trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat)
-        });
+        let is_greeting = greeting_patterns
+            .iter()
+            .any(|&pat| trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat));
 
         if is_greeting && trimmed.len() < 20 {
             let greeting_response = "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
@@ -429,7 +556,8 @@ impl LlmInterface {
         let has_tools = !self.tool_definitions.read().await.is_empty();
 
         let system_prompt = if has_tools {
-            self.build_system_prompt_with_tools().await
+            self.build_system_prompt_with_tools(Some(&user_message))
+                .await
         } else {
             self.system_prompt.clone()
         };
@@ -457,7 +585,9 @@ impl LlmInterface {
         let thinking_enabled = if self.uses_instance_manager() {
             // Instance manager mode - use backend setting
             if let Some(manager) = &self.instance_manager {
-                manager.get_active_instance().map(|inst| inst.thinking_enabled)
+                manager
+                    .get_active_instance()
+                    .map(|inst| inst.thinking_enabled)
             } else {
                 None
             }
@@ -467,8 +597,11 @@ impl LlmInterface {
         };
 
         // DEBUG: Log thinking_enabled value
-        eprintln!("[LlmInterface] chat_stream_internal: thinking_enabled={:?}, uses_instance_manager={}",
-            thinking_enabled, self.uses_instance_manager());
+        eprintln!(
+            "[LlmInterface] chat_stream_internal: thinking_enabled={:?}, uses_instance_manager={}",
+            thinking_enabled,
+            self.uses_instance_manager()
+        );
 
         let params = edge_ai_core::llm::backend::GenerationParams {
             temperature: Some(self.temperature),
@@ -502,7 +635,11 @@ impl LlmInterface {
         // Get tool definitions
         let tools_input = if has_tools {
             let tools = self.tool_definitions.read().await;
-            let result = if tools.is_empty() { None } else { Some(tools.clone()) };
+            let result = if tools.is_empty() {
+                None
+            } else {
+                Some(tools.clone())
+            };
             drop(tools);
             result
         } else {
@@ -520,11 +657,14 @@ impl LlmInterface {
         // Get runtime using instance manager if enabled
         let llm = self.get_runtime().await?;
 
-        let output = llm.generate(input).await
+        let output = llm
+            .generate(input)
+            .await
             .map_err(|e| AgentError::Generation(e.to_string()))?;
 
         let duration = start.elapsed();
-        let tokens_used = output.usage
+        let tokens_used = output
+            .usage
             .map(|u| u.completion_tokens as usize)
             .unwrap_or_else(|| output.text.split_whitespace().count());
 
@@ -541,7 +681,8 @@ impl LlmInterface {
     pub async fn chat_stream(
         &self,
         user_message: impl Into<String>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
         self.chat_stream_internal(user_message, None, true).await
     }
 
@@ -550,8 +691,12 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
-        self.chat_stream_internal(user_message, Some(history), true).await
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
+        // Enable thinking for complex queries (default behavior)
+        *self.thinking_enabled.write().await = Some(true);
+        self.chat_stream_internal(user_message, Some(history), true)
+            .await
     }
 
     /// Send a chat message with streaming response, without tools.
@@ -559,7 +704,8 @@ impl LlmInterface {
     pub async fn chat_stream_without_tools(
         &self,
         user_message: impl Into<String>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
         self.chat_stream_internal(user_message, None, false).await
     }
 
@@ -569,8 +715,28 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
-        self.chat_stream_internal(user_message, Some(history), false).await
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
+        self.chat_stream_internal(user_message, Some(history), false)
+            .await
+    }
+
+    /// Send a chat message with streaming response, with tools, but without thinking.
+    /// This is for simple queries where we want fast responses without thinking overhead.
+    pub async fn chat_stream_no_thinking_with_history(
+        &self,
+        user_message: impl Into<String>,
+        history: &[Message],
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
+        // Set thinking to false for this call
+        *self.thinking_enabled.write().await = Some(false);
+        // Note: We DON'T restore the old value here because:
+        // 1. The async stream continues after this function returns
+        // 2. Restoring here would affect concurrent requests
+        // 3. The next request will set its own value
+        self.chat_stream_internal(user_message, Some(history), true)
+            .await
     }
 
     /// Send a chat message with streaming response, without tools, without thinking.
@@ -579,11 +745,14 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
         // Temporarily disable thinking for this call
         let old_value = *self.thinking_enabled.read().await;
         *self.thinking_enabled.write().await = Some(false);
-        let result = self.chat_stream_internal(user_message, Some(history), false).await;
+        let result = self
+            .chat_stream_internal(user_message, Some(history), false)
+            .await;
         *self.thinking_enabled.write().await = old_value;
         result
     }
@@ -594,17 +763,22 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: Option<&[Message]>,
         include_tools: bool,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    {
         let user_message = user_message.into();
 
         let model_arc = Arc::clone(&self.model);
 
         // Build system prompt (with or without tools based on phase)
         let system_prompt = if include_tools {
-            self.build_system_prompt_with_tools().await
+            self.build_system_prompt_with_tools(Some(&user_message))
+                .await
         } else {
-            // Simple system prompt for Phase 2 (no tools needed)
-            "You are NeoTalk, an edge computing and IoT device management assistant. Help users based on the provided conversation context.".to_string()
+            // Phase 2 system prompt - still include tool calling instructions
+            // because follow-up questions may need tools
+            "你是NeoTalk物联网助手。根据对话历史和用户问题，如果需要查询信息，用XML格式调用工具：<tool_calls><invoke name=\"工具名称\"></invoke></tool_calls>
+可用工具：list_devices, list_rules, query_data, control_device, create_rule, trigger_workflow。
+如果不需要查询工具，直接回答用户问题。".to_string()
         };
 
         // Build input outside the lock
@@ -630,7 +804,9 @@ impl LlmInterface {
         let thinking_enabled = if self.uses_instance_manager() {
             // Instance manager mode - use backend setting
             if let Some(manager) = &self.instance_manager {
-                manager.get_active_instance().map(|inst| inst.thinking_enabled)
+                manager
+                    .get_active_instance()
+                    .map(|inst| inst.thinking_enabled)
             } else {
                 None
             }
@@ -640,8 +816,11 @@ impl LlmInterface {
         };
 
         // DEBUG: Log thinking_enabled value
-        eprintln!("[LlmInterface] chat_stream_internal: thinking_enabled={:?}, uses_instance_manager={}",
-            thinking_enabled, self.uses_instance_manager());
+        eprintln!(
+            "[LlmInterface] chat_stream_internal: thinking_enabled={:?}, uses_instance_manager={}",
+            thinking_enabled,
+            self.uses_instance_manager()
+        );
 
         let params = edge_ai_core::llm::backend::GenerationParams {
             temperature: Some(self.temperature),
@@ -674,7 +853,11 @@ impl LlmInterface {
 
         // Get tool definitions
         let tools = self.tool_definitions.read().await;
-        let tools_input = if tools.is_empty() { None } else { Some(tools.clone()) };
+        let tools_input = if tools.is_empty() {
+            None
+        } else {
+            Some(tools.clone())
+        };
         drop(tools);
 
         let input = LlmInput {
@@ -688,7 +871,9 @@ impl LlmInterface {
         // Get runtime using instance manager if enabled
         let llm = self.get_runtime().await?;
 
-        let stream = llm.generate_stream(input).await
+        let stream = llm
+            .generate_stream(input)
+            .await
             .map_err(|e| AgentError::Generation(e.to_string()))?;
 
         // Acquire permit for concurrency limiting and wrap stream
@@ -734,10 +919,8 @@ impl Default for ChatConfig {
         Self {
             model: "qwen3-vl:2b".to_string(),
             temperature: 0.4,
-            top_p: 0.95,
-            // Let models generate naturally without artificial token limits
-            // Models have their own built-in stopping criteria
-            max_tokens: usize::MAX,
+            top_p: 0.7,       // 0.95 -> 0.7, 减少随机性，降低thinking长度
+            max_tokens: 4096, // usize::MAX -> 4096, 限制总长度
             concurrent_limit: DEFAULT_CONCURRENT_LIMIT,
         }
     }
@@ -773,9 +956,10 @@ pub enum AgentError {
 impl From<AgentError> for super::error::AgentError {
     fn from(err: AgentError) -> Self {
         match err {
-            AgentError::LlmNotReady => super::error::AgentError::Llm("LLM backend not ready".to_string()),
+            AgentError::LlmNotReady => {
+                super::error::AgentError::Llm("LLM backend not ready".to_string())
+            }
             AgentError::Generation(msg) => super::error::AgentError::Llm(msg),
         }
     }
 }
-

@@ -6,10 +6,13 @@ use serde_json::json;
 use edge_ai_devices::ConnectionStatus;
 use edge_ai_storage::ExternalBroker;
 
-use crate::handlers::{ServerState, common::{HandlerResult, ok}};
-use crate::models::ErrorResponse;
-use super::models::MqttStatusDto;
 use super::models::ExternalBrokerConnectionDto;
+use super::models::MqttStatusDto;
+use crate::handlers::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
+use crate::models::ErrorResponse;
 
 /// Get the actual local IP address of the server.
 fn get_server_ip() -> String {
@@ -22,9 +25,10 @@ fn get_server_ip() -> String {
                 let ip = local_addr.ip();
                 if let IpAddr::V4(ipv4) = ip {
                     let octets = ipv4.octets();
-                    if (octets[0] == 192 && octets[1] == 168) ||
-                       (octets[0] == 10) ||
-                       (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) {
+                    if (octets[0] == 192 && octets[1] == 168)
+                        || (octets[0] == 10)
+                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    {
                         return ip.to_string();
                     }
                 }
@@ -39,9 +43,10 @@ fn get_server_ip() -> String {
                 if let get_if_addrs::IfAddr::V4(iface_addr) = iface.addr {
                     let ip = iface_addr.ip;
                     let octets = ip.octets();
-                    if (octets[0] == 192 && octets[1] == 168) ||
-                       (octets[0] == 10) ||
-                       (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) {
+                    if (octets[0] == 192 && octets[1] == 168)
+                        || (octets[0] == 10)
+                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    {
                         return ip.to_string();
                     }
                 }
@@ -64,18 +69,20 @@ fn get_server_ip() -> String {
 pub async fn get_mqtt_status_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let manager = &state.mqtt_device_manager;
+    use edge_ai_devices::adapter::ConnectionStatus;
 
-    // Get connection status
-    let status = manager.connection_status().await;
-    let connected = matches!(status, ConnectionStatus::Connected);
+    // Get connection status from the MQTT adapter
+    let connected = if let Some(adapter) = state.device_service.get_adapter("internal-mqtt").await {
+        matches!(adapter.connection_status(), ConnectionStatus::Connected)
+    } else {
+        false
+    };
 
-    // Extract last error from connection status if disconnected
-    let last_error = match &status {
-        ConnectionStatus::Disconnected => Some("Disconnected".to_string()),
-        ConnectionStatus::Error => Some("Connection error".to_string()),
-        ConnectionStatus::Connecting => None,
-        ConnectionStatus::Connected | ConnectionStatus::Reconnecting => None,
+    // Set last error based on connection state
+    let last_error = if !connected {
+        Some("Disconnected".to_string())
+    } else {
+        None
     };
 
     // Get MQTT settings
@@ -88,18 +95,20 @@ pub async fn get_mqtt_status_handler(
     // Get the actual server IP for embedded broker
     let server_ip = get_server_ip();
 
-    // Count devices - each device represents a subscription via wildcard
-    let devices = manager.list_devices().await;
-    let devices_count = devices.len();
+    // Count devices using DeviceService
+    let configs = state.device_service.list_devices().await;
+    let devices_count = configs.len();
     let subscriptions_count = devices_count;
 
     // For embedded broker, clients_count is the number of connected devices
     let clients_count = devices_count;
 
     // Load external brokers
-    let external_brokers: Vec<ExternalBrokerConnectionDto> = match store.load_all_external_brokers() {
-        Ok(brokers) => {
-            brokers.into_iter().map(|b| ExternalBrokerConnectionDto {
+    let external_brokers: Vec<ExternalBrokerConnectionDto> = match store.load_all_external_brokers()
+    {
+        Ok(brokers) => brokers
+            .into_iter()
+            .map(|b| ExternalBrokerConnectionDto {
                 id: b.id,
                 name: b.name,
                 broker: b.broker,
@@ -108,8 +117,8 @@ pub async fn get_mqtt_status_handler(
                 connected: b.connected,
                 enabled: b.enabled,
                 last_error: b.last_error,
-            }).collect()
-        }
+            })
+            .collect(),
         Err(_) => Vec::new(),
     };
 

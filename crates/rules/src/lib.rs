@@ -33,19 +33,29 @@
 //! }
 //! ```
 
+pub mod device_integration;
 pub mod dsl;
 pub mod engine;
 pub mod error;
-pub mod integration;
-pub mod device_integration;
 pub mod history;
+pub mod integration;
 
-pub use dsl::{RuleDslParser, ParsedRule, RuleCondition, RuleAction, ComparisonOperator, LogLevel};
-pub use engine::{RuleEngine, CompiledRule, RuleId, RuleStatus, RuleState, RuleExecutionResult, ValueProvider, InMemoryValueProvider};
-pub use error::{RuleError, NeoTalkError};
-pub use integration::{EventDrivenRuleEngine, EventEngineResult, EventEngineError, CachedValueProvider};
-pub use device_integration::{DeviceValueProvider, DeviceActionExecutor, DeviceIntegratedRuleEngine, DeviceIntegrationResult, DeviceIntegrationError};
-pub use history::{RuleHistoryStorage, RuleHistoryEntry, RuleHistoryStats, HistoryFilter, HistoryError};
+pub use device_integration::{
+    DeviceActionExecutor, DeviceIntegratedRuleEngine, DeviceIntegrationError,
+    DeviceIntegrationResult, DeviceValueProvider,
+};
+pub use dsl::{ComparisonOperator, LogLevel, ParsedRule, RuleAction, RuleCondition, RuleDslParser};
+pub use engine::{
+    CompiledRule, InMemoryValueProvider, RuleEngine, RuleExecutionResult, RuleId, RuleState,
+    RuleStatus, ValueProvider,
+};
+pub use error::{NeoTalkError, RuleError};
+pub use history::{
+    HistoryError, HistoryFilter, RuleHistoryEntry, RuleHistoryStats, RuleHistoryStorage,
+};
+pub use integration::{
+    CachedValueProvider, EventDrivenRuleEngine, EventEngineError, EventEngineResult,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -1,10 +1,10 @@
 //! Home Assistant entity to NeoTalk device mapper.
 
-use super::entities::{HassEntityState, HassDomain, HassDeviceClass, HassDeviceInfo};
+use super::entities::{HassDeviceClass, HassDeviceInfo, HassDomain, HassEntityState};
 use super::templates::HassDeviceTemplate;
 use crate::mdl::{
-    Device, DeviceId, DeviceType, MetricValue, MetricDefinition, MetricDataType,
-    DeviceCapability, Command, DeviceState,
+    Command, Device, DeviceCapability, DeviceId, DeviceState, DeviceType, MetricDataType,
+    MetricDefinition, MetricValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -169,7 +169,8 @@ impl HassEntityMapper {
 
     /// Add a custom mapping.
     pub fn add_mapping(&mut self, mapping: EntityMapping) {
-        self.custom_mappings.insert(mapping.entity_id.clone(), mapping);
+        self.custom_mappings
+            .insert(mapping.entity_id.clone(), mapping);
     }
 
     /// Add a custom template.
@@ -230,7 +231,10 @@ impl HassEntityMapper {
     }
 
     /// Map a group of entities that belong to the same device.
-    fn map_device_group(&self, entities: Vec<HassEntityState>) -> MappingResult<Option<MappedDevice>> {
+    fn map_device_group(
+        &self,
+        entities: Vec<HassEntityState>,
+    ) -> MappingResult<Option<MappedDevice>> {
         if entities.is_empty() {
             return Ok(None);
         }
@@ -317,7 +321,10 @@ impl HassEntityMapper {
     }
 
     /// Find the appropriate template for an entity.
-    fn find_template_for_entity(&self, entity: &HassEntityState) -> MappingResult<HassDeviceTemplate> {
+    fn find_template_for_entity(
+        &self,
+        entity: &HassEntityState,
+    ) -> MappingResult<HassDeviceTemplate> {
         let domain = HassDomain::from_entity_id(&entity.entity_id);
 
         // Match by domain and device class
@@ -343,7 +350,7 @@ impl HassEntityMapper {
                     "{}: {}",
                     domain.as_str(),
                     entity.entity_id
-                )))
+                )));
             }
         };
 
@@ -677,7 +684,10 @@ mod tests {
     #[test]
     fn test_slugify() {
         let mapper = HassEntityMapper::new();
-        assert_eq!(mapper.slugify("Living Room Temperature"), "living_room_temperature");
+        assert_eq!(
+            mapper.slugify("Living Room Temperature"),
+            "living_room_temperature"
+        );
         assert_eq!(mapper.slugify("sensor.temp_188"), "sensor_temp_188");
     }
 
@@ -711,6 +721,9 @@ mod tests {
         };
 
         assert_eq!(mapper.infer_data_type(&float_entity), MetricDataType::Float);
-        assert_eq!(mapper.infer_data_type(&bool_entity), MetricDataType::Boolean);
+        assert_eq!(
+            mapper.infer_data_type(&bool_entity),
+            MetricDataType::Boolean
+        );
     }
 }

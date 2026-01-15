@@ -54,68 +54,41 @@
 //! }
 //! ```
 
-pub mod error;
-pub mod tool;
 pub mod builtin;
+pub mod error;
 pub mod real;
 pub mod registry;
+pub mod tool;
 
 // Re-exports commonly used types
-pub use error::{ToolError, Result, NeoTalkError};
-pub use tool::{Tool, ToolOutput, ToolDefinition, Parameter, ToolExample, DynTool};
-pub use registry::{
-    ToolRegistry,
-    ToolRegistryBuilder,
-    ToolCall,
-    ToolResult,
-    format_for_llm,
-};
+pub use error::{NeoTalkError, Result, ToolError};
+pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult, format_for_llm};
+pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
 
 // Re-exports from core (backward compatibility)
 pub use edge_ai_core::tools::{
-    Tool as CoreTool, ToolFactory, ToolError as CoreToolError,
-    ToolOutput as CoreToolOutput, ToolDefinition as CoreToolDefinition,
-    Parameter as CoreParameter, object_schema, property,
-    string_property, number_property, boolean_property, array_property,
+    Parameter as CoreParameter, Tool as CoreTool, ToolDefinition as CoreToolDefinition,
+    ToolError as CoreToolError, ToolFactory, ToolOutput as CoreToolOutput, array_property,
+    boolean_property, number_property, object_schema, property, string_property,
 };
 
 // Feature-gated built-in tools
 #[cfg(feature = "builtin")]
 pub use builtin::{
-    QueryDataTool,
-    ControlDeviceTool,
-    ListDevicesTool,
-    GetDeviceMetricsTool,
-    GetDeviceTypeSchemaTool,
-    ListDeviceTypesTool,
-    CreateRuleTool,
-    ListRulesTool,
+    CommandInfo, ControlDeviceTool, CreateRuleTool, DataPoint, DeviceInfo, DeviceTypeInfo,
+    DeviceTypeSchema, GetDeviceMetricsTool, GetDeviceTypeSchemaTool, ListDeviceTypesTool,
+    ListDevicesTool, ListRulesTool, MetricDataPoint, MetricInfo, MockDeviceManager,
+    MockDeviceTypeRegistry, MockRuleEngine, MockTimeSeriesStore, QueryDataTool, RuleInfo,
     TriggerWorkflowTool,
-    MockTimeSeriesStore,
-    MockDeviceManager,
-    MockDeviceTypeRegistry,
-    MockRuleEngine,
-    DataPoint,
-    MetricDataPoint,
-    DeviceInfo,
-    DeviceTypeInfo,
-    MetricInfo,
-    CommandInfo,
-    DeviceTypeSchema,
-    RuleInfo,
 };
 
 // Feature-gated real tools
 #[cfg(feature = "real")]
 pub use real::{
-    QueryDataTool as RealQueryDataTool,
-    ControlDeviceTool as RealControlDeviceTool,
-    ListDevicesTool as RealListDevicesTool,
-    CreateRuleTool as RealCreateRuleTool,
-    ListRulesTool as RealListRulesTool,
+    ControlDeviceTool as RealControlDeviceTool, CreateRuleTool as RealCreateRuleTool,
+    ListDevicesTool as RealListDevicesTool, ListRulesTool as RealListRulesTool,
+    QueryDataTool as RealQueryDataTool, QueryRuleHistoryTool, QueryWorkflowStatusTool,
     TriggerWorkflowTool as RealTriggerWorkflowTool,
-    QueryRuleHistoryTool,
-    QueryWorkflowStatusTool,
 };
 
 /// Version information
@@ -132,9 +105,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_integration() {
-        let registry = ToolRegistryBuilder::new()
-            .with_standard_tools()
-            .build();
+        let registry = ToolRegistryBuilder::new().with_standard_tools().build();
 
         // Should have at least 5 standard tools
         assert!(registry.len() >= 5);

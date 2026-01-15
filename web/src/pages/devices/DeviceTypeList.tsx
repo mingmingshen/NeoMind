@@ -173,10 +173,10 @@ export function DeviceTypeList({
                       {type.description || "-"}
                     </TableCell>
                     <TableCell align="center">
-                      {type.uplink?.metrics?.length ?? type.metric_count ?? 0}
+                      {type.metrics?.length ?? type.metric_count ?? 0}
                     </TableCell>
                     <TableCell align="center">
-                      {type.downlink?.commands?.length ?? type.command_count ?? 0}
+                      {type.commands?.length ?? type.command_count ?? 0}
                     </TableCell>
                     <TableCell align="right">
                       <div className="flex justify-end gap-1">

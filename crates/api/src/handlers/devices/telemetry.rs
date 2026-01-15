@@ -1,12 +1,18 @@
 //! Device telemetry and command history handlers.
 
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 use std::collections::HashMap;
 
-use crate::handlers::{ServerState, common::{HandlerResult, ok}};
 use super::metrics::value_to_json;
+use crate::handlers::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 
 /// Get device telemetry data (time series).
 ///
@@ -25,29 +31,42 @@ pub async fn get_device_telemetry_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Parse query parameters
     let metric = params.get("metric").cloned();
-    let start = params.get("start")
+    let start = params
+        .get("start")
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or_else(|| chrono::Utc::now().timestamp() - 86400); // 24 hours ago
-    let end = params.get("end")
+    let end = params
+        .get("end")
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or_else(|| chrono::Utc::now().timestamp());
-    let limit = params.get("limit")
+    let limit = params
+        .get("limit")
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(1000);
     let aggregate = params.get("aggregate").cloned();
 
-    // Get device to find available metrics
-    let device = state.mqtt_device_manager.get_device(&device_id).await;
-    let device_type = if let Some(d) = device.as_ref() {
-        state.mqtt_device_manager.get_device_type(&d.device_type).await
-    } else {
-        None
+    // Get device template to find available metrics
+    let available_metrics: Vec<String> = match state
+        .device_service
+        .get_device_with_template(&device_id)
+        .await
+    {
+        Ok((_, template)) => {
+            if template.metrics.is_empty() {
+                // Device has no defined metrics - use _raw for raw payload data
+                vec!["_raw".to_string()]
+            } else {
+                template.metrics.iter().map(|m| m.name.clone()).collect()
+            }
+        }
+        Err(_) => {
+            // Device not found - try to query actual metrics from storage
+            match state.time_series_storage.list_metrics(&device_id).await {
+                Ok(metrics) if !metrics.is_empty() => metrics,
+                _ => vec!["_raw".to_string()],
+            }
+        }
     };
-
-    let available_metrics: Vec<String> = device_type
-        .as_ref()
-        .map(|dt| dt.uplink.metrics.iter().map(|m| m.name.clone()).collect())
-        .unwrap_or_default();
 
     let target_metrics: Vec<String> = if let Some(m) = metric {
         vec![m]
@@ -55,6 +74,7 @@ pub async fn get_device_telemetry_handler(
         available_metrics.clone()
     };
 
+    // Don't return empty response - at least try to query _raw metric
     if target_metrics.is_empty() {
         return ok(json!({
             "device_id": device_id,
@@ -72,12 +92,11 @@ pub async fn get_device_telemetry_handler(
         let points = match aggregate.as_deref() {
             Some(_agg_type) => {
                 // Aggregated query - aggregate function returns AggregatedData directly
-                match state.time_series_storage.aggregate(
-                    &device_id,
-                    metric_name,
-                    start,
-                    end,
-                ).await {
+                match state
+                    .time_series_storage
+                    .aggregate(&device_id, metric_name, start, end)
+                    .await
+                {
                     Ok(agg) => {
                         vec![json!({
                             "timestamp": agg.start_timestamp,
@@ -92,24 +111,26 @@ pub async fn get_device_telemetry_handler(
                 }
             }
             None => {
-                // Raw query
-                match state.time_series_storage.query(
-                    &device_id,
-                    metric_name,
-                    start,
-                    end,
-                ).await {
+                // Raw query - use DeviceService
+                match state
+                    .device_service
+                    .query_telemetry(&device_id, metric_name, Some(start), Some(end))
+                    .await
+                {
                     Ok(points) => {
                         let mut result = points
                             .into_iter()
                             .take(limit)
-                            .map(|p| json!({
-                                "timestamp": p.timestamp,
-                                "value": metric_value_to_json(&p.value),
-                            }))
+                            .map(|(timestamp, value)| {
+                                json!({
+                                    "timestamp": timestamp,
+                                    "value": metric_value_to_json(&value),
+                                })
+                            })
                             .collect::<Vec<_>>();
                         // Sort by timestamp descending
-                        result.sort_by(|a, b| b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64()));
+                        result
+                            .sort_by(|a, b| b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64()));
                         result
                     }
                     Err(_) => vec![],
@@ -142,72 +163,112 @@ pub async fn get_device_telemetry_summary_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Default to last 24 hours
     let end = chrono::Utc::now().timestamp();
-    let start = params.get("hours")
+    let start = params
+        .get("hours")
         .and_then(|s| s.parse::<i64>().ok())
         .map(|h| end - h * 3600)
         .unwrap_or_else(|| end - 86400);
 
-    // Get device to find available metrics
-    let device = state.mqtt_device_manager.get_device(&device_id).await;
-    let device_type = if let Some(d) = device.as_ref() {
-        state.mqtt_device_manager.get_device_type(&d.device_type).await
-    } else {
-        None
+    // Get device template to find available metrics
+    let (template_metrics, use_raw): (Vec<String>, bool) = match state
+        .device_service
+        .get_device_with_template(&device_id)
+        .await
+    {
+        Ok((_, template)) => {
+            if template.metrics.is_empty() {
+                (vec!["_raw".to_string()], true)
+            } else {
+                (template.metrics.iter().map(|m| m.name.clone()).collect(), false)
+            }
+        }
+        Err(_) => {
+            // Device not found - try actual metrics from storage
+            match state.time_series_storage.list_metrics(&device_id).await {
+                Ok(metrics) if !metrics.is_empty() => (metrics, false),
+                _ => (vec!["_raw".to_string()], true),
+            }
+        }
     };
 
-    // Build metric info with display_name, unit, and data_type
-    let metric_info: Vec<(String, (&str, &str, &str))> = device_type
-        .as_ref()
-        .map(|dt| dt.uplink.metrics.iter().map(|m| {
-            let data_type_str = match m.data_type {
-                edge_ai_devices::mdl::MetricDataType::Integer => "integer",
-                edge_ai_devices::mdl::MetricDataType::Float => "float",
-                edge_ai_devices::mdl::MetricDataType::String => "string",
-                edge_ai_devices::mdl::MetricDataType::Boolean => "boolean",
-                edge_ai_devices::mdl::MetricDataType::Binary => "binary",
-            };
-            (m.name.clone(), (m.display_name.as_str(), m.unit.as_str(), data_type_str))
-        }).collect())
-        .unwrap_or_default();
+    let metric_info: Vec<(String, (String, String, String))> = if use_raw {
+        template_metrics.into_iter().map(|m| {
+            (m, ("Raw Payload Data".to_string(), "JSON".to_string(), "string".to_string()))
+        }).collect()
+    } else {
+        match state.device_service.get_device_with_template(&device_id).await {
+            Ok((_, template)) => template
+                .metrics
+                .iter()
+                .map(|m| {
+                    let data_type_str = match m.data_type {
+                        edge_ai_devices::mdl::MetricDataType::Integer => "integer".to_string(),
+                        edge_ai_devices::mdl::MetricDataType::Float => "float".to_string(),
+                        edge_ai_devices::mdl::MetricDataType::String => "string".to_string(),
+                        edge_ai_devices::mdl::MetricDataType::Boolean => "boolean".to_string(),
+                        edge_ai_devices::mdl::MetricDataType::Binary => "binary".to_string(),
+                        edge_ai_devices::mdl::MetricDataType::Enum { .. } => "enum".to_string(),
+                    };
+                    (
+                        m.name.clone(),
+                        (m.display_name.clone(), m.unit.clone(), data_type_str),
+                    )
+                })
+                .collect(),
+            Err(_) => vec![],
+        }
+    };
 
     let mut summary_data: HashMap<String, serde_json::Value> = HashMap::new();
 
-    for (metric_name, (display_name, unit, data_type)) in &metric_info {
+    for (metric_name, (display_name, unit, data_type)) in metric_info.iter() {
         // Get aggregated statistics - aggregate() returns AggregatedData directly
-        if let Ok(agg) = state.time_series_storage.aggregate(
-            &device_id,
-            metric_name,
-            start,
-            end,
-        ).await {
+        if let Ok(agg) = state
+            .time_series_storage
+            .aggregate(&device_id, metric_name, start, end)
+            .await
+        {
             // Get latest value
-            let latest = state.time_series_storage.latest(&device_id, metric_name).await.ok().flatten();
+            let latest = state
+                .time_series_storage
+                .latest(&device_id, metric_name)
+                .await
+                .ok()
+                .flatten();
 
-            summary_data.insert(metric_name.to_string(), json!({
-                "display_name": display_name,
-                "unit": unit,
-                "data_type": data_type,
-                "current": latest.as_ref().map(|p| metric_value_to_json(&p.value)),
-                "current_timestamp": latest.map(|p| p.timestamp),
-                "avg": agg.avg,
-                "min": agg.min,
-                "max": agg.max,
-                "count": agg.count,
-            }));
-        } else {
-            // Try to get current value from device cache
-            if let Ok(val) = state.mqtt_device_manager.read_metric(&device_id, metric_name).await {
-                summary_data.insert(metric_name.to_string(), json!({
+            summary_data.insert(
+                metric_name.to_string(),
+                json!({
                     "display_name": display_name,
                     "unit": unit,
                     "data_type": data_type,
-                    "current": metric_value_to_json(&val),
-                    "current_timestamp": chrono::Utc::now().timestamp(),
-                    "avg": null,
-                    "min": null,
-                    "max": null,
-                    "count": 0,
-                }));
+                    "current": latest.as_ref().map(|p| metric_value_to_json(&p.value)),
+                    "current_timestamp": latest.map(|p| p.timestamp),
+                    "avg": agg.avg,
+                    "min": agg.min,
+                    "max": agg.max,
+                    "count": agg.count,
+                }),
+            );
+        } else {
+            // Try to get current value from DeviceService
+            if let Ok(current_values) = state.device_service.get_current_metrics(&device_id).await {
+                if let Some(val) = current_values.get(metric_name) {
+                    summary_data.insert(
+                        metric_name.to_string(),
+                        json!({
+                            "display_name": display_name,
+                            "unit": unit,
+                            "data_type": data_type,
+                            "current": metric_value_to_json(val),
+                            "current_timestamp": chrono::Utc::now().timestamp(),
+                            "avg": null,
+                            "min": null,
+                            "max": null,
+                            "count": 0,
+                        }),
+                    );
+                }
             }
         }
     }
@@ -241,20 +302,47 @@ fn metric_value_to_json(value: &edge_ai_devices::MetricValue) -> serde_json::Val
 /// Query parameters:
 /// - limit: maximum number of commands to return (default: 50)
 pub async fn get_device_command_history_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Path(device_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
-    // For now, return empty command history
-    // TODO: Implement command history storage
-    let _limit = params.get("limit")
+    let limit = params
+        .get("limit")
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(50);
 
+    // Get command history from DeviceService
+    let commands = state
+        .device_service
+        .get_command_history(&device_id, Some(limit))
+        .await;
+
+    // Convert CommandHistoryRecord to JSON
+    let commands_json: Vec<serde_json::Value> = commands
+        .into_iter()
+        .map(|cmd| {
+            json!({
+                "command_id": cmd.command_id,
+                "command_name": cmd.command_name,
+                "parameters": cmd.parameters,
+                "status": match cmd.status {
+                    edge_ai_devices::CommandStatus::Pending => "pending",
+                    edge_ai_devices::CommandStatus::Executing => "executing",
+                    edge_ai_devices::CommandStatus::Success => "success",
+                    edge_ai_devices::CommandStatus::Failed => "failed",
+                    edge_ai_devices::CommandStatus::Timeout => "timeout",
+                },
+                "result": cmd.result,
+                "error": cmd.error,
+                "created_at": cmd.created_at,
+                "completed_at": cmd.completed_at,
+            })
+        })
+        .collect();
+
     ok(json!({
         "device_id": device_id,
-        "commands": [],
-        "count": 0,
-        "note": "Command history tracking is not yet implemented",
+        "commands": commands_json,
+        "count": commands_json.len(),
     }))
 }

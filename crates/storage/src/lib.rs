@@ -59,109 +59,91 @@
 // Storage backends module
 pub mod backends;
 
-pub mod singleton;
-pub mod error;
-pub mod timeseries;
-pub mod vector;
-pub mod session;
-pub mod multimodal;
-pub mod knowledge;
-pub mod settings;
-pub mod llm_backends;
-pub mod decisions;
 pub mod backend;
-pub mod device_state;
-pub mod business;
-pub mod llm_data;
 pub mod backup;
+pub mod business;
+pub mod decisions;
+pub mod device_registry;
+pub mod device_state;
+pub mod error;
+pub mod knowledge;
+pub mod llm_backends;
+pub mod llm_data;
 pub mod maintenance;
 pub mod monitoring;
+pub mod multimodal;
+pub mod session;
+pub mod settings;
+pub mod singleton;
+pub mod timeseries;
+pub mod vector;
 
 // Re-exports
 pub use error::{Error, Result};
 
 pub use timeseries::{
-    DataPoint, TimeSeriesBucket, TimeSeriesResult, TimeSeriesStore,
-    RetentionPolicy, PerformanceStats, BatchWriteRequest,
-    RetentionPolicyCleanupResult, TimeSeriesConfig,
+    BatchWriteRequest, DataPoint, PerformanceStats, RetentionPolicy, RetentionPolicyCleanupResult,
+    TimeSeriesBucket, TimeSeriesConfig, TimeSeriesResult, TimeSeriesStore,
 };
 
 pub use vector::{
-    Embedding, PersistentVectorStore, SearchResult, SimilarityMetric,
-    VectorDocument, VectorStore,
+    Embedding, PersistentVectorStore, SearchResult, SimilarityMetric, VectorDocument, VectorStore,
 };
 
-pub use session::{
-    SessionStore, SessionMessage, SessionMetadata,
-};
+pub use session::{SessionMessage, SessionMetadata, SessionStore};
 
-pub use multimodal::{
-    MultimodalStore, ImageMetadata, DocumentMetadata,
-};
+pub use multimodal::{DocumentMetadata, ImageMetadata, MultimodalStore};
 
 pub use settings::{
-    SettingsStore, LlmSettings, LlmBackendType,
-    MqttSettings,
-    HassSettings, ExternalBroker, ConfigChangeEntry,
-    SecurityLevel, SecurityWarning,
+    ConfigChangeEntry, ExternalBroker, HassSettings, LlmBackendType, LlmSettings, MqttSettings,
+    SecurityLevel, SecurityWarning, SettingsStore,
 };
 
 pub use llm_backends::{
-    LlmBackendStore, LlmBackendInstance, BackendCapabilities,
-    ConnectionTestResult, LlmBackendStats,
+    BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStats, LlmBackendStore,
 };
 
 pub use decisions::{
-    DecisionStore, StoredDecision, DecisionFilter, DecisionStats,
-    DecisionType, DecisionPriority, DecisionStatus,
-    StoredAction, ExecutionResult,
+    DecisionFilter, DecisionPriority, DecisionStats, DecisionStatus, DecisionStore, DecisionType,
+    ExecutionResult, StoredAction, StoredDecision,
 };
 
 pub use device_state::{
-    DeviceState, DeviceStateStore, DeviceFilter,
-    DeviceCapabilities, MetricSpec, CommandSpec, ParameterSpec, ConfigSpec,
-    MetricValue, MetricQuality, CacheStats,
+    CacheStats, CommandSpec, ConfigSpec, DeviceCapabilities, DeviceFilter, DeviceState,
+    DeviceStateStore, MetricQuality, MetricSpec, MetricValue, ParameterSpec,
 };
 
 pub use business::{
-    EventLog, EventLogStore, EventSeverity, EventFilter,
-    RuleExecution, RuleExecutionResult, RuleHistoryStore, RuleExecutionStats,
-    WorkflowExecution, WorkflowStatus, StepExecution, WorkflowHistoryStore,
-    Alert, AlertStatus, AlertStore, AlertFilter,
+    Alert, AlertFilter, AlertStatus, AlertStore, EventFilter, EventLog, EventLogStore,
+    EventSeverity, RuleExecution, RuleExecutionResult, RuleExecutionStats, RuleHistoryStore,
+    StepExecution, WorkflowExecution, WorkflowHistoryStore, WorkflowStatus,
 };
 
-pub use llm_data::{
-    MemoryEntry, MemoryFilter, MemoryStats, LongTermMemoryStore,
-};
+pub use llm_data::{LongTermMemoryStore, MemoryEntry, MemoryFilter, MemoryStats};
 
-pub use backup::{
-    BackupManager, BackupHandler, BackupMetadata, BackupConfig, BackupType,
-};
+pub use backup::{BackupConfig, BackupHandler, BackupManager, BackupMetadata, BackupType};
 
-pub use maintenance::{
-    MaintenanceScheduler, MaintenanceConfig, MaintenanceResult, CleanupUtils,
-};
+pub use maintenance::{CleanupUtils, MaintenanceConfig, MaintenanceResult, MaintenanceScheduler};
 
 pub use monitoring::{
-    StorageMonitor, StorageMetrics, HealthStatus, HealthCheckResult,
-    CheckResult, MonitoringConfig, AlertThresholds, OperationStats,
+    AlertThresholds, CheckResult, HealthCheckResult, HealthStatus, MonitoringConfig,
+    OperationStats, StorageMetrics, StorageMonitor,
+};
+
+pub use device_registry::{
+    CommandDefinition, CommandHistoryRecord, CommandStatus, ConnectionConfig, DeviceConfig,
+    DeviceRegistryStore, DeviceTypeTemplate, MetricDataType, MetricDefinition, ParamMetricValue,
+    ParameterDefinition,
 };
 
 // Re-exports from core (backward compatibility)
-pub use edge_ai_core::storage::{
-    StorageBackend, StorageFactory, StorageError,
-};
+pub use edge_ai_core::storage::{StorageBackend, StorageError, StorageFactory};
 
 // Backends module exports
-pub use backends::{
-    create_backend, available_backends,
-    RedbBackend, RedbBackendConfig,
-};
+pub use backends::{RedbBackend, RedbBackendConfig, available_backends, create_backend};
 
 // Singleton module exports
-pub use singleton::{
-    get_or_open_db, close_db, clear_cache, cache_size, is_cached,
-};
+pub use singleton::{cache_size, clear_cache, close_db, get_or_open_db, is_cached};
 
 #[cfg(feature = "memory")]
 pub use backends::{MemoryBackend, MemoryBackendConfig};

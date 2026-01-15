@@ -65,8 +65,12 @@ pub struct HassConnectionConfig {
     pub timeout: u64,
 }
 
-fn default_verify_ssl() -> bool { true }
-fn default_timeout() -> u64 { 30 }
+fn default_verify_ssl() -> bool {
+    true
+}
+fn default_timeout() -> u64 {
+    30
+}
 
 impl HassConnectionConfig {
     /// Create a new connection config with bearer token.
@@ -82,7 +86,9 @@ impl HassConnectionConfig {
     /// Get the WebSocket URL for this connection.
     pub fn websocket_url(&self) -> String {
         let url = self.url.trim_end_matches('/');
-        let url = url.replace("http://", "ws://").replace("https://", "wss://");
+        let url = url
+            .replace("http://", "ws://")
+            .replace("https://", "wss://");
         format!("{}/api/websocket", url)
     }
 
@@ -162,7 +168,9 @@ pub struct HassEntityAttributes {
     pub extra: HashMap<String, serde_json::Value>,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 /// Device information from Home Assistant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -444,10 +452,22 @@ mod tests {
 
     #[test]
     fn test_domain_from_entity_id() {
-        assert_eq!(HassDomain::from_entity_id("sensor.temperature_188"), HassDomain::Sensor);
-        assert_eq!(HassDomain::from_entity_id("switch.living_room"), HassDomain::Switch);
-        assert_eq!(HassDomain::from_entity_id("light.kitchen"), HassDomain::Light);
-        assert_eq!(HassDomain::from_entity_id("unknown.something"), HassDomain::Unknown);
+        assert_eq!(
+            HassDomain::from_entity_id("sensor.temperature_188"),
+            HassDomain::Sensor
+        );
+        assert_eq!(
+            HassDomain::from_entity_id("switch.living_room"),
+            HassDomain::Switch
+        );
+        assert_eq!(
+            HassDomain::from_entity_id("light.kitchen"),
+            HassDomain::Light
+        );
+        assert_eq!(
+            HassDomain::from_entity_id("unknown.something"),
+            HassDomain::Unknown
+        );
     }
 
     #[test]

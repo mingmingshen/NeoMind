@@ -5,13 +5,16 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tokio::time::{interval, Instant};
+use tokio::time::{Instant, interval};
 
-use edge_ai_core::eventbus::EventBus;
 use edge_ai_core::event::NeoTalkEvent;
+use edge_ai_core::eventbus::EventBus;
 
 use super::config::{AutonomousConfig, ReviewType};
-use super::review::{ReviewContext, ReviewResult, SystemReview, DeviceHealthReview, TrendAnalysisReview, AnomalyDetectionReview, EnergyOptimizationReview};
+use super::review::{
+    AnomalyDetectionReview, DeviceHealthReview, EnergyOptimizationReview, ReviewContext,
+    ReviewResult, SystemReview, TrendAnalysisReview,
+};
 
 /// State of the autonomous agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,7 +100,9 @@ impl AutonomousAgent {
         }
 
         if !self.config.enabled {
-            return Err(AgentError::Disabled("Agent is disabled in config".to_string()));
+            return Err(AgentError::Disabled(
+                "Agent is disabled in config".to_string(),
+            ));
         }
 
         *state = AgentState::Starting;
@@ -130,7 +135,10 @@ impl AutonomousAgent {
     }
 
     /// Perform a single review immediately.
-    pub async fn trigger_review(&self, review_type: ReviewType) -> Result<ReviewResult, AgentError> {
+    pub async fn trigger_review(
+        &self,
+        review_type: ReviewType,
+    ) -> Result<ReviewResult, AgentError> {
         if !self.state.read().await.is_running() {
             return Err(AgentError::InvalidState(
                 "Agent must be running to trigger reviews".to_string(),
@@ -213,12 +221,10 @@ impl AutonomousAgent {
         // For now, use empty context
 
         // Perform the review with timeout
-        let review_result = tokio::time::timeout(
-            self.config.timeout_duration(),
-            review.review(&mut context),
-        )
-        .await
-        .map_err(|_| AgentError::Timeout(format!("Review {:?} timed out", review_type)))?;
+        let review_result =
+            tokio::time::timeout(self.config.timeout_duration(), review.review(&mut context))
+                .await
+                .map_err(|_| AgentError::Timeout(format!("Review {:?} timed out", review_type)))?;
 
         context.complete();
 
@@ -241,7 +247,10 @@ impl AutonomousAgent {
             review_type: review_type.as_str().to_string(),
             timestamp: chrono::Utc::now().timestamp(),
         };
-        let _ = self.event_bus.publish_with_source(event, "autonomous_agent").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "autonomous_agent")
+            .await;
     }
 
     /// Publish review result event.
@@ -265,7 +274,10 @@ impl AutonomousAgent {
                     confidence: 80.0,
                     timestamp: chrono::Utc::now().timestamp(),
                 };
-                let _ = self.event_bus.publish_with_source(event, "autonomous_agent").await;
+                let _ = self
+                    .event_bus
+                    .publish_with_source(event, "autonomous_agent")
+                    .await;
             }
             ReviewResult::NoFindings { .. } => {
                 tracing::info!("Review {:?} found no issues", review_type);

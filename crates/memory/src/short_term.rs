@@ -311,7 +311,8 @@ mod tests {
 
     #[test]
     fn test_system_prompt() {
-        let mut memory = ShortTermMemory::new().with_system_prompt("You are a helpful assistant.".to_string());
+        let mut memory =
+            ShortTermMemory::new().with_system_prompt("You are a helpful assistant.".to_string());
         assert_eq!(memory.system_prompt(), Some("You are a helpful assistant."));
 
         memory.set_system_prompt("New prompt".to_string());
@@ -347,7 +348,10 @@ mod tests {
 
     #[test]
     fn test_memory_message_summary() {
-        let msg = MemoryMessage::new("user", "This is a very long message that should be truncated in the summary");
+        let msg = MemoryMessage::new(
+            "user",
+            "This is a very long message that should be truncated in the summary",
+        );
         let summary = msg.summary();
         assert!(summary.contains("[user]"));
         assert!(summary.contains("..."));

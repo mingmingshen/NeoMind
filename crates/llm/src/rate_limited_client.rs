@@ -6,12 +6,12 @@
 //! - Retry after parsing from headers
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use reqwest::{Client, Response, StatusCode};
-use tokio::sync:: RwLock;
+use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 /// Default rate limit: 5 requests per rolling window for most APIs

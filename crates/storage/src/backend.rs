@@ -233,18 +233,12 @@ impl StorageBackend for MemoryBackend {
 
     fn read(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>> {
         let data = self.data.read().unwrap();
-        Ok(data
-            .get(table)
-            .and_then(|t| t.get(key))
-            .cloned())
+        Ok(data.get(table).and_then(|t| t.get(key)).cloned())
     }
 
     fn delete(&self, table: &str, key: &str) -> Result<bool> {
         let mut data = self.data.write().unwrap();
-        Ok(data
-            .get_mut(table)
-            .and_then(|t| t.remove(key))
-            .is_some())
+        Ok(data.get_mut(table).and_then(|t| t.remove(key)).is_some())
     }
 
     fn scan(&self, table: &str, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
@@ -301,12 +295,7 @@ impl UnifiedStorage {
     }
 
     /// Write JSON-serializable data.
-    pub fn write_json<T: Serialize>(
-        &self,
-        table: &str,
-        key: &str,
-        value: &T,
-    ) -> Result<()> {
+    pub fn write_json<T: Serialize>(&self, table: &str, key: &str, value: &T) -> Result<()> {
         let data = serde_json::to_vec(value)?;
         self.backend.write(table, key, &data)
     }
@@ -441,10 +430,7 @@ impl ConfigStore {
     }
 
     /// Get a value with default.
-    pub fn get_or_default<T: for<'de> Deserialize<'de> + Default>(
-        &self,
-        key: &str,
-    ) -> Result<T> {
+    pub fn get_or_default<T: for<'de> Deserialize<'de> + Default>(&self, key: &str) -> Result<T> {
         Ok(self.get(key)?.unwrap_or_default())
     }
 
@@ -500,8 +486,14 @@ mod tests {
         ];
 
         backend.write_batch("test", items).unwrap();
-        assert_eq!(backend.read("test", "key1").unwrap(), Some(b"value1".to_vec()));
-        assert_eq!(backend.read("test", "key2").unwrap(), Some(b"value2".to_vec()));
+        assert_eq!(
+            backend.read("test", "key1").unwrap(),
+            Some(b"value1".to_vec())
+        );
+        assert_eq!(
+            backend.read("test", "key2").unwrap(),
+            Some(b"value2".to_vec())
+        );
     }
 
     #[test]
@@ -582,7 +574,9 @@ mod tests {
             field: String,
         }
 
-        let data = Data { field: "test".to_string() };
+        let data = Data {
+            field: "test".to_string(),
+        };
         let kv = KvPair::from_value("key", &data).unwrap();
 
         assert_eq!(kv.key, "key");

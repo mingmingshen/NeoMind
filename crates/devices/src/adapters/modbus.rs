@@ -12,10 +12,10 @@
 //! └─ reset command           ──→ slave:1, register:0x0200, type:Coil
 //! ```
 
-use crate::adapter::{DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo, AdapterResult};
-use crate::protocol::{ProtocolMapping, Address};
-use edge_ai_core::EventBus;
+use crate::adapter::{AdapterResult, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo};
+use crate::protocol::{Address, ProtocolMapping};
 use async_trait::async_trait;
+use edge_ai_core::EventBus;
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -324,9 +324,7 @@ impl ModbusAdapter {
         let (event_tx, _) = broadcast::channel(1000);
 
         // Extract device IDs
-        let device_ids: Vec<String> = config.devices.iter()
-            .map(|d| d.device_id.clone())
-            .collect();
+        let device_ids: Vec<String> = config.devices.iter().map(|d| d.device_id.clone()).collect();
 
         Self {
             config,
@@ -339,16 +337,11 @@ impl ModbusAdapter {
     }
 
     /// Create a new Modbus adapter with a protocol mapping.
-    pub fn with_mapping(
-        config: ModbusAdapterConfig,
-        mapping: Arc<dyn ProtocolMapping>,
-    ) -> Self {
+    pub fn with_mapping(config: ModbusAdapterConfig, mapping: Arc<dyn ProtocolMapping>) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
 
         // Extract device IDs
-        let device_ids: Vec<String> = config.devices.iter()
-            .map(|d| d.device_id.clone())
-            .collect();
+        let device_ids: Vec<String> = config.devices.iter().map(|d| d.device_id.clone()).collect();
 
         Self {
             config,
@@ -378,7 +371,9 @@ impl ModbusAdapter {
 
     /// Get device configuration by ID.
     fn get_device_config(&self, device_id: &str) -> Option<&ModbusDeviceConfig> {
-        self.config.devices.iter()
+        self.config
+            .devices
+            .iter()
             .find(|d| d.device_id == device_id)
     }
 
@@ -473,9 +468,7 @@ impl ModbusAdapter {
                     MetricValue::Float(scaled)
                 }
             }
-            MetricValue::Float(f) => {
-                MetricValue::Float(f * reg.scale + reg.offset)
-            }
+            MetricValue::Float(f) => MetricValue::Float(f * reg.scale + reg.offset),
             other => other,
         }
     }
@@ -506,23 +499,33 @@ impl ModbusAdapter {
         device_id: &str,
         metric_name: &str,
     ) -> Result<crate::mdl::MetricValue, Box<dyn std::error::Error + Send + Sync>> {
-        let device = self.get_device_config(device_id)
+        let device = self
+            .get_device_config(device_id)
             .ok_or("Device not found")?;
 
         // Get register address from protocol mapping or device config
         let (address, register_type, count) = if let Some(ref mapping) = self.protocol_mapping {
-            if let Some(Address::Modbus { slave, register, register_type: rt, count: ct }) =
-                mapping.metric_address(metric_name) {
+            if let Some(Address::Modbus {
+                slave,
+                register,
+                register_type: rt,
+                count: ct,
+            }) = mapping.metric_address(metric_name)
+            {
                 (register, rt, ct)
             } else {
                 // Fallback to device config
-                let reg = device.registers.iter()
+                let reg = device
+                    .registers
+                    .iter()
                     .find(|r| r.name == metric_name)
                     .ok_or("Register not found")?;
                 (reg.address, reg.register_type.into(), Some(reg.count))
             }
         } else {
-            let reg = device.registers.iter()
+            let reg = device
+                .registers
+                .iter()
                 .find(|r| r.name == metric_name)
                 .ok_or("Register not found")?;
             (reg.address, reg.register_type.into(), Some(reg.count))
@@ -530,8 +533,10 @@ impl ModbusAdapter {
 
         // In a real implementation, this would read from the actual Modbus device
         // For now, return a simulated value
-        info!("Reading Modbus register: device={}, metric={}, address={:?}, type={:?}",
-            device_id, metric_name, address, register_type);
+        info!(
+            "Reading Modbus register: device={}, metric={}, address={:?}, type={:?}",
+            device_id, metric_name, address, register_type
+        );
 
         // Simulated data - in production, use tokio-modbus
         let simulated_data = vec![0x00, 0x19]; // 25 in big-endian
@@ -546,18 +551,28 @@ impl ModbusAdapter {
         command: &str,
         params: &HashMap<String, crate::mdl::MetricValue>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let device = self.get_device_config(device_id)
+        let device = self
+            .get_device_config(device_id)
             .ok_or("Device not found")?;
 
         if let Some(ref mapping) = self.protocol_mapping {
             // Serialize command using protocol mapping
             let payload = mapping.serialize_command(command, params)?;
-            let address = mapping.command_address(command)
+            let address = mapping
+                .command_address(command)
                 .ok_or("Command not found in mapping")?;
 
-            if let Address::Modbus { slave, register, register_type, .. } = address {
-                info!("Sending Modbus command: device={}, command={}, slave={}, register={:?}, type={:?}",
-                    device_id, command, slave, register, register_type);
+            if let Address::Modbus {
+                slave,
+                register,
+                register_type,
+                ..
+            } = address
+            {
+                info!(
+                    "Sending Modbus command: device={}, command={}, slave={}, register={:?}, type={:?}",
+                    device_id, command, slave, register, register_type
+                );
                 // In a real implementation, this would write to the Modbus device
                 // For now, just log the payload
                 debug!("Command payload: {:?}", payload);
@@ -575,20 +590,33 @@ impl ModbusAdapter {
     }
 
     /// Get all registers for a device from protocol mapping or config.
-    pub fn get_device_registers(&self, device_id: &str) -> Vec<(String, u16, RegisterType, ModbusDataType)> {
+    pub fn get_device_registers(
+        &self,
+        device_id: &str,
+    ) -> Vec<(String, u16, RegisterType, ModbusDataType)> {
         let mut result = Vec::new();
 
         if let Some(ref mapping) = self.protocol_mapping {
             // Get registers from protocol mapping
             for capability in mapping.mapped_capabilities() {
-                if let Some(Address::Modbus { register, register_type, .. }) =
-                    mapping.metric_address(&capability) {
+                if let Some(Address::Modbus {
+                    register,
+                    register_type,
+                    ..
+                }) = mapping.metric_address(&capability)
+                {
                     // Convert ModbusRegisterType to RegisterType
                     let rt = match register_type {
-                        crate::protocol::mapping::ModbusRegisterType::InputRegister => RegisterType::InputRegister,
-                        crate::protocol::mapping::ModbusRegisterType::HoldingRegister => RegisterType::HoldingRegister,
+                        crate::protocol::mapping::ModbusRegisterType::InputRegister => {
+                            RegisterType::InputRegister
+                        }
+                        crate::protocol::mapping::ModbusRegisterType::HoldingRegister => {
+                            RegisterType::HoldingRegister
+                        }
                         crate::protocol::mapping::ModbusRegisterType::Coil => RegisterType::Coil,
-                        crate::protocol::mapping::ModbusRegisterType::DiscreteInput => RegisterType::DiscreteInput,
+                        crate::protocol::mapping::ModbusRegisterType::DiscreteInput => {
+                            RegisterType::DiscreteInput
+                        }
                     };
                     result.push((capability, register, rt, ModbusDataType::Int16));
                 }
@@ -596,7 +624,12 @@ impl ModbusAdapter {
         } else if let Some(device) = self.get_device_config(device_id) {
             // Get registers from device config
             for reg in &device.registers {
-                result.push((reg.name.clone(), reg.address, reg.register_type, reg.data_type));
+                result.push((
+                    reg.name.clone(),
+                    reg.address,
+                    reg.register_type,
+                    reg.data_type,
+                ));
             }
         }
 
@@ -625,7 +658,8 @@ impl DeviceAdapter for ModbusAdapter {
 
         info!("Starting Modbus adapter: {}", self.config.name);
 
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Spawn polling tasks for each device
         let running = self.running.clone();
@@ -653,8 +687,10 @@ impl DeviceAdapter for ModbusAdapter {
                     while running.load(std::sync::atomic::Ordering::Relaxed) {
                         // Poll each register
                         for reg in &registers {
-                            debug!("Polling Modbus device: {}, register: {}",
-                                device_id, reg.name);
+                            debug!(
+                                "Polling Modbus device: {}, register: {}",
+                                device_id, reg.name
+                            );
 
                             // In production, actual polling would happen here
                             // For now, we simulate a metric event
@@ -702,14 +738,18 @@ impl DeviceAdapter for ModbusAdapter {
             debug!("Modbus adapter '{}' stopped", adapter_name);
         });
 
-        info!("Modbus adapter '{}' started, polling {} devices",
-              self.config.name, self.config.devices.len());
+        info!(
+            "Modbus adapter '{}' started, polling {} devices",
+            self.config.name,
+            self.config.devices.len()
+        );
         Ok(())
     }
 
     async fn stop(&self) -> AdapterResult<()> {
         info!("Stopping Modbus adapter: {}", self.config.name);
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -728,7 +768,65 @@ impl DeviceAdapter for ModbusAdapter {
     }
 
     fn list_devices(&self) -> Vec<String> {
-        self.devices.try_read().map(|v| v.clone()).unwrap_or_default()
+        self.devices
+            .try_read()
+            .map(|v| v.clone())
+            .unwrap_or_default()
+    }
+
+    async fn send_command(
+        &self,
+        device_id: &str,
+        command_name: &str,
+        payload: String,
+        _topic: Option<String>,
+    ) -> AdapterResult<()> {
+        // Convert payload back to params for existing send_command
+        // This is a temporary implementation - should be refactored
+        use crate::mdl::MetricValue;
+        let mut params = std::collections::HashMap::new();
+        // Parse payload as JSON if possible
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&payload) {
+            if let Some(obj) = json.as_object() {
+                for (k, v) in obj {
+                    let mv = match v {
+                        serde_json::Value::Number(n) => {
+                            if let Some(i) = n.as_i64() {
+                                MetricValue::Integer(i)
+                            } else {
+                                MetricValue::Float(n.as_f64().unwrap_or(0.0))
+                            }
+                        }
+                        serde_json::Value::String(s) => MetricValue::String(s.clone()),
+                        serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+                        _ => MetricValue::String(v.to_string()),
+                    };
+                    params.insert(k.clone(), mv);
+                }
+            }
+        }
+
+        self.send_command(device_id, command_name, &params)
+            .await
+            .map_err(|e| super::super::adapter::AdapterError::Communication(e.to_string()))
+    }
+
+    fn connection_status(&self) -> super::super::adapter::ConnectionStatus {
+        if self.is_running() {
+            super::super::adapter::ConnectionStatus::Connected
+        } else {
+            super::super::adapter::ConnectionStatus::Disconnected
+        }
+    }
+
+    async fn subscribe_device(&self, _device_id: &str) -> AdapterResult<()> {
+        // Modbus doesn't support subscriptions, but we can track the device
+        Ok(())
+    }
+
+    async fn unsubscribe_device(&self, _device_id: &str) -> AdapterResult<()> {
+        // Modbus doesn't support subscriptions
+        Ok(())
     }
 }
 
@@ -790,10 +888,10 @@ mod tests {
             "192.168.1.100",
             vec![RegisterDefinition::holding_register("temperature", 100)],
         )
-            .with_name("Temperature Sensor")
-            .with_port(502)
-            .with_slave_id(1)
-            .with_poll_interval(30);
+        .with_name("Temperature Sensor")
+        .with_port(502)
+        .with_slave_id(1)
+        .with_poll_interval(30);
 
         assert_eq!(config.device_id, "temp_sensor");
         assert_eq!(config.host, "192.168.1.100");
@@ -831,8 +929,7 @@ mod tests {
             vec![RegisterDefinition::holding_register("value", 0)],
         );
 
-        let config = ModbusAdapterConfig::new("test_adapter")
-            .with_device(device);
+        let config = ModbusAdapterConfig::new("test_adapter").with_device(device);
 
         assert_eq!(config.name, "test_adapter");
         assert_eq!(config.devices.len(), 1);
@@ -867,8 +964,7 @@ mod tests {
             vec![RegisterDefinition::holding_register("value", 0)],
         );
 
-        let config = ModbusAdapterConfig::new("test")
-            .with_device(device);
+        let config = ModbusAdapterConfig::new("test").with_device(device);
 
         let adapter = ModbusAdapter::new(config);
 
@@ -925,8 +1021,8 @@ mod tests {
     #[test]
     fn test_default_parse_register_int16() {
         let data: [u8; 2] = [0x00, 0x64]; // 100 in big-endian
-        let reg = RegisterDefinition::holding_register("test", 0)
-            .with_data_type(ModbusDataType::Int16);
+        let reg =
+            RegisterDefinition::holding_register("test", 0).with_data_type(ModbusDataType::Int16);
         let result = ModbusAdapter::default_parse_register(&data, &reg);
         assert!(matches!(result, crate::mdl::MetricValue::Integer(100)));
     }
@@ -944,8 +1040,8 @@ mod tests {
     #[test]
     fn test_default_parse_register_float32() {
         let data: [u8; 4] = [0x41, 0xBE, 0x00, 0x00]; // 23.75 in big-endian
-        let reg = RegisterDefinition::holding_register("test", 0)
-            .with_data_type(ModbusDataType::Float32);
+        let reg =
+            RegisterDefinition::holding_register("test", 0).with_data_type(ModbusDataType::Float32);
         let result = ModbusAdapter::default_parse_register(&data, &reg);
         if let crate::mdl::MetricValue::Float(f) = result {
             assert!((f - 23.75).abs() < 0.01);

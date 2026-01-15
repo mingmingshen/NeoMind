@@ -7,19 +7,18 @@
 //! - Downlink adapters for various protocols
 //! - Command processing and acknowledgment handling
 
-pub mod command;
-pub mod queue;
-pub mod processor;
-pub mod adapter;
-pub mod state;
 pub mod ack;
+pub mod adapter;
 pub mod api;
+pub mod command;
 pub mod events;
+pub mod processor;
+pub mod queue;
+pub mod state;
 
 // Re-exports
 pub use command::{
-    CommandRequest, CommandSource, CommandPriority, CommandStatus,
-    CommandResult, RetryPolicy,
+    CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus, RetryPolicy,
 };
 
 pub use queue::{CommandQueue, QueueStats};
@@ -27,15 +26,17 @@ pub use queue::{CommandQueue, QueueStats};
 pub use processor::{CommandProcessor, ProcessorConfig};
 
 pub use adapter::{
-    DownlinkAdapterRegistry, AnyAdapter, AdapterError, AdapterStats,
-    MqttDownlinkAdapter, ModbusDownlinkAdapter, HttpDownlinkAdapter,
-    MqttAdapterConfig, ModbusAdapterConfig, HttpAdapterConfig, ModbusDeviceType,
+    AdapterError, AdapterStats, AnyAdapter, DownlinkAdapterRegistry, HttpAdapterConfig,
+    HttpDownlinkAdapter, ModbusAdapterConfig, ModbusDeviceType, ModbusDownlinkAdapter,
+    MqttAdapterConfig, MqttDownlinkAdapter,
 };
 
-pub use state::{CommandStateStore, StateError, StoreStats, CommandManager};
+pub use state::{CommandManager, CommandStateStore, StateError, StoreStats};
 
-pub use ack::{AckHandler, AckError, AckStatus, CommandAck, AckHandlerConfig, AckEvent};
+pub use ack::{AckError, AckEvent, AckHandler, AckHandlerConfig, AckStatus, CommandAck};
 
-pub use events::{CommandEventBus, CommandEvent, CommandEventType, EventFilter, EventIntegration};
+pub use events::{CommandEvent, CommandEventBus, CommandEventType, EventFilter, EventIntegration};
 
-pub use api::{CommandApi, ApiError, SubmitCommandRequest, SubmitCommandResponse, CommandStatusResponse};
+pub use api::{
+    ApiError, CommandApi, CommandStatusResponse, SubmitCommandRequest, SubmitCommandResponse,
+};

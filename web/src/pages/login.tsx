@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { Bot, Languages } from "lucide-react"
@@ -20,6 +20,9 @@ const languages = [
   { code: 'en', name: 'English' },
   { code: 'zh', name: '简体中文' },
 ]
+
+// LocalStorage keys for remembering credentials
+const CREDENTIALS_KEY = 'neotalk_remembered_credentials'
 
 // Error translation helper
 function translateError(error: string, t: (key: string, params?: Record<string, unknown>) => string): string {
@@ -57,6 +60,49 @@ export function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
+  // Load saved credentials on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CREDENTIALS_KEY)
+      if (saved) {
+        const credentials = JSON.parse(saved)
+        if (credentials.username) {
+          setUsername(credentials.username)
+        }
+        if (credentials.password) {
+          setPassword(credentials.password)
+        }
+        if (credentials.rememberMe !== undefined) {
+          setRememberMe(credentials.rememberMe)
+        }
+      }
+    } catch {
+      // Ignore parsing errors
+    }
+  }, [])
+
+  // Save credentials when rememberMe changes
+  useEffect(() => {
+    if (rememberMe && username) {
+      try {
+        localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({
+          username,
+          password: '', // Only save password when logging in successfully
+          rememberMe: true,
+        }))
+      } catch {
+        // Ignore localStorage errors
+      }
+    } else if (!rememberMe) {
+      // Clear saved credentials when unchecked
+      try {
+        localStorage.removeItem(CREDENTIALS_KEY)
+      } catch {
+        // Ignore localStorage errors
+      }
+    }
+  }, [rememberMe, username])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
@@ -64,6 +110,26 @@ export function LoginPage() {
 
     try {
       await login(username, password, rememberMe)
+
+      // Save credentials if remember me is checked
+      if (rememberMe) {
+        try {
+          localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({
+            username,
+            password,
+            rememberMe: true,
+          }))
+        } catch {
+          // Ignore localStorage errors
+        }
+      } else {
+        // Clear saved credentials
+        try {
+          localStorage.removeItem(CREDENTIALS_KEY)
+        } catch {
+          // Ignore localStorage errors
+        }
+      }
     } catch (err) {
       setError(translateError(err instanceof Error ? err.message : String(t('auth:loginFailed')), t))
     } finally {
@@ -103,7 +169,7 @@ export function LoginPage() {
             </div>
             <h1 className="text-2xl font-bold">NeoTalk</h1>
             <p className="text-sm text-muted-foreground">
-              {t('platformTagline')}
+              {t('auth:platformTagline')}
             </p>
           </div>
 
@@ -111,13 +177,13 @@ export function LoginPage() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <FieldGroup>
               <Field className="gap-2">
-                <FieldLabel htmlFor="username">{t('username')}</FieldLabel>
+                <FieldLabel htmlFor="username">{t('auth:username')}</FieldLabel>
                 <Input
                   id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder={t('usernamePlaceholder')}
+                  placeholder={t('auth:usernamePlaceholder')}
                   autoComplete="username"
                   required
                   className="h-10"
@@ -125,13 +191,13 @@ export function LoginPage() {
               </Field>
 
               <Field className="gap-2">
-                <FieldLabel htmlFor="password">{t('password')}</FieldLabel>
+                <FieldLabel htmlFor="password">{t('auth:password')}</FieldLabel>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t('passwordPlaceholder')}
+                  placeholder={t('auth:passwordPlaceholder')}
                   autoComplete="current-password"
                   required
                   className="h-10"
@@ -147,7 +213,7 @@ export function LoginPage() {
                   className="h-4 w-4 rounded border-gray-300"
                 />
                 <span className="text-sm text-muted-foreground">
-                  {t('rememberMe')}
+                  {t('auth:rememberMe')}
                 </span>
               </label>
 
@@ -163,7 +229,7 @@ export function LoginPage() {
                 disabled={isLoading || !username || !password}
                 className="w-full"
               >
-                {isLoading ? t('loggingIn') : t('login')}
+                {isLoading ? t('auth:loggingIn') : t('auth:login')}
               </Button>
             </FieldGroup>
           </form>

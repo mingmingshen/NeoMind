@@ -199,16 +199,19 @@ pub async fn export_config_handler(
         });
     }
 
-    // Export devices
-    let devices = state.mqtt_device_manager.list_devices().await;
-    if !devices.is_empty() {
+    // Export devices using DeviceService
+    let configs = state.device_service.list_devices().await;
+    if !configs.is_empty() {
         export.devices = Some(DevicesExport {
-            devices: devices.into_iter().map(|d| DeviceConfigExport {
-                device_id: d.device_id,
-                device_type: d.device_type,
-                name: d.name,
-                config: None, // Device-specific config not currently exposed
-            }).collect(),
+            devices: configs
+                .into_iter()
+                .map(|d| DeviceConfigExport {
+                    device_id: d.device_id,
+                    device_type: d.device_type,
+                    name: Some(d.name),
+                    config: None, // Device-specific config not currently exposed
+                })
+                .collect(),
         });
     }
 
@@ -216,13 +219,16 @@ pub async fn export_config_handler(
     let rules = state.rule_engine.list_rules().await;
     if !rules.is_empty() {
         export.rules = Some(RulesExport {
-            rules: rules.into_iter().map(|r| RuleConfigExport {
-                id: r.id.to_string(),
-                name: r.name.clone(),
-                enabled: matches!(r.status, edge_ai_rules::RuleStatus::Active),
-                rule_text: format!("{:?}", r.condition), // Simplified export
-                description: None,
-            }).collect(),
+            rules: rules
+                .into_iter()
+                .map(|r| RuleConfigExport {
+                    id: r.id.to_string(),
+                    name: r.name.clone(),
+                    enabled: matches!(r.status, edge_ai_rules::RuleStatus::Active),
+                    rule_text: format!("{:?}", r.condition), // Simplified export
+                    description: None,
+                })
+                .collect(),
         });
     }
 
@@ -266,7 +272,9 @@ pub async fn import_config_handler(
                 }
             }
         } else {
-            result.skipped.push("LLM settings: not found in export".to_string());
+            result
+                .skipped
+                .push("LLM settings: not found in export".to_string());
         }
     }
 
@@ -277,13 +285,17 @@ pub async fn import_config_handler(
                 match import_device(&state, device, options.overwrite).await {
                     Ok(_) => {}
                     Err(e) => {
-                        result.errors.push(format!("Device {}: {}", device.device_id, e));
+                        result
+                            .errors
+                            .push(format!("Device {}: {}", device.device_id, e));
                     }
                 }
             }
             result.imported.devices = Some(devices.clone());
         } else {
-            result.skipped.push("Devices: not found in export".to_string());
+            result
+                .skipped
+                .push("Devices: not found in export".to_string());
         }
     }
 
@@ -300,7 +312,9 @@ pub async fn import_config_handler(
             }
             result.imported.rules = Some(rules.clone());
         } else {
-            result.skipped.push("Rules: not found in export".to_string());
+            result
+                .skipped
+                .push("Rules: not found in export".to_string());
         }
     }
 
@@ -338,8 +352,8 @@ pub async fn validate_config_handler(
 
     // Validate devices if present
     if let Some(devices) = &config.devices {
-        let devices_valid = !devices.devices.is_empty()
-            && devices.devices.iter().all(|d| !d.device_id.is_empty());
+        let devices_valid =
+            !devices.devices.is_empty() && devices.devices.iter().all(|d| !d.device_id.is_empty());
         validation.insert("devices".to_string(), json!(devices_valid));
         if !devices_valid {
             is_valid = false;
@@ -363,7 +377,9 @@ async fn import_llm_settings(
 
     let backend = match settings.backend.as_str() {
         "ollama" => {
-            let endpoint = settings.endpoint.clone()
+            let endpoint = settings
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
             LlmBackend::Ollama {
                 endpoint,
@@ -371,7 +387,9 @@ async fn import_llm_settings(
             }
         }
         "openai" => {
-            let endpoint = settings.endpoint.clone()
+            let endpoint = settings
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
             LlmBackend::OpenAi {
                 api_key: String::new(), // API key needs to be set separately for security
@@ -382,7 +400,10 @@ async fn import_llm_settings(
         _ => return Err(format!("Unsupported backend: {}", settings.backend)),
     };
 
-    state.session_manager.set_llm_backend(backend).await
+    state
+        .session_manager
+        .set_llm_backend(backend)
+        .await
         .map_err(|e| e.to_string())?;
 
     Ok(())

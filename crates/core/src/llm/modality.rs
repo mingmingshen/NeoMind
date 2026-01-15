@@ -71,7 +71,11 @@ impl ModalityContent {
         match self {
             Self::Text(s) => s.clone(),
             Self::Image(img) => format!("[Image: {}]", img.description()),
-            Self::Mixed(parts) => parts.iter().map(|p| p.as_text()).collect::<Vec<_>>().join(" "),
+            Self::Mixed(parts) => parts
+                .iter()
+                .map(|p| p.as_text())
+                .collect::<Vec<_>>()
+                .join(" "),
         }
     }
 
@@ -80,7 +84,11 @@ impl ModalityContent {
         match self {
             Self::Text(s) => s.clone(),
             Self::Image(_) => String::new(),
-            Self::Mixed(parts) => parts.iter().map(|p| p.extract_text()).collect::<Vec<_>>().join(" "),
+            Self::Mixed(parts) => parts
+                .iter()
+                .map(|p| p.extract_text())
+                .collect::<Vec<_>>()
+                .join(" "),
         }
     }
 }
@@ -115,29 +123,19 @@ impl fmt::Display for ModalityContent {
 pub enum ImageContent {
     /// Image from URL.
     #[serde(rename = "url")]
-    Url {
-        url: String,
-    },
+    Url { url: String },
 
     /// Image from base64-encoded data.
     #[serde(rename = "base64")]
-    Base64 {
-        data: String,
-        mime_type: String,
-    },
+    Base64 { data: String, mime_type: String },
 
     /// Image from file path.
     #[serde(rename = "file")]
-    File {
-        path: std::path::PathBuf,
-    },
+    File { path: std::path::PathBuf },
 
     /// Image from raw bytes.
     #[serde(rename = "bytes")]
-    Bytes {
-        data: Vec<u8>,
-        mime_type: String,
-    },
+    Bytes { data: Vec<u8>, mime_type: String },
 }
 
 impl ImageContent {
@@ -204,10 +202,7 @@ impl ImageInput {
 
     /// Create from bytes.
     pub fn from_bytes(data: Vec<u8>) -> Self {
-        Self::Bytes {
-            data,
-            format: None,
-        }
+        Self::Bytes { data, format: None }
     }
 
     /// Create from bytes with known format.

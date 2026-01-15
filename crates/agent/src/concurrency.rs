@@ -99,7 +99,8 @@ impl SessionConcurrencyLimiter {
         // Check session limit first
         {
             let sessions = self.inner.session_usage.try_read().ok()?;
-            let session_current = sessions.get(session_id)
+            let session_current = sessions
+                .get(session_id)
                 .map(|u| u.current.load(Ordering::Relaxed))
                 .unwrap_or(0);
 
@@ -134,9 +135,9 @@ impl SessionConcurrencyLimiter {
         // Increment session counter
         {
             let mut sessions = self.inner.session_usage.try_write().ok()?;
-            let usage = sessions.entry(session_id.clone()).or_insert_with(|| {
-                SessionUsage::new(self.inner.per_session_limit)
-            });
+            let usage = sessions
+                .entry(session_id.clone())
+                .or_insert_with(|| SessionUsage::new(self.inner.per_session_limit));
 
             // Double-check session limit (could have changed)
             if usage.current.load(Ordering::Relaxed) >= self.inner.per_session_limit {
@@ -229,10 +230,17 @@ impl GlobalConcurrencyLimiter {
             if current >= self.max {
                 return None;
             }
-            match self.current.compare_exchange_weak(current, current + 1, Ordering::Relaxed, Ordering::Relaxed) {
-                Ok(_) => return Some(GlobalPermit {
-                    limiter: self.current.clone(),
-                }),
+            match self.current.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    return Some(GlobalPermit {
+                        limiter: self.current.clone(),
+                    });
+                }
                 Err(new_current) => current = new_current,
             }
         }
@@ -248,7 +256,8 @@ impl GlobalConcurrencyLimiter {
     }
 
     pub fn available(&self) -> usize {
-        self.max.saturating_sub(self.current.load(Ordering::Relaxed))
+        self.max
+            .saturating_sub(self.current.load(Ordering::Relaxed))
     }
 }
 

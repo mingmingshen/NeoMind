@@ -15,7 +15,6 @@ use std::fmt;
 #[serde(tag = "type")]
 pub enum NeoTalkEvent {
     // ========== Device Events ==========
-
     /// Device came online
     DeviceOnline {
         device_id: String,
@@ -54,7 +53,6 @@ pub enum NeoTalkEvent {
     },
 
     // ========== Rule Events ==========
-
     /// Rule condition was evaluated
     RuleEvaluated {
         rule_id: String,
@@ -82,7 +80,6 @@ pub enum NeoTalkEvent {
     },
 
     // ========== Workflow Events ==========
-
     /// Workflow was triggered
     WorkflowTriggered {
         workflow_id: String,
@@ -112,7 +109,6 @@ pub enum NeoTalkEvent {
     },
 
     // ========== Alert Events ==========
-
     /// Alert was created
     AlertCreated {
         alert_id: String,
@@ -130,7 +126,6 @@ pub enum NeoTalkEvent {
     },
 
     // ========== LLM Events (Autonomous Agent) ==========
-
     /// Periodic review was triggered
     ///
     /// This event triggers the autonomous agent to collect system data
@@ -166,7 +161,6 @@ pub enum NeoTalkEvent {
     },
 
     // ========== User Events ==========
-
     /// User message (for LLM)
     UserMessage {
         session_id: String,
@@ -184,7 +178,6 @@ pub enum NeoTalkEvent {
     },
 
     // ========== Tool Execution Events ==========
-
     /// Tool execution started
     ToolExecutionStart {
         tool_name: String,
@@ -286,9 +279,7 @@ impl NeoTalkEvent {
     pub fn is_rule_event(&self) -> bool {
         matches!(
             self,
-            Self::RuleEvaluated { .. }
-                | Self::RuleTriggered { .. }
-                | Self::RuleExecuted { .. }
+            Self::RuleEvaluated { .. } | Self::RuleTriggered { .. } | Self::RuleExecuted { .. }
         )
     }
 
@@ -319,7 +310,10 @@ impl NeoTalkEvent {
 
     /// Check if this is an alert event.
     pub fn is_alert_event(&self) -> bool {
-        matches!(self, Self::AlertCreated { .. } | Self::AlertAcknowledged { .. })
+        matches!(
+            self,
+            Self::AlertCreated { .. } | Self::AlertAcknowledged { .. }
+        )
     }
 
     /// Check if this is a tool execution event.
@@ -534,10 +528,7 @@ impl ProposedAction {
     }
 
     /// Create a workflow trigger action.
-    pub fn trigger_workflow(
-        workflow_id: impl Into<String>,
-        params: serde_json::Value,
-    ) -> Self {
+    pub fn trigger_workflow(workflow_id: impl Into<String>, params: serde_json::Value) -> Self {
         let workflow_id = workflow_id.into();
         Self {
             action_type: "trigger_workflow".to_string(),
@@ -662,9 +653,7 @@ mod tests {
 
     #[test]
     fn test_llm_decision_event() {
-        let actions = vec![
-            ProposedAction::notify_user("Test notification"),
-        ];
+        let actions = vec![ProposedAction::notify_user("Test notification")];
 
         let event = NeoTalkEvent::LlmDecisionProposed {
             decision_id: "dec-1".to_string(),

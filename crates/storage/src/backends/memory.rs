@@ -2,7 +2,7 @@
 //!
 //! Provides non-persistent storage for testing and development.
 
-use edge_ai_core::storage::{StorageBackend, StorageError, Result as CoreResult};
+use edge_ai_core::storage::{Result as CoreResult, StorageBackend, StorageError};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock as StdRwLock};
 
@@ -69,30 +69,36 @@ impl Default for MemoryBackend {
 
 impl StorageBackend for MemoryBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
-        let mut data = self.data.write().map_err(|e| StorageError::Backend(e.to_string()))?;
+        let mut data = self
+            .data
+            .write()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         let table_data = data.entry(table.to_string()).or_insert_with(HashMap::new);
         table_data.insert(key.to_string(), value.to_vec());
         Ok(())
     }
 
     fn read(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>> {
-        let data = self.data.read().map_err(|e| StorageError::Backend(e.to_string()))?;
-        Ok(data
-            .get(table)
-            .and_then(|t| t.get(key))
-            .cloned())
+        let data = self
+            .data
+            .read()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        Ok(data.get(table).and_then(|t| t.get(key)).cloned())
     }
 
     fn delete(&self, table: &str, key: &str) -> Result<bool> {
-        let mut data = self.data.write().map_err(|e| StorageError::Backend(e.to_string()))?;
-        Ok(data
-            .get_mut(table)
-            .and_then(|t| t.remove(key))
-            .is_some())
+        let mut data = self
+            .data
+            .write()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        Ok(data.get_mut(table).and_then(|t| t.remove(key)).is_some())
     }
 
     fn scan(&self, table: &str, prefix: &str) -> Result<Vec<(String, Vec<u8>)>> {
-        let data = self.data.read().map_err(|e| StorageError::Backend(e.to_string()))?;
+        let data = self
+            .data
+            .read()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         let mut results = Vec::new();
 
         if let Some(table_data) = data.get(table) {
@@ -107,7 +113,10 @@ impl StorageBackend for MemoryBackend {
     }
 
     fn write_batch(&self, table: &str, items: Vec<(String, Vec<u8>)>) -> Result<()> {
-        let mut data = self.data.write().map_err(|e| StorageError::Backend(e.to_string()))?;
+        let mut data = self
+            .data
+            .write()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         let table_data = data.entry(table.to_string()).or_insert_with(HashMap::new);
 
         for (key, value) in items {
@@ -126,7 +135,8 @@ impl MemoryBackend {
     /// Get the number of entries in a table.
     pub fn count(&self, table: &str) -> usize {
         let data = self.data.read().ok();
-        data.and_then(|d| d.get(table).map(|m| m.len())).unwrap_or(0)
+        data.and_then(|d| d.get(table).map(|m| m.len()))
+            .unwrap_or(0)
     }
 
     /// Clear all data.
@@ -196,8 +206,14 @@ mod tests {
         ];
 
         backend.write_batch("test", items).unwrap();
-        assert_eq!(backend.read("test", "key1").unwrap(), Some(b"value1".to_vec()));
-        assert_eq!(backend.read("test", "key2").unwrap(), Some(b"value2".to_vec()));
+        assert_eq!(
+            backend.read("test", "key1").unwrap(),
+            Some(b"value1".to_vec())
+        );
+        assert_eq!(
+            backend.read("test", "key2").unwrap(),
+            Some(b"value2".to_vec())
+        );
     }
 
     #[test]

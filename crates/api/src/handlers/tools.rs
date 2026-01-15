@@ -1,13 +1,19 @@
 //! Tools management handlers.
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde::Serialize;
 use serde_json::json;
 use std::sync::Arc;
 
-use edge_ai_tools::{ToolRegistry, ToolRegistryBuilder, ToolDefinition};
+use edge_ai_tools::{ToolDefinition, ToolRegistry, ToolRegistryBuilder};
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 /// DTO for tool definition responses.
@@ -32,13 +38,9 @@ impl From<&ToolDefinition> for ToolDefinitionDto {
 fn get_tool_registry() -> Arc<ToolRegistry> {
     use std::sync::OnceLock;
     static REGISTRY: OnceLock<Arc<ToolRegistry>> = OnceLock::new();
-    REGISTRY.get_or_init(|| {
-        Arc::new(
-            ToolRegistryBuilder::new()
-                .with_standard_tools()
-                .build()
-        )
-    }).clone()
+    REGISTRY
+        .get_or_init(|| Arc::new(ToolRegistryBuilder::new().with_standard_tools().build()))
+        .clone()
 }
 
 /// List all available tools.
@@ -100,7 +102,7 @@ pub async fn get_tool_metrics_handler(
                 "executions": 0,  // TODO: track actual executions
                 "errors": 0,
                 "avg_duration_ms": 0,
-            })
+            }),
         );
     }
 

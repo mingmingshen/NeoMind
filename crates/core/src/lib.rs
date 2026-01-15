@@ -17,7 +17,7 @@ pub mod storage;
 pub mod tools;
 
 // Legacy exports (backward compatibility)
-pub use llm::{LlmBackend, LlmConfig, LlmError, GenerationResult};
+pub use llm::{GenerationResult, LlmBackend, LlmConfig, LlmError};
 
 // New exports
 pub use llm::backend::{
@@ -30,28 +30,28 @@ pub use message::{Content, ContentPart, ImageDetail, Message, MessageRole};
 pub use session::{Session, SessionId};
 
 // Event exports
-pub use event::{
-    EventMetadata, MetricValue, NeoTalkEvent, ProposedAction,
-};
+pub use event::{EventMetadata, MetricValue, NeoTalkEvent, ProposedAction};
 
 // Event bus exports
 pub use eventbus::{
-    DEFAULT_CHANNEL_CAPACITY, EventBus, EventBusReceiver, EventPersistence,
-    FilterBuilder, FilteredReceiver, NoOpPersistence, PersistError, SharedEventBus,
+    DEFAULT_CHANNEL_CAPACITY, EventBus, EventBusReceiver, EventPersistence, FilterBuilder,
+    FilteredReceiver, NoOpPersistence, PersistError, SharedEventBus,
 };
 
 /// Re-exports commonly used types.
 pub mod prelude {
     // Configuration
-    pub use crate::config::{LlmProvider, endpoints, models, env_vars,
-                            normalize_ollama_endpoint, normalize_openai_endpoint};
+    pub use crate::config::{
+        LlmProvider, endpoints, env_vars, models, normalize_ollama_endpoint,
+        normalize_openai_endpoint,
+    };
 
     // Error handling
     pub use crate::error::{Error, Result};
 
     // Legacy
-    pub use crate::llm::{LlmBackend, LlmConfig, LlmError, GenerationResult};
-    pub use crate::message::{Message, MessageRole, Content};
+    pub use crate::llm::{GenerationResult, LlmBackend, LlmConfig, LlmError};
+    pub use crate::message::{Content, Message, MessageRole};
     pub use crate::session::{Session, SessionId};
 
     // New runtime types
@@ -70,7 +70,7 @@ pub mod prelude {
     pub use crate::storage::{StorageBackend, StorageError, StorageFactory};
 
     // Tools
-    pub use crate::tools::{Parameter, DynTool, Tool, ToolDefinition, ToolError, ToolOutput};
+    pub use crate::tools::{DynTool, Parameter, Tool, ToolDefinition, ToolError, ToolOutput};
 
     // Alerts
     pub use crate::alerts::{
@@ -78,23 +78,32 @@ pub mod prelude {
     };
 
     // Plugin system
-    pub use crate::plugin::{Plugin, PluginRegistry, PluginMetadata, PluginError, DynPlugin};
+    pub use crate::plugin::{DynPlugin, Plugin, PluginError, PluginMetadata, PluginRegistry};
 
     // Integration system
     pub use crate::integration::{
-        Integration, DynIntegration, IntegrationType, IntegrationState, IntegrationMetadata,
-        IntegrationEvent, IntegrationCommand, IntegrationResponse, IntegrationConfig,
-        IntegrationError, DiscoveredInfo, Result as IntegrationResult,
+        DiscoveredInfo,
+        DynIntegration,
+        Integration,
+        IntegrationCommand,
+        IntegrationConfig,
+        IntegrationError,
+        IntegrationEvent,
+        IntegrationMetadata,
+        IntegrationResponse,
+        IntegrationState,
+        IntegrationType,
+        Result as IntegrationResult,
         // Connector exports
         connector::{
-            Connector, DynConnector, ConnectorError, ConnectorConfig, ConnectionMetrics,
-            Result as ConnectorResult, BaseConnector,
+            BaseConnector, ConnectionMetrics, Connector, ConnectorConfig, ConnectorError,
+            DynConnector, Result as ConnectorResult,
         },
         // Transformer exports
         transformer::{
-            Transformer, DynTransformer, TransformationError, TransformationContext,
-            EntityMapping, MappingConfig, ValueTransform, TransformType,
-            UnitConversion, ConversionFunction, Result as TransformerResult, BaseTransformer,
+            BaseTransformer, ConversionFunction, DynTransformer, EntityMapping, MappingConfig,
+            Result as TransformerResult, TransformType, TransformationContext, TransformationError,
+            Transformer, UnitConversion, ValueTransform,
         },
     };
 }

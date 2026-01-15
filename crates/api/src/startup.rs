@@ -22,7 +22,11 @@ fn colors_enabled() -> bool {
             return false;
         }
         // Check if explicitly enabled
-        if std::env::var("NEOTALK_COLOR").ok().and_then(|v| v.parse().ok()).unwrap_or(false) {
+        if std::env::var("NEOTALK_COLOR")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(false)
+        {
             return true;
         }
         // Auto-detect: enable if we have a TTY
@@ -79,7 +83,10 @@ impl StartupLogger {
         self.phase = StartupPhase::Banner;
 
         println!();
-        println!("{}", color("┌─────────────────────────────────────────┐", ANSI_CYAN));
+        println!(
+            "{}",
+            color("┌─────────────────────────────────────────┐", ANSI_CYAN)
+        );
         println!(
             "{}{}{}",
             color("│ ", ANSI_CYAN),
@@ -92,7 +99,10 @@ impl StartupLogger {
             color("Edge AI Agent - Web Server", ANSI_DIM),
             color("                    │", ANSI_CYAN)
         );
-        println!("{}", color("└─────────────────────────────────────────┘", ANSI_CYAN));
+        println!(
+            "{}",
+            color("└─────────────────────────────────────────┘", ANSI_CYAN)
+        );
         println!();
     }
 
@@ -208,7 +218,10 @@ impl StartupLogger {
         println!();
         println!(
             "{}",
-            color("  ╔═════════════════════════════════════════════════════╗", ANSI_YELLOW)
+            color(
+                "  ╔═════════════════════════════════════════════════════╗",
+                ANSI_YELLOW
+            )
         );
         println!(
             "{} {} {}",
@@ -218,7 +231,10 @@ impl StartupLogger {
         );
         println!(
             "{}",
-            color("  ╠═════════════════════════════════════════════════════╣", ANSI_YELLOW)
+            color(
+                "  ╠═════════════════════════════════════════════════════╣",
+                ANSI_YELLOW
+            )
         );
         println!(
             "{} {} {}",
@@ -234,21 +250,33 @@ impl StartupLogger {
         );
         println!(
             "{}",
-            color("  ╠═════════════════════════════════════════════════════╣", ANSI_YELLOW)
+            color(
+                "  ╠═════════════════════════════════════════════════════╣",
+                ANSI_YELLOW
+            )
         );
         println!(
             "{} {}",
             color("  ║", ANSI_YELLOW),
-            color("  Save this key! You'll need it to access the API. ", ANSI_DIM)
+            color(
+                "  Save this key! You'll need it to access the API. ",
+                ANSI_DIM
+            )
         );
         println!(
             "{} {}",
             color("  ║", ANSI_YELLOW),
-            color("  Use it in the frontend login dialog.              ", ANSI_DIM)
+            color(
+                "  Use it in the frontend login dialog.              ",
+                ANSI_DIM
+            )
         );
         println!(
             "{}",
-            color("  ╚══════════════════════════════════════════════════════╝", ANSI_YELLOW)
+            color(
+                "  ╚══════════════════════════════════════════════════════╝",
+                ANSI_YELLOW
+            )
         );
         println!();
     }
@@ -261,7 +289,10 @@ impl StartupLogger {
         println!();
         println!(
             "{}",
-            color("  ╔═════════════════════════════════════════════════════╗", ANSI_BLUE)
+            color(
+                "  ╔═════════════════════════════════════════════════════╗",
+                ANSI_BLUE
+            )
         );
         println!(
             "{} {} {}",
@@ -271,7 +302,10 @@ impl StartupLogger {
         );
         println!(
             "{}",
-            color("  ╠═════════════════════════════════════════════════════╣", ANSI_BLUE)
+            color(
+                "  ╠═════════════════════════════════════════════════════╣",
+                ANSI_BLUE
+            )
         );
         println!(
             "{} {} {}",
@@ -287,16 +321,25 @@ impl StartupLogger {
         );
         println!(
             "{}",
-            color("  ╠═════════════════════════════════════════════════════╣", ANSI_BLUE)
+            color(
+                "  ╠═════════════════════════════════════════════════════╣",
+                ANSI_BLUE
+            )
         );
         println!(
             "{} {}",
             color("  ║", ANSI_BLUE),
-            color("  ⚠ Please change the password after first login!  ", ANSI_DIM)
+            color(
+                "  ⚠ Please change the password after first login!  ",
+                ANSI_DIM
+            )
         );
         println!(
             "{}",
-            color("  ╚══════════════════════════════════════════════════════╝", ANSI_BLUE)
+            color(
+                "  ╚══════════════════════════════════════════════════════╝",
+                ANSI_BLUE
+            )
         );
         println!();
     }
@@ -309,7 +352,10 @@ impl StartupLogger {
         println!();
         println!(
             "{}",
-            color("  ╔═════════════════════════════════════════════════════╗", ANSI_GREEN)
+            color(
+                "  ╔═════════════════════════════════════════════════════╗",
+                ANSI_GREEN
+            )
         );
         println!(
             "{} {} {}",
@@ -319,7 +365,10 @@ impl StartupLogger {
         );
         println!(
             "{}",
-            color("  ╠═════════════════════════════════════════════════════╣", ANSI_GREEN)
+            color(
+                "  ╠═════════════════════════════════════════════════════╣",
+                ANSI_GREEN
+            )
         );
         println!(
             "{} {} {}",
@@ -331,7 +380,10 @@ impl StartupLogger {
             "{} {} {}",
             color("  ║", ANSI_GREEN),
             color("API:", ANSI_BOLD),
-            color(format!("   http://{}/api/openapi.json    ", addr), ANSI_CYAN)
+            color(
+                format!("   http://{}/api/openapi.json    ", addr),
+                ANSI_CYAN
+            )
         );
         println!(
             "{} {} {}",
@@ -341,7 +393,10 @@ impl StartupLogger {
         );
         println!(
             "{}",
-            color("  ╚══════════════════════════════════════════════════════╝", ANSI_GREEN)
+            color(
+                "  ╚══════════════════════════════════════════════════════╝",
+                ANSI_GREEN
+            )
         );
         println!();
         println!(
@@ -363,11 +418,7 @@ impl StartupLogger {
             ServiceStatus::Error => ("✗", ANSI_RED),
             ServiceStatus::Disabled => ("○", ANSI_GRAY),
         };
-        println!(
-            "    {} {}",
-            color(icon, color_code),
-            format!("{:30}", name)
-        );
+        println!("    {} {}", color(icon, color_code), format!("{:30}", name));
     }
 }
 

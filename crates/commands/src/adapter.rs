@@ -2,10 +2,10 @@
 //!
 //! Supports multiple protocols: MQTT, Modbus, HTTP, etc.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 use crate::command::{CommandRequest, CommandResult};
 
@@ -92,7 +92,10 @@ impl AnyAdapter {
     }
 
     /// Send a command to a device.
-    pub async fn send_command(&self, command: &CommandRequest) -> Result<CommandResult, AdapterError> {
+    pub async fn send_command(
+        &self,
+        command: &CommandRequest,
+    ) -> Result<CommandResult, AdapterError> {
         match self {
             AnyAdapter::Mqtt(a) => a.send_command(command).await,
             AnyAdapter::Modbus(a) => a.send_command(command).await,
@@ -219,7 +222,10 @@ impl MqttDownlinkAdapter {
     }
 
     /// Send a command to a device.
-    pub async fn send_command(&self, command: &CommandRequest) -> Result<CommandResult, AdapterError> {
+    pub async fn send_command(
+        &self,
+        command: &CommandRequest,
+    ) -> Result<CommandResult, AdapterError> {
         if !*self.connected.read().await {
             return Err(AdapterError::NotConnected);
         }
@@ -277,10 +283,7 @@ pub enum ModbusDeviceType {
         parity: String,
     },
     /// Modbus TCP
-    Tcp {
-        host: String,
-        port: u16,
-    },
+    Tcp { host: String, port: u16 },
 }
 
 impl Default for ModbusAdapterConfig {
@@ -344,7 +347,10 @@ impl ModbusDownlinkAdapter {
     }
 
     /// Send a command to a device.
-    pub async fn send_command(&self, command: &CommandRequest) -> Result<CommandResult, AdapterError> {
+    pub async fn send_command(
+        &self,
+        command: &CommandRequest,
+    ) -> Result<CommandResult, AdapterError> {
         if !*self.connected.read().await {
             return Err(AdapterError::NotConnected);
         }
@@ -434,7 +440,10 @@ impl HttpDownlinkAdapter {
     }
 
     /// Send a command to a device.
-    pub async fn send_command(&self, command: &CommandRequest) -> Result<CommandResult, AdapterError> {
+    pub async fn send_command(
+        &self,
+        command: &CommandRequest,
+    ) -> Result<CommandResult, AdapterError> {
         let url = self.build_url(&command.device_id, &command.command_name);
 
         let mut stats = self.stats.write().await;
@@ -501,7 +510,8 @@ impl DownlinkAdapterRegistry {
     fn register_adapter(&mut self, id: AdapterId, adapter: AnyAdapter) {
         // Register device types
         for device_type in adapter.supported_device_types() {
-            self.device_type_map.insert(device_type.to_string(), id.clone());
+            self.device_type_map
+                .insert(device_type.to_string(), id.clone());
         }
 
         self.adapters.insert(id.clone(), adapter);
@@ -620,6 +630,9 @@ mod tests {
         );
 
         let url = adapter.build_url("device1", "turn_on");
-        assert_eq!(url, "https://api.example.com/devices/device1/commands/turn_on");
+        assert_eq!(
+            url,
+            "https://api.example.com/devices/device1/commands/turn_on"
+        );
     }
 }

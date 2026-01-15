@@ -14,8 +14,7 @@ use tokio::fs;
 use crate::Error;
 
 // Image metadata table: key = image_id, value = ImageMetadata (serialized)
-const IMAGE_METADATA_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("image_metadata");
+const IMAGE_METADATA_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("image_metadata");
 
 // Document metadata table: key = doc_id, value = DocumentMetadata (serialized)
 const DOCUMENT_METADATA_TABLE: TableDefinition<&str, &[u8]> =
@@ -423,7 +422,11 @@ impl MultimodalStore {
     }
 
     /// Read image dimensions from common formats.
-    async fn read_image_dimensions(&self, data: &[u8], mime_type: &str) -> (Option<u32>, Option<u32>) {
+    async fn read_image_dimensions(
+        &self,
+        data: &[u8],
+        mime_type: &str,
+    ) -> (Option<u32>, Option<u32>) {
         match mime_type {
             "image/png" => {
                 if data.len() > 24 {
@@ -450,16 +453,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_multimodal_store() {
-        let temp_dir = std::env::temp_dir().join(format!("multimodal_test_{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("multimodal_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let store = MultimodalStore::open(
-            temp_dir.join("db.redb"),
-            temp_dir.join("files"),
-        ).unwrap();
+        let store =
+            MultimodalStore::open(temp_dir.join("db.redb"), temp_dir.join("files")).unwrap();
 
         // Store an image
         let image_data = vec![0u8; 100];
-        let metadata = store.store_image("img1", &image_data, "image/png").await.unwrap();
+        let metadata = store
+            .store_image("img1", &image_data, "image/png")
+            .await
+            .unwrap();
 
         assert_eq!(metadata.id, "img1");
         assert_eq!(metadata.size, 100);
@@ -479,24 +484,30 @@ mod tests {
         assert!(ids.contains(&"img1".to_string()));
 
         // Link analysis
-        store.link_llm_analysis("img1", "A test image", Some("emb1")).unwrap();
+        store
+            .link_llm_analysis("img1", "A test image", Some("emb1"))
+            .unwrap();
 
         let updated = store.get_metadata("img1").unwrap();
-        assert_eq!(updated.unwrap().llm_analysis, Some("A test image".to_string()));
+        assert_eq!(
+            updated.unwrap().llm_analysis,
+            Some("A test image".to_string())
+        );
     }
 
     #[tokio::test]
     async fn test_document_storage() {
         let temp_dir = std::env::temp_dir().join(format!("doc_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let store = MultimodalStore::open(
-            temp_dir.join("db.redb"),
-            temp_dir.join("files"),
-        ).unwrap();
+        let store =
+            MultimodalStore::open(temp_dir.join("db.redb"), temp_dir.join("files")).unwrap();
 
         // Store a document
         let doc_data = b"Test document content".to_vec();
-        let metadata = store.store_document("doc1", &doc_data, "text/plain").await.unwrap();
+        let metadata = store
+            .store_document("doc1", &doc_data, "text/plain")
+            .await
+            .unwrap();
 
         assert_eq!(metadata.id, "doc1");
         assert_eq!(metadata.mime_type, "text/plain");
@@ -510,9 +521,14 @@ mod tests {
         assert_eq!(loaded, b"Test document content");
 
         // Link summary
-        store.link_llm_summary("doc1", "Test summary", Some("emb1")).unwrap();
+        store
+            .link_llm_summary("doc1", "Test summary", Some("emb1"))
+            .unwrap();
 
         let updated = store.get_document_metadata("doc1").unwrap();
-        assert_eq!(updated.unwrap().llm_summary, Some("Test summary".to_string()));
+        assert_eq!(
+            updated.unwrap().llm_summary,
+            Some("Test summary".to_string())
+        );
     }
 }

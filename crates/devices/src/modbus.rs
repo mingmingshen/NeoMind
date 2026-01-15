@@ -1,6 +1,6 @@
 //! Modbus device adapter.
 //!
-//! Implements the Device trait for devices communicating via Modbus protocol.
+//! Modbus protocol support for device communication.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use super::mdl::{
-    Device, Command, ConnectionStatus, DeviceCapability, DeviceError, DeviceId,
-    DeviceInfo, DeviceState, DeviceType, MetricDefinition, MetricDataType, MetricValue,
+    Command, ConnectionStatus, DeviceCapability, DeviceError, DeviceId, DeviceInfo, DeviceState,
+    DeviceType, MetricDataType, MetricDefinition, MetricValue,
 };
 
 /// Modbus register type.
@@ -162,10 +162,18 @@ pub struct ModbusConfig {
     pub poll_interval_ms: u64,
 }
 
-fn default_modbus_port() -> u16 { 502 }
-fn default_slave_id() -> u8 { 1 }
-fn default_timeout() -> u64 { 5000 }
-fn default_poll_interval() -> u64 { 1000 }
+fn default_modbus_port() -> u16 {
+    502
+}
+fn default_slave_id() -> u8 {
+    1
+}
+fn default_timeout() -> u64 {
+    5000
+}
+fn default_poll_interval() -> u64 {
+    1000
+}
 
 impl ModbusConfig {
     pub fn new(host: impl Into<String>) -> Self {
@@ -228,10 +236,8 @@ impl ModbusDevice {
         let id = DeviceId::new();
         let name = name.into();
 
-        let registers_map: HashMap<String, RegisterDefinition> = registers
-            .into_iter()
-            .map(|r| (r.name.clone(), r))
-            .collect();
+        let registers_map: HashMap<String, RegisterDefinition> =
+            registers.into_iter().map(|r| (r.name.clone(), r)).collect();
 
         // Determine device type from register types
         let has_read_only = registers_map.values().any(|r| {
@@ -241,7 +247,10 @@ impl ModbusDevice {
             )
         });
         let has_read_write = registers_map.values().any(|r| {
-            matches!(r.register_type, RegisterType::Coil | RegisterType::HoldingRegister)
+            matches!(
+                r.register_type,
+                RegisterType::Coil | RegisterType::HoldingRegister
+            )
         });
 
         let device_type = match (has_read_only, has_read_write) {
@@ -286,7 +295,10 @@ impl ModbusDevice {
     }
 
     /// Read a raw Modbus register.
-    async fn read_register(&self, reg_def: &RegisterDefinition) -> Result<MetricValue, DeviceError> {
+    async fn read_register(
+        &self,
+        reg_def: &RegisterDefinition,
+    ) -> Result<MetricValue, DeviceError> {
         // Simulate reading from Modbus device
         // In a real implementation, this would use tokio_modbus client
         match reg_def.register_type {
@@ -315,7 +327,11 @@ impl ModbusDevice {
     }
 
     /// Write to a Modbus register.
-    async fn write_register(&self, reg_def: &RegisterDefinition, value: &MetricValue) -> Result<(), DeviceError> {
+    async fn write_register(
+        &self,
+        reg_def: &RegisterDefinition,
+        value: &MetricValue,
+    ) -> Result<(), DeviceError> {
         if matches!(
             reg_def.register_type,
             RegisterType::DiscreteInput | RegisterType::InputRegister
@@ -338,153 +354,6 @@ impl ModbusDevice {
     /// Get register definition by name.
     pub fn register(&self, name: &str) -> Option<&RegisterDefinition> {
         self.registers.get(name)
-    }
-}
-
-#[async_trait]
-impl Device for ModbusDevice {
-    fn id(&self) -> &DeviceId {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn device_type(&self) -> DeviceType {
-        self.device_type
-    }
-
-    fn capabilities(&self) -> Vec<DeviceCapability> {
-        let mut caps = vec![DeviceCapability::ReadNumeric];
-
-        let has_writable = self.registers.values().any(|r| {
-            matches!(r.register_type, RegisterType::Coil | RegisterType::HoldingRegister)
-        });
-
-        if has_writable {
-            caps.push(DeviceCapability::WriteNumeric);
-        }
-
-        caps
-    }
-
-    fn metrics(&self) -> Vec<MetricDefinition> {
-        self.registers
-            .values()
-            .map(|r| r.to_metric_definition())
-            .collect()
-    }
-
-    fn commands(&self) -> Vec<String> {
-        // Modbus devices typically don't have named commands
-        // Writing to registers is done via write_metric or direct register write
-        Vec::new()
-    }
-
-    async fn read_metric(&self, metric: &str) -> Result<MetricValue, DeviceError> {
-        let reg_def = self
-            .registers
-            .get(metric)
-            .ok_or_else(|| DeviceError::InvalidMetric(format!("Unknown metric: {}", metric)))?;
-
-        // Check cache first
-        {
-            let values = self.cached_values.read().await;
-            if let Some(cached) = values.get(metric) {
-                return Ok(cached.clone());
-            }
-        }
-
-        // Read from device
-        let value = self.read_register(reg_def).await?;
-
-        // Cache the value
-        {
-            let mut values = self.cached_values.write().await;
-            values.insert(metric.to_string(), value.clone());
-        }
-
-        // Update last seen
-        let mut state = self.state.write().await;
-        state.last_seen = Some(chrono::Utc::now());
-
-        Ok(value)
-    }
-
-    async fn write_command(&self, command: &Command) -> Result<Option<MetricValue>, DeviceError> {
-        // For Modbus, commands are writes to specific registers
-        // The command name should be the register name
-        if let Some(reg_def) = self.registers.get(&command.name) {
-            if let Some((_, param)) = command.parameters.iter().next() {
-                self.write_register(reg_def, &param.value).await?;
-            }
-            Ok(None)
-        } else {
-            Err(DeviceError::InvalidCommand(format!("Unknown register: {}", command.name)))
-        }
-    }
-
-    async fn connect(&mut self) -> Result<(), DeviceError> {
-        let mut state = self.state.write().await;
-        state.status = ConnectionStatus::Connecting;
-        drop(state);
-
-        // Simulate connection (in real implementation, would connect to Modbus device)
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let mut state = self.state.write().await;
-        state.status = ConnectionStatus::Connected;
-        state.last_seen = Some(chrono::Utc::now());
-        Ok(())
-    }
-
-    async fn disconnect(&mut self) -> Result<(), DeviceError> {
-        let mut state = self.state.write().await;
-        state.status = ConnectionStatus::Disconnected;
-        state.last_seen = Some(chrono::Utc::now());
-        Ok(())
-    }
-
-    async fn is_connected(&self) -> bool {
-        let state = self.state.read().await;
-        matches!(state.status, ConnectionStatus::Connected)
-    }
-
-    async fn state(&self) -> DeviceState {
-        let state = self.state.read().await;
-        state.clone()
-    }
-
-    fn info(&self) -> DeviceInfo {
-        // Use try_read to avoid blocking; fall back to default state if locked
-        let current_state = self.state.try_read()
-            .ok()
-            .map(|s| s.clone())
-            .unwrap_or_else(|| DeviceState {
-                status: ConnectionStatus::Disconnected,
-                last_seen: None,
-                error: None,
-            });
-
-        DeviceInfo {
-            id: self.id.clone(),
-            name: self.name.clone(),
-            device_type: self.device_type,
-            protocol: "modbus".to_string(),
-            status: current_state.status,
-            capabilities: self.capabilities(),
-            metrics: self.metrics(),
-            commands: self.commands(),
-            location: self.location.clone(),
-            metadata: {
-                let mut meta = HashMap::new();
-                meta.insert("host".to_string(), self.config.host.clone());
-                meta.insert("port".to_string(), self.config.port.to_string());
-                meta.insert("slave_id".to_string(), self.config.slave_id.to_string());
-                meta
-            },
-        }
     }
 }
 

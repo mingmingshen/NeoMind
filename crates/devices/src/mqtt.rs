@@ -1,6 +1,6 @@
 //! MQTT device adapter.
 //!
-//! Implements the Device trait for devices communicating via MQTT protocol.
+//! MQTT protocol support for device communication.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use super::mdl::{
-    Device, Command, ConnectionStatus, DeviceCapability, DeviceError, DeviceId,
-    DeviceInfo, DeviceState, DeviceType, MetricDefinition, MetricDataType, MetricValue,
+    Command, ConnectionStatus, DeviceCapability, DeviceError, DeviceId, DeviceInfo, DeviceState,
+    DeviceType, MetricDataType, MetricDefinition, MetricValue,
 };
 
 /// Configuration for an MQTT device.
@@ -55,9 +55,15 @@ pub struct MqttConfig {
     pub command_topic: String,
 }
 
-fn default_keep_alive() -> u64 { 60 }
-fn default_clean_session() -> bool { true }
-fn default_qos() -> u8 { 1 }
+fn default_keep_alive() -> u64 {
+    60
+}
+fn default_clean_session() -> bool {
+    true
+}
+fn default_qos() -> u8 {
+    1
+}
 
 impl MqttConfig {
     pub fn new(broker: impl Into<String>, topic_prefix: impl Into<String>) -> Self {
@@ -136,10 +142,7 @@ impl MqttDevice {
         let id = DeviceId::new();
         let name = name.into();
 
-        let metrics_map = metrics
-            .into_iter()
-            .map(|m| (m.name.clone(), m))
-            .collect();
+        let metrics_map = metrics.into_iter().map(|m| (m.name.clone(), m)).collect();
 
         let state = DeviceState {
             status: ConnectionStatus::Disconnected,
@@ -232,11 +235,16 @@ impl MqttDevice {
                         .map_err(|e| DeviceError::Serialization(format!("UTF-8 error: {}", e)))?;
                     MetricValue::Boolean(s.eq_ignore_ascii_case("true") || s == "1")
                 }
-                MetricDataType::String => {
-                    MetricValue::String(String::from_utf8(payload.to_vec())
-                        .unwrap_or_else(|_| String::from_utf8_lossy(payload).to_string()))
-                }
+                MetricDataType::String => MetricValue::String(
+                    String::from_utf8(payload.to_vec())
+                        .unwrap_or_else(|_| String::from_utf8_lossy(payload).to_string()),
+                ),
                 MetricDataType::Binary => MetricValue::Binary(payload.to_vec()),
+                // For Enum types, treat as String
+                MetricDataType::Enum { .. } => MetricValue::String(
+                    String::from_utf8(payload.to_vec())
+                        .unwrap_or_else(|_| String::from_utf8_lossy(payload).to_string()),
+                ),
             };
 
             let mut values = self.cached_values.write().await;
@@ -248,7 +256,10 @@ impl MqttDevice {
 
             Ok(())
         } else {
-            Err(DeviceError::InvalidMetric(format!("Unknown metric: {}", metric_name)))
+            Err(DeviceError::InvalidMetric(format!(
+                "Unknown metric: {}",
+                metric_name
+            )))
         }
     }
 
@@ -256,135 +267,14 @@ impl MqttDevice {
     pub async fn publish_command(&self, command: &Command) -> Result<Vec<u8>, DeviceError> {
         // This would publish to MQTT broker
         // For now, we simulate by creating the payload
-        let payload = serde_json::to_vec(command)
-            .map_err(|e| DeviceError::Serialization(e.to_string()))?;
+        let payload =
+            serde_json::to_vec(command).map_err(|e| DeviceError::Serialization(e.to_string()))?;
 
         // Update last seen
         let mut state = self.state.write().await;
         state.last_seen = Some(chrono::Utc::now());
 
         Ok(payload)
-    }
-}
-
-#[async_trait]
-impl Device for MqttDevice {
-    fn id(&self) -> &DeviceId {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn device_type(&self) -> DeviceType {
-        if self.available_commands.is_empty() {
-            DeviceType::Sensor
-        } else if !self.metrics.is_empty() {
-            DeviceType::Hybrid
-        } else {
-            DeviceType::Actuator
-        }
-    }
-
-    fn capabilities(&self) -> Vec<DeviceCapability> {
-        let mut caps = vec![DeviceCapability::ReadNumeric];
-        if !self.available_commands.is_empty() {
-            caps.push(DeviceCapability::ExecuteCommand);
-        }
-        caps.push(DeviceCapability::StreamData);
-        caps
-    }
-
-    fn metrics(&self) -> Vec<MetricDefinition> {
-        self.metrics.values().cloned().collect()
-    }
-
-    fn commands(&self) -> Vec<String> {
-        self.available_commands.clone()
-    }
-
-    async fn read_metric(&self, metric: &str) -> Result<MetricValue, DeviceError> {
-        if !self.metrics.contains_key(metric) {
-            return Err(DeviceError::InvalidMetric(format!("Unknown metric: {}", metric)));
-        }
-
-        let values = self.cached_values.read().await;
-        values
-            .get(metric)
-            .cloned()
-            .ok_or_else(|| DeviceError::Communication(format!("No value for metric: {}", metric)))
-    }
-
-    async fn write_command(&self, command: &Command) -> Result<Option<MetricValue>, DeviceError> {
-        if !self.available_commands.contains(&command.name) {
-            return Err(DeviceError::InvalidCommand(format!("Unknown command: {}", command.name)));
-        }
-
-        let _payload = self.publish_command(command).await?;
-        Ok(None)
-    }
-
-    async fn connect(&mut self) -> Result<(), DeviceError> {
-        let mut state = self.state.write().await;
-        state.status = ConnectionStatus::Connecting;
-        drop(state);
-
-        // Simulate connection (in real implementation, would connect to MQTT broker)
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let mut state = self.state.write().await;
-        state.status = ConnectionStatus::Connected;
-        state.last_seen = Some(chrono::Utc::now());
-        Ok(())
-    }
-
-    async fn disconnect(&mut self) -> Result<(), DeviceError> {
-        let mut state = self.state.write().await;
-        state.status = ConnectionStatus::Disconnected;
-        state.last_seen = Some(chrono::Utc::now());
-        Ok(())
-    }
-
-    async fn is_connected(&self) -> bool {
-        let state = self.state.read().await;
-        matches!(state.status, ConnectionStatus::Connected)
-    }
-
-    async fn state(&self) -> DeviceState {
-        let state = self.state.read().await;
-        state.clone()
-    }
-
-    fn info(&self) -> DeviceInfo {
-        // Use try_read to avoid blocking; fall back to default state if locked
-        let current_state = self.state.try_read()
-            .ok()
-            .map(|s| s.clone())
-            .unwrap_or_else(|| DeviceState {
-                status: ConnectionStatus::Disconnected,
-                last_seen: None,
-                error: None,
-            });
-
-        DeviceInfo {
-            id: self.id.clone(),
-            name: self.name.clone(),
-            device_type: self.device_type(),
-            protocol: "mqtt".to_string(),
-            status: current_state.status,
-            capabilities: self.capabilities(),
-            metrics: self.metrics(),
-            commands: self.available_commands.clone(),
-            location: self.location.clone(),
-            metadata: {
-                let mut meta = HashMap::new();
-                meta.insert("broker".to_string(), self.config.broker.clone());
-                meta.insert("port".to_string(), self.config.port.to_string());
-                meta.insert("topic_prefix".to_string(), self.config.topic_prefix.clone());
-                meta
-            },
-        }
     }
 }
 
@@ -407,17 +297,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_mqtt_sensor() {
-        let metrics = vec![
-            MetricDefinition {
-                name: "temperature".to_string(),
-                description: "Temperature in Celsius".to_string(),
-                data_type: MetricDataType::Float,
-                unit: Some("°C".to_string()),
-                read_only: true,
-                min: Some(-40.0),
-                max: Some(100.0),
-            },
-        ];
+        let metrics = vec![MetricDefinition {
+            name: "temperature".to_string(),
+            description: "Temperature in Celsius".to_string(),
+            data_type: MetricDataType::Float,
+            unit: Some("°C".to_string()),
+            read_only: true,
+            min: Some(-40.0),
+            max: Some(100.0),
+        }];
 
         let device = MqttDevice::sensor("TempSensor1", "localhost", "sensors/temp1", metrics);
 
@@ -425,7 +313,10 @@ mod tests {
         assert_eq!(device.device_type(), DeviceType::Sensor);
 
         // Process a message
-        device.process_message("sensors/temp1/temperature", b"23.5").await.unwrap();
+        device
+            .process_message("sensors/temp1/temperature", b"23.5")
+            .await
+            .unwrap();
 
         // Read the cached value
         let value = device.read_metric("temperature").await.unwrap();

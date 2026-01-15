@@ -43,7 +43,8 @@ impl TriggerManager {
 
         // Add to workflow triggers
         let mut triggers = self.triggers.write().await;
-        triggers.entry(workflow_id.clone())
+        triggers
+            .entry(workflow_id.clone())
             .or_insert_with(Vec::new)
             .push(trigger.clone());
 
@@ -73,13 +74,18 @@ impl TriggerManager {
     /// Trigger a workflow by trigger ID
     pub async fn trigger(&self, trigger_id: &str) -> Result<()> {
         let callbacks = self.callbacks.read().await;
-        let callback = callbacks.get(trigger_id)
-            .ok_or_else(|| WorkflowError::ExecutionError(format!("Trigger not found: {}", trigger_id)))?;
+        let callback = callbacks.get(trigger_id).ok_or_else(|| {
+            WorkflowError::ExecutionError(format!("Trigger not found: {}", trigger_id))
+        })?;
 
         // Execute the workflow
         // This would normally call through the workflow engine
         // For now, we just log
-        tracing::info!("Triggered workflow {} via trigger {}", callback.workflow_id, trigger_id);
+        tracing::info!(
+            "Triggered workflow {} via trigger {}",
+            callback.workflow_id,
+            trigger_id
+        );
 
         Ok(())
     }
@@ -87,17 +93,24 @@ impl TriggerManager {
     /// Get triggers for a workflow
     pub async fn get_workflow_triggers(&self, workflow_id: &str) -> Vec<Trigger> {
         let triggers = self.triggers.read().await;
-        triggers.get(workflow_id)
-            .cloned()
-            .unwrap_or_default()
+        triggers.get(workflow_id).cloned().unwrap_or_default()
     }
 
     /// Fire an event trigger
-    pub async fn fire_event(&self, event_type: &str, data: Option<serde_json::Value>) -> Result<()> {
+    pub async fn fire_event(
+        &self,
+        event_type: &str,
+        data: Option<serde_json::Value>,
+    ) -> Result<()> {
         let callbacks = self.callbacks.read().await;
 
         for (trigger_id, callback) in callbacks.iter() {
-            if let Trigger::Event { id: _, event_type: et, filters } = &callback.get_trigger() {
+            if let Trigger::Event {
+                id: _,
+                event_type: et,
+                filters,
+            } = &callback.get_trigger()
+            {
                 if et == event_type {
                     // Check filters
                     let matches = if let Some(filters) = filters {
@@ -117,7 +130,10 @@ impl TriggerManager {
     }
 
     /// Check if event data matches filters
-    fn check_filters(filters: &HashMap<String, serde_json::Value>, data: &serde_json::Value) -> bool {
+    fn check_filters(
+        filters: &HashMap<String, serde_json::Value>,
+        data: &serde_json::Value,
+    ) -> bool {
         if let Some(obj) = data.as_object() {
             for (key, expected_value) in filters {
                 if let Some(actual_value) = obj.get(key) {
@@ -186,7 +202,10 @@ mod tests {
             id: "manual1".to_string(),
         };
 
-        manager.register(workflow_id.clone(), trigger, executor).await.unwrap();
+        manager
+            .register(workflow_id.clone(), trigger, executor)
+            .await
+            .unwrap();
 
         let triggers = manager.get_workflow_triggers(&workflow_id).await;
         assert_eq!(triggers.len(), 1);
@@ -203,7 +222,10 @@ mod tests {
             id: "manual1".to_string(),
         };
 
-        manager.register(workflow_id.clone(), trigger, executor).await.unwrap();
+        manager
+            .register(workflow_id.clone(), trigger, executor)
+            .await
+            .unwrap();
         manager.unregister_workflow(&workflow_id).await;
 
         let triggers = manager.get_workflow_triggers(&workflow_id).await;

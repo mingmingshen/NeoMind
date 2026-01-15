@@ -42,11 +42,14 @@ pub async fn shutdown_signal() {
 pub async fn cleanup_resources(state: &ServerState) {
     tracing::info!("Cleaning up resources...");
 
-    // 1. Disconnect MQTT (with timeout)
-    let mqtt = state.mqtt_device_manager.clone();
+    // 1. Stop MQTT adapter through DeviceService (with timeout)
+    let device_service = state.device_service.clone();
     let mqtt_task = tokio::spawn(async move {
-        if let Err(e) = mqtt.disconnect().await {
-            tracing::warn!("MQTT disconnect error: {}", e);
+        use edge_ai_devices::adapter::DeviceAdapter;
+        if let Some(adapter) = device_service.get_adapter("internal-mqtt").await {
+            if let Err(e) = adapter.stop().await {
+                tracing::warn!("MQTT adapter stop error: {}", e);
+            }
         }
     });
     let _ = tokio::time::timeout(Duration::from_secs(5), mqtt_task).await;
@@ -80,7 +83,12 @@ pub async fn cleanup_resources(state: &ServerState) {
 pub async fn shutdown_with_timeout(state: &ServerState) {
     // Run cleanup directly instead of spawning, since we need to wait for it anyway
     // This avoids the 'static lifetime requirement
-    match tokio::time::timeout(Duration::from_secs(SHUTDOWN_TIMEOUT), cleanup_resources(state)).await {
+    match tokio::time::timeout(
+        Duration::from_secs(SHUTDOWN_TIMEOUT),
+        cleanup_resources(state),
+    )
+    .await
+    {
         Ok(_) => {
             tracing::info!("Resources cleaned up successfully");
         }

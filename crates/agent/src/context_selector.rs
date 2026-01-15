@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use edge_ai_rules::{RuleEngine, CompiledRule};
 use edge_ai_devices::mdl_format::DeviceTypeDefinition;
+use edge_ai_rules::{CompiledRule, RuleEngine};
 
 /// Intent analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,13 +164,23 @@ impl IntentAnalyzer {
         // Rule creation keywords (check before rule query)
         if (query.contains("创建") || query.contains("新建") || query.contains("添加"))
             && (query.contains("规则") || query.contains("rule"))
-            || query.contains("create rule") || query.contains("add rule") || query.contains("new rule") {
+            || query.contains("create rule")
+            || query.contains("add rule")
+            || query.contains("new rule")
+        {
             return IntentType::RuleCreation;
         }
 
         // Device control keywords
-        if query.contains("控制") || query.contains("执行") || query.contains("开启") || query.contains("关闭")
-            || query.contains("control") || query.contains("execute") || query.contains("turn on") || query.contains("turn off") {
+        if query.contains("控制")
+            || query.contains("执行")
+            || query.contains("开启")
+            || query.contains("关闭")
+            || query.contains("control")
+            || query.contains("execute")
+            || query.contains("turn on")
+            || query.contains("turn off")
+        {
             return IntentType::DeviceControl;
         }
 
@@ -180,16 +190,30 @@ impl IntentAnalyzer {
         }
 
         // Alert keywords
-        if query.contains("告警") || query.contains("警报") || query.contains("通知")
-            || query.contains("alert") || query.contains("alarm") || query.contains("notify") {
+        if query.contains("告警")
+            || query.contains("警报")
+            || query.contains("通知")
+            || query.contains("alert")
+            || query.contains("alarm")
+            || query.contains("notify")
+        {
             return IntentType::AlertManagement;
         }
 
         // Device query keywords
-        if query.contains("设备") || query.contains("传感器") || query.contains("温度") || query.contains("湿度")
-            || query.contains("查询") || query.contains("状态")
-            || query.contains("device") || query.contains("sensor") || query.contains("temperature") || query.contains("humidity")
-            || query.contains("query") || query.contains("status") {
+        if query.contains("设备")
+            || query.contains("传感器")
+            || query.contains("温度")
+            || query.contains("湿度")
+            || query.contains("查询")
+            || query.contains("状态")
+            || query.contains("device")
+            || query.contains("sensor")
+            || query.contains("temperature")
+            || query.contains("humidity")
+            || query.contains("query")
+            || query.contains("status")
+        {
             return IntentType::DeviceQuery;
         }
 
@@ -298,7 +322,10 @@ impl IntentAnalyzer {
     fn determine_scope(&self, intent_type: &IntentType, entities: &[Entity]) -> ContextScope {
         match intent_type {
             IntentType::DeviceQuery => {
-                if entities.iter().any(|e| e.entity_type == EntityType::DeviceId) {
+                if entities
+                    .iter()
+                    .any(|e| e.entity_type == EntityType::DeviceId)
+                {
                     ContextScope::Standard
                 } else {
                     ContextScope::Minimal
@@ -419,18 +446,32 @@ impl ContextSelector {
             .iter()
             .flat_map(|dt| {
                 let ids = vec![dt.device_type.clone()];
-                let metrics: Vec<String> = dt.uplink.metrics.iter().map(|m| m.name.clone()).collect();
-                let commands: Vec<String> = dt.downlink.commands.iter().map(|c| c.name.clone()).collect();
+                let metrics: Vec<String> =
+                    dt.uplink.metrics.iter().map(|m| m.name.clone()).collect();
+                let commands: Vec<String> = dt
+                    .downlink
+                    .commands
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect();
                 ids.into_iter().chain(metrics).chain(commands)
             })
             .collect();
 
-        let ids: Vec<String> = device_types.iter().map(|dt| dt.device_type.clone()).collect();
-        let metrics: Vec<String> = device_types.iter()
+        let ids: Vec<String> = device_types
+            .iter()
+            .map(|dt| dt.device_type.clone())
+            .collect();
+        let metrics: Vec<String> = device_types
+            .iter()
             .flat_map(|dt| dt.uplink.metrics.iter().map(|m| m.name.clone()))
             .collect();
-        let types: Vec<String> = device_types.iter().map(|dt| dt.device_type.clone()).collect();
-        let commands: Vec<String> = device_types.iter()
+        let types: Vec<String> = device_types
+            .iter()
+            .map(|dt| dt.device_type.clone())
+            .collect();
+        let commands: Vec<String> = device_types
+            .iter()
             .flat_map(|dt| dt.downlink.commands.iter().map(|c| c.name.clone()))
             .collect();
 
@@ -456,7 +497,8 @@ impl ContextSelector {
         let device_types = self.device_types.read().await;
 
         // Extract device IDs from entities
-        let target_devices: HashSet<String> = analysis.entities
+        let target_devices: HashSet<String> = analysis
+            .entities
             .iter()
             .filter(|e| e.entity_type == EntityType::DeviceId)
             .map(|e| e.value.clone())
@@ -471,13 +513,21 @@ impl ContextSelector {
         for dt in &*device_types {
             let include = match analysis.context_scope {
                 ContextScope::Minimal => target_devices.contains(&dt.device_type),
-                ContextScope::Standard => target_devices.is_empty() || target_devices.contains(&dt.device_type),
+                ContextScope::Standard => {
+                    target_devices.is_empty() || target_devices.contains(&dt.device_type)
+                }
                 ContextScope::Extended | ContextScope::Full => true,
             };
 
             if include {
-                let metrics: Vec<String> = dt.uplink.metrics.iter().map(|m| m.name.clone()).collect();
-                let commands: Vec<String> = dt.downlink.commands.iter().map(|c| c.name.clone()).collect();
+                let metrics: Vec<String> =
+                    dt.uplink.metrics.iter().map(|m| m.name.clone()).collect();
+                let commands: Vec<String> = dt
+                    .downlink
+                    .commands
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect();
 
                 token_count += dt.device_type.len() + metrics.len() * 10 + commands.len() * 10;
 
@@ -507,7 +557,8 @@ impl ContextSelector {
                     rule_refs.push(RuleReference {
                         rule_id: rule.id.to_string(),
                         name: rule.name.clone(),
-                        condition: format!("{}.{} {} {}",
+                        condition: format!(
+                            "{}.{} {} {}",
                             rule.condition.device_id,
                             rule.condition.metric,
                             rule.condition.operator.as_str(),
@@ -565,7 +616,9 @@ mod tests {
     #[tokio::test]
     async fn test_entity_extraction() {
         let analyzer = IntentAnalyzer::new();
-        analyzer.register_device_ids(vec!["sensor-1".to_string()]).await;
+        analyzer
+            .register_device_ids(vec!["sensor-1".to_string()])
+            .await;
 
         let result = analyzer.analyze("查询 sensor-1 的温度").await;
         assert!(!result.entities.is_empty());

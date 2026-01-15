@@ -13,18 +13,16 @@
 //! └─ relay_state capability  ──────→  └─ HASS: switch.relay123
 //! ```
 
-pub mod mapping;
-pub mod mqtt_mapping;
-pub mod modbus_mapping;
 pub mod hass_mapping;
+pub mod mapping;
+pub mod modbus_mapping;
+pub mod mqtt_mapping;
 
 // Re-exports
+pub use hass_mapping::{HassDomain, HassEntityId, HassMapping, HassMappingBuilder};
 pub use mapping::{
-    ProtocolMapping, Address, ModbusRegisterType,
-    MetricParser, PayloadSerializer,
-    Capability, CapabilityType, MappingConfig, MappingError,
-    SharedMapping,
+    Address, Capability, CapabilityType, MappingConfig, MappingError, MetricParser,
+    ModbusRegisterType, PayloadSerializer, ProtocolMapping, SharedMapping,
 };
-pub use mqtt_mapping::{MqttMapping, MqttMappingBuilder, MqttValueParser, BinaryFormat};
-pub use modbus_mapping::{ModbusMapping, ModbusMappingBuilder, ModbusDataType};
-pub use hass_mapping::{HassMapping, HassMappingBuilder, HassDomain, HassEntityId};
+pub use modbus_mapping::{ModbusDataType, ModbusMapping, ModbusMappingBuilder};
+pub use mqtt_mapping::{BinaryFormat, MqttMapping, MqttMappingBuilder, MqttValueParser};

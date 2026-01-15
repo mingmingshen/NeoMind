@@ -9,11 +9,11 @@ use tokio::sync::RwLock;
 
 use chrono::Utc;
 
-use super::scenario::{
-    Scenario, ScenarioId, ScenarioTemplate, ScenarioTemplates, ScenarioMetadata,
-    ScenarioCategory, Environment,
-};
 use super::error::{Error, Result};
+use super::scenario::{
+    Environment, Scenario, ScenarioCategory, ScenarioId, ScenarioMetadata, ScenarioTemplate,
+    ScenarioTemplates,
+};
 
 /// Manager for scenarios.
 pub struct ScenarioManager {
@@ -36,11 +36,7 @@ impl ScenarioManager {
     }
 
     /// Create a new scenario.
-    pub async fn create_scenario(
-        &self,
-        name: String,
-        description: String,
-    ) -> Result<Scenario> {
+    pub async fn create_scenario(&self, name: String, description: String) -> Result<Scenario> {
         let scenario = Scenario::new(name, description);
         self.add_scenario(scenario.clone()).await?;
         Ok(scenario)
@@ -72,7 +68,10 @@ impl ScenarioManager {
         }
 
         // Add to main storage
-        self.scenarios.write().await.insert(id.clone(), scenario.clone());
+        self.scenarios
+            .write()
+            .await
+            .insert(id.clone(), scenario.clone());
 
         // Update name index
         self.by_name.write().await.insert(name, id.clone());
@@ -102,12 +101,7 @@ impl ScenarioManager {
 
     /// List all scenarios.
     pub async fn list_scenarios(&self) -> Vec<Scenario> {
-        self.scenarios
-            .read()
-            .await
-            .values()
-            .cloned()
-            .collect()
+        self.scenarios.read().await.values().cloned().collect()
     }
 
     /// List active scenarios only.
@@ -157,7 +151,11 @@ impl ScenarioManager {
     }
 
     /// Update a scenario.
-    pub async fn update_scenario(&self, id: &ScenarioId, mut scenario: Scenario) -> Result<Scenario> {
+    pub async fn update_scenario(
+        &self,
+        id: &ScenarioId,
+        mut scenario: Scenario,
+    ) -> Result<Scenario> {
         if !self.scenarios.read().await.contains_key(id) {
             return Err(Error::NotFound(format!("Scenario not found: {}", id)));
         }
@@ -165,20 +163,22 @@ impl ScenarioManager {
         scenario.id = id.clone();
         scenario.updated_at = Utc::now();
 
-        self.scenarios.write().await.insert(id.clone(), scenario.clone());
+        self.scenarios
+            .write()
+            .await
+            .insert(id.clone(), scenario.clone());
 
         // Update indices
-        self.by_name.write().await.insert(scenario.name.clone(), id.clone());
+        self.by_name
+            .write()
+            .await
+            .insert(scenario.name.clone(), id.clone());
 
         Ok(scenario)
     }
 
     /// Update scenario metadata.
-    pub async fn update_metadata(
-        &self,
-        id: &ScenarioId,
-        metadata: ScenarioMetadata,
-    ) -> Result<()> {
+    pub async fn update_metadata(&self, id: &ScenarioId, metadata: ScenarioMetadata) -> Result<()> {
         let mut scenarios = self.scenarios.write().await;
         if let Some(scenario) = scenarios.get_mut(id) {
             scenario.metadata = metadata;
@@ -235,11 +235,7 @@ impl ScenarioManager {
     }
 
     /// Add a device to a scenario.
-    pub async fn add_device_to_scenario(
-        &self,
-        id: &ScenarioId,
-        device_id: String,
-    ) -> Result<()> {
+    pub async fn add_device_to_scenario(&self, id: &ScenarioId, device_id: String) -> Result<()> {
         let mut scenarios = self.scenarios.write().await;
         if let Some(scenario) = scenarios.get_mut(id) {
             scenario.add_device(device_id);
@@ -265,11 +261,7 @@ impl ScenarioManager {
     }
 
     /// Add a rule to a scenario.
-    pub async fn add_rule_to_scenario(
-        &self,
-        id: &ScenarioId,
-        rule_id: String,
-    ) -> Result<()> {
+    pub async fn add_rule_to_scenario(&self, id: &ScenarioId, rule_id: String) -> Result<()> {
         let mut scenarios = self.scenarios.write().await;
         if let Some(scenario) = scenarios.get_mut(id) {
             scenario.add_rule(rule_id);
@@ -280,11 +272,7 @@ impl ScenarioManager {
     }
 
     /// Remove a rule from a scenario.
-    pub async fn remove_rule_from_scenario(
-        &self,
-        id: &ScenarioId,
-        rule_id: &str,
-    ) -> Result<()> {
+    pub async fn remove_rule_from_scenario(&self, id: &ScenarioId, rule_id: &str) -> Result<()> {
         let mut scenarios = self.scenarios.write().await;
         if let Some(scenario) = scenarios.get_mut(id) {
             scenario.remove_rule(rule_id);
@@ -502,10 +490,13 @@ mod tests {
             .unwrap();
         let s1_id = s1.id.clone();
         manager
-            .update_metadata(&s1_id, ScenarioMetadata {
-                category: ScenarioCategory::Monitoring,
-                ..Default::default()
-            })
+            .update_metadata(
+                &s1_id,
+                ScenarioMetadata {
+                    category: ScenarioCategory::Monitoring,
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
 
@@ -515,17 +506,24 @@ mod tests {
             .unwrap();
         let s2_id = s2.id.clone();
         manager
-            .update_metadata(&s2_id, ScenarioMetadata {
-                category: ScenarioCategory::Automation,
-                ..Default::default()
-            })
+            .update_metadata(
+                &s2_id,
+                ScenarioMetadata {
+                    category: ScenarioCategory::Automation,
+                    ..Default::default()
+                },
+            )
             .await
             .unwrap();
 
-        let monitoring = manager.list_by_category(&ScenarioCategory::Monitoring).await;
+        let monitoring = manager
+            .list_by_category(&ScenarioCategory::Monitoring)
+            .await;
         assert_eq!(monitoring.len(), 1);
 
-        let automation = manager.list_by_category(&ScenarioCategory::Automation).await;
+        let automation = manager
+            .list_by_category(&ScenarioCategory::Automation)
+            .await;
         assert_eq!(automation.len(), 1);
     }
 

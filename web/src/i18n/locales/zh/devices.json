@@ -87,6 +87,7 @@
     "name": "名称",
     "type": "类型",
     "adapter": "适配器",
+    "plugin": "插件",
     "status": "状态",
     "lastOnline": "最后上线",
     "actions": "操作"
@@ -123,7 +124,12 @@
       "noData": "该指标暂无历史数据"
     },
     "noHistory": "暂无历史数据",
-    "noMetrics": "暂无指标数据"
+    "noMetrics": "暂无指标数据",
+    "rawData": {
+      "title": "原始数据",
+      "records": "条记录",
+      "noData": "暂无原始数据"
+    }
   },
   "history": {
     "time": "时间",
@@ -239,6 +245,20 @@
     "loading": "加载设备类型中...",
     "noTypes": "暂无设备类型",
     "startUsing": "点击上方「添加类型」来定义设备的指标和命令",
+    "deviceTypes": "设备类型",
+    "totalTypes": "共 {{count}} 种",
+    "formMode": "表单",
+    "jsonMode": "JSON",
+    "aiMode": "AI",
+    "validationError": "验证错误",
+    "requiredFields": "缺少必填字段",
+    "generatedFilled": "设备类型已生成！请在表单中查看和编辑。",
+    "validation": {
+      "deviceTypeRequired": "类型 ID 不能为空",
+      "nameRequired": "名称不能为空",
+      "metricNameRequired": "指标名称不能为空",
+      "commandNameRequired": "命令名称不能为空"
+    },
     "headers": {
       "id": "类型 ID",
       "name": "名称",
@@ -275,12 +295,12 @@
       "nameExample": "例如: 温湿度传感器",
       "description": "设备描述",
       "descExample": "描述设备的功能和用途...",
-      "uplink": "上行数据示例 (设备 → 系统)",
-      "uplinkExample": "例如: {\"temperature\": 25.5, \"humidity\": 60}",
-      "uplinkHint": "输入设备上报的数据示例（JSON 格式）",
-      "downlink": "下行数据示例 (系统 → 设备)",
-      "downlinkExample": "例如: {\"command\": \"set_interval\", \"interval\": 60}",
-      "downlinkHint": "输入下发给设备的命令示例（可选）"
+      "metrics": "指标示例 (设备 → 系统)",
+      "metricsExample": "例如: {\"temperature\": 25.5, \"humidity\": 60}",
+      "metricsHint": "输入设备上报的数据示例（JSON 格式）",
+      "commands": "命令示例 (系统 → 设备)",
+      "commandsExample": "例如: {\"command\": \"set_interval\", \"interval\": 60}",
+      "commandsHint": "输入命令示例。支持多个JSON：{\"action\": \"on\"} {\"action\": \"off\"}"
     },
     "advanced": {
       "format": "JSON 格式定义设备类型",
@@ -305,9 +325,8 @@
     "view": {
       "title": "设备类型详情",
       "basicInfo": "基本信息",
-      "uplink": "Uplink 指标",
-      "downlink": "Downlink 命令",
       "id": "类型 ID",
+      "typeId": "类型 ID",
       "name": "名称",
       "description": "描述",
       "noDescription": "无描述",
@@ -320,19 +339,20 @@
       "unit": "单位: {{unit}}",
       "topic": "Topic: {{topic}}",
       "noMetrics": "暂无指标定义",
-      "noCommands": "暂无命令定义"
+      "noCommands": "暂无命令定义",
+      "parameters": "参数",
+      "params": "参数"
     },
     "edit": {
       "title": "编辑设备类型",
       "basicInfo": "基本信息",
-      "uplink": "Uplink 指标",
-      "downlink": "Downlink 命令",
       "typeId": "类型 ID",
       "idReadOnly": "类型 ID 不可修改",
       "typeName": "类型名称",
       "typeNamePlaceholder": "例如: MQTT 传感器",
       "description": "描述",
       "descPlaceholder": "设备类型描述",
+      "definitionMode": "定义模式",
       "metrics": "指标定义 ({{count}})",
       "addMetric": "添加指标",
       "noMetrics": "暂无指标定义",
@@ -340,10 +360,14 @@
       "displayNamePlaceholder": "温度",
       "fieldName": "字段名",
       "fieldNamePlaceholder": "field_name",
+      "fieldNameHint": "支持最多10级嵌套字段，如 temp.value.new 或 data.sensor.reading.temperature",
       "dataType": "数据类型",
       "unit": "单位 (可选)",
       "unitPlaceholder": "℃, kg, m...",
       "newMetric": "新指标",
+      "uplinkSamples": "上行数据示例",
+      "samplesDescription": "输入上行数据示例（每行一个 JSON 对象）。LLM 将使用这些示例来理解数据结构。",
+      "samplesHint": "每行一个 JSON 对象。例如：{\"temperature\": 25.5}",
       "commands": "命令定义 ({{count}})",
       "addCommand": "添加命令",
       "noCommands": "暂无命令定义",
@@ -351,8 +375,23 @@
       "cmdName": "命令名称",
       "cmdNamePlaceholder": "command_name",
       "topicPlaceholder": "device/command/xxx",
+      "payloadTemplate": "负载模板",
+      "payloadTemplateHint": "使用 ${param} 进行变量替换",
+      "llmHints": "LLM 使用提示",
+      "llmHintsPlaceholder": "描述何时以及如何使用此命令...",
+      "llmHintsDescription": "为 LLM 提供提示，帮助其理解何时调用此命令以及如何使用它。",
+      "commandSamples": "命令示例",
+      "commandSamplesHint": "每行一个 JSON 对象。例如：{\"action\": \"on\"}",
+      "defaultValue": "默认值",
+      "noParameters": "无参数",
       "newCommand": "新命令",
       "saving": "保存中..."
+    },
+    "mode": {
+      "full": "完整模式",
+      "fullDescription": "定义详细的指标结构，包含数据类型和验证",
+      "simple": "简单模式",
+      "simpleDescription": "存储原始数据，LLM 从示例中理解结构"
     },
     "update": {
       "success": "保存成功",
@@ -372,7 +411,7 @@
   "id": {
     "autoGenerate": "自动生成10位随机ID",
     "regenerate": "重新生成随机ID",
-    "topicHint": "设备将使用 Topic: device/{{type}}/{{id}}/uplink"
+    "topicHint": "设备将使用 Topic: device/{{type}}/{{id}}/telemetry"
   },
   "adding": "添加中...",
   "editing": "保存中...",

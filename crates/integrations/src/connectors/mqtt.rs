@@ -2,8 +2,10 @@
 //!
 //! Provides a MQTT client implementation that conforms to the Connector trait.
 
-use edge_ai_core::integration::connector::{Connector, ConnectorError, Result, BaseConnector as CoreBaseConnector};
-use futures::{channel::mpsc, SinkExt, Stream, StreamExt};
+use edge_ai_core::integration::connector::{
+    BaseConnector as CoreBaseConnector, Connector, ConnectorError, Result,
+};
+use futures::{SinkExt, Stream, StreamExt, channel::mpsc};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
@@ -221,7 +223,13 @@ impl MqttConnector {
     }
 
     /// Publish to a topic.
-    pub async fn publish(&self, topic: &str, payload: Vec<u8>, qos: Qos, retain: bool) -> Result<()> {
+    pub async fn publish(
+        &self,
+        topic: &str,
+        payload: Vec<u8>,
+        qos: Qos,
+        retain: bool,
+    ) -> Result<()> {
         let mut client = self.client.lock();
         if let Some(ref mut cli) = *client {
             cli.publish(topic, qos.into(), retain, payload)
@@ -250,9 +258,11 @@ impl Connector for MqttConnector {
 
     async fn connect(&self) -> Result<()> {
         // Create rumqttc client options
-        let client_id = self.config.client_id.clone().unwrap_or_else(|| {
-            format!("neotalk_{}", uuid::Uuid::new_v4())
-        });
+        let client_id = self
+            .config
+            .client_id
+            .clone()
+            .unwrap_or_else(|| format!("neotalk_{}", uuid::Uuid::new_v4()));
 
         let mut opts = rumqttc::MqttOptions::new(client_id, &self.config.broker, self.config.port);
         opts.set_keep_alive(Duration::from_secs(self.config.keep_alive));
@@ -329,7 +339,8 @@ impl Connector for MqttConnector {
     async fn send(&self, data: Vec<u8>) -> Result<()> {
         // Try to parse as MqttMessage
         if let Ok(msg) = serde_json::from_slice::<MqttMessage>(&data) {
-            self.publish(&msg.topic, msg.payload, msg.qos, msg.retain).await?;
+            self.publish(&msg.topic, msg.payload, msg.qos, msg.retain)
+                .await?;
             self.base.record_sent(data.len() as u64);
             Ok(())
         } else {

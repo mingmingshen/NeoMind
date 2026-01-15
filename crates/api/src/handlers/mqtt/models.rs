@@ -83,7 +83,9 @@ pub struct SubscribeRequest {
     pub qos: u8,
 }
 
-fn default_qos() -> u8 { 1 }
+fn default_qos() -> u8 {
+    1
+}
 
 /// Get the actual local IP address of the server.
 /// Returns the first non-loopback IPv4 address, or localhost as fallback.
@@ -98,9 +100,10 @@ pub fn get_server_ip() -> String {
                 if let IpAddr::V4(ipv4) = ip {
                     // Check if it's a private network address
                     let octets = ipv4.octets();
-                    if (octets[0] == 192 && octets[1] == 168) ||
-                       (octets[0] == 10) ||
-                       (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) {
+                    if (octets[0] == 192 && octets[1] == 168)
+                        || (octets[0] == 10)
+                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    {
                         return ip.to_string();
                     }
                 }
@@ -116,9 +119,10 @@ pub fn get_server_ip() -> String {
                     let ip = iface_addr.ip;
                     let octets = ip.octets();
                     // Prefer LAN addresses
-                    if (octets[0] == 192 && octets[1] == 168) ||
-                       (octets[0] == 10) ||
-                       (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) {
+                    if (octets[0] == 192 && octets[1] == 168)
+                        || (octets[0] == 10)
+                        || (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31)
+                    {
                         return ip.to_string();
                     }
                 }

@@ -149,10 +149,7 @@ impl EventTrigger {
         trigger_manager: Arc<TriggerManager>,
     ) -> Self {
         let workflow_id = workflow_id.into();
-        let trigger_id = format!("event:{}:{}",
-            workflow_id,
-            uuid::Uuid::new_v4()
-        );
+        let trigger_id = format!("event:{}:{}", workflow_id, uuid::Uuid::new_v4());
 
         Self {
             config,
@@ -187,8 +184,10 @@ impl EventTrigger {
             return Ok(());
         }
 
-        info!("Starting event trigger '{}' for workflow '{}'",
-              self.trigger_id, self.workflow_id);
+        info!(
+            "Starting event trigger '{}' for workflow '{}'",
+            self.trigger_id, self.workflow_id
+        );
 
         self.running.store(true, Ordering::Relaxed);
 
@@ -226,11 +225,9 @@ impl EventTrigger {
                         }
 
                         // Trigger the workflow
-                        if let Err(e) = Self::trigger_workflow(
-                            &event,
-                            signature,
-                            &seen_events,
-                        ).await {
+                        if let Err(e) =
+                            Self::trigger_workflow(&event, signature, &seen_events).await
+                        {
                             error!("Failed to trigger workflow: {}", e);
                         }
                     }
@@ -250,8 +247,10 @@ impl EventTrigger {
 
     /// Stop the event trigger.
     pub async fn stop(&self) -> Result<()> {
-        info!("Stopping event trigger '{}' for workflow '{}'",
-              self.trigger_id, self.workflow_id);
+        info!(
+            "Stopping event trigger '{}' for workflow '{}'",
+            self.trigger_id, self.workflow_id
+        );
         self.running.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -281,30 +280,54 @@ fn matches_event_type(event: &NeoTalkEvent, pattern: &str) -> bool {
         NeoTalkEvent::DeviceOnline { .. } => pattern == "DeviceOnline" || pattern == "Device*",
         NeoTalkEvent::DeviceOffline { .. } => pattern == "DeviceOffline" || pattern == "Device*",
         NeoTalkEvent::DeviceMetric { .. } => pattern == "DeviceMetric" || pattern == "Device*",
-        NeoTalkEvent::DeviceCommandResult { .. } => pattern == "DeviceCommandResult" || pattern == "Device*",
+        NeoTalkEvent::DeviceCommandResult { .. } => {
+            pattern == "DeviceCommandResult" || pattern == "Device*"
+        }
         NeoTalkEvent::RuleEvaluated { .. } => pattern == "RuleEvaluated" || pattern == "Rule*",
         NeoTalkEvent::RuleTriggered { .. } => pattern == "RuleTriggered" || pattern == "Rule*",
         NeoTalkEvent::RuleExecuted { .. } => pattern == "RuleExecuted" || pattern == "Rule*",
-        NeoTalkEvent::WorkflowTriggered { .. } => pattern == "WorkflowTriggered" || pattern == "Workflow*",
-        NeoTalkEvent::WorkflowStepCompleted { .. } => pattern == "WorkflowStepCompleted" || pattern == "Workflow*",
-        NeoTalkEvent::WorkflowCompleted { .. } => pattern == "WorkflowCompleted" || pattern == "Workflow*",
+        NeoTalkEvent::WorkflowTriggered { .. } => {
+            pattern == "WorkflowTriggered" || pattern == "Workflow*"
+        }
+        NeoTalkEvent::WorkflowStepCompleted { .. } => {
+            pattern == "WorkflowStepCompleted" || pattern == "Workflow*"
+        }
+        NeoTalkEvent::WorkflowCompleted { .. } => {
+            pattern == "WorkflowCompleted" || pattern == "Workflow*"
+        }
         NeoTalkEvent::AlertCreated { .. } => pattern == "AlertCreated" || pattern == "Alert*",
-        NeoTalkEvent::AlertAcknowledged { .. } => pattern == "AlertAcknowledged" || pattern == "Alert*",
-        NeoTalkEvent::PeriodicReviewTriggered { .. } => pattern == "PeriodicReviewTriggered" || pattern == "LLM*",
-        NeoTalkEvent::LlmDecisionProposed { .. } => pattern == "LlmDecisionProposed" || pattern == "LLM*",
-        NeoTalkEvent::LlmDecisionExecuted { .. } => pattern == "LlmDecisionExecuted" || pattern == "LLM*",
+        NeoTalkEvent::AlertAcknowledged { .. } => {
+            pattern == "AlertAcknowledged" || pattern == "Alert*"
+        }
+        NeoTalkEvent::PeriodicReviewTriggered { .. } => {
+            pattern == "PeriodicReviewTriggered" || pattern == "LLM*"
+        }
+        NeoTalkEvent::LlmDecisionProposed { .. } => {
+            pattern == "LlmDecisionProposed" || pattern == "LLM*"
+        }
+        NeoTalkEvent::LlmDecisionExecuted { .. } => {
+            pattern == "LlmDecisionExecuted" || pattern == "LLM*"
+        }
         NeoTalkEvent::UserMessage { .. } => pattern == "UserMessage" || pattern == "User*",
         NeoTalkEvent::LlmResponse { .. } => pattern == "LlmResponse" || pattern == "User*",
-        NeoTalkEvent::ToolExecutionStart { .. } => pattern == "ToolExecutionStart" || pattern == "Tool*",
-        NeoTalkEvent::ToolExecutionSuccess { .. } => pattern == "ToolExecutionSuccess" || pattern == "Tool*",
-        NeoTalkEvent::ToolExecutionFailure { .. } => pattern == "ToolExecutionFailure" || pattern == "Tool*",
+        NeoTalkEvent::ToolExecutionStart { .. } => {
+            pattern == "ToolExecutionStart" || pattern == "Tool*"
+        }
+        NeoTalkEvent::ToolExecutionSuccess { .. } => {
+            pattern == "ToolExecutionSuccess" || pattern == "Tool*"
+        }
+        NeoTalkEvent::ToolExecutionFailure { .. } => {
+            pattern == "ToolExecutionFailure" || pattern == "Tool*"
+        }
     }
 }
 
 /// Check if an event matches the filters.
 fn matches_filters(event: &NeoTalkEvent, filters: &EventFilters) -> bool {
     match event {
-        NeoTalkEvent::DeviceMetric { device_id, metric, .. } => {
+        NeoTalkEvent::DeviceMetric {
+            device_id, metric, ..
+        } => {
             if let Some(ref filter_device) = filters.device_id {
                 if device_id != filter_device {
                     return false;
@@ -341,16 +364,26 @@ fn matches_filters(event: &NeoTalkEvent, filters: &EventFilters) -> bool {
 /// Generate a unique signature for an event.
 fn event_signature(event: &NeoTalkEvent) -> String {
     match event {
-        NeoTalkEvent::DeviceMetric { device_id, metric, .. } => {
+        NeoTalkEvent::DeviceMetric {
+            device_id, metric, ..
+        } => {
             format!("DeviceMetric:{}:{}", device_id, metric)
         }
         NeoTalkEvent::DeviceOnline { device_id, .. } => {
             format!("DeviceOnline:{}", device_id)
         }
-        NeoTalkEvent::DeviceOffline { device_id, reason, .. } => {
-            format!("DeviceOffline:{}:{}", device_id, reason.as_deref().unwrap_or(""))
+        NeoTalkEvent::DeviceOffline {
+            device_id, reason, ..
+        } => {
+            format!(
+                "DeviceOffline:{}:{}",
+                device_id,
+                reason.as_deref().unwrap_or("")
+            )
         }
-        NeoTalkEvent::DeviceCommandResult { device_id, command, .. } => {
+        NeoTalkEvent::DeviceCommandResult {
+            device_id, command, ..
+        } => {
             format!("DeviceCommandResult:{}:{}", device_id, command)
         }
         NeoTalkEvent::RuleEvaluated { rule_id, .. } => {
@@ -362,13 +395,29 @@ fn event_signature(event: &NeoTalkEvent) -> String {
         NeoTalkEvent::RuleExecuted { rule_id, .. } => {
             format!("RuleExecuted:{}", rule_id)
         }
-        NeoTalkEvent::WorkflowTriggered { workflow_id, execution_id, .. } => {
+        NeoTalkEvent::WorkflowTriggered {
+            workflow_id,
+            execution_id,
+            ..
+        } => {
             format!("WorkflowTriggered:{}:{}", workflow_id, execution_id)
         }
-        NeoTalkEvent::WorkflowStepCompleted { workflow_id, execution_id, step_id, .. } => {
-            format!("WorkflowStepCompleted:{}:{}:{}", workflow_id, execution_id, step_id)
+        NeoTalkEvent::WorkflowStepCompleted {
+            workflow_id,
+            execution_id,
+            step_id,
+            ..
+        } => {
+            format!(
+                "WorkflowStepCompleted:{}:{}:{}",
+                workflow_id, execution_id, step_id
+            )
         }
-        NeoTalkEvent::WorkflowCompleted { workflow_id, execution_id, .. } => {
+        NeoTalkEvent::WorkflowCompleted {
+            workflow_id,
+            execution_id,
+            ..
+        } => {
             format!("WorkflowCompleted:{}:{}", workflow_id, execution_id)
         }
         NeoTalkEvent::AlertCreated { alert_id, .. } => {
@@ -438,11 +487,7 @@ impl EventTriggerManager {
         config: EventTriggerConfig,
         trigger_manager: Arc<TriggerManager>,
     ) -> Result<Arc<EventTrigger>> {
-        let trigger = Arc::new(EventTrigger::new(
-            workflow_id,
-            config,
-            trigger_manager,
-        ));
+        let trigger = Arc::new(EventTrigger::new(workflow_id, config, trigger_manager));
 
         let mut triggers = self.triggers.write().await;
         triggers.push(trigger.clone());
@@ -509,10 +554,11 @@ mod tests {
 
     #[test]
     fn test_event_trigger_config() {
-        let config = EventTriggerConfig::new("DeviceMetric")
-            .with_filters(EventFilters::new()
+        let config = EventTriggerConfig::new("DeviceMetric").with_filters(
+            EventFilters::new()
                 .with_device_id("sensor1")
-                .with_metric("temperature"));
+                .with_metric("temperature"),
+        );
 
         assert_eq!(config.event_type, "DeviceMetric");
         assert!(config.filters.is_some());
@@ -581,8 +627,7 @@ mod tests {
 
         assert!(matches_filters(&event, &filters));
 
-        let wrong_device = EventFilters::new()
-            .with_device_id("sensor2");
+        let wrong_device = EventFilters::new().with_device_id("sensor2");
 
         assert!(!matches_filters(&event, &wrong_device));
     }

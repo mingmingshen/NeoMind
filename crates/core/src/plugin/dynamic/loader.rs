@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use libloading::{Library, Symbol};
 
 use super::{
-    descriptor::{PluginDescriptor, PLUGIN_ABI_VERSION},
+    ParsedPluginDescriptor,
+    descriptor::{PLUGIN_ABI_VERSION, PluginDescriptor},
     security::SecurityContext,
     wrapper::DynamicPluginWrapper,
-    ParsedPluginDescriptor,
 };
 use crate::plugin::{DynUnifiedPlugin, PluginError, Result};
 
@@ -82,7 +82,10 @@ impl DynamicPluginLoader {
     }
 
     /// Load a plugin from a specific file path.
-    pub fn load_from_path(&mut self, path: impl AsRef<Path>) -> Result<(DynamicPluginWrapper, Library)> {
+    pub fn load_from_path(
+        &mut self,
+        path: impl AsRef<Path>,
+    ) -> Result<(DynamicPluginWrapper, Library)> {
         let path = path.as_ref();
 
         // Validate path against security rules
@@ -107,8 +110,9 @@ impl DynamicPluginLoader {
         let descriptor = unsafe { &*descriptor };
 
         // Validate the descriptor
-        self.security.validate_descriptor(descriptor)
-            .map_err(|e| PluginError::InvalidPlugin(format!("Descriptor validation failed: {}", e)))?;
+        self.security.validate_descriptor(descriptor).map_err(|e| {
+            PluginError::InvalidPlugin(format!("Descriptor validation failed: {}", e))
+        })?;
 
         // Parse the descriptor
         let parsed = unsafe {
@@ -217,8 +221,9 @@ impl DynamicPluginLoader {
         let descriptor = unsafe { &*descriptor };
 
         // Validate and parse
-        self.security.validate_descriptor(descriptor)
-            .map_err(|e| PluginError::InvalidPlugin(format!("Descriptor validation failed: {}", e)))?;
+        self.security.validate_descriptor(descriptor).map_err(|e| {
+            PluginError::InvalidPlugin(format!("Descriptor validation failed: {}", e))
+        })?;
 
         unsafe {
             ParsedPluginDescriptor::from_raw(descriptor)

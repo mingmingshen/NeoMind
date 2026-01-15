@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{DescriptorError, PluginDescriptor, PluginCapabilities};
+use super::{DescriptorError, PluginCapabilities, PluginDescriptor};
 use crate::plugin::PluginError;
 
 /// Security context for plugin loading.
@@ -43,17 +43,20 @@ impl Default for SecurityContext {
         } else {
             // Default to ~/.neotalk/plugins
             if let Some(home) = dirs::home_dir() {
-                ctx.allowed_paths.push(home.join(".neotalk").join("plugins"));
+                ctx.allowed_paths
+                    .push(home.join(".neotalk").join("plugins"));
             }
         }
 
         // Add system plugin directory
         #[cfg(unix)]
-        ctx.allowed_paths.push(PathBuf::from("/var/lib/neotalk/plugins"));
+        ctx.allowed_paths
+            .push(PathBuf::from("/var/lib/neotalk/plugins"));
 
         #[cfg(windows)]
         if let Some(program_data) = std::env::var("ProgramData").ok() {
-            ctx.allowed_paths.push(PathBuf::from(program_data).join("NeoTalk").join("plugins"));
+            ctx.allowed_paths
+                .push(PathBuf::from(program_data).join("NeoTalk").join("plugins"));
         }
 
         ctx
@@ -135,9 +138,8 @@ impl SecurityContext {
         }
 
         // Check file size
-        let metadata = std::fs::metadata(path).map_err(|e| {
-            PluginError::InvalidPlugin(format!("Cannot read file metadata: {}", e))
-        })?;
+        let metadata = std::fs::metadata(path)
+            .map_err(|e| PluginError::InvalidPlugin(format!("Cannot read file metadata: {}", e)))?;
 
         let file_size = metadata.len() as usize;
         if file_size > self.max_file_size {
@@ -173,7 +175,10 @@ impl SecurityContext {
     }
 
     /// Validate a plugin descriptor.
-    pub fn validate_descriptor(&self, descriptor: &PluginDescriptor) -> Result<(), DescriptorError> {
+    pub fn validate_descriptor(
+        &self,
+        descriptor: &PluginDescriptor,
+    ) -> Result<(), DescriptorError> {
         // Parse the descriptor to check its validity
         let parsed = unsafe { super::ParsedPluginDescriptor::from_raw(descriptor)? };
 

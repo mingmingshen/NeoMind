@@ -47,7 +47,9 @@ pub struct AlertCreateItem {
     pub source: String,
 }
 
-fn default_severity() -> String { "info".to_string() }
+fn default_severity() -> String {
+    "info".to_string()
+}
 
 /// Request for resolving multiple alerts.
 #[derive(Debug, Deserialize)]

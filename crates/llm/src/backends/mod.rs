@@ -33,8 +33,12 @@ pub fn create_backend(
     #[cfg(feature = "cloud")]
     {
         if let Some(plugin) = BackendRegistry::global().get(backend_type) {
-            return plugin.create_runtime(config)
-                .map(|r| std::sync::Arc::from(r) as std::sync::Arc<dyn edge_ai_core::llm::backend::LlmRuntime>)
+            return plugin
+                .create_runtime(config)
+                .map(|r| {
+                    std::sync::Arc::from(r)
+                        as std::sync::Arc<dyn edge_ai_core::llm::backend::LlmRuntime>
+                })
                 .map_err(|e| anyhow::anyhow!("Plugin runtime error: {}", e));
         }
     }

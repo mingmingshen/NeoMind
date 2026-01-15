@@ -98,7 +98,8 @@ export function DeviceDetail({
   const [selectedCommandDef, setSelectedCommandDef] = useState<CommandDefinition | null>(null)
   const [dialogParams, setDialogParams] = useState<Record<string, unknown>>({})
 
-  const commands = deviceType?.downlink?.commands || []
+  // Get commands from template (simplified format) or legacy format
+  const commands = deviceType?.commands || []
 
   const handleCommandClick = (cmd: CommandDefinition) => {
     setSelectedCommandDef(cmd)
@@ -156,7 +157,8 @@ export function DeviceDetail({
     : []
 
   const getMetricDisplayName = (metricName: string): string => {
-    const metricDef = deviceType?.uplink?.metrics.find(m => m.name === metricName)
+    // Use simplified format (direct metrics array)
+    const metricDef = deviceType?.metrics?.find(m => m.name === metricName)
     return metricDef?.display_name || metricName
   }
 
@@ -192,7 +194,7 @@ export function DeviceDetail({
         {/* Content with Tabs */}
         <div className="flex-1 overflow-hidden">
           <Tabs defaultValue="connection" className="h-full flex flex-col">
-            <div className="px-6 pt-4 pb-2">
+            <div className="px-6 pb-2">
               <TabsList>
                 <TabsTrigger value="connection">
                   <Server className="mr-2 h-4 w-4" />
@@ -259,24 +261,66 @@ export function DeviceDetail({
                           )}
                         </div>
                       </div>
-                      <div className="space-y-1 md:col-span-2 lg:col-span-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Activity className="h-3 w-3" />
-                          {t('devices:detail.fields.uplinkTopic')}
-                        </p>
-                        <p className="text-sm font-mono text-xs bg-muted px-2 py-1 rounded">
-                          device/{device.device_type}/{device.device_id || device.id}/uplink
-                        </p>
-                      </div>
-                      <div className="space-y-1 md:col-span-2 lg:col-span-3">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Send className="h-3 w-3" />
-                          {t('devices:detail.fields.downlinkTopic')}
-                        </p>
-                        <p className="text-sm font-mono text-xs bg-muted px-2 py-1 rounded">
-                          device/{device.device_type}/{device.device_id || device.id}/downlink
-                        </p>
-                      </div>
+                      {/* Connection Config - MQTT Topics */}
+                      {device.connection_config?.telemetry_topic && (
+                        <div className="space-y-1 md:col-span-2 lg:col-span-3">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Activity className="h-3 w-3" />
+                            {t('devices:detail.fields.telemetryTopic') || 'Telemetry Topic'}
+                          </p>
+                          <p className="text-sm font-mono text-xs bg-muted px-2 py-1 rounded">
+                            {device.connection_config.telemetry_topic}
+                          </p>
+                        </div>
+                      )}
+                      {device.connection_config?.command_topic && (
+                        <div className="space-y-1 md:col-span-2 lg:col-span-3">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Send className="h-3 w-3" />
+                            {t('devices:detail.fields.commandTopic') || 'Command Topic'}
+                          </p>
+                          <p className="text-sm font-mono text-xs bg-muted px-2 py-1 rounded">
+                            {device.connection_config.command_topic}
+                          </p>
+                        </div>
+                      )}
+                      {/* Fallback to default topic format if connection_config not available */}
+                      {!device.connection_config?.telemetry_topic && !device.connection_config?.command_topic && (
+                        <>
+                          <div className="space-y-1 md:col-span-2 lg:col-span-3">
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Activity className="h-3 w-3" />
+                              {t('devices:detail.fields.telemetryTopic') || 'Telemetry Topic'}
+                            </p>
+                            <p className="text-sm font-mono text-xs bg-muted px-2 py-1 rounded">
+                              device/{device.device_type}/{device.device_id || device.id}/telemetry
+                            </p>
+                          </div>
+                          <div className="space-y-1 md:col-span-2 lg:col-span-3">
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Send className="h-3 w-3" />
+                              {t('devices:detail.fields.commandTopic') || 'Command Topic'}
+                            </p>
+                            <p className="text-sm font-mono text-xs bg-muted px-2 py-1 rounded">
+                              device/{device.device_type}/{device.device_id || device.id}/commands
+                            </p>
+                          </div>
+                        </>
+                      )}
+                      {/* Modbus Connection Info */}
+                      {device.connection_config?.host && device.adapter_type === 'modbus' && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">Modbus Host</p>
+                          <p className="text-sm font-mono text-xs">{device.connection_config.host}:{device.connection_config.port || 502}</p>
+                        </div>
+                      )}
+                      {/* HASS Connection Info */}
+                      {device.connection_config?.entity_id && device.adapter_type === 'hass' && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground">HASS Entity ID</p>
+                          <p className="text-sm font-mono text-xs">{device.connection_config.entity_id}</p>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -374,12 +418,13 @@ export function DeviceDetail({
                     </Card>
                   )}
                 </div>
-              ) : (
-                // Metrics Grid View
+              ) : deviceType?.metrics && deviceType.metrics.length > 0 ? (
+                // Defined metrics - show card grid
                 device.current_values && Object.keys(device.current_values).length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Object.entries(device.current_values).map(([metricName, value]) => {
-                      const metricDef = deviceType?.uplink?.metrics.find(m => m.name === metricName)
+                      // Use simplified format
+                      const metricDef = deviceType?.metrics?.find(m => m.name === metricName)
                       const displayName = metricDef?.display_name || metricName
                       const unit = metricDef?.unit || ""
                       const dataType = metricDef?.data_type || ""
@@ -415,6 +460,65 @@ export function DeviceDetail({
                     </CardContent>
                   </Card>
                 )
+              ) : (
+                // No metrics defined - show raw data table
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-semibold">{t('devices:detail.tabs.metrics')}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {t('devices:detail.noMetrics')} - {t('devices:detail.rawData.title')}
+                    </p>
+                  </div>
+
+                  {telemetryData && Object.keys(telemetryData.data).length > 0 ? (
+                    Object.entries(telemetryData.data).map(([metricName, points]) => (
+                      <Card key={metricName}>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base">{metricName}</CardTitle>
+                          <CardDescription className="text-xs">
+                            {points.length} {t('devices:detail.rawData.records')}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-40">{t('devices:detail.metricHistory.time')}</TableHead>
+                                <TableHead>{t('devices:detail.metricHistory.value')}</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {points.length > 0 ? (
+                                points
+                                  .slice()
+                                  .reverse()
+                                  .slice(0, 50)
+                                  .map((point, index) => (
+                                    <TableRow key={index}>
+                                      <TableCell className="text-sm text-muted-foreground">
+                                        {formatTimestamp(point.timestamp)}
+                                      </TableCell>
+                                      <TableCell className="font-mono text-xs break-all">
+                                        {renderMetricValue(point.value, undefined, handleImageClick, t)}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                              ) : (
+                                <EmptyStateInline title={t('devices:detail.metricHistory.noData')} colSpan={2} />
+                              )}
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
+                    ))
+                  ) : (
+                    <Card>
+                      <CardContent className="flex items-center justify-center py-12">
+                        <p className="text-muted-foreground">{t('devices:detail.rawData.noData')}</p>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               )}
             </TabsContent>
 

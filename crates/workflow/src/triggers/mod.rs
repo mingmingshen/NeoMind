@@ -5,7 +5,5 @@
 pub mod event;
 pub mod llm_decision;
 
-pub use event::{EventTrigger, EventTriggerConfig, EventFilters, EventTriggerManager};
-pub use llm_decision::{
-    LlmDecisionTrigger, LlmDecisionTriggerConfig, LlmDecisionTriggerManager,
-};
+pub use event::{EventFilters, EventTrigger, EventTriggerConfig, EventTriggerManager};
+pub use llm_decision::{LlmDecisionTrigger, LlmDecisionTriggerConfig, LlmDecisionTriggerManager};

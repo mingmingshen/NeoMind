@@ -4,20 +4,20 @@
 //! device adapter types, each with type-specific metadata, configuration
 //! schemas, and commands.
 
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use chrono::Utc;
 
 use crate::adapter::DeviceAdapter;
 use crate::plugin_adapter::{DeviceAdapterPlugin, DeviceAdapterPluginFactory};
 use edge_ai_core::EventBus;
 use edge_ai_core::plugin::{
-    ExtendedPluginMetadata, PluginType, PluginState, PluginError, PluginStats,
-    StateMachine, PluginMetadata, PluginPermission,
+    ExtendedPluginMetadata, PluginError, PluginMetadata, PluginPermission, PluginState,
+    PluginStats, PluginType, StateMachine,
 };
 
 #[cfg(feature = "embedded-broker")]
@@ -122,7 +122,6 @@ impl ExternalBrokerConfig {
         format!("{}-{}", self.client_id, uuid::Uuid::new_v4())
     }
 }
-
 
 /// Configuration for Modbus adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -284,7 +283,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
             self.config = Some(crate::embedded_broker::EmbeddedBrokerConfig::default());
         }
 
-        self.state_machine.transition(PluginState::Initialized, "Initialization".to_string())
+        self.state_machine
+            .transition(PluginState::Initialized, "Initialization".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
         Ok(())
     }
@@ -294,21 +294,26 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
             return Ok(());
         }
 
-        let config = self.config.clone()
-            .unwrap_or_default();
+        let config = self.config.clone().unwrap_or_default();
 
         let broker = crate::embedded_broker::EmbeddedBroker::new(config.clone());
-        broker.start()
-            .map_err(|e| PluginError::InitializationFailed(format!("Failed to start broker: {}", e)))?;
+        broker.start().map_err(|e| {
+            PluginError::InitializationFailed(format!("Failed to start broker: {}", e))
+        })?;
 
         self.running.store(true, Ordering::Relaxed);
         *self.start_time.write().await = Some(Instant::now());
         self.stats.record_start();
 
-        self.state_machine.transition(PluginState::Running, "Start".to_string())
+        self.state_machine
+            .transition(PluginState::Running, "Start".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
-        tracing::info!("Internal MQTT Broker plugin started on {}:{}", config.listen, config.port);
+        tracing::info!(
+            "Internal MQTT Broker plugin started on {}:{}",
+            config.listen,
+            config.port
+        );
 
         Ok(())
     }
@@ -321,12 +326,16 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
         self.running.store(false, Ordering::Relaxed);
         *self.start_time.write().await = None;
 
-        let duration = self.start_time.read().await
+        let duration = self
+            .start_time
+            .read()
+            .await
             .map(|t| t.elapsed().as_millis() as u64)
             .unwrap_or(0);
         self.stats.record_stop(duration);
 
-        self.state_machine.transition(PluginState::Stopped, "Stop".to_string())
+        self.state_machine
+            .transition(PluginState::Stopped, "Stop".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         tracing::info!("Internal MQTT Broker plugin stopped");
@@ -339,7 +348,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
             self.stop().await?;
         }
 
-        self.state_machine.transition(PluginState::Loaded, "Shutdown".to_string())
+        self.state_machine
+            .transition(PluginState::Loaded, "Shutdown".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         Ok(())
@@ -360,7 +370,9 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
         if crate::embedded_broker::is_broker_running(config.port) {
             Ok(())
         } else {
-            Err(PluginError::Other(anyhow::anyhow!("Broker port not accessible")))
+            Err(PluginError::Other(anyhow::anyhow!(
+                "Broker port not accessible"
+            )))
         }
     }
 
@@ -371,7 +383,11 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
         stats
     }
 
-    async fn handle_command(&self, command: &str, _args: &serde_json::Value) -> Result<serde_json::Value, PluginError> {
+    async fn handle_command(
+        &self,
+        command: &str,
+        _args: &serde_json::Value,
+    ) -> Result<serde_json::Value, PluginError> {
         match command {
             "get_status" => {
                 let default_config = crate::embedded_broker::EmbeddedBrokerConfig::default();
@@ -394,19 +410,18 @@ impl edge_ai_core::plugin::UnifiedPlugin for InternalMqttBrokerPlugin {
                         .unwrap_or(1000),
                 }))
             }
-            "get_info" => {
-                Ok(json!({
-                    "id": self.metadata.base.id,
-                    "name": self.metadata.base.name,
-                    "plugin_type": "internal_mqtt_broker",
-                    "version": self.metadata.version.to_string(),
-                    "running": self.running.load(Ordering::Relaxed),
-                    "description": self.metadata.base.description,
-                }))
-            }
-            _ => {
-                Err(PluginError::Other(anyhow::anyhow!("Unknown command: {}", command)))
-            }
+            "get_info" => Ok(json!({
+                "id": self.metadata.base.id,
+                "name": self.metadata.base.name,
+                "plugin_type": "internal_mqtt_broker",
+                "version": self.metadata.version.to_string(),
+                "running": self.running.load(Ordering::Relaxed),
+                "description": self.metadata.base.description,
+            })),
+            _ => Err(PluginError::Other(anyhow::anyhow!(
+                "Unknown command: {}",
+                command
+            ))),
         }
     }
 }
@@ -427,14 +442,9 @@ pub struct ExternalMqttBrokerPlugin {
 impl ExternalMqttBrokerPlugin {
     /// Create a new external MQTT broker plugin.
     pub fn new(id: String, name: String, event_bus: EventBus) -> Self {
-        let base = PluginMetadata::new(
-            &id,
-            &name,
-            "1.0.0",
-            ">=1.0.0",
-        )
-        .with_description("External MQTT broker connection")
-        .with_type("external_mqtt_broker");
+        let base = PluginMetadata::new(&id, &name, "1.0.0", ">=1.0.0")
+            .with_description("External MQTT broker connection")
+            .with_type("external_mqtt_broker");
 
         let metadata = ExtendedPluginMetadata {
             base,
@@ -488,7 +498,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
 
         self.config = Some(broker_config);
 
-        self.state_machine.transition(PluginState::Initialized, "Initialization".to_string())
+        self.state_machine
+            .transition(PluginState::Initialized, "Initialization".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
         Ok(())
     }
@@ -498,7 +509,9 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
             return Ok(());
         }
 
-        let config = self.config.as_ref()
+        let config = self
+            .config
+            .as_ref()
             .ok_or_else(|| PluginError::InitializationFailed("No configuration".to_string()))?;
 
         // The actual MQTT connection would be managed by the MqttAdapter
@@ -506,7 +519,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
         self.running.store(true, Ordering::Relaxed);
         self.stats.record_start();
 
-        self.state_machine.transition(PluginState::Running, "Start".to_string())
+        self.state_machine
+            .transition(PluginState::Running, "Start".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
         tracing::info!("External MQTT Broker plugin started: {}", config.broker);
@@ -522,7 +536,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
         self.running.store(false, Ordering::Relaxed);
         self.stats.record_stop(0);
 
-        self.state_machine.transition(PluginState::Stopped, "Stop".to_string())
+        self.state_machine
+            .transition(PluginState::Stopped, "Stop".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         tracing::info!("External MQTT Broker plugin stopped");
@@ -535,7 +550,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
             self.stop().await?;
         }
 
-        self.state_machine.transition(PluginState::Loaded, "Shutdown".to_string())
+        self.state_machine
+            .transition(PluginState::Loaded, "Shutdown".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         Ok(())
@@ -559,10 +575,16 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
         stats
     }
 
-    async fn handle_command(&self, command: &str, _args: &serde_json::Value) -> Result<serde_json::Value, PluginError> {
+    async fn handle_command(
+        &self,
+        command: &str,
+        _args: &serde_json::Value,
+    ) -> Result<serde_json::Value, PluginError> {
         match command {
             "get_status" => {
-                let config = self.config.as_ref()
+                let config = self
+                    .config
+                    .as_ref()
                     .ok_or_else(|| PluginError::Other(anyhow::anyhow!("No configuration")))?;
 
                 Ok(json!({
@@ -573,18 +595,17 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
                     "device_count": self.device_count.load(Ordering::Relaxed),
                 }))
             }
-            "get_info" => {
-                Ok(json!({
-                    "id": self.metadata.base.id,
-                    "name": self.metadata.base.name,
-                    "plugin_type": "external_mqtt_broker",
-                    "running": self.running.load(Ordering::Relaxed),
-                    "version": self.metadata.version.to_string(),
-                }))
-            }
-            _ => {
-                Err(PluginError::Other(anyhow::anyhow!("Unknown command: {}", command)))
-            }
+            "get_info" => Ok(json!({
+                "id": self.metadata.base.id,
+                "name": self.metadata.base.name,
+                "plugin_type": "external_mqtt_broker",
+                "running": self.running.load(Ordering::Relaxed),
+                "version": self.metadata.version.to_string(),
+            })),
+            _ => Err(PluginError::Other(anyhow::anyhow!(
+                "Unknown command: {}",
+                command
+            ))),
         }
     }
 }
@@ -605,14 +626,9 @@ pub struct ModbusAdapterPlugin {
 impl ModbusAdapterPlugin {
     /// Create a new Modbus adapter plugin.
     pub fn new(id: String, name: String, event_bus: EventBus) -> Self {
-        let base = PluginMetadata::new(
-            &id,
-            &name,
-            "1.0.0",
-            ">=1.0.0",
-        )
-        .with_description("Modbus TCP device adapter")
-        .with_type("modbus_adapter");
+        let base = PluginMetadata::new(&id, &name, "1.0.0", ">=1.0.0")
+            .with_description("Modbus TCP device adapter")
+            .with_type("modbus_adapter");
 
         let metadata = ExtendedPluginMetadata {
             base,
@@ -656,7 +672,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ModbusAdapterPlugin {
 
         self.config = Some(modbus_config);
 
-        self.state_machine.transition(PluginState::Initialized, "Initialization".to_string())
+        self.state_machine
+            .transition(PluginState::Initialized, "Initialization".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
         Ok(())
     }
@@ -669,7 +686,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ModbusAdapterPlugin {
         self.running.store(true, Ordering::Relaxed);
         self.stats.record_start();
 
-        self.state_machine.transition(PluginState::Running, "Start".to_string())
+        self.state_machine
+            .transition(PluginState::Running, "Start".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
         tracing::info!("Modbus Adapter plugin started");
@@ -685,7 +703,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ModbusAdapterPlugin {
         self.running.store(false, Ordering::Relaxed);
         self.stats.record_stop(0);
 
-        self.state_machine.transition(PluginState::Stopped, "Stop".to_string())
+        self.state_machine
+            .transition(PluginState::Stopped, "Stop".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         tracing::info!("Modbus Adapter plugin stopped");
@@ -698,7 +717,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for ModbusAdapterPlugin {
             self.stop().await?;
         }
 
-        self.state_machine.transition(PluginState::Loaded, "Shutdown".to_string())
+        self.state_machine
+            .transition(PluginState::Loaded, "Shutdown".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         Ok(())
@@ -721,20 +741,23 @@ impl edge_ai_core::plugin::UnifiedPlugin for ModbusAdapterPlugin {
         stats
     }
 
-    async fn handle_command(&self, command: &str, _args: &serde_json::Value) -> Result<serde_json::Value, PluginError> {
+    async fn handle_command(
+        &self,
+        command: &str,
+        _args: &serde_json::Value,
+    ) -> Result<serde_json::Value, PluginError> {
         match command {
-            "get_info" => {
-                Ok(json!({
-                    "id": self.metadata.base.id,
-                    "name": self.metadata.base.name,
-                    "plugin_type": "modbus_adapter",
-                    "running": self.running.load(Ordering::Relaxed),
-                    "version": self.metadata.version.to_string(),
-                }))
-            }
-            _ => {
-                Err(PluginError::Other(anyhow::anyhow!("Unknown command: {}", command)))
-            }
+            "get_info" => Ok(json!({
+                "id": self.metadata.base.id,
+                "name": self.metadata.base.name,
+                "plugin_type": "modbus_adapter",
+                "running": self.running.load(Ordering::Relaxed),
+                "version": self.metadata.version.to_string(),
+            })),
+            _ => Err(PluginError::Other(anyhow::anyhow!(
+                "Unknown command: {}",
+                command
+            ))),
         }
     }
 }
@@ -770,7 +793,9 @@ impl UnifiedAdapterPluginFactory {
         name: String,
         event_bus: EventBus,
     ) -> Arc<RwLock<ExternalMqttBrokerPlugin>> {
-        Arc::new(RwLock::new(ExternalMqttBrokerPlugin::new(id, name, event_bus)))
+        Arc::new(RwLock::new(ExternalMqttBrokerPlugin::new(
+            id, name, event_bus,
+        )))
     }
 
     /// Create a Modbus adapter plugin.

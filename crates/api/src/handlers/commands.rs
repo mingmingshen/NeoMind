@@ -1,8 +1,14 @@
 //! Command history API handlers.
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use edge_ai_commands::CommandManager;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -97,7 +103,9 @@ impl From<&edge_ai_commands::command::CommandResult> for CommandResultDto {
 
 /// Get command manager from server state.
 fn get_command_manager(state: &ServerState) -> Result<Arc<CommandManager>, ErrorResponse> {
-    state.command_manager.as_ref()
+    state
+        .command_manager
+        .as_ref()
         .cloned()
         .ok_or_else(|| ErrorResponse::service_unavailable("Command manager not initialized"))
 }
@@ -162,11 +170,7 @@ pub async fn list_commands_handler(
     let offset = params.offset.unwrap_or(0);
     let limit = params.limit.unwrap_or(50);
 
-    let paginated: Vec<CommandDto> = filtered
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect();
+    let paginated: Vec<CommandDto> = filtered.into_iter().skip(offset).take(limit).collect();
 
     ok(json!({
         "commands": paginated,
@@ -187,7 +191,10 @@ pub async fn get_command_handler(
     let manager = get_command_manager(&state)?;
 
     // Need to be explicit about the type since CommandId is a type alias
-    use edge_ai_commands::{command::CommandRequest, state::{CommandStateStore, StateError}};
+    use edge_ai_commands::{
+        command::CommandRequest,
+        state::{CommandStateStore, StateError},
+    };
     let cmd: Result<CommandRequest, StateError> = CommandStateStore::get(&manager.state, &id).await;
     let cmd = cmd.map_err(|e| {
         if matches!(e, StateError::NotFound(_)) {
@@ -213,7 +220,10 @@ pub async fn retry_command_handler(
     let manager = get_command_manager(&state)?;
 
     // Check if command exists
-    use edge_ai_commands::{command::CommandRequest, state::{CommandStateStore, StateError}};
+    use edge_ai_commands::{
+        command::CommandRequest,
+        state::{CommandStateStore, StateError},
+    };
     let cmd: Result<CommandRequest, StateError> = CommandStateStore::get(&manager.state, &id).await;
     let cmd = cmd.map_err(|e| {
         if matches!(e, StateError::NotFound(_)) {
@@ -232,7 +242,9 @@ pub async fn retry_command_handler(
     }
 
     // Retry the command
-    manager.retry(&id).await
+    manager
+        .retry(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to retry command: {}", e)))?;
 
     ok(json!({
@@ -250,14 +262,13 @@ pub async fn cancel_command_handler(
 ) -> HandlerResult<serde_json::Value> {
     let manager = get_command_manager(&state)?;
 
-    manager.cancel(&id).await
-        .map_err(|e| {
-            if matches!(e, edge_ai_commands::state::StateError::NotFound(_)) {
-                ErrorResponse::not_found(format!("Command not found: {}", id))
-            } else {
-                ErrorResponse::internal(format!("Failed to cancel command: {}", e))
-            }
-        })?;
+    manager.cancel(&id).await.map_err(|e| {
+        if matches!(e, edge_ai_commands::state::StateError::NotFound(_)) {
+            ErrorResponse::not_found(format!("Command not found: {}", id))
+        } else {
+            ErrorResponse::internal(format!("Failed to cancel command: {}", e))
+        }
+    })?;
 
     ok(json!({
         "message": format!("Command {} cancelled", id),
@@ -277,7 +288,8 @@ pub async fn get_command_stats_handler(
     let queue_stats = manager.queue_stats().await;
 
     // Convert stats to API format
-    let by_status: Vec<serde_json::Value> = state_stats.by_status
+    let by_status: Vec<serde_json::Value> = state_stats
+        .by_status
         .into_iter()
         .map(|(status, count)| {
             json!({
@@ -316,7 +328,8 @@ pub async fn cleanup_commands_handler(
     let manager = get_command_manager(&state)?;
 
     // Get cleanup age (default 7 days)
-    let older_than_secs = body.get("older_than_days")
+    let older_than_secs = body
+        .get("older_than_days")
         .and_then(|v| v.as_i64())
         .map(|d| d * 24 * 60 * 60)
         .unwrap_or(7 * 24 * 60 * 60);
@@ -345,7 +358,8 @@ mod tests {
 
     #[test]
     fn test_command_query_params_with_filters() {
-        let params: CommandQueryParams = serde_json::from_str(r#"{"device_id":"test","status":"pending","limit":10}"#).unwrap();
+        let params: CommandQueryParams =
+            serde_json::from_str(r#"{"device_id":"test","status":"pending","limit":10}"#).unwrap();
         assert_eq!(params.device_id, Some("test".to_string()));
         assert_eq!(params.status, Some("pending".to_string()));
         assert_eq!(params.limit, Some(10));

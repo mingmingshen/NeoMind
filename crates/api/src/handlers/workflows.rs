@@ -1,13 +1,19 @@
 //! Workflow engine handlers.
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use edge_ai_workflow::{Workflow, WorkflowStatus, Step, Trigger, WorkflowEngine};
+use edge_ai_workflow::{Step, Trigger, Workflow, WorkflowEngine, WorkflowStatus};
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 /// Detailed workflow info for API responses.
@@ -69,7 +75,8 @@ impl From<&Workflow> for WorkflowDto {
             WorkflowStatus::Paused => "paused",
             WorkflowStatus::Disabled => "disabled",
             WorkflowStatus::Failed => "failed",
-        }.to_string();
+        }
+        .to_string();
 
         Self {
             id: w.id.clone(),
@@ -111,7 +118,9 @@ pub async fn list_workflows_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
-    let workflows = engine.list_workflows().await
+    let workflows = engine
+        .list_workflows()
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to list workflows: {}", e)))?;
 
     let dtos: Vec<WorkflowDto> = workflows.iter().map(WorkflowDto::from).collect();
@@ -130,7 +139,9 @@ pub async fn get_workflow_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
-    let workflow = engine.get_workflow(&id).await
+    let workflow = engine
+        .get_workflow(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get workflow: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Workflow {}", id)))?;
 
@@ -151,8 +162,7 @@ pub async fn create_workflow_handler(
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
 
     let id = uuid::Uuid::new_v4().to_string();
-    let mut workflow = Workflow::new(&id, &req.name)
-        .with_description(req.description);
+    let mut workflow = Workflow::new(&id, &req.name).with_description(req.description);
 
     // Add steps from request
     for step in req.steps {
@@ -170,10 +180,13 @@ pub async fn create_workflow_handler(
     }
 
     // Validate workflow before registering
-    workflow.validate()
+    workflow
+        .validate()
         .map_err(|e| ErrorResponse::bad_request(format!("Invalid workflow: {}", e)))?;
 
-    engine.register_workflow(workflow).await
+    engine
+        .register_workflow(workflow)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to create workflow: {}", e)))?;
 
     ok(json!({
@@ -192,7 +205,9 @@ pub async fn update_workflow_handler(
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
 
-    let mut workflow = engine.get_workflow(&id).await
+    let mut workflow = engine
+        .get_workflow(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get workflow: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Workflow {}", id)))?;
 
@@ -208,7 +223,9 @@ pub async fn update_workflow_handler(
     }
     workflow.updated_at = chrono::Utc::now().timestamp();
 
-    engine.register_workflow(workflow).await
+    engine
+        .register_workflow(workflow)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update workflow: {}", e)))?;
 
     ok(json!({
@@ -224,7 +241,9 @@ pub async fn delete_workflow_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
-    engine.unregister_workflow(&id).await
+    engine
+        .unregister_workflow(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete workflow: {}", e)))?;
 
     ok(json!({
@@ -240,7 +259,9 @@ pub async fn execute_workflow_handler(
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
-    let result = engine.execute_workflow(&id).await
+    let result = engine
+        .execute_workflow(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to execute workflow: {}", e)))?;
 
     ok(json!({
@@ -259,15 +280,20 @@ pub async fn get_workflow_executions_handler(
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
 
     // First check if workflow exists
-    let _workflow = engine.get_workflow(&id).await
+    let _workflow = engine
+        .get_workflow(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get workflow: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Workflow {}", id)))?;
 
-    let executions = engine.get_workflow_executions(&id).await
+    let executions = engine
+        .get_workflow_executions(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
 
-    let execution_dtos: Vec<ExecutionDto> = executions.iter().map(|e| {
-        ExecutionDto {
+    let execution_dtos: Vec<ExecutionDto> = executions
+        .iter()
+        .map(|e| ExecutionDto {
             id: e.id.clone(),
             workflow_id: e.workflow_id.clone(),
             status: format!("{:?}", e.status),
@@ -275,8 +301,8 @@ pub async fn get_workflow_executions_handler(
             completed_at: e.completed_at.map(format_timestamp),
             error: e.error.clone(),
             step_count: e.step_results.len(),
-        }
-    }).collect();
+        })
+        .collect();
 
     ok(json!({
         "workflow_id": id,
@@ -294,12 +320,16 @@ pub async fn get_execution_handler(
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
 
-    let execution = engine.get_execution(&exec_id).await
+    let execution = engine
+        .get_execution(&exec_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get execution: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Execution {}", exec_id)))?;
 
     if execution.workflow_id != id {
-        return Err(ErrorResponse::bad_request("Execution does not belong to this workflow"));
+        return Err(ErrorResponse::bad_request(
+            "Execution does not belong to this workflow",
+        ));
     }
 
     ok(json!({
@@ -325,14 +355,18 @@ pub async fn set_workflow_status_handler(
 ) -> HandlerResult<serde_json::Value> {
     let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
 
-    let mut workflow = engine.get_workflow(&id).await
+    let mut workflow = engine
+        .get_workflow(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to get workflow: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Workflow {}", id)))?;
 
     workflow.enabled = req.enabled;
     workflow.updated_at = chrono::Utc::now().timestamp();
 
-    engine.register_workflow(workflow).await
+    engine
+        .register_workflow(workflow)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update workflow: {}", e)))?;
 
     ok(json!({

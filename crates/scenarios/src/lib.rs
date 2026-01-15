@@ -38,16 +38,16 @@
 //! }
 //! ```
 
-pub mod scenario;
-pub mod manager;
 pub mod error;
+pub mod manager;
+pub mod scenario;
 
-pub use scenario::{
-    Scenario, ScenarioId, ScenarioCategory, Environment, ScenarioMetadata,
-    ScenarioTemplate, ScenarioTemplates,
-};
-pub use manager::{ScenarioManager, ScenarioStats};
 pub use error::{Error, Result};
+pub use manager::{ScenarioManager, ScenarioStats};
+pub use scenario::{
+    Environment, Scenario, ScenarioCategory, ScenarioId, ScenarioMetadata, ScenarioTemplate,
+    ScenarioTemplates,
+};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

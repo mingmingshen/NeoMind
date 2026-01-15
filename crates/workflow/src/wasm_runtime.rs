@@ -75,8 +75,8 @@ impl WasmRuntime {
         // Configure memory limits - use a smaller value that fits within async_stack_size
         engine_config.max_wasm_stack(1024 * 1024); // 1MB max stack
 
-        let engine = Engine::new(&engine_config)
-            .map_err(|e| WorkflowError::WasmError(e.to_string()))?;
+        let engine =
+            Engine::new(&engine_config).map_err(|e| WorkflowError::WasmError(e.to_string()))?;
 
         Ok(Self {
             engine,
@@ -86,7 +86,12 @@ impl WasmRuntime {
     }
 
     /// Load a WASM module
-    pub async fn load_module(&self, id: String, bytes: Vec<u8>, metadata: ModuleMetadata) -> Result<()> {
+    pub async fn load_module(
+        &self,
+        id: String,
+        bytes: Vec<u8>,
+        metadata: ModuleMetadata,
+    ) -> Result<()> {
         // Validate the module
         self.validate_module(&bytes)?;
 
@@ -121,12 +126,18 @@ impl WasmRuntime {
         function_name: &str,
         _args: Vec<serde_json::Value>,
     ) -> Result<serde_json::Value> {
-        let _module = self.get_module(module_id).await
+        let _module = self
+            .get_module(module_id)
+            .await
             .ok_or_else(|| WorkflowError::WasmError(format!("Module not found: {}", module_id)))?;
 
         // For now, return a placeholder result
         // Full WASM execution requires proper handling of lifetimes and store
-        tracing::info!("Executing WASM function {} from module {}", function_name, module_id);
+        tracing::info!(
+            "Executing WASM function {} from module {}",
+            function_name,
+            module_id
+        );
 
         Ok(serde_json::json!(null))
     }

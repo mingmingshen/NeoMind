@@ -1,14 +1,17 @@
 //! Bulk alert operations.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde_json::json;
 
-use edge_ai_alerts::{Alert, AlertSeverity, AlertId};
+use edge_ai_alerts::{Alert, AlertId, AlertSeverity};
 
-use crate::handlers::{ServerState, common::{HandlerResult, ok}};
 use super::models::{
-    BulkOperationResult, BulkCreateAlertsRequest,
-    BulkResolveAlertsRequest, BulkAcknowledgeAlertsRequest, BulkDeleteAlertsRequest,
+    BulkAcknowledgeAlertsRequest, BulkCreateAlertsRequest, BulkDeleteAlertsRequest,
+    BulkOperationResult, BulkResolveAlertsRequest,
+};
+use crate::handlers::{
+    ServerState,
+    common::{HandlerResult, ok},
 };
 
 /// Bulk create alerts.
@@ -82,28 +85,26 @@ pub async fn bulk_resolve_alerts_handler(
 
     for (index, id_str) in req.alert_ids.into_iter().enumerate() {
         match AlertId::from_string(&id_str) {
-            Ok(alert_id) => {
-                match state.alert_manager.resolve(&alert_id).await {
-                    Ok(_) => {
-                        results.push(BulkOperationResult {
-                            index,
-                            success: true,
-                            id: Some(id_str.clone()),
-                            error: None,
-                        });
-                        succeeded += 1;
-                    }
-                    Err(e) => {
-                        results.push(BulkOperationResult {
-                            index,
-                            success: false,
-                            id: Some(id_str.clone()),
-                            error: Some(e.to_string()),
-                        });
-                        failed += 1;
-                    }
+            Ok(alert_id) => match state.alert_manager.resolve(&alert_id).await {
+                Ok(_) => {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: true,
+                        id: Some(id_str.clone()),
+                        error: None,
+                    });
+                    succeeded += 1;
                 }
-            }
+                Err(e) => {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(id_str.clone()),
+                        error: Some(e.to_string()),
+                    });
+                    failed += 1;
+                }
+            },
             Err(_) => {
                 results.push(BulkOperationResult {
                     index,
@@ -137,28 +138,26 @@ pub async fn bulk_acknowledge_alerts_handler(
 
     for (index, id_str) in req.alert_ids.into_iter().enumerate() {
         match AlertId::from_string(&id_str) {
-            Ok(alert_id) => {
-                match state.alert_manager.acknowledge(&alert_id).await {
-                    Ok(_) => {
-                        results.push(BulkOperationResult {
-                            index,
-                            success: true,
-                            id: Some(id_str.clone()),
-                            error: None,
-                        });
-                        succeeded += 1;
-                    }
-                    Err(e) => {
-                        results.push(BulkOperationResult {
-                            index,
-                            success: false,
-                            id: Some(id_str.clone()),
-                            error: Some(e.to_string()),
-                        });
-                        failed += 1;
-                    }
+            Ok(alert_id) => match state.alert_manager.acknowledge(&alert_id).await {
+                Ok(_) => {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: true,
+                        id: Some(id_str.clone()),
+                        error: None,
+                    });
+                    succeeded += 1;
                 }
-            }
+                Err(e) => {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(id_str.clone()),
+                        error: Some(e.to_string()),
+                    });
+                    failed += 1;
+                }
+            },
             Err(_) => {
                 results.push(BulkOperationResult {
                     index,
@@ -192,28 +191,26 @@ pub async fn bulk_delete_alerts_handler(
 
     for (index, id_str) in req.alert_ids.into_iter().enumerate() {
         match AlertId::from_string(&id_str) {
-            Ok(alert_id) => {
-                match state.alert_manager.delete_alert(&alert_id).await {
-                    Ok(_) => {
-                        results.push(BulkOperationResult {
-                            index,
-                            success: true,
-                            id: Some(id_str.clone()),
-                            error: None,
-                        });
-                        succeeded += 1;
-                    }
-                    Err(e) => {
-                        results.push(BulkOperationResult {
-                            index,
-                            success: false,
-                            id: Some(id_str.clone()),
-                            error: Some(e.to_string()),
-                        });
-                        failed += 1;
-                    }
+            Ok(alert_id) => match state.alert_manager.delete_alert(&alert_id).await {
+                Ok(_) => {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: true,
+                        id: Some(id_str.clone()),
+                        error: None,
+                    });
+                    succeeded += 1;
                 }
-            }
+                Err(e) => {
+                    results.push(BulkOperationResult {
+                        index,
+                        success: false,
+                        id: Some(id_str.clone()),
+                        error: Some(e.to_string()),
+                    });
+                    failed += 1;
+                }
+            },
             Err(_) => {
                 results.push(BulkOperationResult {
                     index,

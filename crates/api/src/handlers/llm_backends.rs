@@ -2,21 +2,24 @@
 //!
 //! This module provides REST API endpoints for managing multiple LLM backend instances.
 
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 use edge_ai_llm::instance_manager::{
-    LlmBackendInstanceManager, BackendTypeDefinition, get_instance_manager,
+    BackendTypeDefinition, LlmBackendInstanceManager, get_instance_manager,
 };
-use edge_ai_storage::{
-    LlmBackendInstance, BackendCapabilities, LlmBackendStore,
-    LlmBackendType,
-};
+use edge_ai_storage::{BackendCapabilities, LlmBackendInstance, LlmBackendStore, LlmBackendType};
 
 /// Query parameters for listing LLM backends
 #[derive(Debug, Deserialize)]
@@ -66,10 +69,18 @@ pub struct CreateBackendRequest {
     pub capabilities: Option<BackendCapabilities>,
 }
 
-fn default_temperature() -> f32 { 0.7 }
-fn default_top_p() -> f32 { 0.9 }
-fn default_max_tokens() -> usize { usize::MAX }
-fn default_thinking_enabled() -> bool { true }
+fn default_temperature() -> f32 {
+    0.7
+}
+fn default_top_p() -> f32 {
+    0.9
+}
+fn default_max_tokens() -> usize {
+    usize::MAX
+}
+fn default_thinking_enabled() -> bool {
+    true
+}
 
 /// Request to update an LLM backend instance
 #[derive(Debug, Deserialize)]
@@ -127,7 +138,8 @@ impl From<LlmBackendInstance> for BackendInstanceDto {
             backend_type,
             endpoint: instance.endpoint,
             model: instance.model,
-            api_key_configured: instance.api_key.is_some() && !instance.api_key.as_ref().map_or(false, |k| k.is_empty()),
+            api_key_configured: instance.api_key.is_some()
+                && !instance.api_key.as_ref().map_or(false, |k| k.is_empty()),
             is_active: instance.is_active,
             temperature: instance.temperature,
             top_p: instance.top_p,
@@ -172,8 +184,7 @@ impl From<BackendTypeDefinition> for BackendTypeDto {
 
 /// Get the instance manager (returns error instead of panic)
 fn get_manager() -> Result<Arc<LlmBackendInstanceManager>, ErrorResponse> {
-    get_instance_manager()
-        .map_err(|e| ErrorResponse::internal(e.to_string()))
+    get_instance_manager().map_err(|e| ErrorResponse::internal(e.to_string()))
 }
 
 /// Get backend statistics through the manager
@@ -257,12 +268,14 @@ pub async fn get_backend_handler(
 ) -> HandlerResult<serde_json::Value> {
     let manager = get_manager()?;
 
-    let instance = manager.get_instance(&id)
+    let instance = manager
+        .get_instance(&id)
         .ok_or_else(|| ErrorResponse::not_found(format!("Backend instance {}", id)))?;
 
     let mut dto: BackendInstanceDto = instance.clone().into();
     dto.healthy = manager.get_health_status(&id);
-    dto.is_active = manager.get_active_instance()
+    dto.is_active = manager
+        .get_active_instance()
         .map(|a| a.id == id)
         .unwrap_or(false);
 
@@ -287,14 +300,20 @@ pub async fn create_backend_handler(
         "anthropic" => LlmBackendType::Anthropic,
         "google" => LlmBackendType::Google,
         "xai" => LlmBackendType::XAi,
-        _ => return Err(ErrorResponse::bad_request(format!("Unknown backend type: {}", req.backend_type))),
+        _ => {
+            return Err(ErrorResponse::bad_request(format!(
+                "Unknown backend type: {}",
+                req.backend_type
+            )));
+        }
     };
 
     // Generate unique ID
     let id = LlmBackendStore::generate_id(&req.backend_type);
 
     // Use provided capabilities or get defaults for the backend type
-    let capabilities = req.capabilities
+    let capabilities = req
+        .capabilities
         .unwrap_or_else(|| get_default_capabilities(&backend_type));
 
     let instance = LlmBackendInstance {
@@ -314,11 +333,14 @@ pub async fn create_backend_handler(
     };
 
     // Validate
-    instance.validate()
+    instance
+        .validate()
         .map_err(|e| ErrorResponse::bad_request(e))?;
 
     // Save
-    manager.upsert_instance(instance).await
+    manager
+        .upsert_instance(instance)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -338,7 +360,8 @@ pub async fn update_backend_handler(
     let manager = get_manager()?;
 
     // Get existing instance
-    let mut instance = manager.get_instance(&id)
+    let mut instance = manager
+        .get_instance(&id)
         .ok_or_else(|| ErrorResponse::not_found(format!("Backend instance {}", id)))?;
 
     // Update fields
@@ -369,11 +392,14 @@ pub async fn update_backend_handler(
     instance.updated_at = chrono::Utc::now().timestamp();
 
     // Validate
-    instance.validate()
+    instance
+        .validate()
         .map_err(|e| ErrorResponse::bad_request(e))?;
 
     // Save
-    manager.upsert_instance(instance.clone()).await
+    manager
+        .upsert_instance(instance.clone())
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     // Clear cache
@@ -394,7 +420,9 @@ pub async fn delete_backend_handler(
 ) -> HandlerResult<serde_json::Value> {
     let manager = get_manager()?;
 
-    manager.remove_instance(&id).await
+    manager
+        .remove_instance(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -412,54 +440,86 @@ pub async fn activate_backend_handler(
     let manager = get_manager()?;
 
     // Get the backend instance to extract its configuration
-    let instance = manager.get_instance(&id)
+    let instance = manager
+        .get_instance(&id)
         .ok_or_else(|| ErrorResponse::not_found(format!("Backend instance {}", id)))?;
 
     // Set active in the instance manager
-    manager.set_active(&id).await
+    manager
+        .set_active(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     // Also update the SessionManager's LLM backend for existing sessions
     use edge_ai_agent::LlmBackend;
     let backend = match instance.backend_type {
         LlmBackendType::Ollama => {
-            let endpoint = instance.endpoint.clone()
+            let endpoint = instance
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
             let model = instance.model.clone();
             LlmBackend::Ollama { endpoint, model }
         }
         LlmBackendType::OpenAi => {
             let api_key = instance.api_key.clone().unwrap_or_default();
-            let endpoint = instance.endpoint.clone()
+            let endpoint = instance
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi { api_key, endpoint, model }
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
         }
         LlmBackendType::Anthropic => {
             let api_key = instance.api_key.clone().unwrap_or_default();
-            let endpoint = instance.endpoint.clone()
+            let endpoint = instance
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi { api_key, endpoint, model }
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
         }
         LlmBackendType::Google => {
             let api_key = instance.api_key.clone().unwrap_or_default();
-            let endpoint = instance.endpoint.clone()
+            let endpoint = instance
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi { api_key, endpoint, model }
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
         }
         LlmBackendType::XAi => {
             let api_key = instance.api_key.clone().unwrap_or_default();
-            let endpoint = instance.endpoint.clone()
+            let endpoint = instance
+                .endpoint
+                .clone()
                 .unwrap_or_else(|| "https://api.x.ai/v1".to_string());
             let model = instance.model.clone();
-            LlmBackend::OpenAi { api_key, endpoint, model }
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            }
         }
     };
 
     // Update all existing sessions to use the new backend
-    state.session_manager.set_llm_backend(backend).await
+    state
+        .session_manager
+        .set_llm_backend(backend)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -477,7 +537,9 @@ pub async fn test_backend_handler(
 ) -> HandlerResult<serde_json::Value> {
     let manager = get_manager()?;
 
-    let result = manager.test_connection(&id).await
+    let result = manager
+        .test_connection(&id)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -524,7 +586,8 @@ pub async fn get_backend_schema_handler(
 pub async fn get_backend_stats_handler(
     State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let stats = get_backend_stats().await
+    let stats = get_backend_stats()
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(stats)

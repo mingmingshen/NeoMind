@@ -7,11 +7,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use edge_ai_core::plugin::{PluginType, UnifiedPlugin, UnifiedPluginRegistry};
 use edge_ai_core::EventBus;
-use edge_ai_llm::instance_manager::get_instance_manager;
-use edge_ai_llm::plugin_adapter::{llm_backend_to_unified_plugin, LlmBackendUnifiedPlugin};
+use edge_ai_core::plugin::{PluginType, UnifiedPlugin, UnifiedPluginRegistry};
 use edge_ai_devices::DeviceAdapterPluginRegistry;
+use edge_ai_llm::instance_manager::get_instance_manager;
+use edge_ai_llm::plugin_adapter::{LlmBackendUnifiedPlugin, llm_backend_to_unified_plugin};
 
 use super::ServerState;
 
@@ -62,14 +62,17 @@ impl ServerState {
             };
 
             // Register to unified plugin registry
-            self.plugin_registry.register(
-                plugin_id.clone(),
-                plugin,
-                PluginType::LlmBackend,
-            ).await
-                .map_err(|e| anyhow::anyhow!("Failed to register LLM plugin {}: {}", plugin_id, e))?;
+            self.plugin_registry
+                .register(plugin_id.clone(), plugin, PluginType::LlmBackend)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to register LLM plugin {}: {}", plugin_id, e)
+                })?;
 
-            info!(category = "plugins", "Registered LLM backend plugin: {}", plugin_id);
+            info!(
+                category = "plugins",
+                "Registered LLM backend plugin: {}", plugin_id
+            );
         }
 
         Ok(())
@@ -84,7 +87,9 @@ impl ServerState {
         use edge_ai_devices::AdapterPluginConfig;
 
         // Get the event bus for device adapters
-        let event_bus = self.event_bus.as_ref()
+        let event_bus = self
+            .event_bus
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("EventBus not available"))?;
 
         // Initialize the device adapter plugin registry if not already done
@@ -102,15 +107,21 @@ impl ServerState {
             // The internal MQTT is already running, we just need to register it
             // as a discoverable plugin. Since it's managed by ServerState, we
             // create a reference to it in the plugin registry.
-            info!(category = "plugins", "Internal MQTT adapter is managed by ServerState, marking as built-in");
+            info!(
+                category = "plugins",
+                "Internal MQTT adapter is managed by ServerState, marking as built-in"
+            );
 
             // Note: The internal MQTT is already connected through mqtt_device_manager
             // We don't need to re-register it here since it's accessible via the
             // /api/plugins/device-adapters endpoint through the DeviceAdapterPluginRegistry
         }
 
-        info!(category = "plugins", "Device adapter registry initialized with {} adapters",
-            stats.adapters.len());
+        info!(
+            category = "plugins",
+            "Device adapter registry initialized with {} adapters",
+            stats.adapters.len()
+        );
 
         Ok(())
     }

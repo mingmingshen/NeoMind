@@ -142,7 +142,11 @@ impl ToolRegistry {
     /// Search for tools by keyword with category filter.
     ///
     /// Allows filtering by tool category prefix (e.g., "device", "rule", "workflow").
-    pub fn search_with_category(&self, keyword: &str, category_prefix: Option<&str>) -> Vec<ToolDefinition> {
+    pub fn search_with_category(
+        &self,
+        keyword: &str,
+        category_prefix: Option<&str>,
+    ) -> Vec<ToolDefinition> {
         let results = self.search(keyword);
         if let Some(prefix) = category_prefix {
             let prefix_lower = prefix.to_lowercase();
@@ -285,18 +289,24 @@ impl ToolRegistryBuilder {
     }
 
     /// Add the query data tool with real storage.
-    pub fn with_real_query_data_tool(self, storage: Arc<edge_ai_devices::TimeSeriesStorage>) -> Self {
+    pub fn with_real_query_data_tool(
+        self,
+        storage: Arc<edge_ai_devices::TimeSeriesStorage>,
+    ) -> Self {
         self.with_tool(Arc::new(super::real::QueryDataTool::new(storage)))
     }
 
     /// Add the control device tool with real device manager.
-    pub fn with_real_control_device_tool(self, manager: Arc<edge_ai_devices::MqttDeviceManager>) -> Self {
-        self.with_tool(Arc::new(super::real::ControlDeviceTool::new(manager)))
+    pub fn with_real_control_device_tool(
+        self,
+        service: Arc<edge_ai_devices::DeviceService>,
+    ) -> Self {
+        self.with_tool(Arc::new(super::real::ControlDeviceTool::new(service)))
     }
 
-    /// Add the list devices tool with real device manager.
-    pub fn with_real_list_devices_tool(self, manager: Arc<edge_ai_devices::MqttDeviceManager>) -> Self {
-        self.with_tool(Arc::new(super::real::ListDevicesTool::new(manager)))
+    /// Add the list devices tool with real device service.
+    pub fn with_real_list_devices_tool(self, service: Arc<edge_ai_devices::DeviceService>) -> Self {
+        self.with_tool(Arc::new(super::real::ListDevicesTool::new(service)))
     }
 
     /// Add the create rule tool with real rule engine.
@@ -310,7 +320,10 @@ impl ToolRegistryBuilder {
     }
 
     /// Add the trigger workflow tool with real workflow engine.
-    pub fn with_real_trigger_workflow_tool(self, engine: Arc<edge_ai_workflow::WorkflowEngine>) -> Self {
+    pub fn with_real_trigger_workflow_tool(
+        self,
+        engine: Arc<edge_ai_workflow::WorkflowEngine>,
+    ) -> Self {
         self.with_tool(Arc::new(super::real::TriggerWorkflowTool::new(engine)))
     }
 
@@ -351,8 +364,14 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
         if let Some(props) = def.parameters.get("properties") {
             if let Some(obj) = props.as_object() {
                 for (name, prop) in obj {
-                    let desc = prop.get("description").and_then(|d| d.as_str()).unwrap_or("No description");
-                    let type_name = prop.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+                    let desc = prop
+                        .get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("No description");
+                    let type_name = prop
+                        .get("type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("unknown");
                     result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
                 }
             }
@@ -418,7 +437,9 @@ mod tests {
     async fn test_registry_execute_not_found() {
         let registry = ToolRegistry::new();
 
-        let result = registry.execute("unknown_tool", serde_json::json!({})).await;
+        let result = registry
+            .execute("unknown_tool", serde_json::json!({}))
+            .await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ToolError::NotFound(_)));
     }
@@ -442,9 +463,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_builder_with_standard_tools() {
-        let registry = ToolRegistryBuilder::new()
-            .with_standard_tools()
-            .build();
+        let registry = ToolRegistryBuilder::new().with_standard_tools().build();
 
         assert!(registry.len() >= 5);
         assert!(registry.has("query_data"));
@@ -453,23 +472,21 @@ mod tests {
 
     #[test]
     fn test_format_for_llm() {
-        let definitions = vec![
-            ToolDefinition {
-                name: "test_tool".to_string(),
-                description: "A test tool".to_string(),
-                parameters: serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "arg1": {
-                            "type": "string",
-                            "description": "First argument"
-                        }
-                    },
-                    "required": ["arg1"]
-                }),
-                example: None,
-            },
-        ];
+        let definitions = vec![ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "arg1": {
+                        "type": "string",
+                        "description": "First argument"
+                    }
+                },
+                "required": ["arg1"]
+            }),
+            example: None,
+        }];
 
         let formatted = format_for_llm(&definitions);
         assert!(formatted.contains("test_tool"));
@@ -479,8 +496,8 @@ mod tests {
 
     #[test]
     fn test_tool_call() {
-        let call = ToolCall::new("test_tool", serde_json::json!({"key": "value"}))
-            .with_id("call_123");
+        let call =
+            ToolCall::new("test_tool", serde_json::json!({"key": "value"})).with_id("call_123");
 
         assert_eq!(call.name, "test_tool");
         assert_eq!(call.id, Some("call_123".to_string()));

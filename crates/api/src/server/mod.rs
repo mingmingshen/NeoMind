@@ -3,26 +3,26 @@
 //! This provides a web interface with WebSocket support for chat
 //! and REST API for devices, rules, alerts, and session management.
 
-pub mod types;
 pub mod middleware;
 pub mod router;
+pub mod types;
 
 // Re-export commonly used types
-pub use types::{ServerState, DeviceStatusUpdate, MAX_REQUEST_BODY_SIZE};
-pub use router::{create_router, create_router_with_state};
 pub use middleware::rate_limit_middleware;
+pub use router::{create_router, create_router_with_state};
+pub use types::{DeviceStatusUpdate, MAX_REQUEST_BODY_SIZE, ServerState};
 
 use std::net::SocketAddr;
 use std::time::Duration;
 
 /// Run the web server with graceful shutdown.
 pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
-    use crate::startup::{StartupLogger, ServiceStatus};
+    use crate::startup::{ServiceStatus, StartupLogger};
 
     let mut startup = StartupLogger::new();
     startup.banner();
 
-    let state = ServerState::new();
+    let state = ServerState::new().await;
 
     // Initialization phase
     startup.phase_init();

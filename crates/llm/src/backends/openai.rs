@@ -16,12 +16,12 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use edge_ai_core::llm::backend::{
-    BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput,
-    LlmRuntime, StreamChunk, TokenUsage,
+    BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput, LlmRuntime,
+    StreamChunk, TokenUsage,
 };
 use edge_ai_core::message::{Content, ContentPart, ImageDetail, Message, MessageRole};
 
-use crate::rate_limited_client::{RateLimitedClient, ProviderRateLimits};
+use crate::rate_limited_client::{ProviderRateLimits, RateLimitedClient};
 
 /// Cloud API provider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -207,11 +207,8 @@ impl CloudRuntime {
             CloudProvider::Custom => (10, Duration::from_secs(1)),
         };
 
-        let client = RateLimitedClient::with_rate_limits(
-            http_client,
-            max_requests,
-            window_duration,
-        );
+        let client =
+            RateLimitedClient::with_rate_limits(http_client, max_requests, window_duration);
 
         let model = config.get_model();
 
@@ -237,14 +234,12 @@ impl CloudRuntime {
                                 ContentPart::Text { text } => {
                                     ApiContentPart::Text { text: text.clone() }
                                 }
-                                ContentPart::ImageUrl { url, detail } => {
-                                    ApiContentPart::ImageUrl {
-                                        url: url.clone(),
-                                        detail: image_detail_to_string(
-                                            detail.as_ref().unwrap_or(&ImageDetail::Auto),
-                                        ),
-                                    }
-                                }
+                                ContentPart::ImageUrl { url, detail } => ApiContentPart::ImageUrl {
+                                    url: url.clone(),
+                                    detail: image_detail_to_string(
+                                        detail.as_ref().unwrap_or(&ImageDetail::Auto),
+                                    ),
+                                },
                                 ContentPart::ImageBase64 {
                                     data,
                                     mime_type,
@@ -297,11 +292,18 @@ impl LlmRuntime for CloudRuntime {
         !self.config.api_key.is_empty()
     }
 
-    async fn generate(&self, input: edge_ai_core::llm::backend::LlmInput) -> Result<LlmOutput, LlmError> {
+    async fn generate(
+        &self,
+        input: edge_ai_core::llm::backend::LlmInput,
+    ) -> Result<LlmOutput, LlmError> {
         let start_time = Instant::now();
         let model = input.model.unwrap_or_else(|| self.model.clone());
 
-        let url = format!("{}{}", self.config.get_base_url(), self.config.provider.chat_path());
+        let url = format!(
+            "{}{}",
+            self.config.get_base_url(),
+            self.config.provider.chat_path()
+        );
 
         let request = ChatCompletionRequest {
             model: model.clone(),
@@ -337,7 +339,10 @@ impl LlmRuntime for CloudRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         let status = response.status();
-        let body = response.text().await.map_err(|e| LlmError::Network(e.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
             self.metrics.write().unwrap().record_failure();
@@ -348,8 +353,8 @@ impl LlmRuntime for CloudRuntime {
             )));
         }
 
-        let chat_response: ChatCompletionResponse = serde_json::from_str(&body)
-            .map_err(|e| LlmError::Serialization(e))?;
+        let chat_response: ChatCompletionResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::Serialization(e))?;
 
         let choice = chat_response
             .choices
@@ -379,7 +384,10 @@ impl LlmRuntime for CloudRuntime {
         match &result {
             Ok(output) => {
                 let tokens = output.usage.map_or(0, |u| u.completion_tokens as u64);
-                self.metrics.write().unwrap().record_success(tokens, latency_ms);
+                self.metrics
+                    .write()
+                    .unwrap()
+                    .record_success(tokens, latency_ms);
             }
             Err(_) => {
                 self.metrics.write().unwrap().record_failure();
@@ -398,7 +406,11 @@ impl LlmRuntime for CloudRuntime {
         let (tx, rx) = mpsc::channel(64);
 
         let model = input.model.unwrap_or_else(|| self.model.clone());
-        let url = format!("{}{}", self.config.get_base_url(), self.config.provider.chat_path());
+        let url = format!(
+            "{}{}",
+            self.config.get_base_url(),
+            self.config.provider.chat_path()
+        );
         let api_key = self.config.api_key.clone();
         let rate_limiter = self.client.clone();
         let inner_client = self.client.inner().clone();
@@ -418,11 +430,7 @@ impl LlmRuntime for CloudRuntime {
 
         tokio::spawn(async move {
             // Create rate limit key
-            let rate_limit_key = format!(
-                "{:?}:{:x}",
-                provider,
-                hash_api_key(&api_key)
-            );
+            let rate_limit_key = format!("{:?}:{:x}", provider, hash_api_key(&api_key));
 
             // Acquire rate limit permit before making request
             rate_limiter.acquire(&rate_limit_key).await;
@@ -441,9 +449,7 @@ impl LlmRuntime for CloudRuntime {
                     // Handle rate limit response
                     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                         let _ = tx
-                            .send(Err(LlmError::Generation(
-                                "Rate limited by API".to_string(),
-                            )))
+                            .send(Err(LlmError::Generation("Rate limited by API".to_string())))
                             .await;
                         return;
                     }
@@ -486,7 +492,8 @@ impl LlmRuntime for CloudRuntime {
                                             if let Some(choice) = evt.choices.first() {
                                                 let delta = &choice.delta.content;
                                                 if !delta.is_empty() {
-                                                    let _ = tx.send(Ok((delta.clone(), false))).await;
+                                                    let _ =
+                                                        tx.send(Ok((delta.clone(), false))).await;
                                                 }
                                             }
                                         }
@@ -670,9 +677,18 @@ mod tests {
 
     #[test]
     fn test_cloud_provider_urls() {
-        assert_eq!(CloudProvider::OpenAI.base_url(), "https://api.openai.com/v1");
-        assert_eq!(CloudProvider::Anthropic.base_url(), "https://api.anthropic.com/v1");
-        assert_eq!(CloudProvider::Google.base_url(), "https://generativelanguage.googleapis.com/v1beta");
+        assert_eq!(
+            CloudProvider::OpenAI.base_url(),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            CloudProvider::Anthropic.base_url(),
+            "https://api.anthropic.com/v1"
+        );
+        assert_eq!(
+            CloudProvider::Google.base_url(),
+            "https://generativelanguage.googleapis.com/v1beta"
+        );
         assert_eq!(CloudProvider::Grok.base_url(), "https://api.x.ai/v1");
     }
 }

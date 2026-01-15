@@ -49,7 +49,9 @@ impl FallbackRule {
     /// Check if this rule matches the user message.
     pub fn matches(&self, message: &str) -> bool {
         let msg_lower = message.to_lowercase();
-        self.keywords.iter().any(|k| msg_lower.contains(&k.to_lowercase()))
+        self.keywords
+            .iter()
+            .any(|k| msg_lower.contains(&k.to_lowercase()))
     }
 }
 
@@ -59,11 +61,9 @@ pub fn default_fallback_rules() -> Vec<FallbackRule> {
         // List devices rule
         FallbackRule::new(vec!["设备", "device", "列表", "list"], "list_devices")
             .with_response_template("找到 {count} 个设备:\n{devices}"),
-
         // List rules rule
         FallbackRule::new(vec!["规则", "rule"], "list_rules")
             .with_response_template("找到 {count} 条规则:\n{rules}"),
-
         // Query data rule
         FallbackRule::new(vec!["查询", "query", "数据", "data"], "query_data")
             .with_arguments(serde_json::json!({
@@ -71,7 +71,6 @@ pub fn default_fallback_rules() -> Vec<FallbackRule> {
                 "metric": "temperature"
             }))
             .with_response_template("查询到 {count} 条数据点。\n{latest}\n{earliest}"),
-
         // Create rule rule
         FallbackRule::new(vec!["创建", "create"], "create_rule")
             .with_response_template("规则创建功能需要在 LLM 配置后使用自然语言描述创建。"),
@@ -125,40 +124,42 @@ pub async fn process_fallback(
     rules: &[FallbackRule],
     user_message: &str,
 ) -> (AgentMessage, Vec<ToolCall>, Vec<String>) {
-    let (response_content, tool_calls, tools_used) = match rules
-        .iter()
-        .find(|r| r.matches(user_message))
-    {
-        Some(rule) => {
-            // Execute the tool
-            let result = tools.execute(&rule.tool, rule.arguments.clone()).await;
+    let (response_content, tool_calls, tools_used) =
+        match rules.iter().find(|r| r.matches(user_message)) {
+            Some(rule) => {
+                // Execute the tool
+                let result = tools.execute(&rule.tool, rule.arguments.clone()).await;
 
-            let mut tools_used = vec![rule.tool.clone()];
-            let mut response_content = String::new();
+                let mut tools_used = vec![rule.tool.clone()];
+                let mut response_content = String::new();
 
-            if let Ok(ref output) = result {
-                let data = &output.data;
+                if let Ok(ref output) = result {
+                    let data = &output.data;
 
-                // Build response from template
-                if let Some(template) = &rule.response_template {
-                    response_content = build_response_from_template(template, data);
+                    // Build response from template
+                    if let Some(template) = &rule.response_template {
+                        response_content = build_response_from_template(template, data);
+                    } else {
+                        // Default formatting
+                        response_content = format!("Tool '{}' executed successfully", rule.tool);
+                    }
                 } else {
-                    // Default formatting
-                    response_content = format!("Tool '{}' executed successfully", rule.tool);
+                    response_content = format!("执行工具 '{}' 时出错", rule.tool);
                 }
-            } else {
-                response_content = format!("执行工具 '{}' 时出错", rule.tool);
+
+                (response_content, vec![], tools_used)
             }
+            None => {
+                // Default help message
+                (default_help_message(), vec![], vec![])
+            }
+        };
 
-            (response_content, vec![], tools_used)
-        }
-        None => {
-            // Default help message
-            (default_help_message(), vec![], vec![])
-        }
-    };
-
-    (AgentMessage::assistant(response_content), tool_calls, tools_used)
+    (
+        AgentMessage::assistant(response_content),
+        tool_calls,
+        tools_used,
+    )
 }
 
 /// Build response from template and tool output data.
@@ -208,8 +209,10 @@ fn build_response_from_template(template: &str, data: &Value) -> String {
 
     // Replace {latest} - latest data point
     if result.contains("{latest}") {
-        if let Some(arr) = data["data"].as_array() && !arr.is_empty() {
-            let last_value = arr[arr.len()-1]["value"].as_f64().unwrap_or(0.0);
+        if let Some(arr) = data["data"].as_array()
+            && !arr.is_empty()
+        {
+            let last_value = arr[arr.len() - 1]["value"].as_f64().unwrap_or(0.0);
             result = result.replace("{latest}", &format!("最新温度值: {:.1}°C", last_value));
         } else {
             result = result.replace("{latest}", "无最新数据");
@@ -218,7 +221,9 @@ fn build_response_from_template(template: &str, data: &Value) -> String {
 
     // Replace {earliest} - earliest data point
     if result.contains("{earliest}") {
-        if let Some(arr) = data["data"].as_array() && !arr.is_empty() {
+        if let Some(arr) = data["data"].as_array()
+            && !arr.is_empty()
+        {
             let first_value = arr[0]["value"].as_f64().unwrap_or(0.0);
             result = result.replace("{earliest}", &format!("最早温度值: {:.1}°C", first_value));
         } else {

@@ -4,20 +4,20 @@
 
 #![cfg(feature = "http")]
 
-use crate::{Integration, IntegrationMetadata, IntegrationType, IntegrationState};
 use crate::protocols::BaseIntegration;
-use edge_ai_core::integration::{
-    IntegrationEvent, IntegrationCommand, IntegrationResponse, IntegrationError,
-    Result as IntegrationResult, IntegrationConfig,
-};
-use edge_ai_core::eventbus::EventBus;
+use crate::{Integration, IntegrationMetadata, IntegrationState, IntegrationType};
 use async_trait::async_trait;
+use edge_ai_core::eventbus::EventBus;
+use edge_ai_core::integration::{
+    IntegrationCommand, IntegrationConfig, IntegrationError, IntegrationEvent, IntegrationResponse,
+    Result as IntegrationResult,
+};
 use futures::Stream;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 #[cfg(feature = "http")]
 use reqwest::Client;
@@ -44,9 +44,15 @@ pub struct HassConfig {
     pub poll_interval_secs: u64,
 }
 
-fn default_timeout() -> u64 { 30 }
-fn default_websocket() -> bool { true }
-fn default_poll_interval() -> u64 { 5 }
+fn default_timeout() -> u64 {
+    30
+}
+fn default_websocket() -> bool {
+    true
+}
+fn default_poll_interval() -> u64 {
+    5
+}
 
 impl HassConfig {
     /// Create a new HASS configuration.
@@ -142,7 +148,8 @@ impl HassIntegration {
     pub async fn get_states(&self) -> IntegrationResult<Vec<HassEntity>> {
         let url = format!("{}/states", self.config.api_url());
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.config.token))
             .header("Content-Type", "application/json")
@@ -152,7 +159,7 @@ impl HassIntegration {
 
         if !response.status().is_success() {
             return Err(IntegrationError::AuthenticationFailed(
-                response.status().to_string()
+                response.status().to_string(),
             ));
         }
 
@@ -168,7 +175,8 @@ impl HassIntegration {
     pub async fn get_state(&self, entity_id: &str) -> IntegrationResult<HassEntity> {
         let url = format!("{}/states/{}", self.config.api_url(), entity_id);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.config.token))
             .header("Content-Type", "application/json")
@@ -220,7 +228,8 @@ impl HassIntegration {
             }
         }
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.config.token))
             .header("Content-Type", "application/json")
@@ -254,7 +263,8 @@ impl Integration for HassIntegration {
         // Verify connection by fetching states
         self.get_states().await?;
 
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         self.base.set_running(true);
 
         // Start polling task if WebSocket is not enabled
@@ -289,7 +299,8 @@ impl Integration for HassIntegration {
     }
 
     async fn stop(&self) -> IntegrationResult<()> {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         self.base.set_running(false);
         Ok(())
     }
@@ -302,31 +313,38 @@ impl Integration for HassIntegration {
         Box::pin(ReceiverStream::new(rx))
     }
 
-    async fn send_command(&self, command: IntegrationCommand) -> IntegrationResult<IntegrationResponse> {
+    async fn send_command(
+        &self,
+        command: IntegrationCommand,
+    ) -> IntegrationResult<IntegrationResponse> {
         match command {
             IntegrationCommand::Query { target, .. } => {
                 let state = self.get_state(&target).await?;
-                Ok(IntegrationResponse::success(serde_json::to_value(state).unwrap()))
+                Ok(IntegrationResponse::success(
+                    serde_json::to_value(state).unwrap(),
+                ))
             }
-            IntegrationCommand::CallService { target, service, params } => {
+            IntegrationCommand::CallService {
+                target,
+                service,
+                params,
+            } => {
                 // Parse service as "domain.service"
                 let parts: Vec<&str> = service.split('.').collect();
                 let (domain, svc) = if parts.len() == 2 {
                     (parts[0], parts[1])
                 } else {
                     return Err(IntegrationError::CommandFailed(
-                        "Invalid service format (expected 'domain.service')".to_string()
+                        "Invalid service format (expected 'domain.service')".to_string(),
                     ));
                 };
 
                 self.call_service(domain, svc, &target, params).await?;
                 Ok(IntegrationResponse::success(serde_json::json!({})))
             }
-            IntegrationCommand::SendData { .. } => {
-                Err(IntegrationError::CommandFailed(
-                    "SendData not supported for HASS".to_string()
-                ))
-            }
+            IntegrationCommand::SendData { .. } => Err(IntegrationError::CommandFailed(
+                "SendData not supported for HASS".to_string(),
+            )),
         }
     }
 }
@@ -390,7 +408,10 @@ mod tests {
     fn test_hass_integration() {
         let config = HassConfig::new("http://localhost:8123", "token");
         let integration = HassIntegration::new(config);
-        assert_eq!(integration.metadata().integration_type, IntegrationType::Hass);
+        assert_eq!(
+            integration.metadata().integration_type,
+            IntegrationType::Hass
+        );
         assert!(!integration.base.is_running());
     }
 }

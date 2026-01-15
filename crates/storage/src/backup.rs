@@ -16,8 +16,8 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result};
 use crate::backend::UnifiedStorage;
+use crate::{Error, Result};
 
 /// Backup metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,7 +116,11 @@ impl BackupManager {
     }
 
     /// Create a full backup.
-    pub fn create_full_backup(&self, source_path: &Path, description: Option<String>) -> Result<BackupMetadata> {
+    pub fn create_full_backup(
+        &self,
+        source_path: &Path,
+        description: Option<String>,
+    ) -> Result<BackupMetadata> {
         let backup_id = self.generate_backup_id();
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -154,7 +158,11 @@ impl BackupManager {
     }
 
     /// Create an incremental backup (export changes since timestamp).
-    pub fn create_incremental_backup(&self, since: i64, description: Option<String>) -> Result<BackupMetadata> {
+    pub fn create_incremental_backup(
+        &self,
+        since: i64,
+        description: Option<String>,
+    ) -> Result<BackupMetadata> {
         let backup_id = self.generate_backup_id();
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -233,7 +241,7 @@ impl BackupManager {
             self.copy_file(&metadata.path, target_path)?;
         } else {
             return Err(Error::InvalidInput(
-                "Incremental backups must be restored via import_from_json".to_string()
+                "Incremental backups must be restored via import_from_json".to_string(),
             ));
         }
 
@@ -314,10 +322,13 @@ impl BackupManager {
 
     /// Generate a unique backup ID.
     fn generate_backup_id(&self) -> String {
-        format!("{:x}", SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0))
+        format!(
+            "{:x}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
+        )
     }
 
     /// Save backup metadata.
@@ -356,7 +367,11 @@ impl BackupManager {
     }
 
     /// Collect incremental data since a timestamp.
-    fn collect_incremental_data(&self, _storage: &UnifiedStorage, since: i64) -> Result<serde_json::Value> {
+    fn collect_incremental_data(
+        &self,
+        _storage: &UnifiedStorage,
+        since: i64,
+    ) -> Result<serde_json::Value> {
         // This would scan tables for data modified since the timestamp
         // For now, return empty as this would need timestamp tracking per record
         Ok(serde_json::json!({
@@ -375,7 +390,11 @@ impl BackupManager {
     }
 
     /// Import JSON data to storage.
-    fn import_json_to_storage(&self, _storage: &UnifiedStorage, _data: &serde_json::Value) -> Result<()> {
+    fn import_json_to_storage(
+        &self,
+        _storage: &UnifiedStorage,
+        _data: &serde_json::Value,
+    ) -> Result<()> {
         // Implementation would parse the JSON and write to storage
         Ok(())
     }

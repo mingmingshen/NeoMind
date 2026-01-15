@@ -4,12 +4,12 @@
 //! preventing redundant opening of the same database file while still allowing
 //! multiple independent connections when needed.
 
+use crate::{Error, Result};
+use redb::Database;
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
 use std::sync::OnceLock;
-use redb::Database;
-use crate::{Error, Result};
+use std::sync::{Arc, RwLock};
 
 /// Global cache of open databases.
 ///
@@ -147,7 +147,8 @@ mod tests {
 
     #[test]
     fn test_singleton_same_instance() {
-        let temp = std::env::temp_dir().join(format!("test_singleton_{}.redb", uuid::Uuid::new_v4()));
+        let temp =
+            std::env::temp_dir().join(format!("test_singleton_{}.redb", uuid::Uuid::new_v4()));
 
         let db1 = get_or_open_db(&temp).unwrap();
         let db2 = get_or_open_db(&temp).unwrap();

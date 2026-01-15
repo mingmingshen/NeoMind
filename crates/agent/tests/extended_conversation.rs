@@ -8,23 +8,22 @@
 //! 5. Context preservation across many turns
 //! 6. Sequential tool calls with dependencies
 
+use async_trait::async_trait;
+use futures::{Stream, StreamExt};
+use serde_json::json;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use std::pin::Pin;
 use tokio::sync::RwLock;
-use serde_json::json;
-use futures::{Stream, StreamExt};
-use async_trait::async_trait;
 
+use edge_ai_agent::{agent::AgentEvent, session::SessionManager};
 use edge_ai_core::{
     EventBus,
-    llm::backend::{LlmRuntime, LlmInput, LlmOutput, FinishReason, TokenUsage, BackendId, StreamChunk, LlmError},
+    llm::backend::{
+        BackendId, FinishReason, LlmError, LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
+    },
 };
-use edge_ai_agent::{
-    agent::AgentEvent,
-    session::SessionManager,
-};
-use edge_ai_tools::{ToolRegistryBuilder, Tool, ToolOutput, Result as ToolResult};
+use edge_ai_tools::{Result as ToolResult, Tool, ToolOutput, ToolRegistryBuilder};
 
 /// Mock LLM backend that simulates real streaming behavior.
 struct MockLlmBackend {
@@ -72,9 +71,14 @@ impl LlmRuntime for MockLlmBackend {
         _input: LlmInput,
     ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
         let chunks = self.response_queue.read().await;
-        let cloned: Vec<StreamChunk> = chunks.iter().filter_map(|c| {
-            c.as_ref().ok().map(|(text, is_thinking)| Ok((text.clone(), *is_thinking)))
-        }).collect();
+        let cloned: Vec<StreamChunk> = chunks
+            .iter()
+            .filter_map(|c| {
+                c.as_ref()
+                    .ok()
+                    .map(|(text, is_thinking)| Ok((text.clone(), *is_thinking)))
+            })
+            .collect();
         Ok(Box::pin(futures::stream::iter(cloned)))
     }
 
@@ -131,25 +135,39 @@ fn create_mock_tool(name: &str, description: &str, params: serde_json::Value) ->
 
 /// Create streaming chunks for a simple response.
 fn create_simple_chunks(response: &str) -> Vec<StreamChunk> {
-    vec![
-        Ok((response.to_string(), false)),
-    ]
+    vec![Ok((response.to_string(), false))]
 }
 
 /// Create streaming chunks for a single tool call.
-fn create_tool_call_chunks(tool_name: &str, tool_args: serde_json::Value, final_response: &str) -> Vec<StreamChunk> {
+fn create_tool_call_chunks(
+    tool_name: &str,
+    tool_args: serde_json::Value,
+    final_response: &str,
+) -> Vec<StreamChunk> {
     vec![
-        Ok((format!("I'll help you with that using {}.", tool_name), true)),
-        Ok((format!("<tool_calls><invoke name=\"{}\">", tool_name), false)),
+        Ok((
+            format!("I'll help you with that using {}.", tool_name),
+            true,
+        )),
+        Ok((
+            format!("<tool_calls><invoke name=\"{}\">", tool_name),
+            false,
+        )),
         Ok((create_parameter_xml(&tool_args), false)),
         Ok((format!("</invoke></tool_calls>{}", final_response), false)),
     ]
 }
 
 /// Create streaming chunks for multiple tool calls in one response.
-fn create_multi_tool_call_chunks(tools: Vec<(&str, serde_json::Value)>, final_response: &str) -> Vec<StreamChunk> {
+fn create_multi_tool_call_chunks(
+    tools: Vec<(&str, serde_json::Value)>,
+    final_response: &str,
+) -> Vec<StreamChunk> {
     let mut chunks = vec![
-        Ok(("I'll need to call multiple tools to help you.".to_string(), true)),
+        Ok((
+            "I'll need to call multiple tools to help you.".to_string(),
+            true,
+        )),
         Ok(("<tool_calls>".to_string(), false)),
     ];
 
@@ -176,7 +194,10 @@ fn create_parameter_xml(args: &serde_json::Value) -> String {
                 serde_json::Value::Bool(b) => b.to_string(),
                 _ => "null".to_string(),
             };
-            params.push_str(&format!("<parameter name=\"{}\" value=\"{}\"/>", key, value_str));
+            params.push_str(&format!(
+                "<parameter name=\"{}\" value=\"{}\"/>",
+                key, value_str
+            ));
         }
         params
     } else {
@@ -216,12 +237,12 @@ async fn test_extended_20_round_conversation() {
             "properties": {
                 "device_id": {"type": "string"}
             }
-        })
+        }),
     ));
     registry.register(create_mock_tool(
         "list_devices",
         "List all available devices",
-        json!({"type": "object", "properties": {}})
+        json!({"type": "object", "properties": {}}),
     ));
     registry.register(create_mock_tool(
         "get_temperature",
@@ -231,7 +252,7 @@ async fn test_extended_20_round_conversation() {
             "properties": {
                 "device_id": {"type": "string"}
             }
-        })
+        }),
     ));
     registry.register(create_mock_tool(
         "get_humidity",
@@ -241,7 +262,7 @@ async fn test_extended_20_round_conversation() {
             "properties": {
                 "device_id": {"type": "string"}
             }
-        })
+        }),
     ));
     registry.register(create_mock_tool(
         "control_device",
@@ -253,112 +274,209 @@ async fn test_extended_20_round_conversation() {
                 "command": {"type": "string"},
                 "value": {"type": "string"}
             }
-        })
+        }),
     ));
 
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
     // 20 rounds with increasing complexity
     let test_rounds: Vec<(&str, Vec<&str>, Vec<StreamChunk>)> = vec![
         // Round 1: Greeting
-        ("Hello, can you help me?", vec![], create_simple_chunks("Hello! I'm here to help you manage your devices and answer questions.")),
-
+        (
+            "Hello, can you help me?",
+            vec![],
+            create_simple_chunks(
+                "Hello! I'm here to help you manage your devices and answer questions.",
+            ),
+        ),
         // Round 2: List devices
-        ("What devices do I have?", vec!["list_devices"],
-            create_tool_call_chunks("list_devices", json!({}),
-                "You have 5 devices: sensor_temp_1, sensor_temp_2, sensor_hum_1, switch_living, and switch_bedroom.")),
-
+        (
+            "What devices do I have?",
+            vec!["list_devices"],
+            create_tool_call_chunks(
+                "list_devices",
+                json!({}),
+                "You have 5 devices: sensor_temp_1, sensor_temp_2, sensor_hum_1, switch_living, and switch_bedroom.",
+            ),
+        ),
         // Round 3: Query specific device
-        ("Tell me about sensor_temp_1", vec!["query_device"],
-            create_tool_call_chunks("query_device", json!({"device_id": "sensor_temp_1"}),
-                "sensor_temp_1 is an online temperature sensor located in the living room.")),
-
+        (
+            "Tell me about sensor_temp_1",
+            vec!["query_device"],
+            create_tool_call_chunks(
+                "query_device",
+                json!({"device_id": "sensor_temp_1"}),
+                "sensor_temp_1 is an online temperature sensor located in the living room.",
+            ),
+        ),
         // Round 4: Get temperature
-        ("What's the current temperature?", vec!["get_temperature"],
-            create_tool_call_chunks("get_temperature", json!({"device_id": "sensor_temp_1"}),
-                "The current temperature is 23.5°C.")),
-
+        (
+            "What's the current temperature?",
+            vec!["get_temperature"],
+            create_tool_call_chunks(
+                "get_temperature",
+                json!({"device_id": "sensor_temp_1"}),
+                "The current temperature is 23.5°C.",
+            ),
+        ),
         // Round 5: Get humidity
-        ("What about humidity?", vec!["get_humidity"],
-            create_tool_call_chunks("get_humidity", json!({"device_id": "sensor_hum_1"}),
-                "The current humidity is 65%.")),
-
+        (
+            "What about humidity?",
+            vec!["get_humidity"],
+            create_tool_call_chunks(
+                "get_humidity",
+                json!({"device_id": "sensor_hum_1"}),
+                "The current humidity is 65%.",
+            ),
+        ),
         // Round 6: Context question
-        ("What was the temperature you just mentioned?", vec![],
-            create_simple_chunks("I mentioned the temperature is 23.5°C from sensor_temp_1.")),
-
+        (
+            "What was the temperature you just mentioned?",
+            vec![],
+            create_simple_chunks("I mentioned the temperature is 23.5°C from sensor_temp_1."),
+        ),
         // Round 7: Control device
-        ("Turn on the living room switch", vec!["control_device"],
-            create_tool_call_chunks("control_device", json!({"device_id": "switch_living", "command": "on", "value": "true"}),
-                "The living room switch has been turned on successfully.")),
-
+        (
+            "Turn on the living room switch",
+            vec!["control_device"],
+            create_tool_call_chunks(
+                "control_device",
+                json!({"device_id": "switch_living", "command": "on", "value": "true"}),
+                "The living room switch has been turned on successfully.",
+            ),
+        ),
         // Round 8: Multiple queries
-        ("Check both temperature sensors", vec!["query_device"],
-            create_tool_call_chunks("query_device", json!({"device_id": "sensor_temp_1"}),
-                "Both temperature sensors are online. sensor_temp_1 shows 23.5°C and sensor_temp_2 shows 22.8°C.")),
-
+        (
+            "Check both temperature sensors",
+            vec!["query_device"],
+            create_tool_call_chunks(
+                "query_device",
+                json!({"device_id": "sensor_temp_1"}),
+                "Both temperature sensors are online. sensor_temp_1 shows 23.5°C and sensor_temp_2 shows 22.8°C.",
+            ),
+        ),
         // Round 9: Complex context
-        ("Which sensor is warmer?", vec![],
-            create_simple_chunks("sensor_temp_1 is warmer at 23.5°C compared to sensor_temp_2 at 22.8°C.")),
-
+        (
+            "Which sensor is warmer?",
+            vec![],
+            create_simple_chunks(
+                "sensor_temp_1 is warmer at 23.5°C compared to sensor_temp_2 at 22.8°C.",
+            ),
+        ),
         // Round 10: List again (verify state)
-        ("List devices again", vec!["list_devices"],
-            create_tool_call_chunks("list_devices", json!({}),
-                "You still have 5 devices: sensor_temp_1, sensor_temp_2, sensor_hum_1, switch_living, and switch_bedroom.")),
-
+        (
+            "List devices again",
+            vec!["list_devices"],
+            create_tool_call_chunks(
+                "list_devices",
+                json!({}),
+                "You still have 5 devices: sensor_temp_1, sensor_temp_2, sensor_hum_1, switch_living, and switch_bedroom.",
+            ),
+        ),
         // Round 11: Get humidity again
-        ("What's the humidity now?", vec!["get_humidity"],
-            create_tool_call_chunks("get_humidity", json!({"device_id": "sensor_hum_1"}),
-                "The current humidity is 68%, slightly up from before.")),
-
+        (
+            "What's the humidity now?",
+            vec!["get_humidity"],
+            create_tool_call_chunks(
+                "get_humidity",
+                json!({"device_id": "sensor_hum_1"}),
+                "The current humidity is 68%, slightly up from before.",
+            ),
+        ),
         // Round 12: Context from earlier
-        ("What's the combined status of both temperature sensors?", vec![],
-            create_simple_chunks("From our earlier queries, both sensor_temp_1 (23.5°C) and sensor_temp_2 (22.8°C) are online and functioning normally.")),
-
+        (
+            "What's the combined status of both temperature sensors?",
+            vec![],
+            create_simple_chunks(
+                "From our earlier queries, both sensor_temp_1 (23.5°C) and sensor_temp_2 (22.8°C) are online and functioning normally.",
+            ),
+        ),
         // Round 13: Control another device
-        ("Turn off the bedroom switch", vec!["control_device"],
-            create_tool_call_chunks("control_device", json!({"device_id": "switch_bedroom", "command": "off", "value": "false"}),
-                "The bedroom switch has been turned off.")),
-
+        (
+            "Turn off the bedroom switch",
+            vec!["control_device"],
+            create_tool_call_chunks(
+                "control_device",
+                json!({"device_id": "switch_bedroom", "command": "off", "value": "false"}),
+                "The bedroom switch has been turned off.",
+            ),
+        ),
         // Round 14: Query device
-        ("Check the bedroom switch status", vec!["query_device"],
-            create_tool_call_chunks("query_device", json!({"device_id": "switch_bedroom"}),
-                "The bedroom switch is currently off.")),
-
+        (
+            "Check the bedroom switch status",
+            vec!["query_device"],
+            create_tool_call_chunks(
+                "query_device",
+                json!({"device_id": "switch_bedroom"}),
+                "The bedroom switch is currently off.",
+            ),
+        ),
         // Round 15: Get all environmental data
-        ("Give me all environmental readings", vec!["get_temperature"],
-            create_tool_call_chunks("get_temperature", json!({"device_id": "sensor_temp_1"}),
-                "Environmental readings: Temperature 23.5°C, Humidity 68%. All sensors are operating normally.")),
-
+        (
+            "Give me all environmental readings",
+            vec!["get_temperature"],
+            create_tool_call_chunks(
+                "get_temperature",
+                json!({"device_id": "sensor_temp_1"}),
+                "Environmental readings: Temperature 23.5°C, Humidity 68%. All sensors are operating normally.",
+            ),
+        ),
         // Round 16: Context chain
-        ("Based on all the data we've discussed, what's the environment like?", vec![],
-            create_simple_chunks("Based on our conversation, your environment is comfortable: 23.5°C temperature with 68% humidity. Both temperature sensors are working well, and you have control of two switches.")),
-
+        (
+            "Based on all the data we've discussed, what's the environment like?",
+            vec![],
+            create_simple_chunks(
+                "Based on our conversation, your environment is comfortable: 23.5°C temperature with 68% humidity. Both temperature sensors are working well, and you have control of two switches.",
+            ),
+        ),
         // Round 17: Control command
-        ("Set the living room switch to off", vec!["control_device"],
-            create_tool_call_chunks("control_device", json!({"device_id": "switch_living", "command": "off", "value": "false"}),
-                "The living room switch has been turned off.")),
-
+        (
+            "Set the living room switch to off",
+            vec!["control_device"],
+            create_tool_call_chunks(
+                "control_device",
+                json!({"device_id": "switch_living", "command": "off", "value": "false"}),
+                "The living room switch has been turned off.",
+            ),
+        ),
         // Round 18: Multi-device query
-        ("Check if all sensors are still online", vec!["list_devices"],
-            create_tool_call_chunks("list_devices", json!({}),
-                "All 5 devices are online and operational. No changes detected.")),
-
+        (
+            "Check if all sensors are still online",
+            vec!["list_devices"],
+            create_tool_call_chunks(
+                "list_devices",
+                json!({}),
+                "All 5 devices are online and operational. No changes detected.",
+            ),
+        ),
         // Round 19: Summary request
-        ("Summarize everything we've done today", vec![],
-            create_simple_chunks("Today we: checked your 5 devices multiple times, monitored temperature (23.5°C) and humidity (68%), controlled your living room and bedroom switches, and verified all systems are working properly.")),
-
+        (
+            "Summarize everything we've done today",
+            vec![],
+            create_simple_chunks(
+                "Today we: checked your 5 devices multiple times, monitored temperature (23.5°C) and humidity (68%), controlled your living room and bedroom switches, and verified all systems are working properly.",
+            ),
+        ),
         // Round 20: Closing
-        ("Thanks for all the help!", vec![],
-            create_simple_chunks("You're welcome! Feel free to ask if you need anything else. Have a great day!")),
+        (
+            "Thanks for all the help!",
+            vec![],
+            create_simple_chunks(
+                "You're welcome! Feel free to ask if you need anything else. Have a great day!",
+            ),
+        ),
     ];
 
     println!("Running {} rounds of conversation...\n", test_rounds.len());
@@ -377,8 +495,9 @@ async fn test_extended_20_round_conversation() {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             Duration::from_secs(10),
-            session_manager.process_message_events(&session_id, user_msg)
-        ).await;
+            session_manager.process_message_events(&session_id, user_msg),
+        )
+        .await;
 
         match result {
             Ok(Ok(stream)) => {
@@ -403,7 +522,11 @@ async fn test_extended_20_round_conversation() {
                             }
                         }
                         AgentEvent::ToolCallEnd { tool, success, .. } => {
-                            println!("  Tool '{}' completed: {}", tool, if *success { "OK" } else { "FAIL" });
+                            println!(
+                                "  Tool '{}' completed: {}",
+                                tool,
+                                if *success { "OK" } else { "FAIL" }
+                            );
                         }
                         AgentEvent::Error { message } => {
                             has_error = true;
@@ -471,7 +594,11 @@ async fn test_extended_20_round_conversation() {
     }
 
     println!("=== Test Summary ===");
-    println!("Rounds passed: {}/{}", passed_rounds, passed_rounds + failed_rounds.len());
+    println!(
+        "Rounds passed: {}/{}",
+        passed_rounds,
+        passed_rounds + failed_rounds.len()
+    );
     println!("Total messages processed: {}", total_messages);
     println!("Total tools used: {}", total_tools_used);
 
@@ -495,26 +622,30 @@ async fn test_multiple_tools_same_response() {
     registry.register(create_mock_tool(
         "get_temperature",
         "Get temperature reading",
-        json!({"type": "object", "properties": {"device_id": {"type": "string"}}})
+        json!({"type": "object", "properties": {"device_id": {"type": "string"}}}),
     ));
     registry.register(create_mock_tool(
         "get_humidity",
         "Get humidity reading",
-        json!({"type": "object", "properties": {"device_id": {"type": "string"}}})
+        json!({"type": "object", "properties": {"device_id": {"type": "string"}}}),
     ));
     registry.register(create_mock_tool(
         "get_pressure",
         "Get pressure reading",
-        json!({"type": "object", "properties": {"device_id": {"type": "string"}}})
+        json!({"type": "object", "properties": {"device_id": {"type": "string"}}}),
     ));
 
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
@@ -525,20 +656,23 @@ async fn test_multiple_tools_same_response() {
             ("get_humidity", json!({"device_id": "sensor_1"})),
             ("get_pressure", json!({"device_id": "sensor_1"})),
         ],
-        "All environmental readings collected successfully."
+        "All environmental readings collected successfully.",
     );
 
     mock_llm.set_response_chunks(chunks).await;
 
     let result = tokio::time::timeout(
         Duration::from_secs(10),
-        session_manager.process_message_events(&session_id, "Get all environmental readings from sensor_1")
-    ).await;
+        session_manager
+            .process_message_events(&session_id, "Get all environmental readings from sensor_1"),
+    )
+    .await;
 
     match result {
         Ok(Ok(stream)) => {
             let events = collect_events(stream).await;
-            let tools_used: Vec<_> = events.iter()
+            let tools_used: Vec<_> = events
+                .iter()
                 .filter_map(|e| match e {
                     AgentEvent::ToolCallStart { tool, .. } => Some(tool.clone()),
                     _ => None,
@@ -560,7 +694,11 @@ async fn test_multiple_tools_same_response() {
             if all_found && tools_used.len() == expected_tools.len() {
                 println!("✅ All 3 tools called successfully in same response");
             } else {
-                panic!("Expected 3 tools, got {}: {:?}", tools_used.len(), tools_used);
+                panic!(
+                    "Expected 3 tools, got {}: {:?}",
+                    tools_used.len(),
+                    tools_used
+                );
             }
         }
         Ok(Err(e)) => {
@@ -587,8 +725,14 @@ async fn test_all_tools_functionality() {
         ("list_devices", json!({})),
         ("get_temperature", json!({"device_id": "sensor_1"})),
         ("get_humidity", json!({"device_id": "sensor_1"})),
-        ("control_device", json!({"device_id": "switch_1", "command": "on", "value": "true"})),
-        ("create_rule", json!({"name": "test_rule", "condition": "temp > 25"})),
+        (
+            "control_device",
+            json!({"device_id": "switch_1", "command": "on", "value": "true"}),
+        ),
+        (
+            "create_rule",
+            json!({"name": "test_rule", "condition": "temp > 25"}),
+        ),
         ("list_rules", json!({})),
         ("trigger_workflow", json!({"workflow_id": "test_wf"})),
     ];
@@ -597,17 +741,21 @@ async fn test_all_tools_functionality() {
         registry.register(create_mock_tool(
             tool_name,
             &format!("Mock tool for {}", tool_name),
-            json!({"type": "object", "properties": {"test": {"type": "string"}}})
+            json!({"type": "object", "properties": {"test": {"type": "string"}}}),
         ));
     }
 
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
@@ -619,23 +767,22 @@ async fn test_all_tools_functionality() {
         let chunks = create_tool_call_chunks(
             tool_name,
             args.clone(),
-            &format!("Tool {} executed successfully.", tool_name)
+            &format!("Tool {} executed successfully.", tool_name),
         );
 
         mock_llm.set_response_chunks(chunks).await;
 
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            session_manager.process_message_events(
-                &session_id,
-                &format!("Execute {}", tool_name)
-            )
-        ).await;
+            session_manager.process_message_events(&session_id, &format!("Execute {}", tool_name)),
+        )
+        .await;
 
         match result {
             Ok(Ok(stream)) => {
                 let events = collect_events(stream).await;
-                let tools_called: Vec<_> = events.iter()
+                let tools_called: Vec<_> = events
+                    .iter()
                     .filter_map(|e| match e {
                         AgentEvent::ToolCallStart { tool, .. } => Some(tool.clone()),
                         _ => None,
@@ -658,7 +805,11 @@ async fn test_all_tools_functionality() {
         }
     }
 
-    println!("\nTested {}/{} tools successfully", tested_tools.len(), tools_to_test.len());
+    println!(
+        "\nTested {}/{} tools successfully",
+        tested_tools.len(),
+        tools_to_test.len()
+    );
 
     if tested_tools.len() != tools_to_test.len() {
         panic!("Not all tools were tested successfully");
@@ -677,16 +828,28 @@ async fn test_complex_scenario_with_dependencies() {
 
     let mut registry = ToolRegistryBuilder::new().build();
     registry.register(create_mock_tool("list_devices", "List devices", json!({})));
-    registry.register(create_mock_tool("query_device", "Query device", json!({"device_id": {"type": "string"}})));
-    registry.register(create_mock_tool("control_device", "Control device", json!({"device_id": {"type": "string"}})));
+    registry.register(create_mock_tool(
+        "query_device",
+        "Query device",
+        json!({"device_id": {"type": "string"}}),
+    ));
+    registry.register(create_mock_tool(
+        "control_device",
+        "Control device",
+        json!({"device_id": {"type": "string"}}),
+    ));
 
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
@@ -694,24 +857,35 @@ async fn test_complex_scenario_with_dependencies() {
     // Define conversation steps: (user_message, expected_tools, assistant_response)
     let scenario_steps: Vec<(&str, Vec<&str>, &str)> = vec![
         // Step 1: User asks to control a device but doesn't specify which
-        ("Turn on a device for me", vec!["list_devices"],
-            "I can help with that. Let me first check what devices you have available. You have these devices: switch_living, switch_bedroom, and switch_hallway. Which one would you like me to turn on?"),
-
+        (
+            "Turn on a device for me",
+            vec!["list_devices"],
+            "I can help with that. Let me first check what devices you have available. You have these devices: switch_living, switch_bedroom, and switch_hallway. Which one would you like me to turn on?",
+        ),
         // Step 2: User specifies the living room switch
-        ("Turn on the living room switch", vec!["control_device"],
-            "OK, I'll turn on the living room switch for you. The living room switch has been turned on successfully."),
-
+        (
+            "Turn on the living room switch",
+            vec!["control_device"],
+            "OK, I'll turn on the living room switch for you. The living room switch has been turned on successfully.",
+        ),
         // Step 3: User asks to verify
-        ("Is the living room switch on?", vec!["query_device"],
-            "Yes, the living room switch is currently on."),
-
+        (
+            "Is the living room switch on?",
+            vec!["query_device"],
+            "Yes, the living room switch is currently on.",
+        ),
         // Step 4: User wants to turn it off
-        ("Now turn it off", vec!["control_device"],
-            "I'll turn off the living room switch. The living room switch has been turned off."),
-
+        (
+            "Now turn it off",
+            vec!["control_device"],
+            "I'll turn off the living room switch. The living room switch has been turned off.",
+        ),
         // Step 5: Final verification
-        ("What's the status now?", vec!["query_device"],
-            "The living room switch is currently off."),
+        (
+            "What's the status now?",
+            vec!["query_device"],
+            "The living room switch is currently off.",
+        ),
     ];
 
     let mut step = 1;
@@ -725,12 +899,24 @@ async fn test_complex_scenario_with_dependencies() {
             create_tool_call_chunks("list_devices", json!({}), expected_response)
         } else if expected_tools.contains(&"control_device") {
             if step == 2 {
-                create_tool_call_chunks("control_device", json!({"device_id": "switch_living", "command": "on"}), expected_response)
+                create_tool_call_chunks(
+                    "control_device",
+                    json!({"device_id": "switch_living", "command": "on"}),
+                    expected_response,
+                )
             } else {
-                create_tool_call_chunks("control_device", json!({"device_id": "switch_living", "command": "off"}), expected_response)
+                create_tool_call_chunks(
+                    "control_device",
+                    json!({"device_id": "switch_living", "command": "off"}),
+                    expected_response,
+                )
             }
         } else if expected_tools.contains(&"query_device") {
-            create_tool_call_chunks("query_device", json!({"device_id": "switch_living"}), expected_response)
+            create_tool_call_chunks(
+                "query_device",
+                json!({"device_id": "switch_living"}),
+                expected_response,
+            )
         } else {
             create_simple_chunks(expected_response)
         };
@@ -739,13 +925,15 @@ async fn test_complex_scenario_with_dependencies() {
 
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            session_manager.process_message_events(&session_id, user_msg)
-        ).await;
+            session_manager.process_message_events(&session_id, user_msg),
+        )
+        .await;
 
         match result {
             Ok(Ok(stream)) => {
                 let events = collect_events(stream).await;
-                let response_text: String = events.iter()
+                let response_text: String = events
+                    .iter()
                     .filter_map(|e| match e {
                         AgentEvent::Content { content } => Some(content.as_str()),
                         _ => None,

@@ -4,17 +4,17 @@
 //! of LLM backends at runtime, enabling third-party extensions without
 //! modifying the core codebase.
 
+use crate::backends::{OllamaConfig, OllamaRuntime};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::{Arc, OnceLock, RwLock};
-use serde_json::Value;
-use crate::backends::{OllamaConfig, OllamaRuntime};
 
 #[cfg(feature = "cloud")]
 use crate::backends::openai::{CloudConfig, CloudRuntime};
 
 #[cfg(feature = "cloud")]
-use edge_ai_core::llm::backend::{LlmRuntime, LlmError};
+use edge_ai_core::llm::backend::{LlmError, LlmRuntime};
 
 /// Plugin trait for LLM backend implementations.
 pub trait LlmBackendPlugin: Send + Sync {
@@ -108,13 +108,11 @@ impl BackendRegistry {
     /// Get the global registry instance.
     pub fn global() -> &'static Self {
         static REGISTRY: OnceLock<BackendRegistry> = OnceLock::new();
-        REGISTRY.get_or_init(|| {
-            Self {
-                #[cfg(feature = "cloud")]
-                backends: RwLock::new(HashMap::new()),
-                #[cfg(not(feature = "cloud"))]
-                _marker: PhantomData,
-            }
+        REGISTRY.get_or_init(|| Self {
+            #[cfg(feature = "cloud")]
+            backends: RwLock::new(HashMap::new()),
+            #[cfg(not(feature = "cloud"))]
+            _marker: PhantomData,
         })
     }
 
@@ -146,27 +144,31 @@ impl BackendRegistry {
 /// to register all built-in backends (Ollama, OpenAI, etc.).
 #[cfg(feature = "cloud")]
 pub fn register_builtin_backends() {
-    use edge_ai_core::llm::backend::{LlmRuntime, LlmError};
+    use edge_ai_core::llm::backend::{LlmError, LlmRuntime};
 
     let registry = BackendRegistry::global();
 
     // Ollama plugin
-    let ollama_plugin = Arc::new(DynBackendPlugin::new("ollama", "Ollama Native Backend",
+    let ollama_plugin = Arc::new(DynBackendPlugin::new(
+        "ollama",
+        "Ollama Native Backend",
         |config| {
             let cfg: OllamaConfig = serde_json::from_value(config.clone())
                 .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
             Ok(Box::new(OllamaRuntime::new(cfg)?) as Box<dyn LlmRuntime>)
-        }
+        },
     ));
     registry.register(ollama_plugin);
 
     // OpenAI/Cloud plugin
-    let cloud_plugin = Arc::new(DynBackendPlugin::new("openai", "OpenAI Compatible",
+    let cloud_plugin = Arc::new(DynBackendPlugin::new(
+        "openai",
+        "OpenAI Compatible",
         |config| {
             let cfg: CloudConfig = serde_json::from_value(config.clone())
                 .map_err(|e| LlmError::InvalidInput(e.to_string()))?;
             Ok(Box::new(CloudRuntime::new(cfg)?) as Box<dyn LlmRuntime>)
-        }
+        },
     ));
     registry.register(cloud_plugin);
 }

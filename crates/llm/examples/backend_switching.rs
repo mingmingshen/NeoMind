@@ -5,7 +5,7 @@
 //! 2. Switch between backends at runtime
 //! 3. Use environment variables for configuration
 
-use edge_ai_llm::config::{LlmConfig, LlmBackendConfig, LlmRuntimeManager};
+use edge_ai_llm::config::{LlmBackendConfig, LlmConfig, LlmRuntimeManager};
 
 #[cfg(feature = "cloud")]
 use edge_ai_llm::backends::OllamaConfig;
@@ -20,8 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("1. Creating Ollama backend from code...");
         let ollama_config = LlmConfig {
             backend: LlmBackendConfig::Ollama(
-                OllamaConfig::new("qwen3-vl:2b")
-                    .with_endpoint("http://localhost:11434")
+                OllamaConfig::new("qwen3-vl:2b").with_endpoint("http://localhost:11434"),
             ),
             generation: edge_ai_llm::config::GenerationParams::default(),
         };
@@ -109,7 +108,10 @@ mod tests {
             backend: LlmBackendConfig::Ollama(OllamaConfig::default()),
             generation: edge_ai_llm::config::GenerationParams::default(),
         };
-        assert_eq!(config.backend_type(), edge_ai_core::llm::backend::BackendType::Cloud);
+        assert_eq!(
+            config.backend_type(),
+            edge_ai_core::llm::backend::BackendType::Cloud
+        );
     }
 
     #[test]
@@ -124,8 +126,7 @@ mod tests {
     fn test_config_serialize() {
         let config = LlmConfig {
             backend: LlmBackendConfig::Ollama(
-                OllamaConfig::new("/models/qwen3-vl")
-                    .with_endpoint("http://localhost:11434")
+                OllamaConfig::new("/models/qwen3-vl").with_endpoint("http://localhost:11434"),
             ),
             generation: edge_ai_llm::config::GenerationParams::default(),
         };

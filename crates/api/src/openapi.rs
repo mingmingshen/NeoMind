@@ -27,7 +27,7 @@ impl Modify for ServerModifier {
              use HTTP Bearer token authentication.\n\n\
              ## WebSocket\n\n\
              Real-time communication is available via WebSocket at `/api/chat`."
-            .to_string()
+                .to_string(),
         );
     }
 }
@@ -52,8 +52,7 @@ pub struct ApiDoc;
 
 /// Create the Swagger UI router for nesting.
 pub fn swagger_ui() -> utoipa_swagger_ui::SwaggerUi {
-    SwaggerUi::new("/api-docs{/spec}")
-        .url("/api/openapi.json", ApiDoc::openapi())
+    SwaggerUi::new("/api-docs{/spec}").url("/api/openapi.json", ApiDoc::openapi())
 }
 
 /// Handler that returns the OpenAPI JSON schema.
@@ -63,7 +62,10 @@ pub async fn openapi_json_handler() -> impl axum::response::IntoResponse {
         .expect("Failed to serialize OpenAPI spec");
 
     (
-        [(axum::http::header::CONTENT_TYPE, "application/json;charset=utf-8")],
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "application/json;charset=utf-8",
+        )],
         json,
     )
 }

@@ -2,7 +2,6 @@
 //!
 //! This module defines the foundational traits for function calling
 /// used by LLM agents.
-
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -196,9 +195,9 @@ pub trait Tool: Send + Sync {
         let params = self.parameters();
         if let Some(obj) = params.as_object() {
             if let Some(required) = obj.get("required").and_then(|r| r.as_array()) {
-                let args_obj = args.as_object().ok_or_else(|| {
-                    ToolError::InvalidArguments("Expected object".to_string())
-                })?;
+                let args_obj = args
+                    .as_object()
+                    .ok_or_else(|| ToolError::InvalidArguments("Expected object".to_string()))?;
 
                 for req in required {
                     if let Some(req_str) = req.as_str() {

@@ -6,17 +6,19 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use edge_ai_core::eventbus::EventBus;
 use edge_ai_core::event::{NeoTalkEvent, ProposedAction};
-use edge_ai_tools::{Tool, ToolOutput, ToolError, error::Result as ToolResult, tool::{string_property, array_property, object_schema as tool_object_schema, boolean_property, number_property}};
+use edge_ai_core::eventbus::EventBus;
+use edge_ai_tools::{
+    Tool, ToolError, ToolOutput,
+    error::Result as ToolResult,
+    tool::{
+        array_property, boolean_property, number_property, object_schema as tool_object_schema,
+        string_property,
+    },
+};
 
 use crate::autonomous::{
-    Decision,
-    DecisionEngine,
-    DecisionEngineConfig,
-    DecisionType,
-    DecisionPriority,
-    DecisionAction,
+    Decision, DecisionAction, DecisionEngine, DecisionEngineConfig, DecisionPriority, DecisionType,
 };
 
 /// Tool for proposing decisions based on analysis.
@@ -32,13 +34,17 @@ impl ProposeDecisionTool {
 
     /// Publish a decision proposal to the event bus.
     async fn publish_decision_proposal(&self, decision: &Decision) {
-        let actions: Vec<ProposedAction> = decision.actions.iter().map(|a| {
-            ProposedAction::new(
-                a.action_type.clone(),
-                a.description.clone(),
-                a.parameters.clone(),
-            )
-        }).collect();
+        let actions: Vec<ProposedAction> = decision
+            .actions
+            .iter()
+            .map(|a| {
+                ProposedAction::new(
+                    a.action_type.clone(),
+                    a.description.clone(),
+                    a.parameters.clone(),
+                )
+            })
+            .collect();
 
         let event = NeoTalkEvent::LlmDecisionProposed {
             decision_id: decision.id.clone(),
@@ -50,7 +56,10 @@ impl ProposeDecisionTool {
             timestamp: chrono::Utc::now().timestamp(),
         };
 
-        let _ = self.event_bus.publish_with_source(event, "decision_tool").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "decision_tool")
+            .await;
     }
 }
 
@@ -75,7 +84,12 @@ impl Tool for ProposeDecisionTool {
                 "confidence": number_property("Confidence level (0-100)"),
                 "actions": array_property("object", "List of actions to take. Each action should have 'action_type', 'description', and 'parameters'.")
             }),
-            vec!["title".to_string(), "description".to_string(), "decision_type".to_string(), "actions".to_string()],
+            vec![
+                "title".to_string(),
+                "description".to_string(),
+                "decision_type".to_string(),
+                "actions".to_string(),
+            ],
         )
     }
 
@@ -84,17 +98,17 @@ impl Tool for ProposeDecisionTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("title must be a string".to_string()))?;
 
-        let description = args["description"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("description must be a string".to_string()))?;
+        let description = args["description"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("description must be a string".to_string())
+        })?;
 
         let reasoning = args["reasoning"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("reasoning must be a string".to_string()))?;
 
-        let decision_type_str = args["decision_type"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("decision_type must be a string".to_string()))?;
+        let decision_type_str = args["decision_type"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("decision_type must be a string".to_string())
+        })?;
 
         let decision_type = match decision_type_str {
             "rule" => DecisionType::Rule,
@@ -104,12 +118,15 @@ impl Tool for ProposeDecisionTool {
             "configuration" => DecisionType::Configuration,
             "data_collection" => DecisionType::DataCollection,
             "human_intervention" => DecisionType::HumanIntervention,
-            _ => return Err(ToolError::InvalidArguments(format!("Invalid decision_type: {}", decision_type_str))),
+            _ => {
+                return Err(ToolError::InvalidArguments(format!(
+                    "Invalid decision_type: {}",
+                    decision_type_str
+                )));
+            }
         };
 
-        let priority_str = args["priority"]
-            .as_str()
-            .unwrap_or("medium");
+        let priority_str = args["priority"].as_str().unwrap_or("medium");
 
         let priority = match priority_str {
             "low" => DecisionPriority::Low,
@@ -131,7 +148,8 @@ impl Tool for ProposeDecisionTool {
             reasoning.to_string(),
             decision_type,
             priority,
-        ).with_confidence(confidence);
+        )
+        .with_confidence(confidence);
 
         if let Some(actions_array) = args["actions"].as_array() {
             for action_value in actions_array {
@@ -145,15 +163,13 @@ impl Tool for ProposeDecisionTool {
                     .unwrap_or("")
                     .to_string();
 
-                let action_parameters = action_value.get("parameters")
+                let action_parameters = action_value
+                    .get("parameters")
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
 
-                let action = DecisionAction::new(
-                    action_type,
-                    action_description,
-                    action_parameters,
-                );
+                let action =
+                    DecisionAction::new(action_type, action_description, action_parameters);
 
                 decision = decision.with_action(action);
             }
@@ -195,7 +211,10 @@ impl ExecuteDecisionTool {
             timestamp: chrono::Utc::now().timestamp(),
         };
 
-        let _ = self.event_bus.publish_with_source(event, "decision_tool").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "decision_tool")
+            .await;
     }
 
     /// Execute a single action.
@@ -210,12 +229,8 @@ impl ExecuteDecisionTool {
                 }))
             }
             "control_device" => {
-                let device_id = action.parameters["device_id"]
-                    .as_str()
-                    .unwrap_or("unknown");
-                let command = action.parameters["command"]
-                    .as_str()
-                    .unwrap_or("unknown");
+                let device_id = action.parameters["device_id"].as_str().unwrap_or("unknown");
+                let command = action.parameters["command"].as_str().unwrap_or("unknown");
 
                 Ok(serde_json::json!({
                     "action": "control_device",
@@ -225,9 +240,7 @@ impl ExecuteDecisionTool {
                 }))
             }
             "notify_user" => {
-                let message = action.parameters["message"]
-                    .as_str()
-                    .unwrap_or("");
+                let message = action.parameters["message"].as_str().unwrap_or("");
 
                 Ok(serde_json::json!({
                     "action": "notify_user",
@@ -247,13 +260,11 @@ impl ExecuteDecisionTool {
                     "execution_id": format!("exec_{}", uuid::Uuid::new_v4())
                 }))
             }
-            _ => {
-                Ok(serde_json::json!({
-                    "action": action.action_type,
-                    "status": "success",
-                    "message": "Action acknowledged"
-                }))
-            }
+            _ => Ok(serde_json::json!({
+                "action": action.action_type,
+                "status": "success",
+                "message": "Action acknowledged"
+            })),
         }
     }
 }
@@ -280,9 +291,9 @@ impl Tool for ExecuteDecisionTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
-        let decision_id = args["decision_id"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("decision_id must be a string".to_string()))?;
+        let decision_id = args["decision_id"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("decision_id must be a string".to_string())
+        })?;
 
         let auto_approve = args["auto_approve"].as_bool().unwrap_or(false);
 
@@ -303,7 +314,8 @@ impl Tool for ExecuteDecisionTool {
                 .unwrap_or("")
                 .to_string();
 
-            let action_parameters = action_value.get("parameters")
+            let action_parameters = action_value
+                .get("parameters")
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
 
@@ -350,14 +362,15 @@ impl Tool for ExecuteDecisionTool {
             "results": results
         });
 
-        self.publish_execution(decision_id, all_success, &output).await;
+        self.publish_execution(decision_id, all_success, &output)
+            .await;
 
         Ok(ToolOutput::success_with_metadata(
             output,
             serde_json::json!({
                 "all_success": all_success,
                 "partial_success": success_count > 0 && failure_count > 0
-            })
+            }),
         ))
     }
 }

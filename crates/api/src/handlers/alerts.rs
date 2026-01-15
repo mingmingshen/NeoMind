@@ -1,12 +1,18 @@
 //! Alert management handlers.
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use edge_ai_alerts::{AlertId, AlertSeverity, AlertStatus, Alert};
+use edge_ai_alerts::{Alert, AlertId, AlertSeverity, AlertStatus};
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 /// Alert DTO for API responses.
@@ -32,7 +38,9 @@ pub struct CreateAlertRequest {
     pub source: String,
 }
 
-fn default_severity() -> String { "info".to_string() }
+fn default_severity() -> String {
+    "info".to_string()
+}
 
 /// Update alert request.
 #[derive(Debug, Deserialize)]
@@ -59,15 +67,21 @@ pub async fn list_alerts_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     let alerts = state.alert_manager.list_alerts().await;
-    let dtos: Vec<AlertDto> = alerts.into_iter().map(|a| AlertDto {
-        id: a.id.to_string(),
-        title: a.title,
-        message: a.message,
-        severity: a.severity.as_str().to_string(),
-        status: a.status.as_str().to_string(),
-        acknowledged: matches!(a.status, AlertStatus::Acknowledged | AlertStatus::Resolved | AlertStatus::FalsePositive),
-        timestamp: a.timestamp.to_rfc3339(),
-    }).collect();
+    let dtos: Vec<AlertDto> = alerts
+        .into_iter()
+        .map(|a| AlertDto {
+            id: a.id.to_string(),
+            title: a.title,
+            message: a.message,
+            severity: a.severity.as_str().to_string(),
+            status: a.status.as_str().to_string(),
+            acknowledged: matches!(
+                a.status,
+                AlertStatus::Acknowledged | AlertStatus::Resolved | AlertStatus::FalsePositive
+            ),
+            timestamp: a.timestamp.to_rfc3339(),
+        })
+        .collect();
 
     ok(json!({
         "alerts": dtos,
@@ -81,11 +95,18 @@ pub async fn create_alert_handler(
     Json(req): Json<CreateAlertRequest>,
 ) -> HandlerResult<serde_json::Value> {
     let severity = parse_severity(&req.severity);
-    let source = if req.source.is_empty() { "api".to_string() } else { req.source };
+    let source = if req.source.is_empty() {
+        "api".to_string()
+    } else {
+        req.source
+    };
 
     let alert = Alert::new(severity, req.title.clone(), req.message.clone(), source);
 
-    let alert = state.alert_manager.create_alert(alert).await
+    let alert = state
+        .alert_manager
+        .create_alert(alert)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -102,10 +123,13 @@ pub async fn get_alert_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let alert_id = AlertId::from_string(&id)
-        .map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
+    let alert_id =
+        AlertId::from_string(&id).map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
 
-    let alert = state.alert_manager.get_alert(&alert_id).await
+    let alert = state
+        .alert_manager
+        .get_alert(&alert_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found("Alert"))?;
 
     ok(json!({
@@ -125,8 +149,8 @@ pub async fn update_alert_handler(
     Path(id): Path<String>,
     Json(req): Json<UpdateAlertRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let alert_id = AlertId::from_string(&id)
-        .map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
+    let alert_id =
+        AlertId::from_string(&id).map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
 
     // Note: The current AlertManager doesn't support updating all fields.
     // For now, we only support status changes through the acknowledge/resolve endpoints.
@@ -134,23 +158,37 @@ pub async fn update_alert_handler(
     if let Some(status) = req.status {
         match status.to_lowercase().as_str() {
             "resolved" => {
-                state.alert_manager.resolve(&alert_id).await
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to update alert: {}", e)))?;
+                state.alert_manager.resolve(&alert_id).await.map_err(|e| {
+                    ErrorResponse::internal(format!("Failed to update alert: {}", e))
+                })?;
             }
             "acknowledged" => {
-                state.alert_manager.acknowledge(&alert_id).await
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to update alert: {}", e)))?;
+                state
+                    .alert_manager
+                    .acknowledge(&alert_id)
+                    .await
+                    .map_err(|e| {
+                        ErrorResponse::internal(format!("Failed to update alert: {}", e))
+                    })?;
             }
             "false_positive" | "falsepositive" => {
-                state.alert_manager.mark_false_positive(&alert_id).await
-                    .map_err(|e| ErrorResponse::internal(format!("Failed to update alert: {}", e)))?;
+                state
+                    .alert_manager
+                    .mark_false_positive(&alert_id)
+                    .await
+                    .map_err(|e| {
+                        ErrorResponse::internal(format!("Failed to update alert: {}", e))
+                    })?;
             }
             _ => {}
         }
     }
 
     // Fetch updated alert
-    let alert = state.alert_manager.get_alert(&alert_id).await
+    let alert = state
+        .alert_manager
+        .get_alert(&alert_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found("Alert"))?;
 
     ok(json!({
@@ -167,10 +205,13 @@ pub async fn delete_alert_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let alert_id = AlertId::from_string(&id)
-        .map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
+    let alert_id =
+        AlertId::from_string(&id).map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
 
-    state.alert_manager.delete_alert(&alert_id).await
+    state
+        .alert_manager
+        .delete_alert(&alert_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete alert: {}", e)))?;
 
     ok(json!({
@@ -184,10 +225,13 @@ pub async fn acknowledge_alert_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let alert_id = AlertId::from_string(&id)
-        .map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
+    let alert_id =
+        AlertId::from_string(&id).map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
 
-    state.alert_manager.acknowledge(&alert_id).await
+    state
+        .alert_manager
+        .acknowledge(&alert_id)
+        .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!({
@@ -201,10 +245,13 @@ pub async fn resolve_alert_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let alert_id = AlertId::from_string(&id)
-        .map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
+    let alert_id =
+        AlertId::from_string(&id).map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
 
-    state.alert_manager.resolve(&alert_id).await
+    state
+        .alert_manager
+        .resolve(&alert_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to resolve alert: {}", e)))?;
 
     ok(json!({
@@ -218,10 +265,13 @@ pub async fn mark_false_positive_alert_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let alert_id = AlertId::from_string(&id)
-        .map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
+    let alert_id =
+        AlertId::from_string(&id).map_err(|_| ErrorResponse::bad_request("Invalid alert ID"))?;
 
-    state.alert_manager.mark_false_positive(&alert_id).await
+    state
+        .alert_manager
+        .mark_false_positive(&alert_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to mark alert: {}", e)))?;
 
     ok(json!({

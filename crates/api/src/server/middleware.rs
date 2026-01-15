@@ -1,10 +1,13 @@
 //! Server middleware.
 
+use axum::{
+    body::Body, extract::ConnectInfo, extract::State, http::Request, middleware::Next,
+    response::IntoResponse,
+};
 use std::net::SocketAddr;
-use axum::{extract::ConnectInfo, extract::State, middleware::Next, http::Request, body::Body, response::IntoResponse};
 
-use crate::rate_limit::{extract_client_id, RateLimitExceeded};
 use super::types::ServerState;
+use crate::rate_limit::{RateLimitExceeded, extract_client_id};
 
 /// Rate limiting middleware.
 ///

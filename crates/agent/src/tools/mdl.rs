@@ -10,7 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use edge_ai_devices::{builtin_types, mdl_format::DeviceTypeDefinition};
-use edge_ai_tools::{Tool, ToolOutput, ToolError, error::Result as ToolResult, tool::{object_schema, string_property, array_property}};
+use edge_ai_tools::{
+    Tool, ToolError, ToolOutput,
+    error::Result as ToolResult,
+    tool::{array_property, object_schema, string_property},
+};
 
 /// ListDeviceTypes tool - queries all available device types.
 pub struct ListDeviceTypesTool {
@@ -37,7 +41,11 @@ impl ListDeviceTypesTool {
     fn filter_by_category(&self, category: &str) -> Vec<DeviceTypeSummary> {
         self.device_types
             .iter()
-            .filter(|dt| dt.categories.iter().any(|c| c.eq_ignore_ascii_case(category)))
+            .filter(|dt| {
+                dt.categories
+                    .iter()
+                    .any(|c| c.eq_ignore_ascii_case(category))
+            })
             .map(|dt| DeviceTypeSummary::from_definition(dt))
             .collect()
     }
@@ -72,7 +80,7 @@ impl Tool for ListDeviceTypesTool {
             serde_json::json!({
                 "category": string_property("Filter by device category: 'sensor', 'actuator', 'controller', 'gateway', or 'hybrid'. Optional.")
             }),
-            vec![]
+            vec![],
         )
     }
 
@@ -142,19 +150,22 @@ impl Tool for GetDeviceTypeTool {
             serde_json::json!({
                 "device_type": string_property("Device type ID (e.g., 'dht22_sensor', 'relay_module')")
             }),
-            vec!["device_type".to_string()]
+            vec!["device_type".to_string()],
         )
     }
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
-        let device_type = args["device_type"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("device_type must be a string".to_string()))?;
+        let device_type = args["device_type"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("device_type must be a string".to_string())
+        })?;
 
-        let definition = self.find_device_type(device_type)
-            .ok_or_else(|| ToolError::NotFound(format!("Device type '{}' not found", device_type)))?;
+        let definition = self.find_device_type(device_type).ok_or_else(|| {
+            ToolError::NotFound(format!("Device type '{}' not found", device_type))
+        })?;
 
-        Ok(ToolOutput::success(serde_json::to_value(definition).unwrap()))
+        Ok(ToolOutput::success(
+            serde_json::to_value(definition).unwrap(),
+        ))
     }
 }
 
@@ -189,9 +200,15 @@ impl ExplainDeviceTypeTool {
     /// Generate natural language explanation.
     fn explain(&self, definition: &DeviceTypeDefinition, language: &str) -> DeviceExplanation {
         let (metrics_desc, commands_desc) = if language == "zh" {
-            (self.explain_metrics_zh(definition), self.explain_commands_zh(definition))
+            (
+                self.explain_metrics_zh(definition),
+                self.explain_commands_zh(definition),
+            )
         } else {
-            (self.explain_metrics_en(definition), self.explain_commands_en(definition))
+            (
+                self.explain_metrics_en(definition),
+                self.explain_commands_en(definition),
+            )
         };
 
         DeviceExplanation {
@@ -236,11 +253,17 @@ impl ExplainDeviceTypeTool {
         let mut parts = Vec::new();
 
         if !def.uplink.metrics.is_empty() {
-            parts.push(format!("supports {} uplink metrics", def.uplink.metrics.len()));
+            parts.push(format!(
+                "supports {} uplink metrics",
+                def.uplink.metrics.len()
+            ));
         }
 
         if !def.downlink.commands.is_empty() {
-            parts.push(format!("supports {} downlink commands", def.downlink.commands.len()));
+            parts.push(format!(
+                "supports {} downlink commands",
+                def.downlink.commands.len()
+            ));
         }
 
         if parts.is_empty() {
@@ -255,17 +278,20 @@ impl ExplainDeviceTypeTool {
             return "该设备类型不上报任何指标".to_string();
         }
 
-        let mut parts = vec![format!("该设备上报以下{}个指标：", def.uplink.metrics.len())];
+        let mut parts = vec![format!(
+            "该设备上报以下{}个指标：",
+            def.uplink.metrics.len()
+        )];
         for metric in &def.uplink.metrics {
-            let min_str = metric.min.map_or_else(|| "不限".to_string(), |v| v.to_string());
-            let max_str = metric.max.map_or_else(|| "不限".to_string(), |v| v.to_string());
+            let min_str = metric
+                .min
+                .map_or_else(|| "不限".to_string(), |v| v.to_string());
+            let max_str = metric
+                .max
+                .map_or_else(|| "不限".to_string(), |v| v.to_string());
             parts.push(format!(
                 "- **{}** ({}): 单位：{}，范围：{} - {}",
-                metric.display_name,
-                metric.name,
-                metric.unit,
-                min_str,
-                max_str
+                metric.display_name, metric.name, metric.unit, min_str, max_str
             ));
         }
         parts.join("\n")
@@ -276,17 +302,20 @@ impl ExplainDeviceTypeTool {
             return "This device type does not report any metrics".to_string();
         }
 
-        let mut parts = vec![format!("This device reports the following {} metrics:", def.uplink.metrics.len())];
+        let mut parts = vec![format!(
+            "This device reports the following {} metrics:",
+            def.uplink.metrics.len()
+        )];
         for metric in &def.uplink.metrics {
-            let min_str = metric.min.map_or_else(|| "unlimited".to_string(), |v| v.to_string());
-            let max_str = metric.max.map_or_else(|| "unlimited".to_string(), |v| v.to_string());
+            let min_str = metric
+                .min
+                .map_or_else(|| "unlimited".to_string(), |v| v.to_string());
+            let max_str = metric
+                .max
+                .map_or_else(|| "unlimited".to_string(), |v| v.to_string());
             parts.push(format!(
                 "- **{}** ({ }): unit: {}, range: {} - {}",
-                metric.display_name,
-                metric.name,
-                metric.unit,
-                min_str,
-                max_str
+                metric.display_name, metric.name, metric.unit, min_str, max_str
             ));
         }
         parts.join("\n")
@@ -297,22 +326,19 @@ impl ExplainDeviceTypeTool {
             return "该设备类型不支持任何下行命令".to_string();
         }
 
-        let mut parts = vec![format!("该设备支持以下{}个命令：", def.downlink.commands.len())];
+        let mut parts = vec![format!(
+            "该设备支持以下{}个命令：",
+            def.downlink.commands.len()
+        )];
         for cmd in &def.downlink.commands {
-            parts.push(format!(
-                "- **{}** ({})",
-                cmd.display_name,
-                cmd.name
-            ));
+            parts.push(format!("- **{}** ({})", cmd.display_name, cmd.name));
 
             if !cmd.parameters.is_empty() {
                 parts.push("  参数：".to_string());
                 for param in &cmd.parameters {
                     parts.push(format!(
                         "  - {} ({}): 默认值: {:?}",
-                        param.display_name,
-                        param.name,
-                        param.default_value
+                        param.display_name, param.name, param.default_value
                     ));
                 }
             }
@@ -325,22 +351,19 @@ impl ExplainDeviceTypeTool {
             return "This device type does not support any downlink commands".to_string();
         }
 
-        let mut parts = vec![format!("This device supports the following {} commands:", def.downlink.commands.len())];
+        let mut parts = vec![format!(
+            "This device supports the following {} commands:",
+            def.downlink.commands.len()
+        )];
         for cmd in &def.downlink.commands {
-            parts.push(format!(
-                "- **{}** ({ })",
-                cmd.display_name,
-                cmd.name
-            ));
+            parts.push(format!("- **{}** ({ })", cmd.display_name, cmd.name));
 
             if !cmd.parameters.is_empty() {
                 parts.push("  Parameters:".to_string());
                 for param in &cmd.parameters {
                     parts.push(format!(
                         "  - {} ({}): default: {:?}",
-                        param.display_name,
-                        param.name,
-                        param.default_value
+                        param.display_name, param.name, param.default_value
                     ));
                 }
             }
@@ -353,8 +376,7 @@ impl ExplainDeviceTypeTool {
             let first_metric = &def.uplink.metrics[0];
             format!(
                 "示例：订阅 '{}' 指标来接收设备的{}数据。",
-                first_metric.name,
-                first_metric.display_name
+                first_metric.name, first_metric.display_name
             )
         } else {
             "示例：设备类型定义已加载".to_string()
@@ -366,8 +388,7 @@ impl ExplainDeviceTypeTool {
             let first_metric = &def.uplink.metrics[0];
             format!(
                 "Example: Subscribe to the '{}' metric to receive {} data from the device.",
-                first_metric.name,
-                first_metric.display_name
+                first_metric.name, first_metric.display_name
             )
         } else {
             "Example: Device type definition loaded".to_string()
@@ -397,25 +418,26 @@ impl Tool for ExplainDeviceTypeTool {
                 "device_type": string_property("Device type ID (e.g., 'dht22_sensor', 'relay_module')"),
                 "language": string_property("Output language: 'zh' for Chinese, 'en' for English. Defaults to 'zh'.")
             }),
-            vec!["device_type".to_string()]
+            vec!["device_type".to_string()],
         )
     }
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
-        let device_type = args["device_type"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("device_type must be a string".to_string()))?;
+        let device_type = args["device_type"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("device_type must be a string".to_string())
+        })?;
 
-        let language = args["language"]
-            .as_str()
-            .unwrap_or("zh");
+        let language = args["language"].as_str().unwrap_or("zh");
 
-        let definition = self.find_device_type(device_type)
-            .ok_or_else(|| ToolError::NotFound(format!("Device type '{}' not found", device_type)))?;
+        let definition = self.find_device_type(device_type).ok_or_else(|| {
+            ToolError::NotFound(format!("Device type '{}' not found", device_type))
+        })?;
 
         let explanation = self.explain(definition, language);
 
-        Ok(ToolOutput::success(serde_json::to_value(explanation).unwrap()))
+        Ok(ToolOutput::success(
+            serde_json::to_value(explanation).unwrap(),
+        ))
     }
 }
 

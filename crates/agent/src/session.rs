@@ -15,7 +15,7 @@ use super::error::{AgentError, Result};
 
 // Re-export instance manager for convenience
 pub use edge_ai_llm::instance_manager::{
-    LlmBackendInstanceManager, get_instance_manager, BackendTypeDefinition,
+    BackendTypeDefinition, LlmBackendInstanceManager, get_instance_manager,
 };
 
 /// Information about a session for listing.
@@ -62,17 +62,17 @@ impl SessionManager {
     /// This does not open any database files, avoiding lock conflicts.
     pub fn memory() -> Self {
         eprintln!("[DEBUG SessionManager] Creating memory SessionManager (fallback mode)");
-        let store = SessionStore::open(":memory:")
-            .unwrap_or_else(|e| {
-                // Fallback to temp file if :memory: fails
-                eprintln!("[DEBUG SessionManager] :memory: failed, using temp file: {}", e);
-                let temp_path = std::env::temp_dir().join(
-                    format!("sessions_fallback_{}.redb", uuid::Uuid::new_v4())
-                );
-                eprintln!("[DEBUG SessionManager] Fallback path: {:?}", temp_path);
-                SessionStore::open(&temp_path)
-                    .expect("Failed to create fallback session store")
-            });
+        let store = SessionStore::open(":memory:").unwrap_or_else(|e| {
+            // Fallback to temp file if :memory: fails
+            eprintln!(
+                "[DEBUG SessionManager] :memory: failed, using temp file: {}",
+                e
+            );
+            let temp_path = std::env::temp_dir()
+                .join(format!("sessions_fallback_{}.redb", uuid::Uuid::new_v4()));
+            eprintln!("[DEBUG SessionManager] Fallback path: {:?}", temp_path);
+            SessionStore::open(&temp_path).expect("Failed to create fallback session store")
+        });
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             session_messages: Arc::new(RwLock::new(HashMap::new())),
@@ -100,23 +100,29 @@ impl SessionManager {
 
         // Restore sessions from database on startup
         // Note: This requires LLM backend to be configured later via set_llm_backend
-        let session_ids = manager.store.list_sessions()
-            .unwrap_or_else(|e| {
-                eprintln!("Failed to list sessions from database: {}", e);
-                Vec::new()
-            });
+        let session_ids = manager.store.list_sessions().unwrap_or_else(|e| {
+            eprintln!("Failed to list sessions from database: {}", e);
+            Vec::new()
+        });
 
         if !session_ids.is_empty() {
-            eprintln!("SessionManager: Found {} persisted sessions, restoring...", session_ids.len());
+            eprintln!(
+                "SessionManager: Found {} persisted sessions, restoring...",
+                session_ids.len()
+            );
 
             // Use a blocking task since we're in a sync context
             let rt = tokio::runtime::Handle::try_current();
             if rt.is_ok() {
                 // We're in a tokio runtime, restore sessions asynchronously
                 // For now, just log that sessions will be restored lazily
-                eprintln!("SessionManager: Sessions will be restored on first access (lazy restoration)");
+                eprintln!(
+                    "SessionManager: Sessions will be restored on first access (lazy restoration)"
+                );
             } else {
-                eprintln!("SessionManager: No tokio runtime available, sessions will be restored lazily");
+                eprintln!(
+                    "SessionManager: No tokio runtime available, sessions will be restored lazily"
+                );
             }
         }
 
@@ -127,7 +133,8 @@ impl SessionManager {
 
     /// Save a session ID to persistent storage.
     fn save_session_id(&self, session_id: &str) -> Result<()> {
-        self.store.save_session_id(session_id)
+        self.store
+            .save_session_id(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to save session: {}", e)))
     }
 
@@ -147,7 +154,8 @@ impl SessionManager {
             .map(|msg| {
                 // Convert ToolCall to serde_json::Value, including result field
                 let tool_calls = msg.tool_calls.as_ref().map(|calls| {
-                    calls.iter()
+                    calls
+                        .iter()
                         .map(|call| {
                             let mut obj = serde_json::json!({
                                 "name": call.name,
@@ -177,13 +185,16 @@ impl SessionManager {
             })
             .collect();
 
-        self.store.save_history(session_id, &session_messages)
+        self.store
+            .save_history(session_id, &session_messages)
             .map_err(|e| AgentError::Storage(format!("Failed to save history: {}", e)))
     }
 
     /// Load message history for a session from persistent storage.
     fn load_history(&self, session_id: &str) -> Result<Vec<AgentMessage>> {
-        let session_messages = self.store.load_history(session_id)
+        let session_messages = self
+            .store
+            .load_history(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to load history: {}", e)))?;
 
         // Convert SessionMessage back to AgentMessage
@@ -256,39 +267,52 @@ impl SessionManager {
         use edge_ai_storage::LlmBackendType;
 
         // Get the instance manager
-        let manager = get_instance_manager().map_err(|e| {
-            AgentError::Llm(format!("Failed to get instance manager: {}", e))
-        })?;
+        let manager = get_instance_manager()
+            .map_err(|e| AgentError::Llm(format!("Failed to get instance manager: {}", e)))?;
 
         // Get the active backend instance
-        let active_instance = manager.get_active_instance().ok_or_else(|| {
-            AgentError::Llm("No active LLM backend configured".to_string())
-        })?;
+        let active_instance = manager
+            .get_active_instance()
+            .ok_or_else(|| AgentError::Llm("No active LLM backend configured".to_string()))?;
 
         // Convert to LlmBackend enum based on backend type
         let backend = match active_instance.backend_type {
             LlmBackendType::Ollama => LlmBackend::Ollama {
-                endpoint: active_instance.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string()),
+                endpoint: active_instance
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:11434".to_string()),
                 model: active_instance.model.clone(),
             },
             LlmBackendType::OpenAi => LlmBackend::OpenAi {
                 api_key: active_instance.api_key.clone().unwrap_or_default(),
-                endpoint: active_instance.endpoint.clone().unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+                endpoint: active_instance
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
                 model: active_instance.model.clone(),
             },
             LlmBackendType::Anthropic => LlmBackend::OpenAi {
                 api_key: active_instance.api_key.clone().unwrap_or_default(),
-                endpoint: active_instance.endpoint.clone().unwrap_or_else(|| "https://api.anthropic.com/v1".to_string()),
+                endpoint: active_instance
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "https://api.anthropic.com/v1".to_string()),
                 model: active_instance.model.clone(),
             },
             LlmBackendType::Google => LlmBackend::OpenAi {
                 api_key: active_instance.api_key.clone().unwrap_or_default(),
-                endpoint: active_instance.endpoint.clone().unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string()),
+                endpoint: active_instance.endpoint.clone().unwrap_or_else(|| {
+                    "https://generativelanguage.googleapis.com/v1beta".to_string()
+                }),
                 model: active_instance.model.clone(),
             },
             LlmBackendType::XAi => LlmBackend::OpenAi {
                 api_key: active_instance.api_key.clone().unwrap_or_default(),
-                endpoint: active_instance.endpoint.clone().unwrap_or_else(|| "https://api.x.ai/v1".to_string()),
+                endpoint: active_instance
+                    .endpoint
+                    .clone()
+                    .unwrap_or_else(|| "https://api.x.ai/v1".to_string()),
                 model: active_instance.model.clone(),
             },
         };
@@ -309,7 +333,11 @@ impl SessionManager {
         // Use tool registry if set, otherwise create default mock tools
         let tool_registry = self.tool_registry.read().await.clone();
         let agent = if let Some(tools) = tool_registry {
-            Arc::new(Agent::with_tools(self.default_config.clone(), session_id.clone(), tools))
+            Arc::new(Agent::with_tools(
+                self.default_config.clone(),
+                session_id.clone(),
+                tools,
+            ))
         } else {
             Arc::new(Agent::new(self.default_config.clone(), session_id.clone()))
         };
@@ -320,8 +348,14 @@ impl SessionManager {
             let _ = agent.configure_llm(backend).await;
         }
 
-        self.sessions.write().await.insert(session_id.clone(), agent);
-        self.session_messages.write().await.insert(session_id.clone(), Vec::new());
+        self.sessions
+            .write()
+            .await
+            .insert(session_id.clone(), agent);
+        self.session_messages
+            .write()
+            .await
+            .insert(session_id.clone(), Vec::new());
 
         // Save session ID to database
         self.save_session_id(&session_id)?;
@@ -338,8 +372,9 @@ impl SessionManager {
         }
 
         // Session not in memory, check if it exists in database
-        let in_db = self.store.session_exists(session_id)
-            .map_err(|e| AgentError::Storage(format!("Failed to check session existence: {}", e)))?;
+        let in_db = self.store.session_exists(session_id).map_err(|e| {
+            AgentError::Storage(format!("Failed to check session existence: {}", e))
+        })?;
 
         if in_db {
             // Session exists in database, restore it
@@ -356,9 +391,16 @@ impl SessionManager {
         // Use tool registry if set, otherwise create default agent
         let tool_registry = self.tool_registry.read().await.clone();
         let agent = if let Some(tools) = tool_registry {
-            Arc::new(Agent::with_tools(self.default_config.clone(), session_id.to_string(), tools))
+            Arc::new(Agent::with_tools(
+                self.default_config.clone(),
+                session_id.to_string(),
+                tools,
+            ))
         } else {
-            Arc::new(Agent::new(self.default_config.clone(), session_id.to_string()))
+            Arc::new(Agent::new(
+                self.default_config.clone(),
+                session_id.to_string(),
+            ))
         };
 
         // Configure LLM if a default backend is set
@@ -373,12 +415,22 @@ impl SessionManager {
         // Restore history to agent's memory
         if !history.is_empty() {
             agent.restore_history(history.clone()).await;
-            eprintln!("Restored {} messages for session {}", history.len(), session_id);
+            eprintln!(
+                "Restored {} messages for session {}",
+                history.len(),
+                session_id
+            );
         }
 
         // Save to in-memory cache
-        self.sessions.write().await.insert(session_id.to_string(), agent.clone());
-        self.session_messages.write().await.insert(session_id.to_string(), history);
+        self.sessions
+            .write()
+            .await
+            .insert(session_id.to_string(), agent.clone());
+        self.session_messages
+            .write()
+            .await
+            .insert(session_id.to_string(), history);
 
         Ok(agent)
     }
@@ -404,7 +456,11 @@ impl SessionManager {
                         // Use tool registry if set, otherwise create default mock tools
                         let tool_registry = self.tool_registry.read().await.clone();
                         let agent = if let Some(tools) = tool_registry {
-                            Arc::new(Agent::with_tools(self.default_config.clone(), id.clone(), tools))
+                            Arc::new(Agent::with_tools(
+                                self.default_config.clone(),
+                                id.clone(),
+                                tools,
+                            ))
                         } else {
                             Arc::new(Agent::new(self.default_config.clone(), id.clone()))
                         };
@@ -429,24 +485,28 @@ impl SessionManager {
 
                         // Save to in-memory cache
                         self.sessions.write().await.insert(id.clone(), agent);
-                        self.session_messages.write().await.insert(id.clone(), history);
+                        self.session_messages
+                            .write()
+                            .await
+                            .insert(id.clone(), history);
 
                         id
                     } else {
                         // Create a new session
                         eprintln!("Session {} not found in database, creating new session", id);
-                        let new_id = self.create_session().await.unwrap_or_else(|_| {
-                            Uuid::new_v4().to_string()
-                        });
+                        let new_id = self
+                            .create_session()
+                            .await
+                            .unwrap_or_else(|_| Uuid::new_v4().to_string());
                         new_id
                     }
                 }
             }
             None => {
                 // No session ID provided, create a new session
-                self.create_session().await.unwrap_or_else(|_| {
-                    Uuid::new_v4().to_string()
-                })
+                self.create_session()
+                    .await
+                    .unwrap_or_else(|_| Uuid::new_v4().to_string())
             }
         }
     }
@@ -460,7 +520,9 @@ impl SessionManager {
         let in_memory = self.sessions.read().await.contains_key(session_id);
         eprintln!("[DEBUG] in_memory: {}", in_memory);
 
-        let in_db = self.store.session_exists(session_id)
+        let in_db = self
+            .store
+            .session_exists(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to check session: {}", e)))?;
         eprintln!("[DEBUG] in_db: {}", in_db);
 
@@ -482,10 +544,16 @@ impl SessionManager {
     }
 
     /// Update session title.
-    pub async fn update_session_title(&self, session_id: &str, title: Option<String>) -> Result<()> {
+    pub async fn update_session_title(
+        &self,
+        session_id: &str,
+        title: Option<String>,
+    ) -> Result<()> {
         // Check if session exists (in memory or database)
         let in_memory = self.sessions.read().await.contains_key(session_id);
-        let in_db = self.store.session_exists(session_id)
+        let in_db = self
+            .store
+            .session_exists(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to check session: {}", e)))?;
 
         if !in_memory && !in_db {
@@ -497,7 +565,8 @@ impl SessionManager {
             title: title.filter(|t| !t.trim().is_empty()), // Filter out empty titles
         };
 
-        self.store.save_session_metadata(session_id, &metadata)
+        self.store
+            .save_session_metadata(session_id, &metadata)
             .map_err(|e| AgentError::Storage(format!("Failed to save session metadata: {}", e)))?;
 
         Ok(())
@@ -505,83 +574,85 @@ impl SessionManager {
 
     /// Get session title.
     pub async fn get_session_title(&self, session_id: &str) -> Result<Option<String>> {
-        self.store.get_session_metadata(session_id)
+        self.store
+            .get_session_metadata(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to get session metadata: {}", e)))
             .map(|meta| meta.title)
     }
 
     /// List all active sessions with their metadata.
-/// Returns sessions from both memory and database (for persistence after restart).
-pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
-    let mut infos = Vec::new();
+    /// Returns sessions from both memory and database (for persistence after restart).
+    pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
+        let mut infos = Vec::new();
 
-    // Get all session IDs from database (including those not in memory)
-    let db_session_ids = match self.store.list_sessions() {
-        Ok(ids) => ids,
-        Err(e) => {
-            eprintln!("Failed to list sessions from database: {}", e);
-            // Fallback to memory-only sessions
-            self.sessions.read().await.keys().cloned().collect()
-        }
-    };
-
-    for session_id in db_session_ids {
-        // Get timestamp from store (in seconds)
-        let timestamp_seconds = self.store.get_session_timestamp(&session_id).ok()
-            .and_then(|r| r);
-
-        // Convert seconds to milliseconds for frontend compatibility
-        let timestamp_ms = timestamp_seconds
-            .unwrap_or_else(|| chrono::Utc::now().timestamp())
-            * 1000;
-
-        // Try to get messages from memory first, then from database
-        let message_count = if let Some(msgs) = self.session_messages.read().await.get(&session_id) {
-            msgs.len() as u32
-        } else {
-            // Load from database to get message count
-            self.load_history(&session_id)
-                .map(|msgs| msgs.len() as u32)
-                .unwrap_or(0)
+        // Get all session IDs from database (including those not in memory)
+        let db_session_ids = match self.store.list_sessions() {
+            Ok(ids) => ids,
+            Err(e) => {
+                eprintln!("Failed to list sessions from database: {}", e);
+                // Fallback to memory-only sessions
+                self.sessions.read().await.keys().cloned().collect()
+            }
         };
 
-        // Get preview from database (first user message)
-        let preview = self.load_history(&session_id)
-            .ok()
-            .and_then(|msgs| {
-                msgs.iter()
-                    .find(|m| m.role == "user")
-                    .map(|m| {
-                        // Truncate content to 50 chars
-                        let content = m.content.trim();
-                        if content.len() > 50 {
-                            format!("{}...", &content[..50])
-                        } else {
-                            content.to_string()
-                        }
-                    })
+        for session_id in db_session_ids {
+            // Get timestamp from store (in seconds)
+            let timestamp_seconds = self
+                .store
+                .get_session_timestamp(&session_id)
+                .ok()
+                .and_then(|r| r);
+
+            // Convert seconds to milliseconds for frontend compatibility
+            let timestamp_ms =
+                timestamp_seconds.unwrap_or_else(|| chrono::Utc::now().timestamp()) * 1000;
+
+            // Try to get messages from memory first, then from database
+            let message_count =
+                if let Some(msgs) = self.session_messages.read().await.get(&session_id) {
+                    msgs.len() as u32
+                } else {
+                    // Load from database to get message count
+                    self.load_history(&session_id)
+                        .map(|msgs| msgs.len() as u32)
+                        .unwrap_or(0)
+                };
+
+            // Get preview from database (first user message)
+            let preview = self.load_history(&session_id).ok().and_then(|msgs| {
+                msgs.iter().find(|m| m.role == "user").map(|m| {
+                    // Truncate content to 50 chars
+                    let content = m.content.trim();
+                    if content.len() > 50 {
+                        format!("{}...", &content[..50])
+                    } else {
+                        content.to_string()
+                    }
+                })
             });
 
-        // Get title from metadata
-        let title = self.store.get_session_metadata(&session_id)
-            .ok()
-            .and_then(|meta| meta.title)
-            .filter(|t| !t.is_empty());
+            // Get title from metadata
+            let title = self
+                .store
+                .get_session_metadata(&session_id)
+                .ok()
+                .and_then(|meta| meta.title)
+                .filter(|t| !t.is_empty());
 
-        infos.push(SessionInfo {
-            session_id: session_id.clone(),
-            created_at: timestamp_ms,
-            message_count,
-            title,
-            preview,
-        });
+            infos.push(SessionInfo {
+                session_id: session_id.clone(),
+                created_at: timestamp_ms,
+                message_count,
+                title,
+                preview,
+            });
+        }
+
+        // Sort by created_at descending (newest first)
+        infos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        infos
     }
-
-    // Sort by created_at descending (newest first)
-    infos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
-    infos
-}
 
     /// List all active sessions (IDs only).
     /// Returns sessions from both memory and database (for persistence after restart).
@@ -613,7 +684,10 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
 
         // Update message history
         let messages = agent.history().await;
-        self.session_messages.write().await.insert(session_id.to_string(), messages.clone());
+        self.session_messages
+            .write()
+            .await
+            .insert(session_id.to_string(), messages.clone());
 
         // Persist history to database
         if let Err(e) = self.save_history(session_id, &messages) {
@@ -652,7 +726,10 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
             Err(AgentError::NotFound(_)) => {
                 // Session not found in memory or DB - might be dirty data
                 // Return empty history instead of error
-                eprintln!("Session {} not found, returning empty history (may be dirty data)", session_id);
+                eprintln!(
+                    "Session {} not found, returning empty history (may be dirty data)",
+                    session_id
+                );
                 Ok(Vec::new())
             }
             Err(e) => Err(e),
@@ -665,7 +742,10 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
         agent.clear_history().await;
 
         // Update in-memory cache
-        self.session_messages.write().await.insert(session_id.to_string(), Vec::new());
+        self.session_messages
+            .write()
+            .await
+            .insert(session_id.to_string(), Vec::new());
 
         // Clear persisted history using the dedicated clear method
         if let Err(e) = self.store.clear_history(session_id) {
@@ -677,21 +757,20 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
 
     /// Persist the current history for a session to the database.
     pub async fn persist_history(&self, session_id: &str) -> Result<()> {
-        eprintln!("[DEBUG] persist_history called for session: {}", session_id);
         let messages = if let Ok(agent) = self.get_session(session_id).await {
-            eprintln!("[DEBUG] Got agent, fetching history...");
             agent.history().await
         } else if let Some(cached) = self.session_messages.read().await.get(session_id) {
-            eprintln!("[DEBUG] Got cached messages, count: {}", cached.len());
             cached.clone()
         } else {
-            eprintln!("[DEBUG] No agent or cached messages found for session");
             return Ok(());
         };
 
-        eprintln!("[DEBUG] Saving {} messages for session {}", messages.len(), session_id);
         if let Err(e) = self.save_history(session_id, &messages) {
-            eprintln!("Failed to persist history for session {}: {}", session_id, e);
+            tracing::debug!(
+                session_id = %session_id,
+                error = %e,
+                "Failed to persist history"
+            );
         }
 
         Ok(())
@@ -727,11 +806,17 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
                         if let Ok(Some(timestamp)) = self.store.get_session_timestamp(&session_id) {
                             let age_seconds = now - timestamp;
                             if age_seconds > empty_session_threshold {
-                                eprintln!("Found empty session {} (age: {}s), removing", session_id, age_seconds);
+                                eprintln!(
+                                    "Found empty session {} (age: {}s), removing",
+                                    session_id, age_seconds
+                                );
                                 let _ = self.delete_session_id(&session_id);
                                 invalid_count += 1;
                             } else {
-                                eprintln!("Skipping recent empty session {} (age: {}s)", session_id, age_seconds);
+                                eprintln!(
+                                    "Skipping recent empty session {} (age: {}s)",
+                                    session_id, age_seconds
+                                );
                             }
                         }
                     }
@@ -739,7 +824,10 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
                 }
                 Err(e) => {
                     // Failed to load history - corrupted data
-                    eprintln!("Found corrupted session {} (error: {}), removing", session_id, e);
+                    eprintln!(
+                        "Found corrupted session {} (error: {}), removing",
+                        session_id, e
+                    );
                     let _ = self.delete_session_id(&session_id);
                     invalid_count += 1;
                 }
@@ -775,13 +863,17 @@ pub async fn list_sessions_with_info(&self) -> Vec<SessionInfo> {
 impl Default for SessionManager {
     fn default() -> Self {
         Self::new().unwrap_or_else(|e| {
-            eprintln!("Failed to create SessionManager: {}, using in-memory only", e);
+            eprintln!(
+                "Failed to create SessionManager: {}, using in-memory only",
+                e
+            );
             Self {
                 sessions: Arc::new(RwLock::new(HashMap::new())),
                 session_messages: Arc::new(RwLock::new(HashMap::new())),
                 store: SessionStore::open(":memory:").unwrap_or_else(|_| {
                     // Fallback to temp file if :memory: fails
-                    let temp_path = std::env::temp_dir().join(format!("sessions_fallback_{}.redb", uuid::Uuid::new_v4()));
+                    let temp_path = std::env::temp_dir()
+                        .join(format!("sessions_fallback_{}.redb", uuid::Uuid::new_v4()));
                     SessionStore::open(&temp_path).expect("Failed to create fallback session store")
                 }),
                 default_config: AgentConfig::default(),
@@ -823,7 +915,9 @@ mod tests {
         let manager = create_temp_manager();
 
         // Create a session with an ID that doesn't exist - should create new
-        let new_id = manager.get_or_create_session(Some("non-existent-id".to_string())).await;
+        let new_id = manager
+            .get_or_create_session(Some("non-existent-id".to_string()))
+            .await;
         assert!(manager.get_session(&new_id).await.is_ok());
 
         // Get existing session
@@ -857,7 +951,10 @@ mod tests {
         let manager = create_temp_manager();
         let session_id = manager.create_session().await.unwrap();
 
-        let response = manager.process_message(&session_id, "列出设备").await.unwrap();
+        let response = manager
+            .process_message(&session_id, "列出设备")
+            .await
+            .unwrap();
         assert!(!response.message.content.is_empty());
     }
 
@@ -866,7 +963,10 @@ mod tests {
         let manager = create_temp_manager();
         let session_id = manager.create_session().await.unwrap();
 
-        manager.process_message(&session_id, "列出设备").await.unwrap();
+        manager
+            .process_message(&session_id, "列出设备")
+            .await
+            .unwrap();
 
         let history = manager.get_history(&session_id).await.unwrap();
         assert!(history.len() >= 2); // user + assistant
@@ -877,7 +977,10 @@ mod tests {
         let manager = create_temp_manager();
         let session_id = manager.create_session().await.unwrap();
 
-        manager.process_message(&session_id, "列出设备").await.unwrap();
+        manager
+            .process_message(&session_id, "列出设备")
+            .await
+            .unwrap();
         manager.clear_history(&session_id).await.unwrap();
 
         let history = manager.get_history(&session_id).await.unwrap();
@@ -904,8 +1007,14 @@ mod tests {
         let session2 = manager.create_session().await.unwrap();
 
         // Send different messages
-        manager.process_message(&session1, "列出设备").await.unwrap();
-        manager.process_message(&session2, "列出规则").await.unwrap();
+        manager
+            .process_message(&session1, "列出设备")
+            .await
+            .unwrap();
+        manager
+            .process_message(&session2, "列出规则")
+            .await
+            .unwrap();
 
         // Check histories are independent
         let history1 = manager.get_history(&session1).await.unwrap();

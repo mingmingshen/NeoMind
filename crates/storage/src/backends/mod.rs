@@ -48,26 +48,31 @@ pub fn create_backend(
     match backend_type {
         #[cfg(feature = "redb")]
         "redb" => {
-            let cfg: RedbBackendConfig = serde_json::from_value(config.clone())
-                .map_err(|e| edge_ai_core::storage::StorageError::Configuration(
-                    format!("Invalid redb config: {}", e)
-                ))?;
+            let cfg: RedbBackendConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                edge_ai_core::storage::StorageError::Configuration(format!(
+                    "Invalid redb config: {}",
+                    e
+                ))
+            })?;
             Ok(Arc::new(redb::RedbBackend::new(cfg)?))
         }
 
         #[cfg(feature = "memory")]
         "memory" => {
-            let cfg: MemoryBackendConfig = serde_json::from_value(config.clone())
-                .map_err(|e| edge_ai_core::storage::StorageError::Configuration(
-                    format!("Invalid memory config: {}", e)
-                ))?;
+            let cfg: MemoryBackendConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                edge_ai_core::storage::StorageError::Configuration(format!(
+                    "Invalid memory config: {}",
+                    e
+                ))
+            })?;
             Ok(Arc::new(memory::MemoryBackend::new(cfg)))
         }
 
-        _ => Err(edge_ai_core::storage::StorageError::Configuration(
-            format!("Unknown backend type: {}. Available backends: {}",
-                backend_type, available_backends().join(", "))
-        )),
+        _ => Err(edge_ai_core::storage::StorageError::Configuration(format!(
+            "Unknown backend type: {}. Available backends: {}",
+            backend_type,
+            available_backends().join(", ")
+        ))),
     }
 }
 

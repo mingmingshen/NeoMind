@@ -8,8 +8,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::translation::{Language, MdlTranslator, DslTranslator};
 use crate::context_selector::{ContextBundle, DeviceTypeReference, RuleReference};
+use crate::translation::{DslTranslator, Language, MdlTranslator};
 
 /// System prompt template.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,22 +245,22 @@ impl PromptGenerator {
                 ToolDescription {
                     name: "list_device_types".to_string(),
                     description: "列出所有支持的设备类型".to_string(),
-                    example: "list_device_types(category: 'sensor')".to_string(),
+                    example: "{\"name\": \"list_device_types\", \"arguments\": {\"category\": \"sensor\"}}".to_string(),
                 },
                 ToolDescription {
                     name: "get_device_type".to_string(),
                     description: "获取设备类型的详细信息".to_string(),
-                    example: "get_device_type(device_type: 'dht22_sensor')".to_string(),
+                    example: "{\"name\": \"get_device_type\", \"arguments\": {\"device_type\": \"dht22_sensor\"}}".to_string(),
                 },
                 ToolDescription {
                     name: "list_rules".to_string(),
                     description: "列出所有规则".to_string(),
-                    example: "list_rules()".to_string(),
+                    example: "{\"name\": \"list_rules\", \"arguments\": {}}".to_string(),
                 },
                 ToolDescription {
                     name: "create_rule".to_string(),
                     description: "创建新规则".to_string(),
-                    example: "create_rule(dsl: 'RULE \"High Temp\" WHEN sensor.temp > 50 DO NOTIFY \"Hot\" END')".to_string(),
+                    example: "{\"name\": \"create_rule\", \"arguments\": {\"dsl\": \"RULE \\\"High Temp\\\" WHEN sensor.temp > 50 DO NOTIFY \\\"Hot\\\" END\"}}".to_string(),
                 },
             ],
             dsl_examples: vec![
@@ -289,7 +289,7 @@ END"#.to_string(),
                 "创建规则前先查询相关设备能力".to_string(),
                 "规则名称应清晰描述其用途".to_string(),
                 "注意设置合理的阈值避免频繁触发".to_string(),
-                "多工具调用规则：如果多个工具之间没有依赖关系，应该在同一个<tool_calls>块中一次性调用，这样可以并行执行，提高响应速度".to_string(),
+                "多工具调用规则：如果多个工具之间没有依赖关系，应该在同一个JSON数组中一次性调用，这样可以并行执行，提高响应速度".to_string(),
                 "直接回答问题，不要过度思考或展开冗长的推理过程".to_string(),
             ],
         }
@@ -301,10 +301,7 @@ END"#.to_string(),
                 category: ExampleCategory::MultiToolCalling,
                 user_input: "列出所有设备和规则，告诉我当前状态".to_string(),
                 assistant_response: "我来同时查询设备列表和规则列表。".to_string(),
-                tool_calls: vec![
-                    "list_devices()".to_string(),
-                    "list_rules()".to_string(),
-                ],
+                tool_calls: vec!["list_devices()".to_string(), "list_rules()".to_string()],
             },
             FewShotExample {
                 category: ExampleCategory::MultiToolCalling,
@@ -318,20 +315,25 @@ END"#.to_string(),
             FewShotExample {
                 category: ExampleCategory::RuleCreation,
                 user_input: "创建一个规则，当温度传感器读数超过30度时发送通知".to_string(),
-                assistant_response: "好的，我来创建一个高温告警规则。首先让我查询一下可用的设备类型。".to_string(),
+                assistant_response:
+                    "好的，我来创建一个高温告警规则。首先让我查询一下可用的设备类型。".to_string(),
                 tool_calls: vec!["list_device_types()".to_string()],
             },
             FewShotExample {
                 category: ExampleCategory::DeviceControl,
                 user_input: "把客厅的灯打开".to_string(),
                 assistant_response: "好的，我来发送打开客厅灯的命令。".to_string(),
-                tool_calls: vec!["control_device(device_id: 'living_room_light', command: 'ON')".to_string()],
+                tool_calls: vec![
+                    "control_device(device_id: 'living_room_light', command: 'ON')".to_string(),
+                ],
             },
             FewShotExample {
                 category: ExampleCategory::DataQuery,
                 user_input: "当前所有传感器的温度是多少？".to_string(),
                 assistant_response: "让我查询一下所有温度传感器的当前读数。".to_string(),
-                tool_calls: vec!["query_data(device_id: 'temp_sensor', metric: 'temperature')".to_string()],
+                tool_calls: vec![
+                    "query_data(device_id: 'temp_sensor', metric: 'temperature')".to_string(),
+                ],
             },
         ]
     }
@@ -341,7 +343,9 @@ END"#.to_string(),
 
         // 重要指令：禁用思考模式，提高响应速度
         prompt.push_str("## 重要指令\n\n");
-        prompt.push_str("/no_think - 请直接回答问题，不要使用思考模式（think），不要展开冗长的推理过程。\n\n");
+        prompt.push_str(
+            "/no_think - 请直接回答问题，不要使用思考模式（think），不要展开冗长的推理过程。\n\n",
+        );
 
         prompt.push_str("## 核心能力\n\n");
         for cap in &template.capabilities {
@@ -353,6 +357,18 @@ END"#.to_string(),
             prompt.push_str(&format!("**{}**: {}\n", tool.name, tool.description));
             prompt.push_str(&format!("  示例: `{}`\n", tool.example));
         }
+
+        // 添加工具调用格式说明
+        prompt.push_str("\n## 工具调用格式\n\n");
+        prompt.push_str("当需要调用工具时，使用以下JSON格式：\n\n");
+        prompt.push_str("**单个工具调用**：\n");
+        prompt.push_str("```json\n");
+        prompt.push_str(r#"{"name": "tool_name", "arguments": {"param1": "value1"}}"#);
+        prompt.push_str("\n```\n\n");
+        prompt.push_str("**多个工具调用（并行）**：\n");
+        prompt.push_str("```json\n");
+        prompt.push_str(r#"[{"name": "tool1", "arguments": {}}, {"name": "tool2", "arguments": {}}]"#);
+        prompt.push_str("\n```\n\n");
 
         prompt.push_str("\n## DSL 规则语法\n\n");
         for ex in &template.dsl_examples {

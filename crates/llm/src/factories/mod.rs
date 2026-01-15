@@ -144,7 +144,10 @@ impl BackendFactory for CloudFactory {
             .ok_or_else(|| LlmError::InvalidInput("api_key is required".into()))?
             .to_string();
 
-        let model = config.get("model").and_then(|v| v.as_str()).map(String::from);
+        let model = config
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let endpoint = config.get("endpoint").and_then(|v| v.as_str());
 
         let mut cloud_config = match provider {
@@ -173,7 +176,9 @@ impl BackendFactory for CloudFactory {
 
         let api_key = config.get("api_key").and_then(|v| v.as_str());
         if api_key.map_or(true, |k| k.is_empty()) {
-            return Err(LlmError::InvalidInput("api_key is required for cloud backends".into()));
+            return Err(LlmError::InvalidInput(
+                "api_key is required for cloud backends".into(),
+            ));
         }
 
         Ok(())
@@ -274,7 +279,11 @@ impl LlmRuntime for MockRuntime {
         &self,
         input: edge_ai_core::llm::backend::LlmInput,
     ) -> Result<edge_ai_core::llm::backend::LlmOutput, LlmError> {
-        let last_msg = input.messages.last().map(|m| m.text()).unwrap_or_else(|| String::new());
+        let last_msg = input
+            .messages
+            .last()
+            .map(|m| m.text())
+            .unwrap_or_else(|| String::new());
         Ok(edge_ai_core::llm::backend::LlmOutput {
             text: format!("Mock response to: {}", last_msg),
             finish_reason: edge_ai_core::llm::backend::FinishReason::Stop,
@@ -287,11 +296,17 @@ impl LlmRuntime for MockRuntime {
         &self,
         input: edge_ai_core::llm::backend::LlmInput,
     ) -> Result<
-        std::pin::Pin<Box<dyn futures::Stream<Item = edge_ai_core::llm::backend::StreamChunk> + Send>>,
+        std::pin::Pin<
+            Box<dyn futures::Stream<Item = edge_ai_core::llm::backend::StreamChunk> + Send>,
+        >,
         LlmError,
     > {
         use futures::stream;
-        let last_msg = input.messages.last().map(|m| m.text()).unwrap_or_else(|| String::new());
+        let last_msg = input
+            .messages
+            .last()
+            .map(|m| m.text())
+            .unwrap_or_else(|| String::new());
         let response = format!("Mock stream response to: {}", last_msg);
         let chunks: Vec<_> = response
             .chars()
@@ -360,9 +375,21 @@ mod tests {
     #[cfg(feature = "cloud")]
     #[test]
     fn test_cloud_factory_parse_provider() {
-        assert_eq!(CloudFactory::parse_provider("openai").unwrap(), CloudProvider::OpenAI);
-        assert_eq!(CloudFactory::parse_provider("claude").unwrap(), CloudProvider::Anthropic);
-        assert_eq!(CloudFactory::parse_provider("gemini").unwrap(), CloudProvider::Google);
-        assert_eq!(CloudFactory::parse_provider("grok").unwrap(), CloudProvider::Grok);
+        assert_eq!(
+            CloudFactory::parse_provider("openai").unwrap(),
+            CloudProvider::OpenAI
+        );
+        assert_eq!(
+            CloudFactory::parse_provider("claude").unwrap(),
+            CloudProvider::Anthropic
+        );
+        assert_eq!(
+            CloudFactory::parse_provider("gemini").unwrap(),
+            CloudProvider::Google
+        );
+        assert_eq!(
+            CloudFactory::parse_provider("grok").unwrap(),
+            CloudProvider::Grok
+        );
     }
 }

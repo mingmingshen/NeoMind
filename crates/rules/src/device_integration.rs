@@ -3,8 +3,8 @@
 //! This module integrates the rule engine with device management,
 //! enabling rule actions to control devices and send notifications.
 
-use crate::engine::{ValueProvider, CompiledRule, RuleId, RuleExecutionResult};
 use crate::dsl::{RuleAction, RuleError};
+use crate::engine::{CompiledRule, RuleExecutionResult, RuleId, ValueProvider};
 use edge_ai_core::{EventBus, NeoTalkEvent};
 use std::any::Any;
 use std::collections::HashMap;
@@ -75,7 +75,8 @@ impl DeviceValueProvider {
     /// Get all cached values for a device.
     pub async fn get_device_values(&self, device_id: &str) -> HashMap<String, f64> {
         let cache = self.cache.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|((d, _), _)| d == device_id)
             .map(|((_, m), v)| (m.clone(), *v))
             .collect()
@@ -92,7 +93,9 @@ impl ValueProvider for DeviceValueProvider {
     fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
         // Use try_read to avoid blocking in async context
         if let Ok(cache) = self.cache.try_read() {
-            cache.get(&(device_id.to_string(), metric.to_string())).copied()
+            cache
+                .get(&(device_id.to_string(), metric.to_string()))
+                .copied()
         } else {
             None
         }
@@ -127,18 +130,25 @@ impl DeviceActionExecutor {
         let mut actions_executed = Vec::new();
 
         match action {
-            RuleAction::Execute { device_id: target_device, command, params: _ } => {
+            RuleAction::Execute {
+                device_id: target_device,
+                command,
+                params: _,
+            } => {
                 let target = device_id.unwrap_or(target_device);
                 actions_executed.push(format!("execute:{}", command));
 
                 // Publish command event
-                let _ = self.event_bus.publish(NeoTalkEvent::DeviceCommandResult {
-                    device_id: target.to_string(),
-                    command: command.clone(),
-                    success: true,
-                    result: Some(serde_json::json!("Command sent")),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
+                let _ = self
+                    .event_bus
+                    .publish(NeoTalkEvent::DeviceCommandResult {
+                        device_id: target.to_string(),
+                        command: command.clone(),
+                        success: true,
+                        result: Some(serde_json::json!("Command sent")),
+                        timestamp: chrono::Utc::now().timestamp(),
+                    })
+                    .await;
 
                 info!("Executed command '{}' on device '{}'", command, target);
             }
@@ -146,17 +156,24 @@ impl DeviceActionExecutor {
                 actions_executed.push(format!("notify:{}", message));
 
                 // Publish alert event
-                let _ = self.event_bus.publish(NeoTalkEvent::AlertCreated {
-                    alert_id: uuid::Uuid::new_v4().to_string(),
-                    title: "Rule Notification".to_string(),
-                    severity: "info".to_string(),
-                    message: message.clone(),
-                    timestamp: chrono::Utc::now().timestamp(),
-                }).await;
+                let _ = self
+                    .event_bus
+                    .publish(NeoTalkEvent::AlertCreated {
+                        alert_id: uuid::Uuid::new_v4().to_string(),
+                        title: "Rule Notification".to_string(),
+                        severity: "info".to_string(),
+                        message: message.clone(),
+                        timestamp: chrono::Utc::now().timestamp(),
+                    })
+                    .await;
 
                 info!("Sent notification: {}", message);
             }
-            RuleAction::Log { level, message, severity: _ } => {
+            RuleAction::Log {
+                level,
+                message,
+                severity: _,
+            } => {
                 actions_executed.push(format!("log:{}", message));
 
                 match level {
@@ -208,7 +225,11 @@ impl DeviceActionExecutor {
             rule_name: rule.name.clone(),
             success: errors.is_empty(),
             actions_executed: all_executed,
-            error: if errors.is_empty() { None } else { Some(errors.join("; ")) },
+            error: if errors.is_empty() {
+                None
+            } else {
+                Some(errors.join("; "))
+            },
             duration_ms: duration.as_millis() as u64,
         })
     }
@@ -265,20 +286,25 @@ impl DeviceIntegratedRuleEngine {
         let result = self.executor.execute_rule_actions(rule, device_id).await?;
 
         // Publish rule executed event
-        let _ = self.event_bus.publish(NeoTalkEvent::RuleExecuted {
-            rule_id: rule.id.to_string(),
-            rule_name: rule.name.clone(),
-            success: result.success,
-            duration_ms: result.duration_ms,
-            timestamp: chrono::Utc::now().timestamp(),
-        }).await;
+        let _ = self
+            .event_bus
+            .publish(NeoTalkEvent::RuleExecuted {
+                rule_id: rule.id.to_string(),
+                rule_name: rule.name.clone(),
+                success: result.success,
+                duration_ms: result.duration_ms,
+                timestamp: chrono::Utc::now().timestamp(),
+            })
+            .await;
 
         Ok(result)
     }
 
     /// Update a device metric value.
     pub async fn update_metric(&self, device_id: &str, metric: &str, value: f64) {
-        self.value_provider.update_value(device_id, metric, value).await;
+        self.value_provider
+            .update_value(device_id, metric, value)
+            .await;
     }
 
     /// Get all values for a device.

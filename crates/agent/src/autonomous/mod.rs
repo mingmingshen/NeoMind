@@ -5,28 +5,15 @@
 
 pub mod agent;
 pub mod config;
-pub mod review;
 pub mod context;
 pub mod decision;
+pub mod review;
 
-pub use agent::{AutonomousAgent, AgentState};
+pub use agent::{AgentState, AutonomousAgent};
 pub use config::{AutonomousConfig, ReviewType};
-pub use review::{ReviewContext, ReviewResult, SystemReview};
-pub use context::{
-    SystemContext,
-    ContextCollector,
-    TimeRange,
-    EnergyData,
-    MetricAggregation,
-};
+pub use context::{ContextCollector, EnergyData, MetricAggregation, SystemContext, TimeRange};
 pub use decision::{
-    Decision,
-    DecisionAction,
-    DecisionType,
-    DecisionPriority,
-    DecisionStatus,
-    DecisionEngine,
-    DecisionEngineConfig,
-    ImpactAssessment,
-    DecisionError,
+    Decision, DecisionAction, DecisionEngine, DecisionEngineConfig, DecisionError,
+    DecisionPriority, DecisionStatus, DecisionType, ImpactAssessment,
 };
+pub use review::{ReviewContext, ReviewResult, SystemReview};

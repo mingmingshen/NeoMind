@@ -5,6 +5,6 @@
 pub mod device_steps;
 
 pub use device_steps::{
-    AggregationType, DeviceCommandResult, DeviceQueryResult, DeviceState,
-    DeviceWorkflowIntegration, DeviceWorkflowError,
+    AggregationType, DeviceCommandResult, DeviceQueryResult, DeviceState, DeviceWorkflowError,
+    DeviceWorkflowIntegration,
 };

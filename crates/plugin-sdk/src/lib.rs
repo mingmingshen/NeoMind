@@ -27,7 +27,7 @@ pub mod prelude {
 }
 
 // Re-exports for convenience
-pub use descriptor::{PluginDescriptor, PluginType, PLUGIN_ABI_VERSION};
+pub use descriptor::{PLUGIN_ABI_VERSION, PluginDescriptor, PluginType};
 pub use error::{PluginError, PluginResult};
 pub use types::{PluginContext, PluginRequest, PluginResponse};
 
@@ -35,10 +35,7 @@ pub use types::{PluginContext, PluginRequest, PluginResponse};
 ///
 /// # Safety
 /// The config_json pointer must point to valid UTF-8 data.
-pub unsafe fn create_plugin<P>(
-    config_json: *const u8,
-    config_len: usize,
-) -> *mut ()
+pub unsafe fn create_plugin<P>(config_json: *const u8, config_len: usize) -> *mut ()
 where
     P: 'static,
 {

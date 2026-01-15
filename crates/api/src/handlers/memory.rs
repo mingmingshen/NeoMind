@@ -1,17 +1,21 @@
 //! Memory system handlers.
 
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
 use edge_ai_memory::{
-    TieredMemory,
-    KnowledgeEntry, KnowledgeCategory,
-    MemoryMessage, ConversationEntry, SearchResult,
+    ConversationEntry, KnowledgeCategory, KnowledgeEntry, MemoryMessage, SearchResult, TieredMemory,
 };
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 /// Query parameters for memory search.
@@ -24,7 +28,9 @@ pub struct MemoryQueryParams {
     pub top_k: usize,
 }
 
-fn default_top_k() -> usize { 5 }
+fn default_top_k() -> usize {
+    5
+}
 
 /// DTO for memory stats.
 #[derive(Debug, Serialize)]
@@ -169,13 +175,16 @@ pub struct AddKnowledgeRequest {
     pub device_ids: Vec<String>,
 }
 
-fn default_category() -> String { "best_practice".to_string() }
+fn default_category() -> String {
+    "best_practice".to_string()
+}
 
 /// Global memory instance shared across all handlers.
 fn get_global_memory() -> Arc<tokio::sync::RwLock<TieredMemory>> {
     use std::sync::OnceLock;
     static MEMORY: OnceLock<Arc<tokio::sync::RwLock<TieredMemory>>> = OnceLock::new();
-    MEMORY.get_or_init(|| Arc::new(tokio::sync::RwLock::new(TieredMemory::new())))
+    MEMORY
+        .get_or_init(|| Arc::new(tokio::sync::RwLock::new(TieredMemory::new())))
         .clone()
 }
 
@@ -229,7 +238,8 @@ pub async fn consolidate_memory_handler(
 ) -> HandlerResult<serde_json::Value> {
     let memory = get_global_memory();
     let mem = memory.read().await;
-    mem.consolidate(&session_id).await
+    mem.consolidate(&session_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to consolidate memory: {}", e)))?;
 
     ok(json!({
@@ -320,7 +330,8 @@ pub async fn add_mid_term_handler(
 ) -> HandlerResult<serde_json::Value> {
     let memory = get_global_memory();
     let mem = memory.read().await;
-    mem.add_conversation(&req.session_id, &req.user_input, &req.assistant_response).await
+    mem.add_conversation(&req.session_id, &req.user_input, &req.assistant_response)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add conversation: {}", e)))?;
 
     ok(json!({
@@ -452,7 +463,8 @@ pub async fn add_knowledge_handler(
     entry.tags = req.tags;
     entry.device_ids = req.device_ids;
 
-    mem.add_knowledge(entry).await
+    mem.add_knowledge(entry)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add knowledge: {}", e)))?;
 
     ok(json!({

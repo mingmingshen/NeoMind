@@ -4,8 +4,8 @@
 //! The encryption key is derived from a master secret using PBKDF2.
 
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
 };
 use sha2::Sha256;
 use std::env;
@@ -68,14 +68,16 @@ impl CryptoService {
         if let Ok(key_str) = env::var(ENCRYPTION_KEY_ENV) {
             let key = key_str.as_bytes();
             Self::new(key).unwrap_or_else(|_| {
-                warn!(category = "crypto", "Invalid encryption key in environment, using random key");
+                warn!(
+                    category = "crypto",
+                    "Invalid encryption key in environment, using random key"
+                );
                 Self::generate_random()
             })
         } else {
             warn!(
                 category = "crypto",
-                "No {} set, using random key (keys will be invalid on restart)",
-                ENCRYPTION_KEY_ENV
+                "No {} set, using random key (keys will be invalid on restart)", ENCRYPTION_KEY_ENV
             );
             Self::generate_random()
         }
@@ -181,7 +183,8 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let crypto = CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
+        let crypto =
+            CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
         let plaintext = "Hello, World! This is a secret message.";
 
         let encrypted = crypto.encrypt_str(plaintext).unwrap();
@@ -193,7 +196,8 @@ mod tests {
 
     #[test]
     fn test_hash_api_key() {
-        let crypto = CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
+        let crypto =
+            CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
         let key1 = "ntk_1234567890abcdef";
         let key2 = "ntk_1234567890abcdef";
         let key3 = "ntk_different_key";
@@ -215,7 +219,8 @@ mod tests {
 
     #[test]
     fn test_invalid_decryption_fails() {
-        let crypto = CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
+        let crypto =
+            CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
         let invalid = "not_valid_base64!!";
 
         assert!(crypto.decrypt_str(invalid).is_err());
@@ -223,8 +228,10 @@ mod tests {
 
     #[test]
     fn test_wrong_key_fails() {
-        let crypto1 = CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
-        let crypto2 = CryptoService::new(b"different_32_byte_master_key_for_testing_purposes!!").unwrap();
+        let crypto1 =
+            CryptoService::new(b"this_is_a_32_byte_master_key_for_testing_purposes").unwrap();
+        let crypto2 =
+            CryptoService::new(b"different_32_byte_master_key_for_testing_purposes!!").unwrap();
 
         let encrypted = crypto1.encrypt_str("secret").unwrap();
         assert!(crypto2.decrypt_str(&encrypted).is_err());

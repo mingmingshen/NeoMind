@@ -3,9 +3,9 @@
 //! Scenarios represent business contexts that group devices and rules together,
 //! making it easier for LLMs to understand and operate on device combinations.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// Unique identifier for a scenario.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -295,9 +295,17 @@ impl ScenarioTemplates {
             description: "监控数据中心机房的温度，防止过热导致设备故障".to_string(),
             category: ScenarioCategory::Monitoring,
             environment: Environment::DataCenter,
-            business_context_template: "数据中心机房温度监控，当温度超过阈值时触发告警并启动空调设备".to_string(),
-            suggested_device_types: vec!["temperature_sensor".to_string(), "hvac_controller".to_string()],
-            tags: vec!["数据中心".to_string(), "温度监控".to_string(), "环境监控".to_string()],
+            business_context_template:
+                "数据中心机房温度监控，当温度超过阈值时触发告警并启动空调设备".to_string(),
+            suggested_device_types: vec![
+                "temperature_sensor".to_string(),
+                "hvac_controller".to_string(),
+            ],
+            tags: vec![
+                "数据中心".to_string(),
+                "温度监控".to_string(),
+                "环境监控".to_string(),
+            ],
         }
     }
 
@@ -308,9 +316,18 @@ impl ScenarioTemplates {
             description: "基于时间和人员密度自动调节办公室照明和空调".to_string(),
             category: ScenarioCategory::Automation,
             environment: Environment::Office,
-            business_context_template: "非工作时间自动关闭照明和调低空调温度，工作时间根据人员密度智能调节".to_string(),
-            suggested_device_types: vec!["light_controller".to_string(), "hvac_controller".to_string(), "occupancy_sensor".to_string()],
-            tags: vec!["办公室".to_string(), "节能".to_string(), "自动化".to_string()],
+            business_context_template:
+                "非工作时间自动关闭照明和调低空调温度，工作时间根据人员密度智能调节".to_string(),
+            suggested_device_types: vec![
+                "light_controller".to_string(),
+                "hvac_controller".to_string(),
+                "occupancy_sensor".to_string(),
+            ],
+            tags: vec![
+                "办公室".to_string(),
+                "节能".to_string(),
+                "自动化".to_string(),
+            ],
         }
     }
 
@@ -321,9 +338,18 @@ impl ScenarioTemplates {
             description: "监控生产线设备状态和产品质量指标".to_string(),
             category: ScenarioCategory::Alert,
             environment: Environment::Factory,
-            business_context_template: "实时监控生产线关键参数，异常时立即停机并通知相关人员".to_string(),
-            suggested_device_types: vec!["quality_sensor".to_string(), "conveyor_controller".to_string(), "alert_system".to_string()],
-            tags: vec!["工厂".to_string(), "质量控制".to_string(), "生产监控".to_string()],
+            business_context_template: "实时监控生产线关键参数，异常时立即停机并通知相关人员"
+                .to_string(),
+            suggested_device_types: vec![
+                "quality_sensor".to_string(),
+                "conveyor_controller".to_string(),
+                "alert_system".to_string(),
+            ],
+            tags: vec![
+                "工厂".to_string(),
+                "质量控制".to_string(),
+                "生产监控".to_string(),
+            ],
         }
     }
 
@@ -334,9 +360,18 @@ impl ScenarioTemplates {
             description: "根据用户习惯和实时环境自动调节家居设备".to_string(),
             category: ScenarioCategory::Automation,
             environment: Environment::SmartHome,
-            business_context_template: "学习用户习惯，自动调节温度、照明和窗帘，提供舒适的居住环境".to_string(),
-            suggested_device_types: vec!["thermostat".to_string(), "smart_light".to_string(), "smart_blind".to_string()],
-            tags: vec!["智能家居".to_string(), "舒适度".to_string(), "自动化".to_string()],
+            business_context_template: "学习用户习惯，自动调节温度、照明和窗帘，提供舒适的居住环境"
+                .to_string(),
+            suggested_device_types: vec![
+                "thermostat".to_string(),
+                "smart_light".to_string(),
+                "smart_blind".to_string(),
+            ],
+            tags: vec![
+                "智能家居".to_string(),
+                "舒适度".to_string(),
+                "自动化".to_string(),
+            ],
         }
     }
 }
@@ -353,10 +388,7 @@ mod tests {
 
     #[test]
     fn test_scenario_creation() {
-        let scenario = Scenario::new(
-            "Test Scenario".to_string(),
-            "A test scenario".to_string(),
-        );
+        let scenario = Scenario::new("Test Scenario".to_string(), "A test scenario".to_string());
 
         assert_eq!(scenario.name, "Test Scenario");
         assert_eq!(scenario.description, "A test scenario");
@@ -367,10 +399,7 @@ mod tests {
 
     #[test]
     fn test_add_remove_devices() {
-        let mut scenario = Scenario::new(
-            "Test".to_string(),
-            "Test".to_string(),
-        );
+        let mut scenario = Scenario::new("Test".to_string(), "Test".to_string());
 
         scenario.add_device("device1".to_string());
         scenario.add_device("device2".to_string());
@@ -387,10 +416,7 @@ mod tests {
 
     #[test]
     fn test_add_remove_rules() {
-        let mut scenario = Scenario::new(
-            "Test".to_string(),
-            "Test".to_string(),
-        );
+        let mut scenario = Scenario::new("Test".to_string(), "Test".to_string());
 
         scenario.add_rule("rule1".to_string());
         scenario.add_rule("rule2".to_string());
@@ -402,10 +428,7 @@ mod tests {
 
     #[test]
     fn test_to_llm_prompt() {
-        let mut scenario = Scenario::new(
-            "温度监控".to_string(),
-            "监控机房温度".to_string(),
-        );
+        let mut scenario = Scenario::new("温度监控".to_string(), "监控机房温度".to_string());
         scenario.add_device("sensor1".to_string());
         scenario.add_device("sensor2".to_string());
         scenario.add_rule("rule1".to_string());
@@ -420,10 +443,7 @@ mod tests {
 
     #[test]
     fn test_scenario_summary() {
-        let mut scenario = Scenario::new(
-            "Test".to_string(),
-            "Test".to_string(),
-        );
+        let mut scenario = Scenario::new("Test".to_string(), "Test".to_string());
         scenario.add_device("d1".to_string());
         scenario.add_rule("r1".to_string());
 

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::error::Result;
-use super::long_term::{KnowledgeEntry, KnowledgeCategory, TroubleshootingCase};
+use super::long_term::{KnowledgeCategory, KnowledgeEntry, TroubleshootingCase};
 use super::mid_term::{ConversationEntry, SearchResult};
 use super::short_term::{MemoryMessage, ShortTermMemory};
 
@@ -89,7 +89,11 @@ impl TieredMemory {
     // ===== Short-term memory operations =====
 
     /// Add a message to short-term memory.
-    pub fn add_message(&mut self, role: impl Into<String>, content: impl Into<String>) -> Result<()> {
+    pub fn add_message(
+        &mut self,
+        role: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Result<()> {
         self.short_term.add(role, content)
     }
 
@@ -155,7 +159,10 @@ impl TieredMemory {
     }
 
     /// Get knowledge by category.
-    pub async fn get_knowledge_by_category(&self, category: &KnowledgeCategory) -> Vec<KnowledgeEntry> {
+    pub async fn get_knowledge_by_category(
+        &self,
+        category: &KnowledgeCategory,
+    ) -> Vec<KnowledgeEntry> {
         self.long_term.get_by_category(category).await
     }
 
@@ -382,9 +389,7 @@ mod tests {
         let mut memory = TieredMemory::new();
 
         memory.add_message("user", "Question 1").unwrap();
-        memory
-            .add_message("assistant", "Answer 1")
-            .unwrap();
+        memory.add_message("assistant", "Answer 1").unwrap();
 
         memory.consolidate("test_session").await.unwrap();
 
@@ -405,9 +410,7 @@ mod tests {
 
         memory.add_troubleshooting_case(case).await.unwrap();
 
-        let results = memory
-            .find_troubleshooting(&["no power".to_string()])
-            .await;
+        let results = memory.find_troubleshooting(&["no power".to_string()]).await;
         assert_eq!(results.len(), 1);
     }
 
@@ -433,10 +436,7 @@ mod tests {
         let mut memory = TieredMemory::new();
 
         memory.add_message("user", "Test").unwrap();
-        memory
-            .add_conversation("s1", "Q", "A")
-            .await
-            .unwrap();
+        memory.add_conversation("s1", "Q", "A").await.unwrap();
 
         let entry = KnowledgeEntry::new("Test", "Content", KnowledgeCategory::BestPractice);
         memory.add_knowledge(entry).await.unwrap();

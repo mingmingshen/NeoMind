@@ -2,16 +2,14 @@
 
 use crate::error::Result;
 use crate::workflow::Workflow;
+use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
-use redb::{Database, TableDefinition, ReadableTable};
 
 // Table definitions
-const WORKFLOW_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("workflows");
-const EXECUTION_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("executions");
+const WORKFLOW_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("workflows");
+const EXECUTION_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("executions");
 const WORKFLOW_EXECUTIONS_TABLE: TableDefinition<&str, &[u8]> =
     TableDefinition::new("workflow_executions");
 
@@ -60,8 +58,8 @@ impl WorkflowStore {
 
     /// Create an in-memory store
     pub fn memory() -> Result<Arc<Self>> {
-        let temp_path = std::env::temp_dir()
-            .join(format!("workflow_store_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("workflow_store_{}.redb", uuid::Uuid::new_v4()));
         Self::open(temp_path)
     }
 
@@ -252,8 +250,8 @@ impl ExecutionStore {
 
     /// Create an in-memory store
     pub fn memory() -> Result<Arc<Self>> {
-        let temp_path = std::env::temp_dir()
-            .join(format!("execution_store_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("execution_store_{}.redb", uuid::Uuid::new_v4()));
         Self::open(temp_path)
     }
 
@@ -283,11 +281,18 @@ impl ExecutionStore {
 
             // Trim if too many
             if executions.len() > self.max_records {
-                executions = executions.into_iter().rev().take(self.max_records).collect();
+                executions = executions
+                    .into_iter()
+                    .rev()
+                    .take(self.max_records)
+                    .collect();
             }
 
             let mut index_table = write_txn.open_table(WORKFLOW_EXECUTIONS_TABLE)?;
-            index_table.insert(workflow_key.as_str(), serde_json::to_vec(&executions)?.as_slice())?;
+            index_table.insert(
+                workflow_key.as_str(),
+                serde_json::to_vec(&executions)?.as_slice(),
+            )?;
         }
         write_txn.commit()?;
         Ok(())
@@ -400,12 +405,11 @@ mod tests {
     async fn test_workflow_store() {
         let store = WorkflowStore::memory().unwrap();
 
-        let workflow = Workflow::new("test", "Test Workflow")
-            .with_step(Step::Log {
-                id: "log1".to_string(),
-                message: "test".to_string(),
-                level: "info".to_string(),
-            });
+        let workflow = Workflow::new("test", "Test Workflow").with_step(Step::Log {
+            id: "log1".to_string(),
+            message: "test".to_string(),
+            level: "info".to_string(),
+        });
 
         store.save(&workflow).unwrap();
 

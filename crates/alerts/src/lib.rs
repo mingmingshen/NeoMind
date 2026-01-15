@@ -55,18 +55,22 @@ pub mod error;
 pub mod manager;
 
 pub use alert::{Alert, AlertId, AlertSeverity, AlertStatus};
-pub use channels::{ChannelType, NotificationChannel, ChannelRegistry, MemoryChannel, ConsoleChannel};
-pub use error::{Error, Result, NeoTalkError};
-pub use manager::{AlertManager, AlertStats, AlertRule, AlwaysTrueRule, AlwaysFalseRule, CustomRule};
+pub use channels::{
+    ChannelRegistry, ChannelType, ConsoleChannel, MemoryChannel, NotificationChannel,
+};
+pub use error::{Error, NeoTalkError, Result};
+pub use manager::{
+    AlertManager, AlertRule, AlertStats, AlwaysFalseRule, AlwaysTrueRule, CustomRule,
+};
 
 // Re-exports from core (backward compatibility)
 pub use edge_ai_core::alerts::{
-    Alert as CoreAlert, AlertChannel, ChannelFactory, AlertError, AlertSeverity as CoreSeverity,
-    AlertStatus as CoreStatus,
+    Alert as CoreAlert, AlertChannel, AlertError, AlertSeverity as CoreSeverity,
+    AlertStatus as CoreStatus, ChannelFactory,
 };
 
 #[cfg(feature = "email")]
-pub use channels::{EmailChannel, EmailAttachment};
+pub use channels::{EmailAttachment, EmailChannel};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

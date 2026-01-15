@@ -7,7 +7,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use edge_ai_storage::TimeSeriesStore;
-use edge_ai_tools::{Tool, ToolOutput, ToolError, error::Result as ToolResult, tool::{object_schema, string_property, number_property, boolean_property}};
+use edge_ai_tools::{
+    Tool, ToolError, ToolOutput,
+    error::Result as ToolResult,
+    tool::{boolean_property, number_property, object_schema, string_property},
+};
 
 /// Trend analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,7 +102,11 @@ impl AnalyzeTrendsTool {
         let n = data.len() as f64;
         let sum_x: f64 = (0..data.len()).map(|i| i as f64).sum();
         let sum_y: f64 = data.iter().map(|d| d.value).sum();
-        let sum_xy: f64 = data.iter().enumerate().map(|(i, d)| i as f64 * d.value).sum();
+        let sum_xy: f64 = data
+            .iter()
+            .enumerate()
+            .map(|(i, d)| i as f64 * d.value)
+            .sum();
         let sum_x2: f64 = (0..data.len()).map(|i| (i as f64) * (i as f64)).sum();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
@@ -106,15 +114,17 @@ impl AnalyzeTrendsTool {
         // Calculate correlation coefficient (R)
         let mean_x = sum_x / n;
         let mean_y = sum_y / n;
-        let numerator: f64 = data.iter().enumerate()
+        let numerator: f64 = data
+            .iter()
+            .enumerate()
             .map(|(i, d)| (i as f64 - mean_x) * (d.value - mean_y))
             .sum();
-        let sum_xx: f64 = data.iter().enumerate()
+        let sum_xx: f64 = data
+            .iter()
+            .enumerate()
             .map(|(i, _)| (i as f64 - mean_x).powi(2))
             .sum();
-        let sum_yy: f64 = data.iter()
-            .map(|d| (d.value - mean_y).powi(2))
-            .sum();
+        let sum_yy: f64 = data.iter().map(|d| (d.value - mean_y).powi(2)).sum();
         let r = numerator / (sum_xx * sum_yy).sqrt();
 
         // Determine trend direction
@@ -155,15 +165,17 @@ impl AnalyzeTrendsTool {
             sorted[n / 2]
         };
 
-        let variance = values.iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f64>() / n as f64;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n as f64;
         let std_dev = variance.sqrt();
 
         let min = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
-        let cv = if mean != 0.0 { std_dev / mean.abs() } else { 0.0 };
+        let cv = if mean != 0.0 {
+            std_dev / mean.abs()
+        } else {
+            0.0
+        };
 
         TrendSummary {
             mean,
@@ -176,7 +188,12 @@ impl AnalyzeTrendsTool {
     }
 
     /// Generate predictions based on trend.
-    fn generate_predictions(&self, data: &[TrendDataPoint], slope: f64, r: f64) -> TrendPredictions {
+    fn generate_predictions(
+        &self,
+        data: &[TrendDataPoint],
+        slope: f64,
+        r: f64,
+    ) -> TrendPredictions {
         if data.is_empty() || r.abs() < 0.3 {
             return TrendPredictions {
                 next_1h: None,
@@ -246,9 +263,7 @@ impl Tool for AnalyzeTrendsTool {
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        let start_time = args["start_time"]
-            .as_i64()
-            .unwrap_or(end_time - 86400); // Default 24 hours
+        let start_time = args["start_time"].as_i64().unwrap_or(end_time - 86400); // Default 24 hours
 
         let predict = args["predict"].as_bool().unwrap_or(true);
 
@@ -260,10 +275,14 @@ impl Tool for AnalyzeTrendsTool {
             .map_err(|e| ToolError::Execution(format!("Failed to query data: {}", e)))?;
 
         // Convert to trend data points
-        let data_points: Vec<TrendDataPoint> = result.points.iter().map(|p| TrendDataPoint {
-            timestamp: p.timestamp,
-            value: p.value.as_f64().unwrap_or(0.0),
-        }).collect();
+        let data_points: Vec<TrendDataPoint> = result
+            .points
+            .iter()
+            .map(|p| TrendDataPoint {
+                timestamp: p.timestamp,
+                value: p.value.as_f64().unwrap_or(0.0),
+            })
+            .collect();
 
         if data_points.is_empty() {
             return Ok(ToolOutput::success_with_metadata(
@@ -272,7 +291,7 @@ impl Tool for AnalyzeTrendsTool {
                     "metric": metric,
                     "message": "No data available for the specified time range"
                 }),
-                serde_json::json!({"has_data": false})
+                serde_json::json!({"has_data": false}),
             ));
         }
 
@@ -304,7 +323,7 @@ impl Tool for AnalyzeTrendsTool {
             serde_json::json!({
                 "has_data": true,
                 "data_points_count": analysis.data_points.len()
-            })
+            }),
         ))
     }
 }
@@ -315,15 +334,25 @@ mod tests {
 
     #[test]
     fn test_trend_direction() {
-        let tool = AnalyzeTrendsTool::new(
-            edge_ai_storage::TimeSeriesStore::memory().unwrap()
-        );
+        let tool = AnalyzeTrendsTool::new(edge_ai_storage::TimeSeriesStore::memory().unwrap());
 
         let data = vec![
-            TrendDataPoint { timestamp: 1000, value: 10.0 },
-            TrendDataPoint { timestamp: 2000, value: 12.0 },
-            TrendDataPoint { timestamp: 3000, value: 14.0 },
-            TrendDataPoint { timestamp: 4000, value: 16.0 },
+            TrendDataPoint {
+                timestamp: 1000,
+                value: 10.0,
+            },
+            TrendDataPoint {
+                timestamp: 2000,
+                value: 12.0,
+            },
+            TrendDataPoint {
+                timestamp: 3000,
+                value: 14.0,
+            },
+            TrendDataPoint {
+                timestamp: 4000,
+                value: 16.0,
+            },
         ];
 
         let (direction, strength) = tool.analyze_trend(&data);
@@ -333,15 +362,25 @@ mod tests {
 
     #[test]
     fn test_trend_summary() {
-        let tool = AnalyzeTrendsTool::new(
-            edge_ai_storage::TimeSeriesStore::memory().unwrap()
-        );
+        let tool = AnalyzeTrendsTool::new(edge_ai_storage::TimeSeriesStore::memory().unwrap());
 
         let data = vec![
-            TrendDataPoint { timestamp: 1000, value: 10.0 },
-            TrendDataPoint { timestamp: 2000, value: 20.0 },
-            TrendDataPoint { timestamp: 3000, value: 30.0 },
-            TrendDataPoint { timestamp: 4000, value: 40.0 },
+            TrendDataPoint {
+                timestamp: 1000,
+                value: 10.0,
+            },
+            TrendDataPoint {
+                timestamp: 2000,
+                value: 20.0,
+            },
+            TrendDataPoint {
+                timestamp: 3000,
+                value: 30.0,
+            },
+            TrendDataPoint {
+                timestamp: 4000,
+                value: 40.0,
+            },
         ];
 
         let summary = tool.calculate_summary(&data);
@@ -352,15 +391,25 @@ mod tests {
 
     #[test]
     fn test_trend_predict_stable() {
-        let tool = AnalyzeTrendsTool::new(
-            edge_ai_storage::TimeSeriesStore::memory().unwrap()
-        );
+        let tool = AnalyzeTrendsTool::new(edge_ai_storage::TimeSeriesStore::memory().unwrap());
 
         let data = vec![
-            TrendDataPoint { timestamp: 1000, value: 20.0 },
-            TrendDataPoint { timestamp: 2000, value: 21.0 },
-            TrendDataPoint { timestamp: 3000, value: 19.0 },
-            TrendDataPoint { timestamp: 4000, value: 20.5 },
+            TrendDataPoint {
+                timestamp: 1000,
+                value: 20.0,
+            },
+            TrendDataPoint {
+                timestamp: 2000,
+                value: 21.0,
+            },
+            TrendDataPoint {
+                timestamp: 3000,
+                value: 19.0,
+            },
+            TrendDataPoint {
+                timestamp: 4000,
+                value: 20.5,
+            },
         ];
 
         let predictions = tool.generate_predictions(&data, 0.0, 0.1);

@@ -6,8 +6,8 @@ pub mod backend;
 pub mod modality;
 
 pub use backend::{
-    BackendCapabilities, BackendId, DynamicLlmRuntime, FinishReason, GenerationParams,
-    LlmError, LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
+    BackendCapabilities, BackendId, DynamicLlmRuntime, FinishReason, GenerationParams, LlmError,
+    LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
 };
 pub use modality::{ImageContent, ImageInput, ModalityContent};
 
@@ -139,8 +139,7 @@ pub enum StopReason {
 }
 
 /// Stream of generated tokens.
-pub type GenerationStream =
-    Pin<Box<dyn Stream<Item = Result<String, LlmError>> + Send>>;
+pub type GenerationStream = Pin<Box<dyn Stream<Item = Result<String, LlmError>> + Send>>;
 
 /// Core trait for LLM backends (legacy, simple API).
 ///
@@ -153,22 +152,13 @@ pub trait LlmBackend: Send + Sync {
     async fn generate(&self, prompt: &str) -> Result<GenerationResult, LlmError>;
 
     /// Generate with streaming output.
-    async fn generate_stream(
-        &self,
-        prompt: &str,
-    ) -> Result<GenerationStream, LlmError>;
+    async fn generate_stream(&self, prompt: &str) -> Result<GenerationStream, LlmError>;
 
     /// Chat completion with message history.
-    async fn chat(
-        &self,
-        messages: &[Message],
-    ) -> Result<GenerationResult, LlmError>;
+    async fn chat(&self, messages: &[Message]) -> Result<GenerationResult, LlmError>;
 
     /// Chat completion with streaming.
-    async fn chat_stream(
-        &self,
-        messages: &[Message],
-    ) -> Result<GenerationStream, LlmError>;
+    async fn chat_stream(&self, messages: &[Message]) -> Result<GenerationStream, LlmError>;
 
     /// Get the model name/version.
     fn model_name(&self) -> &str;

@@ -3,15 +3,14 @@
 //! This module provides persistent storage for LLM-generated decisions,
 //! including query APIs and statistical analysis.
 
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use redb::{Database, ReadableTable, TableDefinition};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 use crate::Error;
 
 // Decisions table: key = decision_id, value = StoredDecision (serialized as JSON)
-const DECISIONS_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("decisions");
+const DECISIONS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("decisions");
 
 /// Decision store for persisting and querying LLM decisions.
 pub struct DecisionStore {
@@ -170,8 +169,8 @@ impl DecisionStore {
 
     /// Create an in-memory decision store for testing.
     pub fn memory() -> Result<Arc<Self>, Error> {
-        let temp_path = std::env::temp_dir()
-            .join(format!("decisions_test_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("decisions_test_{}.redb", uuid::Uuid::new_v4()));
         Self::open(temp_path)
     }
 
@@ -181,8 +180,8 @@ impl DecisionStore {
         {
             let mut table = write_txn.open_table(DECISIONS_TABLE)?;
 
-            let value = serde_json::to_vec(decision)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(decision).map_err(|e| Error::Serialization(e.to_string()))?;
 
             table.insert(decision.id.as_str(), value.as_slice())?;
         }
@@ -242,11 +241,7 @@ impl DecisionStore {
     }
 
     /// Update decision status.
-    pub async fn update_status(
-        &self,
-        id: &str,
-        status: DecisionStatus,
-    ) -> Result<(), Error> {
+    pub async fn update_status(&self, id: &str, status: DecisionStatus) -> Result<(), Error> {
         // First read the existing decision
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(DECISIONS_TABLE)?;
@@ -268,8 +263,8 @@ impl DecisionStore {
         {
             let mut table = write_txn.open_table(DECISIONS_TABLE)?;
 
-            let value = serde_json::to_vec(&decision)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&decision).map_err(|e| Error::Serialization(e.to_string()))?;
 
             table.insert(id, value.as_slice())?;
         }
@@ -278,11 +273,7 @@ impl DecisionStore {
     }
 
     /// Record execution result for a decision.
-    pub async fn record_execution(
-        &self,
-        id: &str,
-        result: ExecutionResult,
-    ) -> Result<(), Error> {
+    pub async fn record_execution(&self, id: &str, result: ExecutionResult) -> Result<(), Error> {
         // First read the existing decision
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(DECISIONS_TABLE)?;
@@ -311,8 +302,8 @@ impl DecisionStore {
         {
             let mut table = write_txn.open_table(DECISIONS_TABLE)?;
 
-            let value = serde_json::to_vec(&decision)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&decision).map_err(|e| Error::Serialization(e.to_string()))?;
 
             table.insert(id, value.as_slice())?;
         }
@@ -362,7 +353,12 @@ impl DecisionStore {
 
             total_confidence += decision.confidence as f64;
 
-            if decision.execution_result.is_some() || matches!(decision.status, DecisionStatus::Executed | DecisionStatus::Failed) {
+            if decision.execution_result.is_some()
+                || matches!(
+                    decision.status,
+                    DecisionStatus::Executed | DecisionStatus::Failed
+                )
+            {
                 executed_count += 1;
                 if matches!(decision.status, DecisionStatus::Executed) {
                     success_count += 1;
@@ -518,8 +514,16 @@ mod tests {
                 reasoning: "Test".to_string(),
                 actions: vec![],
                 confidence: 0.5 + (i as f32) * 0.1,
-                decision_type: if i % 2 == 0 { DecisionType::Alert } else { DecisionType::Rule },
-                priority: if i < 2 { DecisionPriority::High } else { DecisionPriority::Medium },
+                decision_type: if i % 2 == 0 {
+                    DecisionType::Alert
+                } else {
+                    DecisionType::Rule
+                },
+                priority: if i < 2 {
+                    DecisionPriority::High
+                } else {
+                    DecisionPriority::Medium
+                },
                 source_review: None,
                 created_at: 1000 + i as i64 * 100,
                 executed_at: None,
@@ -567,7 +571,10 @@ mod tests {
         };
         store.save(&decision).await.unwrap();
 
-        store.update_status("dec-1", DecisionStatus::Approved).await.unwrap();
+        store
+            .update_status("dec-1", DecisionStatus::Approved)
+            .await
+            .unwrap();
 
         let retrieved = store.get("dec-1").await.unwrap().unwrap();
         assert_eq!(retrieved.status, DecisionStatus::Approved);
@@ -624,13 +631,25 @@ mod tests {
                 reasoning: "Test".to_string(),
                 actions: vec![],
                 confidence: 0.5 + (i as f32) * 0.1,
-                decision_type: if i % 2 == 0 { DecisionType::Alert } else { DecisionType::Rule },
-                priority: if i < 2 { DecisionPriority::High } else { DecisionPriority::Medium },
+                decision_type: if i % 2 == 0 {
+                    DecisionType::Alert
+                } else {
+                    DecisionType::Rule
+                },
+                priority: if i < 2 {
+                    DecisionPriority::High
+                } else {
+                    DecisionPriority::Medium
+                },
                 source_review: None,
                 created_at: 1000 + i as i64 * 100,
                 executed_at: None,
                 execution_result: None,
-                status: if i == 0 { DecisionStatus::Executed } else { DecisionStatus::Proposed },
+                status: if i == 0 {
+                    DecisionStatus::Executed
+                } else {
+                    DecisionStatus::Proposed
+                },
             };
             store.save(&decision).await.unwrap();
         }

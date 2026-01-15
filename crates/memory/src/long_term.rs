@@ -144,7 +144,12 @@ impl KnowledgeEntry {
         } else {
             self.content.clone()
         };
-        format!("[{}] {}: {}", self.category.as_str(), self.title, content_preview)
+        format!(
+            "[{}] {}: {}",
+            self.category.as_str(),
+            self.title,
+            content_preview
+        )
     }
 
     /// Check if matches a search query.
@@ -152,7 +157,10 @@ impl KnowledgeEntry {
         let query_lower = query.to_lowercase();
         self.title.to_lowercase().contains(&query_lower)
             || self.content.to_lowercase().contains(&query_lower)
-            || self.tags.iter().any(|t| t.to_lowercase().contains(&query_lower))
+            || self
+                .tags
+                .iter()
+                .any(|t| t.to_lowercase().contains(&query_lower))
     }
 }
 
@@ -412,9 +420,11 @@ impl LongTermMemory {
         cases
             .values()
             .filter(|case| {
-                symptoms
-                    .iter()
-                    .any(|s| case.symptoms.iter().any(|cs| cs.to_lowercase().contains(&s.to_lowercase())))
+                symptoms.iter().any(|s| {
+                    case.symptoms
+                        .iter()
+                        .any(|cs| cs.to_lowercase().contains(&s.to_lowercase()))
+                })
             })
             .cloned()
             .collect()
@@ -515,12 +525,8 @@ mod tests {
 
     #[test]
     fn test_knowledge_entry_with_tags() {
-        let entry = KnowledgeEntry::new(
-            "Test",
-            "Content",
-            KnowledgeCategory::DeviceManual,
-        )
-        .with_tags(vec!["sensor".to_string(), "temperature".to_string()]);
+        let entry = KnowledgeEntry::new("Test", "Content", KnowledgeCategory::DeviceManual)
+            .with_tags(vec!["sensor".to_string(), "temperature".to_string()]);
 
         assert_eq!(entry.tags.len(), 2);
         assert!(entry.tags.contains(&"sensor".to_string()));
@@ -571,11 +577,7 @@ mod tests {
     async fn test_long_term_memory_add() {
         let memory = LongTermMemory::new();
 
-        let entry = KnowledgeEntry::new(
-            "Test",
-            "Content",
-            KnowledgeCategory::BestPractice,
-        );
+        let entry = KnowledgeEntry::new("Test", "Content", KnowledgeCategory::BestPractice);
 
         memory.add(entry).await.unwrap();
         assert_eq!(memory.len().await, 1);
@@ -585,11 +587,7 @@ mod tests {
     async fn test_long_term_memory_get() {
         let memory = LongTermMemory::new();
 
-        let entry = KnowledgeEntry::new(
-            "Test Entry",
-            "Content",
-            KnowledgeCategory::BestPractice,
-        );
+        let entry = KnowledgeEntry::new("Test Entry", "Content", KnowledgeCategory::BestPractice);
 
         memory.add(entry.clone()).await.unwrap();
 
@@ -644,7 +642,9 @@ mod tests {
             .await
             .unwrap();
 
-        let manuals = memory.get_by_category(&KnowledgeCategory::DeviceManual).await;
+        let manuals = memory
+            .get_by_category(&KnowledgeCategory::DeviceManual)
+            .await;
         assert_eq!(manuals.len(), 1);
 
         let faqs = memory.get_by_category(&KnowledgeCategory::FAQ).await;
@@ -706,7 +706,10 @@ mod tests {
         let entry = KnowledgeEntry::new("Test", "Original", KnowledgeCategory::BestPractice);
         memory.add(entry.clone()).await.unwrap();
 
-        memory.update(&entry.id, "Updated".to_string()).await.unwrap();
+        memory
+            .update(&entry.id, "Updated".to_string())
+            .await
+            .unwrap();
 
         let retrieved = memory.get(&entry.id).await.unwrap();
         assert_eq!(retrieved.content, "Updated");
@@ -786,7 +789,11 @@ mod tests {
         let memory = LongTermMemory::new();
 
         memory
-            .add(KnowledgeEntry::new("Test", "Content", KnowledgeCategory::BestPractice))
+            .add(KnowledgeEntry::new(
+                "Test",
+                "Content",
+                KnowledgeCategory::BestPractice,
+            ))
             .await
             .unwrap();
 

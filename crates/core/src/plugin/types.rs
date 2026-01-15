@@ -3,10 +3,10 @@
 //! This module defines the core types for the unified plugin system,
 //! including plugin categories, states, and metadata.
 
-use crate::plugin::{PluginMetadata, PluginError};
+use crate::plugin::{PluginError, PluginMetadata};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use semver::Version;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use tokio::sync::RwLock;
@@ -183,8 +183,7 @@ impl PluginCategory {
             | PluginType::ModbusAdapter
             | PluginType::DeviceAdapter => PluginCategory::Devices,
 
-            PluginType::AlertChannel
-            | PluginType::Integration => PluginCategory::Notify,
+            PluginType::AlertChannel | PluginType::Integration => PluginCategory::Notify,
 
             // Other types default to devices
             PluginType::InternalMqttBroker
@@ -286,10 +285,10 @@ pub struct ExtendedPluginMetadata {
 impl ExtendedPluginMetadata {
     /// Create new extended metadata from base metadata.
     pub fn from_base(base: PluginMetadata, plugin_type: PluginType) -> Self {
-        let version = Version::parse(&base.version)
-            .unwrap_or_else(|_| Version::new(1, 0, 0));
+        let version = Version::parse(&base.version).unwrap_or_else(|_| Version::new(1, 0, 0));
 
-        let required_neotalk_version = base.required_neotalk_version
+        let required_neotalk_version = base
+            .required_neotalk_version
             .parse()
             .unwrap_or_else(|_| Version::new(1, 0, 0));
 
@@ -589,7 +588,11 @@ pub trait UnifiedPlugin: Send + Sync {
     fn get_stats(&self) -> PluginStats;
 
     /// Handle plugin-specific command.
-    async fn handle_command(&self, command: &str, args: &serde_json::Value) -> Result<serde_json::Value, PluginError>;
+    async fn handle_command(
+        &self,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, PluginError>;
 }
 
 /// Dynamic plugin type for unified plugins.
@@ -669,22 +672,13 @@ pub enum PluginRegistryEvent {
     },
 
     /// Plugin was unregistered
-    Unregistered {
-        plugin_id: String,
-        timestamp: i64,
-    },
+    Unregistered { plugin_id: String, timestamp: i64 },
 
     /// Plugin was started
-    Started {
-        plugin_id: String,
-        timestamp: i64,
-    },
+    Started { plugin_id: String, timestamp: i64 },
 
     /// Plugin was stopped
-    Stopped {
-        plugin_id: String,
-        timestamp: i64,
-    },
+    Stopped { plugin_id: String, timestamp: i64 },
 
     /// Plugin encountered an error
     Error {
@@ -743,9 +737,21 @@ mod tests {
         let mut machine = StateMachine::new();
 
         // Valid transitions
-        assert!(machine.transition(PluginState::Initialized, "Init".to_string()).is_ok());
-        assert!(machine.transition(PluginState::Running, "Start".to_string()).is_ok());
-        assert!(machine.transition(PluginState::Stopped, "Stop".to_string()).is_ok());
+        assert!(
+            machine
+                .transition(PluginState::Initialized, "Init".to_string())
+                .is_ok()
+        );
+        assert!(
+            machine
+                .transition(PluginState::Running, "Start".to_string())
+                .is_ok()
+        );
+        assert!(
+            machine
+                .transition(PluginState::Stopped, "Stop".to_string())
+                .is_ok()
+        );
 
         // Test state checks
         assert!(!PluginState::Stopped.is_active());

@@ -1,17 +1,22 @@
 //! External MQTT broker management handlers.
 
-use axum::{extract::{Path, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
+use edge_ai_devices::adapter::DeviceAdapter;
+use edge_ai_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
 use edge_ai_storage::{ExternalBroker, SecurityLevel, SecurityWarning};
-use edge_ai_devices::{MqttManagerConfig, MultiBrokerManager};
 
+use crate::config;
 use crate::handlers::common::{HandlerResult, ok};
 use crate::models::ErrorResponse;
-use crate::config;
 use crate::server::types::ServerState;
 
 /// DTO for external broker response.
@@ -46,7 +51,11 @@ impl From<ExternalBroker> for ExternalBrokerDto {
             tls: b.tls,
             username: b.username,
             // Mask password in response
-            password: if b.password.is_some() { Some("*****".to_string()) } else { None },
+            password: if b.password.is_some() {
+                Some("*****".to_string())
+            } else {
+                None
+            },
             // Check if any certificates are configured
             has_certs: b.ca_cert.is_some() || b.client_cert.is_some() || b.client_key.is_some(),
             enabled: b.enabled,
@@ -84,8 +93,12 @@ pub struct ExternalBrokerRequest {
     pub enabled: bool,
 }
 
-fn default_external_broker_port() -> u16 { 1883 }
-fn default_external_broker_enabled() -> bool { true }
+fn default_external_broker_port() -> u16 {
+    1883
+}
+fn default_external_broker_enabled() -> bool {
+    true
+}
 
 /// List all external brokers.
 ///
@@ -94,11 +107,10 @@ pub async fn list_brokers_handler() -> HandlerResult<serde_json::Value> {
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    let brokers = store.load_all_external_brokers()
-        .map_err(|e| {
-            tracing::warn!(category = "mqtt", error = %e, "Failed to load external brokers");
-            ErrorResponse::internal(format!("Failed to load brokers: {}", e))
-        })?;
+    let brokers = store.load_all_external_brokers().map_err(|e| {
+        tracing::warn!(category = "mqtt", error = %e, "Failed to load external brokers");
+        ErrorResponse::internal(format!("Failed to load brokers: {}", e))
+    })?;
 
     let dtos: Vec<ExternalBrokerDto> = brokers.into_iter().map(ExternalBrokerDto::from).collect();
     ok(json!({
@@ -110,13 +122,12 @@ pub async fn list_brokers_handler() -> HandlerResult<serde_json::Value> {
 /// Get a specific external broker.
 ///
 /// GET /api/brokers/:id
-pub async fn get_broker_handler(
-    Path(id): Path<String>,
-) -> HandlerResult<serde_json::Value> {
+pub async fn get_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_json::Value> {
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    let broker = store.load_external_broker(&id)
+    let broker = store
+        .load_external_broker(&id)
         .map_err(|e| {
             tracing::warn!(category = "mqtt", error = %e, "Failed to load broker");
             ErrorResponse::internal(format!("Failed to load broker: {}", e))
@@ -143,10 +154,14 @@ pub async fn create_broker_handler(
 
     // Check if broker already exists
     if store.load_external_broker(&id).is_ok_and(|b| b.is_some()) {
-        return Err(ErrorResponse::bad_request(format!("Broker already exists: {}", id)));
+        return Err(ErrorResponse::bad_request(format!(
+            "Broker already exists: {}",
+            id
+        )));
     }
 
-    let mut broker = ExternalBroker::new(id.clone(), req.name.clone(), req.broker.clone(), req.port);
+    let mut broker =
+        ExternalBroker::new(id.clone(), req.name.clone(), req.broker.clone(), req.port);
     broker.username = req.username.clone();
     broker.password = req.password.clone();
     broker.tls = req.tls;
@@ -190,48 +205,77 @@ pub async fn create_broker_handler(
     }
 
     // Save broker configuration
-    store.save_external_broker(&broker)
+    store
+        .save_external_broker(&broker)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save broker: {}", e)))?;
 
     tracing::info!(category = "mqtt", name = %broker.name, url = %broker.broker_url(), "Created external broker");
 
-    // If enabled, create MQTT connection through MultiBrokerManager
+    // If enabled, create MQTT connection through MqttAdapter
     let mut connected = false;
     let mut connection_error: Option<String> = None;
     if broker.enabled {
-        // Create MQTT manager config
-        let mut mqtt_config = MqttManagerConfig::new(&broker.broker)
-            .with_port(broker.port)
-            .with_client_id(format!("neotalk-external-{}", &id));
+        // Create MqttAdapter config
+        let mqtt_config = MqttAdapterConfig {
+            name: format!("external-{}", id),
+            mqtt: edge_ai_devices::mqtt::MqttConfig {
+                broker: broker.broker.clone(),
+                port: broker.port,
+                client_id: Some(format!("neotalk-external-{}", id)),
+                username: broker.username.clone(),
+                password: broker.password.clone(),
+                keep_alive: 60,
+                clean_session: true,
+                qos: 1,
+                topic_prefix: "device".to_string(),
+                command_topic: "downlink".to_string(),
+            },
+            subscribe_topics: vec!["device/+/+/uplink".to_string()],
+            discovery_topic: None,
+            discovery_prefix: "neotalk".to_string(),
+            auto_discovery: false,
+            storage_dir: Some("data".to_string()),
+        };
 
-        // Add authentication if configured
-        if let (Some(username), Some(password)) = (&broker.username, &broker.password) {
-            mqtt_config = mqtt_config.with_auth(username, password);
-        }
+        // Create the MQTT adapter
+        let adapter_result: edge_ai_devices::adapter::AdapterResult<Arc<dyn DeviceAdapter>> =
+            create_adapter(
+                "mqtt",
+                &serde_json::to_value(mqtt_config).unwrap(),
+                state.event_bus.as_ref().unwrap(),
+            );
 
-        // Add to multi-broker manager (this creates the MQTT connection)
-        match state.multi_broker_manager.add_broker(&id, mqtt_config).await {
-            Ok(()) => {
-                // Start the broker connection
-                match state.multi_broker_manager.start_broker(&id).await {
+        match adapter_result {
+            Ok(adapter) => {
+                // Register adapter with device service
+                let adapter_id = format!("external-{}", id);
+                state
+                    .device_service
+                    .register_adapter(adapter_id.clone(), adapter.clone())
+                    .await;
+
+                // Start the adapter
+                match adapter.start().await {
                     Ok(()) => {
                         connected = true;
-                        tracing::info!(category = "mqtt", broker_id = %id, "MQTT connection established");
+                        tracing::info!(category = "mqtt", broker_id = %id, "MQTT adapter started successfully");
                     }
                     Err(e) => {
                         connection_error = Some(format!("MQTT connection failed: {}", e));
-                        tracing::warn!(category = "mqtt", broker_id = %id, error = %e, "Failed to start MQTT connection");
+                        tracing::warn!(category = "mqtt", broker_id = %id, error = %e, "Failed to start MQTT adapter");
                     }
                 }
             }
             Err(e) => {
-                connection_error = Some(format!("Failed to add broker: {}", e));
-                tracing::warn!(category = "mqtt", broker_id = %id, error = %e, "Failed to add broker to manager");
+                connection_error = Some(format!("Failed to create adapter: {}", e));
+                tracing::warn!(category = "mqtt", broker_id = %id, error = %e, "Failed to create MQTT adapter");
             }
         }
 
         // Update broker connection status
-        if let Err(e) = update_broker_connection_status(&store, &id, connected, connection_error.clone()).await {
+        if let Err(e) =
+            update_broker_connection_status(&store, &id, connected, connection_error.clone()).await
+        {
             tracing::warn!("Failed to update broker status: {}", e);
         }
 
@@ -249,13 +293,16 @@ pub async fn create_broker_handler(
     }
 
     // Add security warnings to response if any
-    let warnings_json: Vec<serde_json::Value> = warnings.iter().map(|w| {
-        json!({
-            "level": format!("{:?}", w.level),
-            "message": w.message,
-            "recommendation": w.recommendation,
+    let warnings_json: Vec<serde_json::Value> = warnings
+        .iter()
+        .map(|w| {
+            json!({
+                "level": format!("{:?}", w.level),
+                "message": w.message,
+                "recommendation": w.recommendation,
+            })
         })
-    }).collect();
+        .collect();
 
     let mut response = json!({
         "broker": ExternalBrokerDto::from(broker),
@@ -279,7 +326,8 @@ pub async fn update_broker_handler(
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    let mut broker = store.load_external_broker(&id)
+    let mut broker = store
+        .load_external_broker(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to load broker: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Broker not found: {}", id)))?;
 
@@ -302,7 +350,8 @@ pub async fn update_broker_handler(
     broker.enabled = req.enabled;
     broker.touch();
 
-    store.save_external_broker(&broker)
+    store
+        .save_external_broker(&broker)
         .map_err(|e| ErrorResponse::internal(format!("Failed to save broker: {}", e)))?;
 
     tracing::info!(category = "mqtt", name = %broker.name, url = %broker.broker_url(), "Updated external broker");
@@ -328,7 +377,9 @@ pub async fn update_broker_handler(
         }
 
         // Update broker connection status
-        if let Err(e) = update_broker_connection_status(&store, &id, connected, connection_error.clone()).await {
+        if let Err(e) =
+            update_broker_connection_status(&store, &id, connected, connection_error.clone()).await
+        {
             tracing::warn!("Failed to update broker status: {}", e);
         }
 
@@ -354,13 +405,12 @@ pub async fn update_broker_handler(
 /// Delete an external broker.
 ///
 /// DELETE /api/brokers/:id
-pub async fn delete_broker_handler(
-    Path(id): Path<String>,
-) -> HandlerResult<serde_json::Value> {
+pub async fn delete_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_json::Value> {
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    let existed = store.delete_external_broker(&id)
+    let existed = store
+        .delete_external_broker(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete broker: {}", e)))?;
 
     if existed {
@@ -369,20 +419,22 @@ pub async fn delete_broker_handler(
             "message": "External broker deleted successfully",
         }))
     } else {
-        Err(ErrorResponse::not_found(format!("Broker not found: {}", id)))
+        Err(ErrorResponse::not_found(format!(
+            "Broker not found: {}",
+            id
+        )))
     }
 }
 
 /// Test connection to an external broker.
 ///
 /// POST /api/brokers/:id/test
-pub async fn test_broker_handler(
-    Path(id): Path<String>,
-) -> HandlerResult<serde_json::Value> {
+pub async fn test_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_json::Value> {
     let store = config::open_settings_store()
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
-    let broker = store.load_external_broker(&id)
+    let broker = store
+        .load_external_broker(&id)
         .map_err(|e| ErrorResponse::internal(format!("Failed to load broker: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Broker not found: {}", id)))?;
 
@@ -428,11 +480,11 @@ pub async fn test_broker_handler(
                 Ok(Some(updated_broker)) => {
                     tracing::info!(category = "mqtt", broker_id = %id, connected = updated_broker.connected, "Reloaded broker after update");
                     Some(ExternalBrokerDto::from(updated_broker))
-                },
+                }
                 Ok(None) => {
                     tracing::warn!(category = "mqtt", broker_id = %id, "Broker not found after update");
                     None
-                },
+                }
                 Err(e) => {
                     tracing::warn!(category = "mqtt", broker_id = %id, error = %e, "Failed to reload broker after status update");
                     None
@@ -457,7 +509,9 @@ pub async fn test_broker_handler(
             let error_msg = format!("Connection failed: {}", e);
 
             // Update broker status to disconnected with error
-            if let Err(err) = update_broker_connection_status(&store, &id, false, Some(error_msg.clone())).await {
+            if let Err(err) =
+                update_broker_connection_status(&store, &id, false, Some(error_msg.clone())).await
+            {
                 tracing::warn!("Failed to update broker status: {}", err);
             }
 
@@ -487,7 +541,9 @@ pub async fn test_broker_handler(
             let error_msg = format!("Connection timeout after 5 seconds");
 
             // Update broker status to disconnected with error
-            if let Err(err) = update_broker_connection_status(&store, &id, false, Some(error_msg.clone())).await {
+            if let Err(err) =
+                update_broker_connection_status(&store, &id, false, Some(error_msg.clone())).await
+            {
                 tracing::warn!("Failed to update broker status: {}", err);
             }
 
@@ -522,7 +578,8 @@ async fn update_broker_connection_status(
     connected: bool,
     error: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut broker = store.load_external_broker(id)?
+    let mut broker = store
+        .load_external_broker(id)?
         .ok_or_else(|| anyhow::anyhow!("Broker not found"))?;
 
     tracing::info!(category = "mqtt", broker_id = %id, connected, "Updating broker connection status");

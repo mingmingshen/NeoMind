@@ -1,15 +1,21 @@
 //! Scenario management handlers.
 
-use axum::{extract::{Path, Query, State}, Json};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
 
 use edge_ai_scenarios::{
-    ScenarioManager, Scenario, ScenarioId, ScenarioCategory, Environment, ScenarioTemplates,
+    Environment, Scenario, ScenarioCategory, ScenarioId, ScenarioManager, ScenarioTemplates,
 };
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 /// DTO for scenario responses.
@@ -67,7 +73,9 @@ pub struct CreateScenarioRequest {
     pub priority: u8,
 }
 
-fn default_priority() -> u8 { 5 }
+fn default_priority() -> u8 {
+    5
+}
 
 /// Request body for updating a scenario.
 #[derive(Debug, Deserialize)]
@@ -98,7 +106,9 @@ pub struct AddRuleRequest {
 fn get_scenario_manager() -> Arc<ScenarioManager> {
     use std::sync::OnceLock;
     static MANAGER: OnceLock<Arc<ScenarioManager>> = OnceLock::new();
-    MANAGER.get_or_init(|| Arc::new(ScenarioManager::new())).clone()
+    MANAGER
+        .get_or_init(|| Arc::new(ScenarioManager::new()))
+        .clone()
 }
 
 /// Parse category from string.
@@ -190,7 +200,9 @@ pub async fn get_scenario_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    let scenario = manager.get_scenario(&scenario_id).await
+    let scenario = manager
+        .get_scenario(&scenario_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Scenario {}", id)))?;
 
     ok(json!({
@@ -230,7 +242,9 @@ pub async fn update_scenario_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    let mut scenario = manager.get_scenario(&scenario_id).await
+    let mut scenario = manager
+        .get_scenario(&scenario_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Scenario {}", id)))?;
 
     // Update fields
@@ -259,7 +273,9 @@ pub async fn update_scenario_handler(
         scenario.is_active = is_active;
     }
 
-    manager.add_scenario(scenario.clone()).await
+    manager
+        .add_scenario(scenario.clone())
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update scenario: {}", e)))?;
 
     ok(json!({
@@ -279,7 +295,9 @@ pub async fn delete_scenario_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.remove_scenario(&scenario_id).await
+    manager
+        .remove_scenario(&scenario_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete scenario: {}", e)))?;
 
     ok(json!({
@@ -298,7 +316,9 @@ pub async fn activate_scenario_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.activate(&scenario_id).await
+    manager
+        .activate(&scenario_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to activate scenario: {}", e)))?;
 
     ok(json!({
@@ -317,7 +337,9 @@ pub async fn deactivate_scenario_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.deactivate(&scenario_id).await
+    manager
+        .deactivate(&scenario_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to deactivate scenario: {}", e)))?;
 
     ok(json!({
@@ -337,7 +359,9 @@ pub async fn add_device_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.add_device_to_scenario(&scenario_id, req.device_id.clone()).await
+    manager
+        .add_device_to_scenario(&scenario_id, req.device_id.clone())
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add device: {}", e)))?;
 
     ok(json!({
@@ -356,7 +380,9 @@ pub async fn remove_device_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.remove_device_from_scenario(&scenario_id, &device_id).await
+    manager
+        .remove_device_from_scenario(&scenario_id, &device_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to remove device: {}", e)))?;
 
     ok(json!({
@@ -376,7 +402,9 @@ pub async fn add_rule_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.add_rule_to_scenario(&scenario_id, req.rule_id.clone()).await
+    manager
+        .add_rule_to_scenario(&scenario_id, req.rule_id.clone())
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to add rule: {}", e)))?;
 
     ok(json!({
@@ -395,7 +423,9 @@ pub async fn remove_rule_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    manager.remove_rule_from_scenario(&scenario_id, &rule_id).await
+    manager
+        .remove_rule_from_scenario(&scenario_id, &rule_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to remove rule: {}", e)))?;
 
     ok(json!({
@@ -410,7 +440,10 @@ pub async fn list_templates_handler(
     State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     let templates = vec![
-        ("datacenter_temperature", "Datacenter Temperature Monitoring"),
+        (
+            "datacenter_temperature",
+            "Datacenter Temperature Monitoring",
+        ),
         ("production_quality", "Factory Production Line"),
         ("smart_home_comfort", "Smart Home Automation"),
         ("office_energy_saving", "Office Energy Management"),
@@ -462,7 +495,9 @@ pub async fn get_scenario_prompt_handler(
     let scenario_id = ScenarioId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
-    let prompt = manager.get_llm_prompt(&scenario_id).await
+    let prompt = manager
+        .get_llm_prompt(&scenario_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to generate prompt: {}", e)))?;
 
     ok(json!({
@@ -482,7 +517,9 @@ pub async fn execute_scenario_handler(
         .map_err(|_| ErrorResponse::bad_request("Invalid scenario ID"))?;
 
     // Check if scenario exists
-    let _scenario = manager.get_scenario(&scenario_id).await
+    let _scenario = manager
+        .get_scenario(&scenario_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found(format!("Scenario {}", id)))?;
 
     // For now, execution is just a placeholder

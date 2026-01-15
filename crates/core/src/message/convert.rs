@@ -62,7 +62,10 @@ impl ExtendedMessage {
     }
 
     /// Create an assistant message with thinking.
-    pub fn assistant_with_thinking(content: impl Into<Content>, thinking: impl Into<String>) -> Self {
+    pub fn assistant_with_thinking(
+        content: impl Into<Content>,
+        thinking: impl Into<String>,
+    ) -> Self {
         Self {
             role: MessageRole::Assistant,
             content: content.into(),
@@ -86,10 +89,7 @@ impl ExtendedMessage {
     }
 
     /// Create an assistant message with tool calls.
-    pub fn assistant_with_tools(
-        content: impl Into<Content>,
-        tool_calls: Vec<ToolCall>,
-    ) -> Self {
+    pub fn assistant_with_tools(content: impl Into<Content>, tool_calls: Vec<ToolCall>) -> Self {
         Self {
             role: MessageRole::Assistant,
             content: content.into(),

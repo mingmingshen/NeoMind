@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use axum::{
     extract::{Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
-    response::{sse::Event, Sse, Json},
+    response::{Json, Sse, sse::Event},
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
@@ -125,12 +125,13 @@ pub async fn event_stream_handler(
 ) -> Result<Sse<impl Stream<Item = Result<Event, axum::Error>>>, StatusCode> {
     // Validate JWT token - must be provided
     let token = params.token.as_ref().ok_or(StatusCode::UNAUTHORIZED)?;
-    state.auth_user_state.validate_token(token)
+    state
+        .auth_user_state
+        .validate_token(token)
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     // Get the event bus from the server state
-    let event_bus = state.event_bus.as_ref()
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let event_bus = state.event_bus.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
     // Create a receiver for events
     let rx = create_filtered_receiver(event_bus, &params.category);
@@ -185,10 +186,7 @@ pub async fn event_stream_handler(
 }
 
 /// Create a filtered receiver based on category.
-fn create_filtered_receiver(
-    event_bus: &EventBus,
-    category: &Option<String>,
-) -> EventBusReceiver {
+fn create_filtered_receiver(event_bus: &EventBus, category: &Option<String>) -> EventBusReceiver {
     match category.as_deref() {
         Some("device") => {
             let filtered = event_bus.filter().device_events();
@@ -236,15 +234,14 @@ pub async fn event_websocket_handler(
 ) -> axum::response::Response {
     // Validate JWT token - reject connection if no token or invalid token
     let _auth_info = match params.token.as_ref() {
-        Some(token) => {
-            match state.auth_user_state.validate_token(token) {
-                Ok(info) => {
-                    tracing::info!("WebSocket event stream authenticated");
-                    Some(info)
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
-                    return ws.on_upgrade(|mut socket| {
+        Some(token) => match state.auth_user_state.validate_token(token) {
+            Ok(info) => {
+                tracing::info!("WebSocket event stream authenticated");
+                Some(info)
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
+                return ws.on_upgrade(|mut socket| {
                         async move {
                             use axum::extract::ws::Message;
                             let _ = socket.send(Message::Text(
@@ -253,19 +250,19 @@ pub async fn event_websocket_handler(
                             let _ = socket.close().await;
                         }
                     });
-                }
             }
-        }
+        },
         None => {
             tracing::warn!("No authentication provided, rejecting WebSocket connection");
-            return ws.on_upgrade(|mut socket| {
-                async move {
-                    use axum::extract::ws::Message;
-                    let _ = socket.send(Message::Text(
-                        serde_json::json!({"type": "Error", "message": "Authentication required"}).to_string()
-                    )).await;
-                    let _ = socket.close().await;
-                }
+            return ws.on_upgrade(|mut socket| async move {
+                use axum::extract::ws::Message;
+                let _ = socket
+                    .send(Message::Text(
+                        serde_json::json!({"type": "Error", "message": "Authentication required"})
+                            .to_string(),
+                    ))
+                    .await;
+                let _ = socket.close().await;
             });
         }
     };
@@ -273,14 +270,15 @@ pub async fn event_websocket_handler(
     let event_bus = match state.event_bus.as_ref() {
         Some(bus) => bus.clone(),
         None => {
-            return ws.on_upgrade(|mut socket| {
-                async move {
-                    use axum::extract::ws::Message;
-                    let _ = socket.send(Message::Text(
-                        serde_json::json!({"type": "Error", "message": "Event bus not available"}).to_string()
-                    )).await;
-                    let _ = socket.close().await;
-                }
+            return ws.on_upgrade(|mut socket| async move {
+                use axum::extract::ws::Message;
+                let _ = socket
+                    .send(Message::Text(
+                        serde_json::json!({"type": "Error", "message": "Event bus not available"})
+                            .to_string(),
+                    ))
+                    .await;
+                let _ = socket.close().await;
             });
         }
     };
@@ -330,8 +328,7 @@ pub async fn event_history_handler(
     Query(query): Query<EventHistoryQuery>,
 ) -> Result<Json<EventListResponse>, StatusCode> {
     // Get event log store from server state
-    let event_log = state.event_log.as_ref()
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let event_log = state.event_log.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
     use edge_ai_storage::business::EventFilter;
 
@@ -352,7 +349,8 @@ pub async fn event_history_handler(
     }
 
     // Query events from storage
-    let logs = event_log.query(&filter)
+    let logs = event_log
+        .query(&filter)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Convert EventLog entries to EventWithMetadata
@@ -375,10 +373,7 @@ pub async fn event_history_handler(
 
     let total = events.len();
 
-    Ok(Json(EventListResponse {
-        events,
-        total,
-    }))
+    Ok(Json(EventListResponse { events, total }))
 }
 
 /// Query events with category filter.
@@ -397,15 +392,14 @@ pub async fn events_query_handler(
 pub async fn event_stats_handler(
     State(state): State<ServerState>,
 ) -> Result<Json<EventStats>, StatusCode> {
-    let event_log = state.event_log.as_ref()
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let event_log = state.event_log.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
-    let event_bus = state.event_bus.as_ref()
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let event_bus = state.event_bus.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
     // Get all events for statistics
     use edge_ai_storage::business::EventFilter;
-    let logs = event_log.query(&EventFilter::new().with_limit(10000))
+    let logs = event_log
+        .query(&EventFilter::new().with_limit(10000))
         .unwrap_or_default();
 
     let mut events_by_type: HashMap<String, u64> = HashMap::new();
@@ -434,8 +428,7 @@ pub async fn subscribe_events_handler(
     State(state): State<ServerState>,
     Json(req): Json<EventSubscriptionRequest>,
 ) -> Result<Json<EventSubscriptionResponse>, StatusCode> {
-    let _event_bus = state.event_bus.as_ref()
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let _event_bus = state.event_bus.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
     // Generate a subscription ID
     let subscription_id = format!("sub-{}", uuid::Uuid::new_v4());
@@ -452,9 +445,7 @@ pub async fn subscribe_events_handler(
 /// Delete an event subscription.
 ///
 /// Cancels an existing event subscription.
-pub async fn unsubscribe_events_handler(
-    Path(_id): Path<String>,
-) -> Result<StatusCode, StatusCode> {
+pub async fn unsubscribe_events_handler(Path(_id): Path<String>) -> Result<StatusCode, StatusCode> {
     // In a full implementation, we would remove the subscription
     // For now, just return success
     tracing::info!("Cancelling subscription: {}", _id);
@@ -467,8 +458,11 @@ fn categorize_event(event_type: &str) -> &str {
         "DeviceOnline" | "DeviceOffline" | "DeviceMetric" | "DeviceCommandResult" => "device",
         "RuleEvaluated" | "RuleTriggered" | "RuleExecuted" => "rule",
         "WorkflowTriggered" | "WorkflowStepCompleted" | "WorkflowCompleted" => "workflow",
-        "PeriodicReviewTriggered" | "LlmDecisionProposed" | "LlmDecisionExecuted"
-        | "UserMessage" | "LlmResponse" => "llm",
+        "PeriodicReviewTriggered"
+        | "LlmDecisionProposed"
+        | "LlmDecisionExecuted"
+        | "UserMessage"
+        | "LlmResponse" => "llm",
         "AlertCreated" | "AlertAcknowledged" => "alert",
         "ToolExecutionStart" | "ToolExecutionSuccess" | "ToolExecutionFailure" => "tool",
         _ => "other",

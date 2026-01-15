@@ -1,10 +1,10 @@
 //! Response caching layer for API endpoints.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
 
 /// Cache entry with expiration.
 #[derive(Debug, Clone)]
@@ -63,8 +63,8 @@ impl ResponseCache {
 
     /// Store a response in the cache.
     pub async fn put(&self, key: String, response: CachedResponse, ttl: Option<Duration>) {
-        let expires_at = chrono::Utc::now().timestamp()
-            + ttl.unwrap_or(self.default_ttl).as_secs() as i64;
+        let expires_at =
+            chrono::Utc::now().timestamp() + ttl.unwrap_or(self.default_ttl).as_secs() as i64;
 
         let entry = CacheEntry {
             body: response.body,
@@ -157,10 +157,18 @@ pub struct CacheConfig {
     pub search_ttl: u64,
 }
 
-fn default_devices_ttl() -> u64 { 30 }
-fn default_stats_ttl() -> u64 { 10 }
-fn default_settings_ttl() -> u64 { 60 }
-fn default_search_ttl() -> u64 { 30 }
+fn default_devices_ttl() -> u64 {
+    30
+}
+fn default_stats_ttl() -> u64 {
+    10
+}
+fn default_settings_ttl() -> u64 {
+    60
+}
+fn default_search_ttl() -> u64 {
+    30
+}
 
 impl Default for CacheConfig {
     fn default() -> Self {
@@ -218,7 +226,13 @@ mod tests {
             content_type: "application/json".to_string(),
         };
 
-        cache.put("test_key".to_string(), response.clone(), Some(Duration::from_secs(10))).await;
+        cache
+            .put(
+                "test_key".to_string(),
+                response.clone(),
+                Some(Duration::from_secs(10)),
+            )
+            .await;
 
         let retrieved = cache.get("test_key").await;
         assert!(retrieved.is_some());
@@ -235,7 +249,13 @@ mod tests {
         };
 
         // Put with very short TTL (1 second)
-        cache.put("test_key".to_string(), response, Some(Duration::from_secs(1))).await;
+        cache
+            .put(
+                "test_key".to_string(),
+                response,
+                Some(Duration::from_secs(1)),
+            )
+            .await;
 
         // Verify it exists initially
         let retrieved = cache.get("test_key").await;
@@ -257,7 +277,13 @@ mod tests {
             content_type: "application/json".to_string(),
         };
 
-        cache.put("test_key".to_string(), response, Some(Duration::from_secs(10))).await;
+        cache
+            .put(
+                "test_key".to_string(),
+                response,
+                Some(Duration::from_secs(10)),
+            )
+            .await;
         cache.invalidate("test_key").await;
 
         let retrieved = cache.get("test_key").await;
@@ -267,7 +293,10 @@ mod tests {
     #[test]
     fn test_cache_key_generation() {
         assert_eq!(cache_key("/api/devices", None), "/api/devices");
-        assert_eq!(cache_key("/api/devices", Some("limit=10")), "/api/devices?limit=10");
+        assert_eq!(
+            cache_key("/api/devices", Some("limit=10")),
+            "/api/devices?limit=10"
+        );
     }
 
     #[test]
@@ -280,10 +309,22 @@ mod tests {
             search_ttl: 30,
         };
 
-        assert_eq!(config.ttl_for_path("/api/devices"), Some(Duration::from_secs(30)));
-        assert_eq!(config.ttl_for_path("/api/stats/system"), Some(Duration::from_secs(10)));
-        assert_eq!(config.ttl_for_path("/api/settings/llm"), Some(Duration::from_secs(60)));
-        assert_eq!(config.ttl_for_path("/api/search?q=test"), Some(Duration::from_secs(30)));
+        assert_eq!(
+            config.ttl_for_path("/api/devices"),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            config.ttl_for_path("/api/stats/system"),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(
+            config.ttl_for_path("/api/settings/llm"),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            config.ttl_for_path("/api/search?q=test"),
+            Some(Duration::from_secs(30))
+        );
         assert_eq!(config.ttl_for_path("/api/sessions/123"), None); // Not cached
     }
 

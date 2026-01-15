@@ -2,13 +2,13 @@
 //!
 //! Provides event publishing and subscription for command lifecycle events.
 
-use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc, broadcast};
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::{RwLock, broadcast, mpsc};
 
-use crate::command::{CommandId, CommandStatus, CommandResult, CommandPriority};
 use crate::ack::AckStatus;
+use crate::command::{CommandId, CommandPriority, CommandResult, CommandStatus};
 
 /// Command lifecycle event types.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,7 +240,8 @@ impl CommandEventBus {
     /// Get events by device.
     pub async fn get_by_device(&self, device_id: &str, limit: usize) -> Vec<CommandEvent> {
         let events = self.recent_events.read().await;
-        events.iter()
+        events
+            .iter()
             .filter(|e| e.device_id == device_id)
             .rev()
             .take(limit)
@@ -251,7 +252,8 @@ impl CommandEventBus {
     /// Get events for a command.
     pub async fn get_for_command(&self, command_id: &CommandId) -> Vec<CommandEvent> {
         let events = self.recent_events.read().await;
-        events.iter()
+        events
+            .iter()
             .filter(|e| &e.command_id == command_id)
             .cloned()
             .collect()
@@ -330,11 +332,7 @@ impl EventIntegration {
     }
 
     /// Publish command created event.
-    pub async fn publish_created(
-        &self,
-        command_id: CommandId,
-        device_id: String,
-    ) {
+    pub async fn publish_created(&self, command_id: CommandId, device_id: String) {
         let event = CommandEvent::new(
             CommandEventType::Created,
             command_id,
@@ -362,22 +360,14 @@ impl EventIntegration {
             _ => return, // Skip other status changes
         };
 
-        let event = CommandEvent::new(
-            event_type,
-            command_id,
-            device_id,
-            current,
-        ).with_previous_status(previous);
+        let event = CommandEvent::new(event_type, command_id, device_id, current)
+            .with_previous_status(previous);
 
         self.event_bus.publish(event).await;
     }
 
     /// Publish command sent event.
-    pub async fn publish_sent(
-        &self,
-        command_id: CommandId,
-        device_id: String,
-    ) {
+    pub async fn publish_sent(&self, command_id: CommandId, device_id: String) {
         let event = CommandEvent::new(
             CommandEventType::Sent,
             command_id,
@@ -399,24 +389,21 @@ impl EventIntegration {
             command_id,
             device_id,
             CommandStatus::WaitingAck,
-        ).with_ack_status(ack_status);
+        )
+        .with_ack_status(ack_status);
 
         self.event_bus.publish(event).await;
     }
 
     /// Publish command retry event.
-    pub async fn publish_retry(
-        &self,
-        command_id: CommandId,
-        device_id: String,
-        attempt: u32,
-    ) {
+    pub async fn publish_retry(&self, command_id: CommandId, device_id: String, attempt: u32) {
         let event = CommandEvent::new(
             CommandEventType::Retry,
             command_id,
             device_id,
             CommandStatus::Queued,
-        ).with_data(serde_json::json!({"attempt": attempt}));
+        )
+        .with_data(serde_json::json!({"attempt": attempt}));
 
         self.event_bus.publish(event).await;
     }
@@ -569,10 +556,9 @@ mod tests {
 
         let mut rx = integration.event_bus().subscribe();
 
-        integration.publish_created(
-            "cmd1".to_string(),
-            "device1".to_string(),
-        ).await;
+        integration
+            .publish_created("cmd1".to_string(), "device1".to_string())
+            .await;
 
         let received = rx.recv().await.unwrap();
         assert_eq!(received.event_type, CommandEventType::Created);

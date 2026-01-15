@@ -5,17 +5,17 @@
 //! - Records tool execution history
 //! - Handles tool errors with proper event publishing
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use edge_ai_core::eventbus::EventBus;
 use edge_ai_core::event::NeoTalkEvent;
-use edge_ai_tools::{ToolRegistry, ToolOutput, ToolError};
+use edge_ai_core::eventbus::EventBus;
+use edge_ai_tools::{ToolError, ToolOutput, ToolRegistry};
 
 /// Maximum number of tool execution records to keep in history.
 const MAX_HISTORY_SIZE: usize = 1000;
@@ -166,9 +166,7 @@ impl ToolExecutionHistory {
         let records = self.records.read().await;
         records
             .iter()
-            .filter(|r| {
-                r.session_id.as_deref() == Some(session_id) && r.tool_name == tool_name
-            })
+            .filter(|r| r.session_id.as_deref() == Some(session_id) && r.tool_name == tool_name)
             .cloned()
             .collect()
     }
@@ -176,11 +174,7 @@ impl ToolExecutionHistory {
     /// Get only failed records.
     pub async fn get_failures(&self) -> Vec<ToolExecutionRecord> {
         let records = self.records.read().await;
-        records
-            .iter()
-            .filter(|r| !r.success)
-            .cloned()
-            .collect()
+        records.iter().filter(|r| !r.success).cloned().collect()
     }
 
     /// Get statistics about tool executions.
@@ -355,7 +349,8 @@ impl EventIntegratedToolRegistry {
         // Handle result and publish event
         match &result {
             Ok(output) => {
-                self.publish_tool_success(name, &args, &output.data, duration_ms, started_at).await;
+                self.publish_tool_success(name, &args, &output.data, duration_ms, started_at)
+                    .await;
 
                 // Record successful execution
                 let record = ToolExecutionRecord::success(
@@ -368,7 +363,8 @@ impl EventIntegratedToolRegistry {
                 self.history.add(record).await;
             }
             Err(error) => {
-                self.publish_tool_failure(name, &args, error, duration_ms, started_at).await;
+                self.publish_tool_failure(name, &args, error, duration_ms, started_at)
+                    .await;
 
                 // Record failed execution
                 let record = ToolExecutionRecord::failure(
@@ -396,7 +392,8 @@ impl EventIntegratedToolRegistry {
         let started_at = chrono::Utc::now().timestamp();
 
         // Publish tool execution start event
-        self.publish_tool_start_with_session(name, &args, session_id, started_at).await;
+        self.publish_tool_start_with_session(name, &args, session_id, started_at)
+            .await;
 
         // Execute the tool
         let result = self.inner.execute(name, args.clone()).await;
@@ -412,7 +409,8 @@ impl EventIntegratedToolRegistry {
                     session_id,
                     duration_ms,
                     started_at,
-                ).await;
+                )
+                .await;
 
                 // Record successful execution
                 let record = ToolExecutionRecord::success(
@@ -421,7 +419,8 @@ impl EventIntegratedToolRegistry {
                     output.data.clone(),
                     duration_ms,
                     started_at,
-                ).with_session(session_id.to_string());
+                )
+                .with_session(session_id.to_string());
                 self.history.add(record).await;
             }
             Err(error) => {
@@ -432,7 +431,8 @@ impl EventIntegratedToolRegistry {
                     session_id,
                     duration_ms,
                     started_at,
-                ).await;
+                )
+                .await;
 
                 // Record failed execution
                 let record = ToolExecutionRecord::failure(
@@ -441,7 +441,8 @@ impl EventIntegratedToolRegistry {
                     error.to_string(),
                     duration_ms,
                     started_at,
-                ).with_session(session_id.to_string());
+                )
+                .with_session(session_id.to_string());
                 self.history.add(record).await;
             }
         }
@@ -457,7 +458,10 @@ impl EventIntegratedToolRegistry {
             session_id: None,
             timestamp,
         };
-        let _ = self.event_bus.publish_with_source(event, "tool_registry").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "tool_registry")
+            .await;
     }
 
     /// Publish tool execution start event with session.
@@ -474,7 +478,10 @@ impl EventIntegratedToolRegistry {
             session_id: Some(session_id.to_string()),
             timestamp,
         };
-        let _ = self.event_bus.publish_with_source(event, "tool_registry").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "tool_registry")
+            .await;
     }
 
     /// Publish tool execution success event.
@@ -494,7 +501,10 @@ impl EventIntegratedToolRegistry {
             session_id: None,
             timestamp,
         };
-        let _ = self.event_bus.publish_with_source(event, "tool_registry").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "tool_registry")
+            .await;
     }
 
     /// Publish tool execution success event with session.
@@ -515,7 +525,10 @@ impl EventIntegratedToolRegistry {
             session_id: Some(session_id.to_string()),
             timestamp,
         };
-        let _ = self.event_bus.publish_with_source(event, "tool_registry").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "tool_registry")
+            .await;
     }
 
     /// Publish tool execution failure event.
@@ -536,7 +549,10 @@ impl EventIntegratedToolRegistry {
             session_id: None,
             timestamp,
         };
-        let _ = self.event_bus.publish_with_source(event, "tool_registry").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "tool_registry")
+            .await;
     }
 
     /// Publish tool execution failure event with session.
@@ -558,7 +574,10 @@ impl EventIntegratedToolRegistry {
             session_id: Some(session_id.to_string()),
             timestamp,
         };
-        let _ = self.event_bus.publish_with_source(event, "tool_registry").await;
+        let _ = self
+            .event_bus
+            .publish_with_source(event, "tool_registry")
+            .await;
     }
 }
 
@@ -705,7 +724,8 @@ mod tests {
             serde_json::json!({}),
             100,
             chrono::Utc::now().timestamp(),
-        ).with_session("session_1".to_string());
+        )
+        .with_session("session_1".to_string());
 
         let record2 = ToolExecutionRecord::success(
             "test_tool".to_string(),
@@ -713,7 +733,8 @@ mod tests {
             serde_json::json!({}),
             100,
             chrono::Utc::now().timestamp(),
-        ).with_session("session_2".to_string());
+        )
+        .with_session("session_2".to_string());
 
         history.add(record1).await;
         history.add(record2).await;
@@ -786,9 +807,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_integrated_registry() {
-        let registry = ToolRegistryBuilder::new()
-            .with_standard_tools()
-            .build();
+        let registry = ToolRegistryBuilder::new().with_standard_tools().build();
 
         let event_bus = EventBus::new();
         let integrated = EventIntegratedToolRegistry::new(registry, event_bus);
@@ -800,18 +819,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_integrated_registry_execute() {
-        let registry = ToolRegistryBuilder::new()
-            .with_standard_tools()
-            .build();
+        let registry = ToolRegistryBuilder::new().with_standard_tools().build();
 
         let event_bus = EventBus::new();
         let integrated = EventIntegratedToolRegistry::new(registry, event_bus);
 
         // Execute a tool
-        let result = integrated.execute(
-            "list_devices",
-            serde_json::json!({})
-        ).await;
+        let result = integrated
+            .execute("list_devices", serde_json::json!({}))
+            .await;
 
         assert!(result.is_ok());
         assert!(result.unwrap().success);

@@ -16,8 +16,8 @@ use tokio::time::sleep;
 /// 3. Action is published to event bus
 #[tokio::test]
 async fn test_device_to_rule_action_flow() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::{MetricValue, NeoTalkEvent};
+    use edge_ai_core::eventbus::EventBus;
 
     // Create event bus
     let bus = EventBus::new();
@@ -35,7 +35,8 @@ async fn test_device_to_rule_action_flow() {
         value: MetricValue::float(55.0),
         timestamp: 0,
         quality: None,
-    }).await;
+    })
+    .await;
 
     // Wait for event propagation
     sleep(Duration::from_millis(100)).await;
@@ -55,27 +56,28 @@ async fn test_device_to_rule_action_flow() {
 /// 3. Tool executes device command
 #[tokio::test]
 async fn test_user_to_llm_to_device_flow() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::NeoTalkEvent;
+    use edge_ai_core::eventbus::EventBus;
 
     let bus = EventBus::new();
 
     // Subscribe to user messages
-    let mut user_rx = bus.filter().custom(|e| {
-        matches!(e, NeoTalkEvent::UserMessage { .. })
-    });
+    let mut user_rx = bus
+        .filter()
+        .custom(|e| matches!(e, NeoTalkEvent::UserMessage { .. }));
 
     // Subscribe to tool execution events
-    let mut tool_rx = bus.filter().custom(|e| {
-        matches!(e, NeoTalkEvent::ToolExecutionStart { .. })
-    });
+    let mut tool_rx = bus
+        .filter()
+        .custom(|e| matches!(e, NeoTalkEvent::ToolExecutionStart { .. }));
 
     // Publish user message
     bus.publish(NeoTalkEvent::UserMessage {
         content: "turn on the light".to_string(),
         session_id: "test_session".to_string(),
         timestamp: 0,
-    }).await;
+    })
+    .await;
 
     // Wait for event propagation
     sleep(Duration::from_millis(50)).await;
@@ -95,8 +97,8 @@ async fn test_user_to_llm_to_device_flow() {
 /// 4. Action is performed
 #[tokio::test]
 async fn test_device_to_workflow_action_flow() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::{MetricValue, NeoTalkEvent};
+    use edge_ai_core::eventbus::EventBus;
 
     let bus = EventBus::new();
 
@@ -108,7 +110,8 @@ async fn test_device_to_workflow_action_flow() {
         device_id: "sensor_001".to_string(),
         device_type: "motion_sensor".to_string(),
         timestamp: 0,
-    }).await;
+    })
+    .await;
 
     // Wait for event propagation
     sleep(Duration::from_millis(50)).await;
@@ -125,8 +128,8 @@ async fn test_device_to_workflow_action_flow() {
 /// 4. Decision is executed (if auto-approved)
 #[tokio::test]
 async fn test_llm_periodic_review_flow() {
+    use edge_ai_core::event::{NeoTalkEvent, ProposedAction};
     use edge_ai_core::eventbus::EventBus;
-    use edge_ai_core::event::{ProposedAction, NeoTalkEvent};
 
     let bus = EventBus::new();
 
@@ -138,12 +141,11 @@ async fn test_llm_periodic_review_flow() {
         review_id: "review_hourly_001".to_string(),
         review_type: "hourly".to_string(),
         timestamp: 0,
-    }).await;
+    })
+    .await;
 
     // Simulate LLM proposing a decision
-    let actions = vec![
-        ProposedAction::notify_user("System is running optimally"),
-    ];
+    let actions = vec![ProposedAction::notify_user("System is running optimally")];
 
     bus.publish(NeoTalkEvent::LlmDecisionProposed {
         decision_id: "decision_001".to_string(),
@@ -153,7 +155,8 @@ async fn test_llm_periodic_review_flow() {
         actions,
         confidence: 0.95,
         timestamp: 0,
-    }).await;
+    })
+    .await;
 
     // Wait for event propagation
     sleep(Duration::from_millis(50)).await;
@@ -170,8 +173,8 @@ async fn test_llm_periodic_review_flow() {
 /// Verify that events are published with minimal latency
 #[tokio::test]
 async fn test_event_streaming_performance() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::{MetricValue, NeoTalkEvent};
+    use edge_ai_core::eventbus::EventBus;
     use std::time::Instant;
 
     let bus = EventBus::new();
@@ -186,13 +189,18 @@ async fn test_event_streaming_performance() {
         value: MetricValue::float(25.0),
         timestamp: 0,
         quality: None,
-    }).await;
+    })
+    .await;
 
     let _received = rx.recv().await.unwrap();
     let elapsed = start.elapsed();
 
     // Event round-trip should be very fast (< 10ms in local testing)
-    assert!(elapsed.as_millis() < 100, "Event delivery should be fast, got {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 100,
+        "Event delivery should be fast, got {:?}",
+        elapsed
+    );
 
     println!("Event latency: {:?}", elapsed);
 }
@@ -202,8 +210,8 @@ async fn test_event_streaming_performance() {
 /// Verify broadcast functionality
 #[tokio::test]
 async fn test_broadcast_to_multiple_subscribers() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::{MetricValue, NeoTalkEvent};
+    use edge_ai_core::eventbus::EventBus;
 
     let bus = EventBus::new();
 
@@ -219,7 +227,8 @@ async fn test_broadcast_to_multiple_subscribers() {
         value: MetricValue::float(25.0),
         timestamp: 0,
         quality: None,
-    }).await;
+    })
+    .await;
 
     // All subscribers should receive
     let r1 = rx1.recv().await;
@@ -238,8 +247,8 @@ async fn test_broadcast_to_multiple_subscribers() {
 /// Verify that filtered subscribers only receive matching events
 #[tokio::test]
 async fn test_filtered_subscriptions() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::{MetricValue, NeoTalkEvent};
+    use edge_ai_core::eventbus::EventBus;
 
     let bus = EventBus::new();
 
@@ -253,7 +262,8 @@ async fn test_filtered_subscriptions() {
         value: MetricValue::float(25.0),
         timestamp: 0,
         quality: None,
-    }).await;
+    })
+    .await;
 
     // Publish rule event
     bus.publish(NeoTalkEvent::RuleTriggered {
@@ -262,7 +272,8 @@ async fn test_filtered_subscriptions() {
         trigger_value: 42.0,
         actions: vec!["action".to_string()],
         timestamp: 0,
-    }).await;
+    })
+    .await;
 
     // Device subscriber should only get device event
     let device_event = device_rx.recv().await.unwrap();
@@ -280,8 +291,8 @@ async fn test_filtered_subscriptions() {
 /// Verify that event metadata (source, timestamp, etc.) is correctly attached
 #[tokio::test]
 async fn test_event_metadata_preserved() {
-    use edge_ai_core::eventbus::EventBus;
     use edge_ai_core::event::{MetricValue, NeoTalkEvent};
+    use edge_ai_core::eventbus::EventBus;
 
     let bus = EventBus::new();
     let mut rx = bus.subscribe();
@@ -296,7 +307,8 @@ async fn test_event_metadata_preserved() {
             quality: None,
         },
         "test_adapter",
-    ).await;
+    )
+    .await;
 
     let received = rx.recv().await.unwrap();
     assert_eq!(received.1.source, "test_adapter");

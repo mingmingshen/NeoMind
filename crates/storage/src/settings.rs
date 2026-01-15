@@ -12,16 +12,14 @@ use serde::{Deserialize, Serialize};
 use crate::Error;
 
 // Settings table: key = "llm_config", value = LlmSettings (serialized)
-pub const SETTINGS_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("settings");
+pub const SETTINGS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("settings");
 
 // External brokers table: key = broker_id, value = ExternalBroker (serialized)
 const EXTERNAL_BROKERS_TABLE: TableDefinition<&str, &[u8]> =
     TableDefinition::new("external_brokers");
 
 // Config history table: key = timestamp_id, value = ConfigChangeEntry (serialized)
-const CONFIG_HISTORY_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("config_history");
+const CONFIG_HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("config_history");
 
 /// Configuration change history entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +47,11 @@ impl ConfigChangeEntry {
         source: String,
     ) -> Self {
         Self {
-            id: format!("cfg_{}_{}", chrono::Utc::now().timestamp_millis(), uuid::Uuid::new_v4().to_string().split_at(8).0),
+            id: format!(
+                "cfg_{}_{}",
+                chrono::Utc::now().timestamp_millis(),
+                uuid::Uuid::new_v4().to_string().split_at(8).0
+            ),
             config_key,
             old_value,
             new_value,
@@ -564,18 +566,28 @@ impl ExternalBroker {
                 std::net::IpAddr::V4(ipv4) => {
                     let octets = ipv4.octets();
                     // 10.0.0.0/8
-                    if octets[0] == 10 { return false; }
+                    if octets[0] == 10 {
+                        return false;
+                    }
                     // 172.16.0.0/12
-                    if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 { return false; }
+                    if octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31 {
+                        return false;
+                    }
                     // 192.168.0.0/16
-                    if octets[0] == 192 && octets[1] == 168 { return false; }
+                    if octets[0] == 192 && octets[1] == 168 {
+                        return false;
+                    }
                 }
                 std::net::IpAddr::V6(ipv6) => {
                     let segments = ipv6.segments();
                     // fc00::/7 (unique local)
-                    if segments[0] & 0xfe00 == 0xfc00 { return false; }
+                    if segments[0] & 0xfe00 == 0xfc00 {
+                        return false;
+                    }
                     // fe80::/10 (link local)
-                    if segments[0] & 0xffc0 == 0xfe80 { return false; }
+                    if segments[0] & 0xffc0 == 0xfe80 {
+                        return false;
+                    }
                 }
             }
             // If it's a parsed IP that's not private, it's public
@@ -588,7 +600,8 @@ impl ExternalBroker {
             if lower.ends_with(".local")
                 || lower.ends_with(".localhost")
                 || lower.contains("home.")
-                || lower.contains("lan.") {
+                || lower.contains("lan.")
+            {
                 return false;
             }
             // Assume non-local domains are public
@@ -682,9 +695,14 @@ impl SettingsStore {
     }
 
     /// Save LLM settings with change tracking.
-    pub fn save_llm_settings_tracked(&self, settings: &LlmSettings, source: &str) -> Result<(), Error> {
+    pub fn save_llm_settings_tracked(
+        &self,
+        settings: &LlmSettings,
+        source: &str,
+    ) -> Result<(), Error> {
         // Get old value for history
-        let old_value = self.load_llm_settings()
+        let old_value = self
+            .load_llm_settings()
             .ok()
             .flatten()
             .and_then(|s| serde_json::to_value(s).ok());
@@ -707,8 +725,13 @@ impl SettingsStore {
     }
 
     /// Save MQTT settings with change tracking.
-    pub fn save_mqtt_settings_tracked(&self, settings: &MqttSettings, source: &str) -> Result<(), Error> {
-        let old_value = self.load_mqtt_settings()
+    pub fn save_mqtt_settings_tracked(
+        &self,
+        settings: &MqttSettings,
+        source: &str,
+    ) -> Result<(), Error> {
+        let old_value = self
+            .load_mqtt_settings()
             .ok()
             .flatten()
             .and_then(|s| serde_json::to_value(s).ok());
@@ -729,8 +752,13 @@ impl SettingsStore {
     }
 
     /// Save HASS settings with change tracking.
-    pub fn save_hass_settings_tracked(&self, settings: &HassSettings, source: &str) -> Result<(), Error> {
-        let old_value = self.load_hass_settings()
+    pub fn save_hass_settings_tracked(
+        &self,
+        settings: &HassSettings,
+        source: &str,
+    ) -> Result<(), Error> {
+        let old_value = self
+            .load_hass_settings()
             .ok()
             .flatten()
             .and_then(|s| serde_json::to_value(s).ok());
@@ -755,8 +783,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(CONFIG_HISTORY_TABLE)?;
-            let value = serde_json::to_vec(entry)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(entry).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(entry.id.as_str(), value.as_slice())?;
         }
         write_txn.commit()?;
@@ -764,7 +792,11 @@ impl SettingsStore {
     }
 
     /// Get configuration change history for a specific key.
-    pub fn get_config_history(&self, config_key: &str, limit: usize) -> Result<Vec<ConfigChangeEntry>, Error> {
+    pub fn get_config_history(
+        &self,
+        config_key: &str,
+        limit: usize,
+    ) -> Result<Vec<ConfigChangeEntry>, Error> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(CONFIG_HISTORY_TABLE)?;
 
@@ -865,7 +897,8 @@ impl SettingsStore {
         }
 
         let brokers = self.load_all_external_brokers()?;
-        export["external_brokers"] = serde_json::to_value(brokers).unwrap_or(serde_json::Value::Null);
+        export["external_brokers"] =
+            serde_json::to_value(brokers).unwrap_or(serde_json::Value::Null);
 
         Ok(export)
     }
@@ -895,7 +928,9 @@ impl SettingsStore {
 
         // Import external brokers
         if let Some(brokers_value) = import.get("external_brokers") {
-            if let Ok(brokers) = serde_json::from_value::<Vec<ExternalBroker>>(brokers_value.clone()) {
+            if let Ok(brokers) =
+                serde_json::from_value::<Vec<ExternalBroker>>(brokers_value.clone())
+            {
                 for broker in brokers {
                     self.save_external_broker(&broker)?;
                 }
@@ -918,7 +953,10 @@ impl SettingsStore {
                     return Err("Ollama endpoint must be specified".to_string());
                 }
             }
-            LlmBackendType::OpenAi | LlmBackendType::Anthropic | LlmBackendType::Google | LlmBackendType::XAi => {
+            LlmBackendType::OpenAi
+            | LlmBackendType::Anthropic
+            | LlmBackendType::Google
+            | LlmBackendType::XAi => {
                 if settings.api_key.as_ref().map_or(true, |k| k.is_empty()) {
                     return Err(format!("{:?} requires an API key", settings.backend));
                 }
@@ -977,8 +1015,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let value = serde_json::to_vec(settings)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(settings).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert("llm_config", value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1001,10 +1039,7 @@ impl SettingsStore {
 
     /// Get LLM settings or return default.
     pub fn get_llm_settings(&self) -> LlmSettings {
-        self.load_llm_settings()
-            .ok()
-            .flatten()
-            .unwrap_or_default()
+        self.load_llm_settings().ok().flatten().unwrap_or_default()
     }
 
     /// Delete LLM settings.
@@ -1020,10 +1055,7 @@ impl SettingsStore {
 
     /// Check if LLM settings exist.
     pub fn has_llm_settings(&self) -> bool {
-        self.load_llm_settings()
-            .ok()
-            .flatten()
-            .is_some()
+        self.load_llm_settings().ok().flatten().is_some()
     }
 
     /// Save arbitrary settings value.
@@ -1043,9 +1075,11 @@ impl SettingsStore {
         let table = read_txn.open_table(SETTINGS_TABLE)?;
 
         if let Some(data) = table.get(key)? {
-            Ok(Some(std::str::from_utf8(data.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?
-                .to_string()))
+            Ok(Some(
+                std::str::from_utf8(data.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?
+                    .to_string(),
+            ))
         } else {
             Ok(None)
         }
@@ -1056,8 +1090,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let value = serde_json::to_vec(settings)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(settings).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert("mqtt_config", value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1080,10 +1114,7 @@ impl SettingsStore {
 
     /// Get MQTT settings or return default.
     pub fn get_mqtt_settings(&self) -> MqttSettings {
-        self.load_mqtt_settings()
-            .ok()
-            .flatten()
-            .unwrap_or_default()
+        self.load_mqtt_settings().ok().flatten().unwrap_or_default()
     }
 
     /// Delete MQTT settings.
@@ -1099,10 +1130,7 @@ impl SettingsStore {
 
     /// Check if MQTT settings exist.
     pub fn has_mqtt_settings(&self) -> bool {
-        self.load_mqtt_settings()
-            .ok()
-            .flatten()
-            .is_some()
+        self.load_mqtt_settings().ok().flatten().is_some()
     }
 
     /// Save HASS settings.
@@ -1110,8 +1138,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let value = serde_json::to_vec(settings)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(settings).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert("hass_config", value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1134,10 +1162,7 @@ impl SettingsStore {
 
     /// Get HASS settings or return default.
     pub fn get_hass_settings(&self) -> HassSettings {
-        self.load_hass_settings()
-            .ok()
-            .flatten()
-            .unwrap_or_default()
+        self.load_hass_settings().ok().flatten().unwrap_or_default()
     }
 
     /// Delete HASS settings.
@@ -1153,10 +1178,7 @@ impl SettingsStore {
 
     /// Check if HASS settings exist.
     pub fn has_hass_settings(&self) -> bool {
-        self.load_hass_settings()
-            .ok()
-            .flatten()
-            .is_some()
+        self.load_hass_settings().ok().flatten().is_some()
     }
 
     /// Save HASS discovery enabled state.
@@ -1164,8 +1186,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let value = serde_json::to_vec(&(enabled))
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(&(enabled)).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert("hass_discovery_enabled", value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1191,8 +1213,8 @@ impl SettingsStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(EXTERNAL_BROKERS_TABLE)?;
-            let value = serde_json::to_vec(broker)
-                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let value =
+                serde_json::to_vec(broker).map_err(|e| Error::Serialization(e.to_string()))?;
             table.insert(broker.id.as_str(), value.as_slice())?;
         }
         write_txn.commit()?;
@@ -1264,7 +1286,10 @@ mod tests {
         let settings = LlmSettings::ollama("qwen2.5:7b");
         assert_eq!(settings.backend_name(), "ollama");
         assert_eq!(settings.model, "qwen2.5:7b");
-        assert_eq!(settings.endpoint, Some("http://localhost:11434".to_string()));
+        assert_eq!(
+            settings.endpoint,
+            Some("http://localhost:11434".to_string())
+        );
     }
 
     #[test]

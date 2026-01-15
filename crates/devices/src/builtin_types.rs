@@ -4,8 +4,8 @@
 //! These definitions follow the MDL (Machine Description Language) format and are
 //! protocol-agnostic. Protocol-specific mappings are defined separately.
 
-use serde_json::json;
 use crate::mdl_format::DeviceTypeDefinition;
+use serde_json::json;
 
 /// Get all built-in device type definitions
 ///
@@ -91,7 +91,8 @@ fn dht22_sensor() -> DeviceTypeDefinition {
             "aggregation": ["avg", "min", "max", "last"],
             "retention_days": 30
         }
-    })).expect("Invalid DHT22 device definition")
+    }))
+    .expect("Invalid DHT22 device definition")
 }
 
 /// 2. 继电器模块
@@ -200,7 +201,8 @@ fn relay_module() -> DeviceTypeDefinition {
             "aggregation": ["last", "count"],
             "retention_days": 7
         }
-    })).expect("Invalid relay module device definition")
+    }))
+    .expect("Invalid relay module device definition")
 }
 
 /// 3. 智能电表
@@ -304,7 +306,8 @@ fn energy_meter() -> DeviceTypeDefinition {
             "aggregation": ["avg", "min", "max", "sum", "last"],
             "retention_days": 90
         }
-    })).expect("Invalid energy meter device definition")
+    }))
+    .expect("Invalid energy meter device definition")
 }
 
 /// 4. 空气质量传感器
@@ -430,7 +433,8 @@ fn air_quality_sensor() -> DeviceTypeDefinition {
             "aggregation": ["avg", "min", "max", "last"],
             "retention_days": 30
         }
-    })).expect("Invalid air quality sensor device definition")
+    }))
+    .expect("Invalid air quality sensor device definition")
 }
 
 /// 5. IP 摄像头（图片采集设备）
@@ -580,7 +584,8 @@ fn ip_camera() -> DeviceTypeDefinition {
             "max_image_size": "10485760",
             "supported_formats": "jpeg,png,webp,h264"
         }
-    })).expect("Invalid IP camera device definition")
+    }))
+    .expect("Invalid IP camera device definition")
 }
 
 /// 6. 图像传感器（支持图片数据上报）
@@ -719,15 +724,16 @@ fn image_sensor() -> DeviceTypeDefinition {
             "max_image_size": "5242880",
             "supported_formats": "png,jpeg,rgb565,grayscale"
         }
-    })).expect("Invalid image sensor device definition")
+    }))
+    .expect("Invalid image sensor device definition")
 }
 
 /// Get MQTT protocol mappings for built-in device types
 ///
 /// These mappings define how to access device capabilities via MQTT.
 pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::protocol::MqttMapping> {
-    use std::collections::HashMap;
     use crate::protocol::{MqttMappingBuilder, MqttValueParser};
+    use std::collections::HashMap;
 
     let mut mappings = HashMap::new();
 
@@ -739,12 +745,12 @@ pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::proto
         .add_command_with_payload(
             "set_interval",
             "sensor/${device_id}/command",
-            r#"{"action": "set_interval", "interval": ${interval}}"#
+            r#"{"action": "set_interval", "interval": ${interval}}"#,
         )
         .add_command_with_payload(
             "request_reading",
             "sensor/${device_id}/command",
-            r#"{"action": "read"}"#
+            r#"{"action": "read"}"#,
         )
         .build();
     mappings.insert("dht22_sensor_mqtt".to_string(), dht22_mapping);
@@ -757,22 +763,22 @@ pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::proto
         .add_command_with_payload(
             "turn_on",
             "relay/${device_id}/command",
-            r#"{"action": "on", "channel": ${channel}}"#
+            r#"{"action": "on", "channel": ${channel}}"#,
         )
         .add_command_with_payload(
             "turn_off",
             "relay/${device_id}/command",
-            r#"{"action": "off", "channel": ${channel}}"#
+            r#"{"action": "off", "channel": ${channel}}"#,
         )
         .add_command_with_payload(
             "toggle",
             "relay/${device_id}/command",
-            r#"{"action": "toggle", "channel": ${channel}}"#
+            r#"{"action": "toggle", "channel": ${channel}}"#,
         )
         .add_command_with_payload(
             "pulse",
             "relay/${device_id}/command",
-            r#"{"action": "pulse", "channel": ${channel}, "duration": ${duration}}"#
+            r#"{"action": "pulse", "channel": ${channel}, "duration": ${duration}}"#,
         )
         .build();
     mappings.insert("relay_module_mqtt".to_string(), relay_mapping);
@@ -788,12 +794,12 @@ pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::proto
         .add_command_with_payload(
             "reset_energy",
             "meter/${device_id}/command",
-            r#"{"action": "reset_energy"}"#
+            r#"{"action": "reset_energy"}"#,
         )
         .add_command_with_payload(
             "set_alarm",
             "meter/${device_id}/command",
-            r#"{"action": "set_alarm", "type": "${type}", "threshold": ${threshold}}"#
+            r#"{"action": "set_alarm", "type": "${type}", "threshold": ${threshold}}"#,
         )
         .build();
     mappings.insert("energy_meter_mqtt".to_string(), energy_meter_mapping);
@@ -804,9 +810,10 @@ pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::proto
 /// Get Modbus protocol mappings for built-in device types
 ///
 /// These mappings define how to access device capabilities via Modbus.
-pub fn builtin_modbus_mappings() -> std::collections::HashMap<String, crate::protocol::ModbusMapping> {
+pub fn builtin_modbus_mappings() -> std::collections::HashMap<String, crate::protocol::ModbusMapping>
+{
+    use crate::protocol::{ModbusDataType, ModbusMappingBuilder};
     use std::collections::HashMap;
-    use crate::protocol::{ModbusMappingBuilder, ModbusDataType};
 
     let mut mappings = HashMap::new();
 
@@ -829,8 +836,8 @@ pub fn builtin_modbus_mappings() -> std::collections::HashMap<String, crate::pro
 ///
 /// These mappings define how to access device capabilities via Home Assistant.
 pub fn builtin_hass_mappings() -> std::collections::HashMap<String, crate::protocol::HassMapping> {
-    use std::collections::HashMap;
     use crate::protocol::HassMappingBuilder;
+    use std::collections::HashMap;
 
     let mut mappings = HashMap::new();
 
@@ -852,7 +859,11 @@ mod tests {
     #[test]
     fn test_builtin_device_types_count() {
         let types = builtin_device_types();
-        assert_eq!(types.len(), 6, "Should have exactly 6 built-in device types");
+        assert_eq!(
+            types.len(),
+            6,
+            "Should have exactly 6 built-in device types"
+        );
     }
 
     #[test]
@@ -900,7 +911,10 @@ mod tests {
         assert!(camera.categories.contains(&"camera".to_string()));
 
         // Check for image metric with binary data type
-        let image_metric = camera.uplink.metrics.iter()
+        let image_metric = camera
+            .uplink
+            .metrics
+            .iter()
             .find(|m| m.name == "image")
             .expect("Should have image metric");
         assert_eq!(image_metric.data_type, MetricDataType::Binary);
@@ -915,7 +929,10 @@ mod tests {
         assert!(sensor.categories.contains(&"image".to_string()));
 
         // Check for image_data metric with binary data type
-        let image_metric = sensor.uplink.metrics.iter()
+        let image_metric = sensor
+            .uplink
+            .metrics
+            .iter()
             .find(|m| m.name == "image_data")
             .expect("Should have image_data metric");
         assert_eq!(image_metric.data_type, MetricDataType::Binary);
@@ -924,16 +941,23 @@ mod tests {
     #[test]
     fn test_all_image_devices_have_multimodal_metadata() {
         let types = builtin_device_types();
-        let image_devices: Vec<_> = types.iter()
+        let image_devices: Vec<_> = types
+            .iter()
             .filter(|t| t.categories.contains(&"image".to_string()))
             .collect();
 
-        assert_eq!(image_devices.len(), 2, "Should have exactly 2 image device types");
+        assert_eq!(
+            image_devices.len(),
+            2,
+            "Should have exactly 2 image device types"
+        );
 
         for device in image_devices {
             // Check that image devices have the expected structure
-            assert!(!device.device_type.is_empty(),
-                "Image device should have a valid device_type");
+            assert!(
+                !device.device_type.is_empty(),
+                "Image device should have a valid device_type"
+            );
         }
     }
 

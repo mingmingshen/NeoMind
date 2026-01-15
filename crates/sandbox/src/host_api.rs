@@ -85,7 +85,10 @@ impl HostApi {
                 HostApiResponse {
                     success: false,
                     data: serde_json::json!(null),
-                    error: Some(format!("Metric '{}' not found on device '{}'", metric, device_id)),
+                    error: Some(format!(
+                        "Metric '{}' not found on device '{}'",
+                        metric, device_id
+                    )),
                 }
             }
         } else {
@@ -164,7 +167,11 @@ impl HostApi {
     }
 
     /// Register a device.
-    pub async fn register_device(&self, device_id: &str, metrics: HashMap<String, f64>) -> HostApiResponse {
+    pub async fn register_device(
+        &self,
+        device_id: &str,
+        metrics: HashMap<String, f64>,
+    ) -> HostApiResponse {
         let mut state = self.state.write().await;
         let device = DeviceData {
             id: device_id.to_string(),

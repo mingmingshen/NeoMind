@@ -15,10 +15,10 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, Semaphore};
-use chrono::{DateTime, Utc};
 
 use crate::Error;
 
@@ -360,7 +360,10 @@ impl BatchWriteRequest {
 
     /// Add a data point for a metric.
     pub fn add_point(&mut self, metric: String, point: DataPoint) {
-        self.metrics.entry(metric).or_insert_with(Vec::new).push(point);
+        self.metrics
+            .entry(metric)
+            .or_insert_with(Vec::new)
+            .push(point);
     }
 
     /// Get total point count.
@@ -405,7 +408,10 @@ impl TimeSeriesStore {
     }
 
     /// Open or create a time series store with custom configuration.
-    pub fn with_config<P: AsRef<Path>>(path: P, config: TimeSeriesConfig) -> Result<Arc<Self>, Error> {
+    pub fn with_config<P: AsRef<Path>>(
+        path: P,
+        config: TimeSeriesConfig,
+    ) -> Result<Arc<Self>, Error> {
         let path_str = path.as_ref().to_string_lossy().to_string();
 
         // Check if we already have a store for this path
@@ -444,8 +450,7 @@ impl TimeSeriesStore {
 
     /// Create an in-memory time series store (for testing).
     pub fn memory() -> Result<Arc<Self>, Error> {
-        let temp_path = std::env::temp_dir()
-            .join(format!("ts_test_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path = std::env::temp_dir().join(format!("ts_test_{}.redb", uuid::Uuid::new_v4()));
         Self::open(temp_path)
     }
 
@@ -499,7 +504,10 @@ impl TimeSeriesStore {
         point: DataPoint,
     ) -> Result<(), Error> {
         let start = Instant::now();
-        let _permit = self.write_semaphore.acquire().await
+        let _permit = self
+            .write_semaphore
+            .acquire()
+            .await
             .map_err(|_| Error::Storage("Write semaphore closed".to_string()))?;
 
         let key = (device_id, metric, point.timestamp);
@@ -553,7 +561,8 @@ impl TimeSeriesStore {
 
     /// Evict least recently used cache entry.
     fn evict_lru_cache(&self, cache: &mut HashMap<(String, String), CacheEntry>) {
-        if let Some(lru_key) = cache.iter()
+        if let Some(lru_key) = cache
+            .iter()
             .min_by_key(|(_, e)| e.access_count)
             .map(|(k, _)| k.clone())
         {
@@ -689,7 +698,8 @@ impl TimeSeriesStore {
         for point in result.points {
             let bucket_key = (point.timestamp / bucket_size_secs) * bucket_size_secs;
             let bucket_end = bucket_key + bucket_size_secs;
-            buckets.entry(bucket_key)
+            buckets
+                .entry(bucket_key)
                 .or_insert_with(|| TimeSeriesBucket::new(bucket_key, bucket_end))
                 .add(&point.value);
         }
@@ -763,12 +773,9 @@ impl TimeSeriesStore {
     }
 
     /// Delete all data for a specific metric.
-    pub async fn delete_metric(
-        &self,
-        device_id: &str,
-        metric: &str,
-    ) -> Result<usize, Error> {
-        self.delete_range(device_id, metric, i64::MIN, i64::MAX).await
+    pub async fn delete_metric(&self, device_id: &str, metric: &str) -> Result<usize, Error> {
+        self.delete_range(device_id, metric, i64::MIN, i64::MAX)
+            .await
     }
 
     /// Write multiple batch requests concurrently.
@@ -790,7 +797,9 @@ impl TimeSeriesStore {
             let metrics = request.metrics.clone();
 
             let handle = tokio::spawn(async move {
-                let _permit = semaphore.acquire().await
+                let _permit = semaphore
+                    .acquire()
+                    .await
                     .map_err(|_| Error::Storage("Semaphore closed".to_string()))?;
                 let start = Instant::now();
                 let mut written = 0;
@@ -818,7 +827,11 @@ impl TimeSeriesStore {
                         if cache.len() >= max_cache_size {
                             cache.retain(|k, _| k != &key);
                             if cache.len() >= max_cache_size {
-                                if let Some(lru) = cache.iter().min_by_key(|(_, e)| e.access_count).map(|(k, _)| k.clone()) {
+                                if let Some(lru) = cache
+                                    .iter()
+                                    .min_by_key(|(_, e)| e.access_count)
+                                    .map(|(k, _)| k.clone())
+                                {
                                     cache.remove(&lru);
                                 }
                             }
@@ -887,7 +900,9 @@ impl TimeSeriesStore {
 
             if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric) {
                 if cutoff < now {
-                    let removed = self.delete_range(device_id, metric, i64::MIN, cutoff).await?;
+                    let removed = self
+                        .delete_range(device_id, metric, i64::MIN, cutoff)
+                        .await?;
                     if removed > 0 {
                         total_removed += removed as u64;
                         metrics_cleaned.insert(metric_key.clone());
@@ -950,7 +965,10 @@ mod tests {
         let store = TimeSeriesStore::memory().unwrap();
 
         let point = DataPoint::new(1000, 23.5);
-        store.write("device1", "temperature", point.clone()).await.unwrap();
+        store
+            .write("device1", "temperature", point.clone())
+            .await
+            .unwrap();
 
         let latest = store.query_latest("device1", "temperature").await.unwrap();
         assert!(latest.is_some());
@@ -966,7 +984,10 @@ mod tests {
             store.write("device1", "temperature", point).await.unwrap();
         }
 
-        let result = store.query_range("device1", "temperature", 1000, 1500).await.unwrap();
+        let result = store
+            .query_range("device1", "temperature", 1000, 1500)
+            .await
+            .unwrap();
         assert_eq!(result.points.len(), 6);
     }
 
@@ -1000,9 +1021,18 @@ mod tests {
     async fn test_list_metrics() {
         let store = TimeSeriesStore::memory().unwrap();
 
-        store.write("device1", "temp", DataPoint::new(1000, 20.0)).await.unwrap();
-        store.write("device1", "humidity", DataPoint::new(1000, 50.0)).await.unwrap();
-        store.write("device2", "temp", DataPoint::new(1000, 22.0)).await.unwrap();
+        store
+            .write("device1", "temp", DataPoint::new(1000, 20.0))
+            .await
+            .unwrap();
+        store
+            .write("device1", "humidity", DataPoint::new(1000, 50.0))
+            .await
+            .unwrap();
+        store
+            .write("device2", "temp", DataPoint::new(1000, 22.0))
+            .await
+            .unwrap();
 
         let metrics = store.list_metrics("device1").await.unwrap();
         assert_eq!(metrics.len(), 2);
@@ -1019,10 +1049,16 @@ mod tests {
             store.write("device1", "temp", point).await.unwrap();
         }
 
-        let count = store.delete_range("device1", "temp", 1200, 1500).await.unwrap();
+        let count = store
+            .delete_range("device1", "temp", 1200, 1500)
+            .await
+            .unwrap();
         assert_eq!(count, 4);
 
-        let result = store.query_range("device1", "temp", 1000, 2000).await.unwrap();
+        let result = store
+            .query_range("device1", "temp", 1000, 2000)
+            .await
+            .unwrap();
         assert_eq!(result.points.len(), 6);
     }
 
@@ -1035,7 +1071,10 @@ mod tests {
             store.write("device1", "counter", point).await.unwrap();
         }
 
-        let buckets = store.query_aggregated("device1", "counter", 1000, 2000, 100).await.unwrap();
+        let buckets = store
+            .query_aggregated("device1", "counter", 1000, 2000, 100)
+            .await
+            .unwrap();
         assert!(!buckets.is_empty());
 
         let first = &buckets[0];

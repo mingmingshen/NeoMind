@@ -26,15 +26,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
 use super::hass_discovery::{
-    HassDiscoveryMessage, parse_discovery_message, is_discovery_topic,
-    HassDiscoveryError, is_supported_component,
+    HassDiscoveryError, HassDiscoveryMessage, is_discovery_topic, is_supported_component,
+    parse_discovery_message,
 };
 use super::hass_discovery_mapper::{map_hass_to_mdl, register_hass_device_type};
-use super::mdl_format::{MdlRegistry, DeviceInstance, ConnectionStatus};
 use super::mdl::DeviceError;
+use super::mdl_format::{ConnectionStatus, DeviceInstance, MdlRegistry};
 
 /// HASS Discovery Listener configuration
 #[derive(Debug, Clone)]
@@ -70,7 +70,8 @@ impl HassDiscoveryConfig {
             format!("{}/+/config", self.topic_prefix)
         } else {
             // Subscribe to specific components
-            self.components.iter()
+            self.components
+                .iter()
                 .map(|c| format!("{}/{}/+/config", self.topic_prefix, c))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -139,7 +140,10 @@ impl HassDiscoveryListener {
         };
 
         // Check if we should process this component
-        if !self.config.should_process_component(&msg.topic_parts.component) {
+        if !self
+            .config
+            .should_process_component(&msg.topic_parts.component)
+        {
             debug!("Skipping component: {}", msg.topic_parts.component);
             return true;
         }
@@ -153,8 +157,10 @@ impl HassDiscoveryListener {
         // Map to MDL and register
         match self.process_discovery_message(&msg).await {
             Ok(device_type) => {
-                info!("Registered HASS device: {} ({})",
-                    device_type, msg.topic_parts.component);
+                info!(
+                    "Registered HASS device: {} ({})",
+                    device_type, msg.topic_parts.component
+                );
             }
             Err(e) => {
                 error!("Failed to process HASS discovery message: {}", e);
@@ -173,8 +179,7 @@ impl HassDiscoveryListener {
         let def = map_hass_to_mdl(msg)?;
         let device_type = def.device_type.clone();
 
-        info!("Discovered HASS device: {} ({})",
-            def.name, def.device_type);
+        info!("Discovered HASS device: {} ({})", def.name, def.device_type);
 
         // Register the device type if auto-register is enabled
         if self.config.auto_register {
@@ -192,7 +197,10 @@ impl HassDiscoveryListener {
                 adapter_id: Some("hass-discovery".to_string()),
             };
 
-            self.devices.write().await.insert(device_type.clone(), instance);
+            self.devices
+                .write()
+                .await
+                .insert(device_type.clone(), instance);
         }
 
         Ok(device_type)
@@ -211,7 +219,9 @@ impl HassDiscoveryListener {
     /// Remove a discovered device
     pub async fn remove_device(&self, device_type: &str) -> Result<(), DeviceError> {
         self.devices.write().await.remove(device_type);
-        self.registry.unregister(device_type).await
+        self.registry
+            .unregister(device_type)
+            .await
             .map_err(|_| DeviceError::NotFound(super::mdl::DeviceId::new()))?;
         Ok(())
     }
@@ -235,8 +245,16 @@ mod tests {
             components: vec!["switch".to_string(), "sensor".to_string()],
             ..Default::default()
         };
-        assert!(config.subscription_topic().contains("homeassistant/switch/+/config"));
-        assert!(config.subscription_topic().contains("homeassistant/sensor/+/config"));
+        assert!(
+            config
+                .subscription_topic()
+                .contains("homeassistant/switch/+/config")
+        );
+        assert!(
+            config
+                .subscription_topic()
+                .contains("homeassistant/sensor/+/config")
+        );
     }
 
     #[test]
@@ -283,7 +301,8 @@ mod tests {
             "command_topic": "cmnd/lamp/POWER",
             "payload_on": "ON",
             "payload_off": "OFF"
-        }"#.as_bytes();
+        }"#
+        .as_bytes();
 
         let handled = listener.handle_message(topic, payload).await;
         assert!(handled);

@@ -1,11 +1,11 @@
 //! Workflow engine - manages and executes workflows
 
 use crate::error::{Result, WorkflowError};
-use crate::executor::{Executor, ExecutionContext};
-use crate::store::{WorkflowStore, ExecutionStore, ExecutionRecord, ExecutionStatus};
-use crate::workflow::Workflow;
-use crate::trigger::TriggerManager;
+use crate::executor::{ExecutionContext, Executor};
 use crate::scheduler::Scheduler;
+use crate::store::{ExecutionRecord, ExecutionStatus, ExecutionStore, WorkflowStore};
+use crate::trigger::TriggerManager;
+use crate::workflow::Workflow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -49,11 +49,9 @@ impl WorkflowEngine {
 
         // Register triggers
         for trigger in &workflow.triggers {
-            self.trigger_manager.register(
-                workflow.id.clone(),
-                trigger.clone(),
-                self.executor.clone(),
-            ).await?;
+            self.trigger_manager
+                .register(workflow.id.clone(), trigger.clone(), self.executor.clone())
+                .await?;
         }
 
         Ok(())
@@ -81,7 +79,9 @@ impl WorkflowEngine {
 
     /// Execute a workflow
     pub async fn execute_workflow(&self, id: &str) -> Result<ExecutionResult> {
-        let workflow = self.workflow_store.load(id)?
+        let workflow = self
+            .workflow_store
+            .load(id)?
             .ok_or_else(|| WorkflowError::WorkflowNotFound(id.to_string()))?;
 
         if !workflow.enabled {
@@ -111,7 +111,8 @@ impl WorkflowEngine {
             let result = tokio::time::timeout(
                 tokio::time::Duration::from_secs(workflow.timeout_seconds),
                 self.executor.execute_step(step, &mut context),
-            ).await;
+            )
+            .await;
 
             let step_result: crate::store::StepResult = match result {
                 Ok(step_result) => step_result?,
@@ -124,7 +125,9 @@ impl WorkflowEngine {
                         output: None,
                         error: Some(e.to_string()),
                     };
-                    context.step_results.insert(step.id().to_string(), step_result.clone());
+                    context
+                        .step_results
+                        .insert(step.id().to_string(), step_result.clone());
 
                     // Update record as failed
                     record.status = ExecutionStatus::Failed;
@@ -150,7 +153,9 @@ impl WorkflowEngine {
                         output: None,
                         error: Some("Timeout".to_string()),
                     };
-                    context.step_results.insert(step.id().to_string(), step_result.clone());
+                    context
+                        .step_results
+                        .insert(step.id().to_string(), step_result.clone());
 
                     // Update record as failed
                     record.status = ExecutionStatus::Failed;
@@ -169,7 +174,9 @@ impl WorkflowEngine {
                 }
             };
 
-            context.step_results.insert(step.id().to_string(), step_result.clone());
+            context
+                .step_results
+                .insert(step.id().to_string(), step_result.clone());
         }
 
         // Update record as completed
@@ -220,7 +227,9 @@ impl WorkflowEngine {
 
     /// Start the scheduler
     pub async fn start_scheduler(&self) -> Result<()> {
-        self.scheduler.start(self.trigger_manager.clone(), self.executor.clone()).await
+        self.scheduler
+            .start(self.trigger_manager.clone(), self.executor.clone())
+            .await
     }
 
     /// Stop the scheduler

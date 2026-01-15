@@ -6,9 +6,12 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use super::error::{Result, ToolError};
-use super::tool::{object_schema, string_property, number_property, Tool, ToolOutput, ToolDefinition, ToolExample, ResponseFormat};
+use super::tool::{
+    ResponseFormat, Tool, ToolDefinition, ToolExample, ToolOutput, number_property, object_schema,
+    string_property,
+};
 
-use edge_ai_devices::{MqttDeviceManager, TimeSeriesStorage};
+use edge_ai_devices::{DeviceService, TimeSeriesStorage};
 use edge_ai_rules::RuleEngine;
 use edge_ai_workflow::WorkflowEngine;
 
@@ -81,21 +84,19 @@ impl Tool for QueryDataTool {
                 }),
                 description: "查询传感器最近24小时的温度数据".to_string(),
             }),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({
-                        "device_id": "sensor_1",
-                        "metric": "temperature"
-                    }),
-                    result: serde_json::json!({
-                        "device_id": "sensor_1",
-                        "metric": "temperature",
-                        "count": 24,
-                        "data": [{"timestamp": 1735718400, "value": 22.5}]
-                    }),
-                    description: "查询设备指标数据".to_string(),
-                },
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({
+                    "device_id": "sensor_1",
+                    "metric": "temperature"
+                }),
+                result: serde_json::json!({
+                    "device_id": "sensor_1",
+                    "metric": "temperature",
+                    "count": 24,
+                    "data": [{"timestamp": 1735718400, "value": 22.5}]
+                }),
+                description: "查询设备指标数据".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("data".to_string()),
         }
@@ -120,9 +121,7 @@ impl Tool for QueryDataTool {
             .as_i64()
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
-        let start_time = args["start_time"]
-            .as_i64()
-            .unwrap_or(end_time - 86400); // Default 24 hours
+        let start_time = args["start_time"].as_i64().unwrap_or(end_time - 86400); // Default 24 hours
 
         // Query the data from real storage
         let data_points = self
@@ -132,12 +131,15 @@ impl Tool for QueryDataTool {
             .map_err(|e| ToolError::Execution(format!("Failed to query data: {}", e)))?;
 
         // Convert data points to the expected format
-        let data: Vec<Value> = data_points.iter().map(|p| {
-            serde_json::json!({
-                "timestamp": p.timestamp,
-                "value": p.value.as_f64().unwrap_or(0.0),
+        let data: Vec<Value> = data_points
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "timestamp": p.timestamp,
+                    "value": p.value.as_f64().unwrap_or(0.0),
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(ToolOutput::success_with_metadata(
             serde_json::json!({
@@ -150,20 +152,20 @@ impl Tool for QueryDataTool {
             }),
             serde_json::json!({
                 "query_type": "time_series_range"
-            })
+            }),
         ))
     }
 }
 
-/// Tool for controlling devices using real device manager.
+/// Tool for controlling devices using real device service.
 pub struct ControlDeviceTool {
-    manager: Arc<MqttDeviceManager>,
+    service: Arc<DeviceService>,
 }
 
 impl ControlDeviceTool {
-    /// Create a new control device tool with real manager.
-    pub fn new(manager: Arc<MqttDeviceManager>) -> Self {
-        Self { manager }
+    /// Create a new control device tool with real device service.
+    pub fn new(service: Arc<DeviceService>) -> Self {
+        Self { service }
     }
 }
 
@@ -282,26 +284,23 @@ impl Tool for ControlDeviceTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("command must be a string".to_string()))?;
 
-        // Extract parameters as HashMap
+        // Extract parameters - DeviceService accepts HashMap<String, serde_json::Value>
         let mut params = std::collections::HashMap::new();
+
+        // Check if "value" parameter exists (for set_value commands)
+        if let Some(value) = args.get("value") {
+            params.insert("value".to_string(), value.clone());
+        }
+
+        // Also check for "parameters" object
         if let Some(obj) = args.get("parameters").and_then(|v| v.as_object()) {
             for (key, val) in obj {
-                // Convert JSON value to MetricValue
-                let metric_val = if let Some(n) = val.as_f64() {
-                    edge_ai_devices::MetricValue::Float(n)
-                } else if let Some(s) = val.as_str() {
-                    edge_ai_devices::MetricValue::String(s.to_string())
-                } else if let Some(b) = val.as_bool() {
-                    edge_ai_devices::MetricValue::Boolean(b)
-                } else {
-                    edge_ai_devices::MetricValue::String(val.to_string())
-                };
-                params.insert(key.clone(), metric_val);
+                params.insert(key.clone(), val.clone());
             }
         }
 
-        // Send command to device
-        self.manager
+        // Send command to device using DeviceService
+        self.service
             .send_command(device_id, command, params)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to send command: {}", e)))?;
@@ -315,15 +314,15 @@ impl Tool for ControlDeviceTool {
     }
 }
 
-/// Tool for listing devices using real device manager.
+/// Tool for listing devices using real device service.
 pub struct ListDevicesTool {
-    manager: Arc<MqttDeviceManager>,
+    service: Arc<DeviceService>,
 }
 
 impl ListDevicesTool {
-    /// Create a new list devices tool with real manager.
-    pub fn new(manager: Arc<MqttDeviceManager>) -> Self {
-        Self { manager }
+    /// Create a new list devices tool with real device service.
+    pub fn new(service: Arc<DeviceService>) -> Self {
+        Self { service }
     }
 }
 
@@ -415,26 +414,30 @@ impl Tool for ListDevicesTool {
     }
 
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
-        let devices = self.manager.list_devices().await;
+        let configs = self.service.list_devices().await;
 
         // Apply filter if specified
         let filtered: Vec<_> = if let Some(filter_type) = args["filter_type"].as_str() {
-            devices.into_iter()
+            configs
+                .into_iter()
                 .filter(|d| d.device_type == filter_type)
                 .collect()
         } else {
-            devices
+            configs
         };
 
         // Convert to simpler format
-        let device_list: Vec<Value> = filtered.iter().map(|d| {
-            serde_json::json!({
-                "id": d.device_id,
-                "name": d.name,
-                "type": d.device_type,
-                "status": "online" // MqttDeviceManager doesn't track status
+        let device_list: Vec<Value> = filtered
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "id": d.device_id,
+                    "name": d.name,
+                    "type": d.device_type,
+                    "status": "unknown" // DeviceService doesn't track status yet
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
             "count": device_list.len(),
@@ -518,19 +521,17 @@ RULE "温度控制" WHEN sensor.temperature > 30 DO EXECUTE fan.turn_on NOTIFY "
                 }),
                 description: "创建一个温度超过35度时触发告警的规则".to_string(),
             }),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({
-                        "name": "高温告警",
-                        "dsl": "RULE \"高温告警\" WHEN sensor.temperature > 35 FOR 5 minutes DO NOTIFY \"温度过高，请注意\" END"
-                    }),
-                    result: serde_json::json!({
-                        "rule_id": "rule_123",
-                        "status": "created"
-                    }),
-                    description: "创建温度告警规则".to_string(),
-                },
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({
+                    "name": "高温告警",
+                    "dsl": "RULE \"高温告警\" WHEN sensor.temperature > 35 FOR 5 minutes DO NOTIFY \"温度过高，请注意\" END"
+                }),
+                result: serde_json::json!({
+                    "rule_id": "rule_123",
+                    "status": "created"
+                }),
+                description: "创建温度告警规则".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("rule".to_string()),
         }
@@ -599,10 +600,7 @@ impl Tool for ListRulesTool {
     }
 
     fn parameters(&self) -> Value {
-        object_schema(
-            serde_json::json!({}),
-            vec![],
-        )
+        object_schema(serde_json::json!({}), vec![])
     }
 
     fn definition(&self) -> ToolDefinition {
@@ -621,18 +619,16 @@ impl Tool for ListRulesTool {
                 }),
                 description: "列出所有自动化规则".to_string(),
             }),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({}),
-                    result: serde_json::json!({
-                        "count": 2,
-                        "rules": [
-                            {"id": "rule_1", "name": "高温告警", "enabled": true, "trigger_count": 5}
-                        ]
-                    }),
-                    description: "获取所有规则列表".to_string(),
-                },
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({}),
+                result: serde_json::json!({
+                    "count": 2,
+                    "rules": [
+                        {"id": "rule_1", "name": "高温告警", "enabled": true, "trigger_count": 5}
+                    ]
+                }),
+                description: "获取所有规则列表".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("rule".to_string()),
         }
@@ -647,14 +643,17 @@ impl Tool for ListRulesTool {
 
         let rules = self.engine.list_rules().await;
 
-        let rule_list: Vec<Value> = rules.iter().map(|r| {
-            serde_json::json!({
-                "id": r.id.to_string(),
-                "name": r.name,
-                "enabled": matches!(r.status, RuleStatus::Active),
-                "trigger_count": r.state.trigger_count,
+        let rule_list: Vec<Value> = rules
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "id": r.id.to_string(),
+                    "name": r.name,
+                    "enabled": matches!(r.status, RuleStatus::Active),
+                    "trigger_count": r.state.trigger_count,
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
             "count": rule_list.len(),
@@ -728,19 +727,17 @@ impl Tool for TriggerWorkflowTool {
                 }),
                 description: "触发日常备份工作流".to_string(),
             }),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({
-                        "workflow_id": "daily_backup"
-                    }),
-                    result: serde_json::json!({
-                        "workflow_id": "daily_backup",
-                        "execution_id": "exec_abc123",
-                        "status": "triggered"
-                    }),
-                    description: "触发工作流".to_string(),
-                },
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({
+                    "workflow_id": "daily_backup"
+                }),
+                result: serde_json::json!({
+                    "workflow_id": "daily_backup",
+                    "execution_id": "exec_abc123",
+                    "status": "triggered"
+                }),
+                description: "触发工作流".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("workflow".to_string()),
         }
@@ -753,12 +750,13 @@ impl Tool for TriggerWorkflowTool {
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
         self.validate_args(&args)?;
 
-        let workflow_id = args["workflow_id"]
-            .as_str()
-            .ok_or_else(|| ToolError::InvalidArguments("workflow_id must be a string".to_string()))?;
+        let workflow_id = args["workflow_id"].as_str().ok_or_else(|| {
+            ToolError::InvalidArguments("workflow_id must be a string".to_string())
+        })?;
 
         // Trigger the workflow
-        let result = self.engine
+        let result = self
+            .engine
             .execute_workflow(workflow_id)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to trigger workflow: {}", e)))?;
@@ -839,21 +837,19 @@ impl Tool for QueryRuleHistoryTool {
                 }),
                 description: "查询指定规则的执行历史".to_string(),
             }),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({
-                        "rule_id": "rule_1",
-                        "limit": 5
-                    }),
-                    result: serde_json::json!({
-                        "count": 5,
-                        "history": [
-                            {"id": "h1", "rule_id": "rule_1", "rule_name": "高温告警", "success": true, "actions_executed": 1, "timestamp": 1735804800}
-                        ]
-                    }),
-                    description: "查询规则执行历史".to_string(),
-                },
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({
+                    "rule_id": "rule_1",
+                    "limit": 5
+                }),
+                result: serde_json::json!({
+                    "count": 5,
+                    "history": [
+                        {"id": "h1", "rule_id": "rule_1", "rule_name": "高温告警", "success": true, "actions_executed": 1, "timestamp": 1735804800}
+                    ]
+                }),
+                description: "查询规则执行历史".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("rule".to_string()),
         }
@@ -881,18 +877,21 @@ impl Tool for QueryRuleHistoryTool {
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to query history: {}", e)))?;
 
-        let history_list: Vec<Value> = entries.iter().map(|entry| {
-            serde_json::json!({
-                "id": entry.id,
-                "rule_id": entry.rule_id,
-                "rule_name": entry.rule_name,
-                "success": entry.success,
-                "actions_executed": entry.actions_executed,
-                "error": entry.error,
-                "duration_ms": entry.duration_ms,
-                "timestamp": entry.timestamp.timestamp(),
+        let history_list: Vec<Value> = entries
+            .iter()
+            .map(|entry| {
+                serde_json::json!({
+                    "id": entry.id,
+                    "rule_id": entry.rule_id,
+                    "rule_name": entry.rule_name,
+                    "success": entry.success,
+                    "actions_executed": entry.actions_executed,
+                    "error": entry.error,
+                    "duration_ms": entry.duration_ms,
+                    "timestamp": entry.timestamp.timestamp(),
+                })
             })
-        }).collect();
+            .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
             "count": history_list.len(),
@@ -971,21 +970,19 @@ impl Tool for QueryWorkflowStatusTool {
                 }),
                 description: "查询指定工作流的执行状态".to_string(),
             }),
-            examples: vec![
-                ToolExample {
-                    arguments: serde_json::json!({
-                        "workflow_id": "daily_backup",
-                        "limit": 5
-                    }),
-                    result: serde_json::json!({
-                        "count": 2,
-                        "executions": [
-                            {"execution_id": "exec_1", "workflow_id": "daily_backup", "status": "completed", "started_at": 1735804800}
-                        ]
-                    }),
-                    description: "查询工作流执行状态".to_string(),
-                },
-            ],
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({
+                    "workflow_id": "daily_backup",
+                    "limit": 5
+                }),
+                result: serde_json::json!({
+                    "count": 2,
+                    "executions": [
+                        {"execution_id": "exec_1", "workflow_id": "daily_backup", "status": "completed", "started_at": 1735804800}
+                    ]
+                }),
+                description: "查询工作流执行状态".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("workflow".to_string()),
         }
@@ -1016,39 +1013,48 @@ impl Tool for QueryWorkflowStatusTool {
         if let Some(workflow_id) = args["workflow_id"].as_str() {
             // Use the dedicated method for workflow-specific executions
             let workflow_executions = self.tracker.get_workflow_executions(workflow_id).await;
-            running = workflow_executions.into_iter()
+            running = workflow_executions
+                .into_iter()
                 .filter(|e| e.is_running())
                 .collect();
-            history = self.tracker.list_history(limit * 2).await.into_iter()
+            history = self
+                .tracker
+                .list_history(limit * 2)
+                .await
+                .into_iter()
                 .filter(|e| e.workflow_id == workflow_id)
                 .take(limit)
                 .collect();
         }
 
-        let status_list: Vec<Value> = running.into_iter().map(|state| {
-            serde_json::json!({
-                "execution_id": state.id,
-                "workflow_id": state.workflow_id,
-                "status": "running",
-                "started_at": state.started_at,
-                "current_step": state.current_step,
+        let status_list: Vec<Value> = running
+            .into_iter()
+            .map(|state| {
+                serde_json::json!({
+                    "execution_id": state.id,
+                    "workflow_id": state.workflow_id,
+                    "status": "running",
+                    "started_at": state.started_at,
+                    "current_step": state.current_step,
+                })
             })
-        }).chain(history.into_iter().take(limit).map(|state| {
-            serde_json::json!({
-                "execution_id": state.id,
-                "workflow_id": state.workflow_id,
-                "status": match state.status {
-                    ExecutionStatus::Running => "running",
-                    ExecutionStatus::Completed => "completed",
-                    ExecutionStatus::Failed => "failed",
-                    ExecutionStatus::Cancelled => "cancelled",
-                },
-                "started_at": state.started_at,
-                "completed_at": state.completed_at,
-                "current_step": state.current_step,
-                "error": state.error,
-            })
-        })).collect();
+            .chain(history.into_iter().take(limit).map(|state| {
+                serde_json::json!({
+                    "execution_id": state.id,
+                    "workflow_id": state.workflow_id,
+                    "status": match state.status {
+                        ExecutionStatus::Running => "running",
+                        ExecutionStatus::Completed => "completed",
+                        ExecutionStatus::Failed => "failed",
+                        ExecutionStatus::Cancelled => "cancelled",
+                    },
+                    "started_at": state.started_at,
+                    "completed_at": state.completed_at,
+                    "current_step": state.current_step,
+                    "error": state.error,
+                })
+            }))
+            .collect();
 
         Ok(ToolOutput::success(serde_json::json!({
             "count": status_list.len(),
@@ -1056,4 +1062,3 @@ impl Tool for QueryWorkflowStatusTool {
         })))
     }
 }
-

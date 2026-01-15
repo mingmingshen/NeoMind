@@ -6,14 +6,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use chrono::{DateTime, Utc};
 
-use edge_ai_storage::TimeSeriesStore as StorageTimeSeriesStore;
 use edge_ai_storage::DataPoint as StorageDataPoint;
+use edge_ai_storage::TimeSeriesStore as StorageTimeSeriesStore;
 
-use super::mdl::{MetricValue, DeviceError};
+use super::mdl::{DeviceError, MetricValue};
 
 /// Time series data point
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,7 +46,9 @@ impl DataPoint {
     fn metric_value_to_json(value: &MetricValue) -> Value {
         match value {
             MetricValue::Integer(n) => Value::Number(serde_json::Number::from(*n)),
-            MetricValue::Float(f) => Value::Number(serde_json::Number::from_f64(*f).unwrap_or(serde_json::Number::from(0))),
+            MetricValue::Float(f) => Value::Number(
+                serde_json::Number::from_f64(*f).unwrap_or(serde_json::Number::from(0)),
+            ),
             MetricValue::String(s) => Value::String(s.clone()),
             MetricValue::Boolean(b) => Value::Bool(*b),
             MetricValue::Binary(data) => Value::String(base64::encode(data)),
@@ -138,39 +140,65 @@ pub struct TimeSeriesStorage {
 impl TimeSeriesStorage {
     /// Create a new time series storage at the given path
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, DeviceError> {
-        let store = StorageTimeSeriesStore::open(path)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-        Ok(Self {
-            store,
-        })
+        let store = StorageTimeSeriesStore::open(path).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
+        Ok(Self { store })
     }
 
     /// Create an in-memory time series storage
     pub fn memory() -> Result<Self, DeviceError> {
-        let store = StorageTimeSeriesStore::memory()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-        Ok(Self {
-            store,
-        })
+        let store = StorageTimeSeriesStore::memory().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
+        Ok(Self { store })
     }
 
     /// Write a data point (all value types are stored)
-    pub async fn write(&self, device_id: &str, metric: &str, point: DataPoint) -> Result<(), DeviceError> {
+    pub async fn write(
+        &self,
+        device_id: &str,
+        metric: &str,
+        point: DataPoint,
+    ) -> Result<(), DeviceError> {
         let storage_point = point.to_storage();
-        self.store.write(device_id, metric, storage_point).await
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        self.store
+            .write(device_id, metric, storage_point)
+            .await
+            .map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
         Ok(())
     }
 
     /// Write multiple data points in a batch (all value types are stored)
-    pub async fn write_batch(&self, device_id: &str, metric: &str, points: Vec<DataPoint>) -> Result<(), DeviceError> {
-        let storage_points: Vec<StorageDataPoint> = points.iter()
-            .map(|p| p.to_storage())
-            .collect();
+    pub async fn write_batch(
+        &self,
+        device_id: &str,
+        metric: &str,
+        points: Vec<DataPoint>,
+    ) -> Result<(), DeviceError> {
+        let storage_points: Vec<StorageDataPoint> = points.iter().map(|p| p.to_storage()).collect();
 
-        self.store.write_batch(device_id, metric, storage_points).await
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        self.store
+            .write_batch(device_id, metric, storage_points)
+            .await
+            .map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
         Ok(())
     }
@@ -183,16 +211,40 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<Vec<DataPoint>, DeviceError> {
-        let result = self.store.query_range(device_id, metric, start_timestamp, end_timestamp).await
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let result = self
+            .store
+            .query_range(device_id, metric, start_timestamp, end_timestamp)
+            .await
+            .map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
-        Ok(result.points.into_iter().filter_map(DataPoint::from_storage).collect())
+        Ok(result
+            .points
+            .into_iter()
+            .filter_map(DataPoint::from_storage)
+            .collect())
     }
 
     /// Get the latest data point
-    pub async fn latest(&self, device_id: &str, metric: &str) -> Result<Option<DataPoint>, DeviceError> {
-        let result = self.store.query_latest(device_id, metric).await
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+    pub async fn latest(
+        &self,
+        device_id: &str,
+        metric: &str,
+    ) -> Result<Option<DataPoint>, DeviceError> {
+        let result = self
+            .store
+            .query_latest(device_id, metric)
+            .await
+            .map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
         Ok(result.and_then(DataPoint::from_storage))
     }
@@ -205,7 +257,9 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<AggregatedData, DeviceError> {
-        let points = self.query(device_id, metric, start_timestamp, end_timestamp).await?;
+        let points = self
+            .query(device_id, metric, start_timestamp, end_timestamp)
+            .await?;
 
         if points.is_empty() {
             return Ok(AggregatedData {
@@ -226,14 +280,14 @@ impl TimeSeriesStorage {
 
         // Calculate aggregates for numeric values
         let (avg, min, max, sum) = if points.first().and_then(|p| p.value.as_f64()).is_some() {
-            let numeric_values: Vec<f64> = points.iter()
-                .filter_map(|p| p.value.as_f64())
-                .collect();
+            let numeric_values: Vec<f64> = points.iter().filter_map(|p| p.value.as_f64()).collect();
 
             let sum_val: f64 = numeric_values.iter().sum();
             let avg_val = sum_val / numeric_values.len() as f64;
             let min_val = numeric_values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-            let max_val = numeric_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            let max_val = numeric_values
+                .iter()
+                .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
             (Some(avg_val), Some(min_val), Some(max_val), Some(sum_val))
         } else {
@@ -257,13 +311,20 @@ impl TimeSeriesStorage {
     pub async fn delete_before(&self, before_timestamp: i64) -> Result<(), DeviceError> {
         // Get all metrics for this device and delete old data
         // This is a simplified implementation - for production you'd want to track all devices
-        let metrics = self.store.list_metrics("").await
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let metrics = self.store.list_metrics("").await.map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         for metric in metrics {
             let device_id: Vec<&str> = metric.split(':').collect();
             if device_id.len() == 2 {
-                let _ = self.store.delete_range(device_id[0], device_id[1], i64::MIN, before_timestamp).await;
+                let _ = self
+                    .store
+                    .delete_range(device_id[0], device_id[1], i64::MIN, before_timestamp)
+                    .await;
             }
         }
 
@@ -272,15 +333,37 @@ impl TimeSeriesStorage {
 
     /// List all devices with data
     pub async fn list_devices(&self) -> Result<Vec<String>, DeviceError> {
-        // This is a simplified implementation - you'd need to track devices separately
-        // or iterate through all metrics to extract device IDs
-        Ok(Vec::new())
+        // Get all metrics and extract unique device IDs
+        let metrics = self.store.list_metrics("").await.map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
+
+        // Extract unique device IDs from "device_id:metric_name" format
+        let mut device_ids = std::collections::HashSet::new();
+        for metric in metrics {
+            if let Some(device_id) = metric.split(':').next() {
+                if !device_id.is_empty() {
+                    device_ids.insert(device_id.to_string());
+                }
+            }
+        }
+
+        let mut devices: Vec<String> = device_ids.into_iter().collect();
+        devices.sort(); // Return in consistent order
+        Ok(devices)
     }
 
     /// List all metrics for a device
     pub async fn list_metrics(&self, device_id: &str) -> Result<Vec<String>, DeviceError> {
-        let metrics = self.store.list_metrics(device_id).await
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let metrics = self.store.list_metrics(device_id).await.map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(metrics)
     }
@@ -288,7 +371,14 @@ impl TimeSeriesStorage {
 
 /// In-memory cache for recent metric values
 pub struct MetricCache {
-    cache: Arc<tokio::sync::RwLock<std::collections::HashMap<String, std::collections::HashMap<String, (MetricValue, DateTime<Utc>)>>>>,
+    cache: Arc<
+        tokio::sync::RwLock<
+            std::collections::HashMap<
+                String,
+                std::collections::HashMap<String, (MetricValue, DateTime<Utc>)>,
+            >,
+        >,
+    >,
     max_entries_per_device: usize,
 }
 
@@ -324,7 +414,10 @@ impl MetricCache {
     }
 
     /// Get all metrics for a device
-    pub async fn get_device(&self, device_id: &str) -> std::collections::HashMap<String, (MetricValue, DateTime<Utc>)> {
+    pub async fn get_device(
+        &self,
+        device_id: &str,
+    ) -> std::collections::HashMap<String, (MetricValue, DateTime<Utc>)> {
         let cache = self.cache.read().await;
         cache.get(device_id).cloned().unwrap_or_default()
     }
@@ -362,8 +455,12 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
 
         rt.block_on(async {
-            cache.set("device1", "temperature", MetricValue::Float(25.5)).await;
-            cache.set("device1", "humidity", MetricValue::Float(60.0)).await;
+            cache
+                .set("device1", "temperature", MetricValue::Float(25.5))
+                .await;
+            cache
+                .set("device1", "humidity", MetricValue::Float(60.0))
+                .await;
 
             let temp_result = cache.get("device1", "temperature").await;
             assert!(temp_result.is_some());

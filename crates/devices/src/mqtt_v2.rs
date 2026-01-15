@@ -17,19 +17,15 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::mdl::{
-    Device, DeviceId, DeviceType as DeviceCategory, MetricValue, Command,
-    DeviceError, ConnectionStatus, DeviceState, DeviceInfo,
-    DeviceCapability,
+    Command, ConnectionStatus, DeviceCapability, DeviceError, DeviceId, DeviceInfo, DeviceState,
+    DeviceType as DeviceCategory, MetricValue,
 };
-use super::mdl_format::{
-    DeviceTypeDefinition, MdlRegistry, DeviceInstance,
-    MdlStorage,
-};
-use super::telemetry::{TimeSeriesStorage, DataPoint};
+use super::mdl_format::{DeviceInstance, DeviceTypeDefinition, MdlRegistry, MdlStorage};
+use super::telemetry::{DataPoint, TimeSeriesStorage};
+use edge_ai_core::EventBus;
 
 use super::hass_discovery::{
-    parse_discovery_message,
-    is_discovery_topic, discovery_subscription_patterns,
+    discovery_subscription_patterns, is_discovery_topic, parse_discovery_message,
 };
 
 /// Simple discovery announcement for internal NeoTalk discovery
@@ -86,7 +82,11 @@ impl DiscoveredHassDevice {
             // Parse identifiers (stored as JSON array string)
             if let Ok(parsed) = serde_json::from_str::<Vec<String>>(identifiers) {
                 if let Some(first_id) = parsed.first() {
-                    tracing::debug!("Entity {} using device.identifiers: {}", self.entity_id, first_id);
+                    tracing::debug!(
+                        "Entity {} using device.identifiers: {}",
+                        self.entity_id,
+                        first_id
+                    );
                     return format!("hass_{}", first_id);
                 }
             }
@@ -98,13 +98,20 @@ impl DiscoveredHassDevice {
         if parts.len() >= 5 && parts[0] == "homeassistant" {
             // 5-part format: homeassistant/<component>/<device_id>/<entity_id>/config
             let device_id = parts[2];
-            tracing::debug!("Entity {} using topic-derived device_id: {} from topic: {}",
-                self.entity_id, device_id, self.discovery_topic);
+            tracing::debug!(
+                "Entity {} using topic-derived device_id: {} from topic: {}",
+                self.entity_id,
+                device_id,
+                self.discovery_topic
+            );
             return format!("hass_{}", device_id);
         }
 
         // Fallback: use entity_id as device_id (no grouping possible)
-        tracing::warn!("Entity {} has no device.identifiers and cannot derive from topic, using entity_id as fallback", self.entity_id);
+        tracing::warn!(
+            "Entity {} has no device.identifiers and cannot derive from topic, using entity_id as fallback",
+            self.entity_id
+        );
         format!("hass_{}", self.entity_id.replace('.', "_"))
     }
 
@@ -121,32 +128,53 @@ pub fn aggregate_hass_devices(entities: Vec<DiscoveredHassDevice>) -> Vec<Aggreg
     // Group entities by device identifier
     for entity in &entities {
         let device_id = entity.get_device_identifier();
-        tracing::info!("Aggregating entity {} -> device {}", entity.entity_id, device_id);
-        device_map.entry(device_id).or_default().push(entity.clone());
+        tracing::info!(
+            "Aggregating entity {} -> device {}",
+            entity.entity_id,
+            device_id
+        );
+        device_map
+            .entry(device_id)
+            .or_default()
+            .push(entity.clone());
     }
 
-    tracing::info!("Aggregated {} entities into {} devices", entities.len(), device_map.len());
+    tracing::info!(
+        "Aggregated {} entities into {} devices",
+        entities.len(),
+        device_map.len()
+    );
 
     // Create aggregated devices
     let mut aggregated = Vec::new();
     for (device_id, entities) in device_map {
         let total_metrics: usize = entities.iter().map(|e| e.metric_count).sum();
         let total_commands: usize = entities.iter().map(|e| e.command_count).sum();
-        let discovery_topics: Vec<String> = entities.iter().map(|e| e.discovery_topic.clone()).collect();
+        let discovery_topics: Vec<String> =
+            entities.iter().map(|e| e.discovery_topic.clone()).collect();
 
         // Get device name from first entity that has one
-        let name = entities.iter()
+        let name = entities
+            .iter()
             .find_map(|e| e.get_device_name())
             .or_else(|| entities.first().and_then(|e| e.name.clone()));
 
         // Get device info from first entity
-        let device_info = entities.first()
+        let device_info = entities
+            .first()
             .map(|e| e.device_info.clone())
             .unwrap_or_default();
 
-        tracing::info!("Device '{}' has {} entities: {}",
-            device_id, entities.len(),
-            entities.iter().map(|e| e.entity_id.as_str()).collect::<Vec<_>>().join(", "));
+        tracing::info!(
+            "Device '{}' has {} entities: {}",
+            device_id,
+            entities.len(),
+            entities
+                .iter()
+                .map(|e| e.entity_id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
 
         aggregated.push(AggregatedHassDevice {
             device_id,
@@ -199,10 +227,18 @@ pub struct MqttManagerConfig {
     pub auto_discovery: bool,
 }
 
-fn default_broker_port() -> u16 { 1883 }
-fn default_keep_alive() -> u64 { 60 }
-fn default_discovery_prefix() -> String { "neotalk/discovery".to_string() }
-fn default_auto_discovery() -> bool { true }
+fn default_broker_port() -> u16 {
+    1883
+}
+fn default_keep_alive() -> u64 {
+    60
+}
+fn default_discovery_prefix() -> String {
+    "neotalk/discovery".to_string()
+}
+fn default_auto_discovery() -> bool {
+    true
+}
 
 impl MqttManagerConfig {
     pub fn new(broker: impl Into<String>) -> Self {
@@ -249,6 +285,14 @@ impl Default for MqttManagerConfig {
 ///
 /// Manages MQTT-based devices with MDL support for device type definitions.
 /// Can be used for both embedded and external MQTT brokers.
+///
+/// ⚠️ **DEPRECATED**: This manager is now primarily used internally by `MqttManagerAdapter`.
+/// For new code, use `DeviceService` and `DeviceAdapter` instead.
+/// Direct access to `MqttDeviceManager` is only needed for HASS discovery and other MQTT-specific features.
+/// See `MqttManagerAdapter` in `adapters/mqtt_manager_adapter.rs` for the adapter interface.
+#[deprecated(
+    note = "Use DeviceService and MqttManagerAdapter instead. MqttDeviceManager is now primarily an internal implementation detail. Only access directly for HASS discovery and other MQTT-specific features."
+)]
 pub struct MqttDeviceManager {
     /// Broker identifier (e.g., "internal-mqtt", "broker-1", etc.)
     broker_id: String,
@@ -269,7 +313,8 @@ pub struct MqttDeviceManager {
     connection_status: Arc<RwLock<ConnectionStatus>>,
 
     /// Metric values cache (device_id -> metric_name -> (value, timestamp))
-    metric_cache: Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
+    metric_cache:
+        Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
 
     /// Time series storage for telemetry data
     time_series_storage: Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
@@ -292,6 +337,9 @@ pub struct MqttDeviceManager {
 
     /// Device timeout monitor task handle
     timeout_monitor_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
+
+    /// Event bus for publishing device events (optional)
+    event_bus: Option<Arc<EventBus>>,
 }
 
 /// Inner MQTT client holder
@@ -320,7 +368,14 @@ impl MqttDeviceManager {
             hass_discovered_devices: Arc::new(RwLock::new(HashMap::new())),
             hass_state_topic_map: Arc::new(RwLock::new(HashMap::new())),
             timeout_monitor_handle: Arc::new(RwLock::new(None)),
+            event_bus: None,
         }
+    }
+
+    /// Set the event bus for publishing device events
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
     }
 
     /// Get the broker ID
@@ -356,14 +411,22 @@ impl MqttDeviceManager {
         }
 
         // Use configured storage dir or default to "data"
-        let storage_dir = self.storage_dir.as_ref().map(|s| s.as_str()).unwrap_or("data");
+        let storage_dir = self
+            .storage_dir
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("data");
         let db_path = std::path::Path::new(storage_dir).join("devices.redb");
 
         // Try to open storage, fall back to memory if it fails
         let storage = match MdlStorage::open(&db_path) {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!("Failed to open MDL storage at {:?}: {}, using in-memory", db_path, e);
+                tracing::warn!(
+                    "Failed to open MDL storage at {:?}: {}, using in-memory",
+                    db_path,
+                    e
+                );
                 // Create in-memory storage
                 MdlStorage::memory()?
             }
@@ -376,7 +439,11 @@ impl MqttDeviceManager {
         let ts_storage = match TimeSeriesStorage::open(&telemetry_path) {
             Ok(ts) => ts,
             Err(e) => {
-                tracing::warn!("Failed to open telemetry storage at {:?}: {}, using in-memory", telemetry_path, e);
+                tracing::warn!(
+                    "Failed to open telemetry storage at {:?}: {}, using in-memory",
+                    telemetry_path,
+                    e
+                );
                 TimeSeriesStorage::memory()?
             }
         };
@@ -418,15 +485,23 @@ impl MqttDeviceManager {
                         let mut restored_values = std::collections::HashMap::new();
                         for metric in &dt.uplink.metrics {
                             if let Ok(Some(latest)) = ts.latest(&device_id, &metric.name).await {
-                                let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(latest.timestamp, 0)
-                                    .unwrap_or_else(|| chrono::Utc::now());
-                                restored_values.insert(metric.name.clone(), (latest.value, timestamp));
+                                let timestamp = chrono::DateTime::<chrono::Utc>::from_timestamp(
+                                    latest.timestamp,
+                                    0,
+                                )
+                                .unwrap_or_else(|| chrono::Utc::now());
+                                restored_values
+                                    .insert(metric.name.clone(), (latest.value, timestamp));
                             }
                         }
                         let restored_count = restored_values.len();
                         updated_instance.current_values = restored_values;
                         if restored_count > 0 {
-                            tracing::info!("Restored {} current values for device {}", restored_count, device_id);
+                            tracing::info!(
+                                "Restored {} current values for device {}",
+                                restored_count,
+                                device_id
+                            );
                         }
                     }
                 }
@@ -444,7 +519,10 @@ impl MqttDeviceManager {
                 drop(devices);
             }
 
-            tracing::info!("Loaded {} device instances from storage", self.devices.read().await.len());
+            tracing::info!(
+                "Loaded {} device instances from storage",
+                self.devices.read().await.len()
+            );
 
             // Restore HASS state topic mappings from device configs
             let _ = self.restore_hass_state_topic_mappings().await;
@@ -483,9 +561,10 @@ impl MqttDeviceManager {
         }
 
         let mut mqttoptions = rumqttc::MqttOptions::new(
-            self.config.client_id.clone().unwrap_or_else(|| {
-                format!("neotalk_mgr_{}", Uuid::new_v4())
-            }),
+            self.config
+                .client_id
+                .clone()
+                .unwrap_or_else(|| format!("neotalk_mgr_{}", Uuid::new_v4())),
             &self.config.broker,
             self.config.port,
         );
@@ -505,15 +584,21 @@ impl MqttDeviceManager {
         // Subscribe to discovery topics if auto-discovery is enabled
         if self.config.auto_discovery {
             let discovery_topic = format!("{}/#", self.config.discovery_prefix);
-            client.subscribe(discovery_topic, rumqttc::QoS::AtLeastOnce).await
+            client
+                .subscribe(discovery_topic, rumqttc::QoS::AtLeastOnce)
+                .await
                 .map_err(|e| DeviceError::Communication(e.to_string()))?;
         }
 
         // Subscribe to all device uplink/downlink topics
         // Topic format: device/{device_type}/{device_id}/uplink or /downlink
-        client.subscribe("device/+/+/uplink", rumqttc::QoS::AtLeastOnce).await
+        client
+            .subscribe("device/+/+/uplink", rumqttc::QoS::AtLeastOnce)
+            .await
             .map_err(|e| DeviceError::Communication(e.to_string()))?;
-        client.subscribe("device/+/+/downlink", rumqttc::QoS::AtLeastOnce).await
+        client
+            .subscribe("device/+/+/downlink", rumqttc::QoS::AtLeastOnce)
+            .await
             .map_err(|e| DeviceError::Communication(e.to_string()))?;
 
         // Subscribe to HASS discovery topics if enabled
@@ -521,7 +606,9 @@ impl MqttDeviceManager {
             // Subscribe to both 4-part and 5-part topic formats
             let hass_topics = super::hass_discovery::discovery_subscription_patterns(None);
             for hass_topic in &hass_topics {
-                client.subscribe(hass_topic, rumqttc::QoS::AtLeastOnce).await
+                client
+                    .subscribe(hass_topic, rumqttc::QoS::AtLeastOnce)
+                    .await
                     .map_err(|e| DeviceError::Communication(e.to_string()))?;
                 tracing::info!("HASS discovery auto-started: subscribed to {}", hass_topic);
             }
@@ -562,6 +649,7 @@ impl MqttDeviceManager {
         let hass_state_topic_map = self.hass_state_topic_map.clone();
         let time_series_storage = self.time_series_storage.clone();
         let storage = self.mdl_registry.storage.clone();
+        let event_bus = self.event_bus.clone();
 
         tokio::spawn(async move {
             let mut eventloop = eventloop;
@@ -584,7 +672,9 @@ impl MqttDeviceManager {
                                     &hass_state_topic_map,
                                     &time_series_storage,
                                     &storage,
-                                ).await;
+                                    &event_bus,
+                                )
+                                .await;
                             }
                             rumqttc::Event::Outgoing(_) => {}
                         }
@@ -598,7 +688,9 @@ impl MqttDeviceManager {
 
                         // Stop polling after consecutive errors to avoid spam
                         if error_count >= max_errors {
-                            tracing::warn!("MQTT connection failed, stopping polling. Device management will be unavailable.");
+                            tracing::warn!(
+                                "MQTT connection failed, stopping polling. Device management will be unavailable."
+                            );
                             *running.write().await = false;
                             break;
                         }
@@ -631,8 +723,11 @@ impl MqttDeviceManager {
 
                         // Convert chrono Duration to seconds for comparison
                         if time_since_last_seen.num_seconds() > timeout_duration.num_seconds() {
-                            tracing::warn!("Device {} timed out (last seen: {} seconds ago), setting to Offline",
-                                device_id, time_since_last_seen.num_seconds());
+                            tracing::warn!(
+                                "Device {} timed out (last seen: {} seconds ago), setting to Offline",
+                                device_id,
+                                time_since_last_seen.num_seconds()
+                            );
                             device.status = super::mdl_format::ConnectionStatus::Offline;
                             offline_count += 1;
                         }
@@ -640,14 +735,20 @@ impl MqttDeviceManager {
                 }
 
                 if offline_count > 0 {
-                    tracing::info!("Device timeout check: {} devices set to Offline", offline_count);
+                    tracing::info!(
+                        "Device timeout check: {} devices set to Offline",
+                        offline_count
+                    );
                 }
             }
         });
 
         *self.timeout_monitor_handle.write().await = Some(handle);
-        tracing::info!("Device timeout monitor started (timeout: {}s, check interval: {}s)",
-            timeout_duration.num_seconds(), check_interval.as_secs());
+        tracing::info!(
+            "Device timeout monitor started (timeout: {}s, check interval: {}s)",
+            timeout_duration.num_seconds(),
+            check_interval.as_secs()
+        );
     }
 
     /// Handle incoming MQTT packet
@@ -655,12 +756,15 @@ impl MqttDeviceManager {
         packet: rumqttc::Packet,
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
         mdl_registry: &MdlRegistry,
-        metric_cache: &Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
+        metric_cache: &Arc<
+            RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
+        >,
         discovery_prefix: &str,
         hass_discovered_devices: &Arc<RwLock<HashMap<String, DiscoveredHassDevice>>>,
         hass_state_topic_map: &Arc<RwLock<HashMap<String, (String, String)>>>,
         time_series_storage: &Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
         storage: &Arc<RwLock<Option<Arc<MdlStorage>>>>,
+        event_bus: &Option<Arc<EventBus>>,
     ) {
         match packet {
             rumqttc::Packet::Publish(publish) => {
@@ -670,19 +774,43 @@ impl MqttDeviceManager {
                 // Check if this is a HASS discovery message
                 if is_discovery_topic(&topic) {
                     tracing::info!("Received HASS discovery message on topic: {}", topic);
-                    Self::handle_hass_discovery_message(&topic, &payload, hass_discovered_devices).await;
+                    Self::handle_hass_discovery_message(&topic, &payload, hass_discovered_devices)
+                        .await;
                 }
                 // Check if this is a discovery announcement
                 else if topic.starts_with(discovery_prefix) && topic.ends_with("/announce") {
-                    Self::handle_discovery_announcement(&payload, devices, mdl_registry).await;
+                    Self::handle_discovery_announcement(&payload, devices, mdl_registry, event_bus)
+                        .await;
                 }
                 // Check if this is a HASS state update
-                else if let Some((device_id, metric_name)) = hass_state_topic_map.read().await.get(&topic).cloned() {
-                    Self::handle_hass_state_update(&device_id, &metric_name, &topic, &payload, devices, mdl_registry, metric_cache, time_series_storage).await;
-                }
-                else {
+                else if let Some((device_id, metric_name)) =
+                    hass_state_topic_map.read().await.get(&topic).cloned()
+                {
+                    Self::handle_hass_state_update(
+                        &device_id,
+                        &metric_name,
+                        &topic,
+                        &payload,
+                        devices,
+                        mdl_registry,
+                        metric_cache,
+                        time_series_storage,
+                        event_bus,
+                    )
+                    .await;
+                } else {
                     // Try to match to a device metric
-                    Self::handle_metric_message(&topic, &payload, devices, mdl_registry, metric_cache, time_series_storage, storage).await;
+                    Self::handle_metric_message(
+                        &topic,
+                        &payload,
+                        devices,
+                        mdl_registry,
+                        metric_cache,
+                        time_series_storage,
+                        storage,
+                        event_bus,
+                    )
+                    .await;
                 }
             }
             rumqttc::Packet::ConnAck(_) => {
@@ -698,11 +826,18 @@ impl MqttDeviceManager {
         payload: &[u8],
         hass_discovered_devices: &Arc<RwLock<HashMap<String, DiscoveredHassDevice>>>,
     ) {
-        tracing::info!("Processing HASS discovery: topic={}, payload_len={}", topic, payload.len());
+        tracing::info!(
+            "Processing HASS discovery: topic={}, payload_len={}",
+            topic,
+            payload.len()
+        );
         match parse_discovery_message(topic, payload) {
             Ok(msg) => {
-                tracing::info!("Successfully parsed HASS discovery: component={}, name={:?}",
-                    msg.topic_parts.component, msg.config.name);
+                tracing::info!(
+                    "Successfully parsed HASS discovery: component={}, name={:?}",
+                    msg.topic_parts.component,
+                    msg.config.name
+                );
                 let entity_id = msg.topic_parts.entity_id();
                 let component = msg.topic_parts.component.clone();
                 let discovery_topic = topic.to_string();
@@ -735,19 +870,33 @@ impl MqttDeviceManager {
                 }
 
                 // Count metrics and commands
-                let metric_count = if msg.config.state_topic.is_some() { 1 } else { 0 };
-                let command_count = if msg.config.command_topic.is_some() { 1 } else { 0 };
+                let metric_count = if msg.config.state_topic.is_some() {
+                    1
+                } else {
+                    0
+                };
+                let command_count = if msg.config.command_topic.is_some() {
+                    1
+                } else {
+                    0
+                };
 
                 // Store raw message for later processing
                 let raw_message = String::from_utf8_lossy(payload).to_string();
 
                 // Log device identifiers for debugging
                 if let Some(ref device) = msg.config.device {
-                    tracing::info!("HASS entity {} belongs to device with identifiers: {:?}",
-                        entity_id, device.identifiers);
+                    tracing::info!(
+                        "HASS entity {} belongs to device with identifiers: {:?}",
+                        entity_id,
+                        device.identifiers
+                    );
                 } else {
-                    tracing::warn!("HASS entity {} has no device.info, topic: {}",
-                        entity_id, topic);
+                    tracing::warn!(
+                        "HASS entity {} has no device.info, topic: {}",
+                        entity_id,
+                        topic
+                    );
                 }
 
                 let discovered_device = DiscoveredHassDevice {
@@ -762,12 +911,24 @@ impl MqttDeviceManager {
                     raw_message,
                 };
 
-                hass_discovered_devices.write().await.insert(entity_id.clone(), discovered_device);
-                tracing::info!("✓ Discovered HASS device: {} (component: {}, metrics: {}, commands: {})",
-                    entity_id, msg.topic_parts.component, metric_count, command_count);
+                hass_discovered_devices
+                    .write()
+                    .await
+                    .insert(entity_id.clone(), discovered_device);
+                tracing::info!(
+                    "✓ Discovered HASS device: {} (component: {}, metrics: {}, commands: {})",
+                    entity_id,
+                    msg.topic_parts.component,
+                    metric_count,
+                    command_count
+                );
             }
             Err(e) => {
-                tracing::warn!("✗ Failed to parse HASS discovery from topic '{}': {:?}", topic, e);
+                tracing::warn!(
+                    "✗ Failed to parse HASS discovery from topic '{}': {:?}",
+                    topic,
+                    e
+                );
             }
         }
     }
@@ -781,8 +942,11 @@ impl MqttDeviceManager {
         payload: &[u8],
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
         mdl_registry: &MdlRegistry,
-        metric_cache: &Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
+        metric_cache: &Arc<
+            RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
+        >,
         time_series_storage: &Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
+        event_bus: &Option<Arc<EventBus>>,
     ) {
         let now = chrono::Utc::now();
 
@@ -790,13 +954,22 @@ impl MqttDeviceManager {
         let payload_str = match std::str::from_utf8(payload) {
             Ok(s) => s.trim(),
             Err(_) => {
-                tracing::warn!("Invalid UTF-8 payload from HASS device {} on topic {}", device_id, topic);
+                tracing::warn!(
+                    "Invalid UTF-8 payload from HASS device {} on topic {}",
+                    device_id,
+                    topic
+                );
                 return;
             }
         };
 
-        tracing::info!("HASS state update: device_id={}, metric_name={}, topic='{}', payload='{}'",
-            device_id, metric_name, topic, payload_str);
+        tracing::info!(
+            "HASS state update: device_id={}, metric_name={}, topic='{}', payload='{}'",
+            device_id,
+            metric_name,
+            topic,
+            payload_str
+        );
 
         // Get device, auto-register if it doesn't exist
         let device = {
@@ -810,7 +983,11 @@ impl MqttDeviceManager {
                 match mdl_registry.get(&d.device_type).await {
                     Some(dt) => (d.device_type.clone(), dt),
                     None => {
-                        tracing::warn!("Device type '{}' not found for HASS device {}", d.device_type, device_id);
+                        tracing::warn!(
+                            "Device type '{}' not found for HASS device {}",
+                            d.device_type,
+                            device_id
+                        );
                         return;
                     }
                 }
@@ -832,13 +1009,21 @@ impl MqttDeviceManager {
                 let (dt_name, dt) = match (found_type_name, found_type) {
                     (Some(name), Some(dt)) => (name, dt),
                     _ => {
-                        tracing::warn!("Cannot auto-register HASS device {}: metric '{}' not found in any device type", device_id, metric_name);
+                        tracing::warn!(
+                            "Cannot auto-register HASS device {}: metric '{}' not found in any device type",
+                            device_id,
+                            metric_name
+                        );
                         return;
                     }
                 };
 
                 // Auto-register the device
-                tracing::info!("Auto-registering HASS device {} with type {}", device_id, dt_name);
+                tracing::info!(
+                    "Auto-registering HASS device {} with type {}",
+                    device_id,
+                    dt_name
+                );
                 let new_device = super::mdl_format::DeviceInstance {
                     device_type: dt_name.clone(),
                     device_id: device_id.to_string(),
@@ -855,40 +1040,67 @@ impl MqttDeviceManager {
                     devices_mut.insert(device_id.to_string(), new_device.clone());
                 }
 
+                // Publish DeviceOnline event for auto-registered HASS device
+                if let Some(bus) = event_bus {
+                    use edge_ai_core::NeoTalkEvent;
+                    bus.publish(NeoTalkEvent::DeviceOnline {
+                        device_id: device_id.to_string(),
+                        device_type: dt_name.clone(),
+                        timestamp: now.timestamp(),
+                    })
+                    .await;
+                    tracing::debug!("Published DeviceOnline event for HASS device {}", device_id);
+                }
+
                 (dt_name, dt)
             }
         };
 
-        tracing::info!("  Device type '{}' has {} metrics: {:?}",
-            device_type_name, device_type.uplink.metrics.len(),
-            device_type.uplink.metrics.iter().map(|m| &m.name).collect::<Vec<_>>());
+        tracing::info!(
+            "  Device type '{}' has {} metrics: {:?}",
+            device_type_name,
+            device_type.uplink.metrics.len(),
+            device_type
+                .uplink
+                .metrics
+                .iter()
+                .map(|m| &m.name)
+                .collect::<Vec<_>>()
+        );
 
         // Find the metric by name (for aggregated devices with multiple metrics)
-        let metric_def = match device_type.uplink.metrics.iter().find(|m| m.name == metric_name) {
+        let metric_def = match device_type
+            .uplink
+            .metrics
+            .iter()
+            .find(|m| m.name == metric_name)
+        {
             Some(m) => m,
             None => {
-                tracing::warn!("Metric '{}' not found in device type {}", metric_name, device_type.device_type);
+                tracing::warn!(
+                    "Metric '{}' not found in device type {}",
+                    metric_name,
+                    device_type.device_type
+                );
                 return;
             }
         };
 
         // Parse the value based on metric data type
         let value = match metric_def.data_type {
-            super::mdl::MetricDataType::Float => {
-                payload_str.parse::<f64>()
-                    .map(|v| super::mdl::MetricValue::Float(v))
-                    .unwrap_or_else(|_| super::mdl::MetricValue::String(payload_str.to_string()))
-            }
-            super::mdl::MetricDataType::Integer => {
-                payload_str.parse::<i64>()
-                    .map(|v| super::mdl::MetricValue::Integer(v))
-                    .unwrap_or_else(|_| super::mdl::MetricValue::String(payload_str.to_string()))
-            }
+            super::mdl::MetricDataType::Float => payload_str
+                .parse::<f64>()
+                .map(|v| super::mdl::MetricValue::Float(v))
+                .unwrap_or_else(|_| super::mdl::MetricValue::String(payload_str.to_string())),
+            super::mdl::MetricDataType::Integer => payload_str
+                .parse::<i64>()
+                .map(|v| super::mdl::MetricValue::Integer(v))
+                .unwrap_or_else(|_| super::mdl::MetricValue::String(payload_str.to_string())),
             super::mdl::MetricDataType::Boolean => {
-                let bool_val = payload_str.eq_ignore_ascii_case("true") ||
-                    payload_str.eq_ignore_ascii_case("on") ||
-                    payload_str.eq_ignore_ascii_case("1") ||
-                    payload_str.eq_ignore_ascii_case("yes");
+                let bool_val = payload_str.eq_ignore_ascii_case("true")
+                    || payload_str.eq_ignore_ascii_case("on")
+                    || payload_str.eq_ignore_ascii_case("1")
+                    || payload_str.eq_ignore_ascii_case("yes");
                 super::mdl::MetricValue::Boolean(bool_val)
             }
             _ => super::mdl::MetricValue::String(payload_str.to_string()),
@@ -897,7 +1109,8 @@ impl MqttDeviceManager {
         // Update metric cache
         {
             let mut cache = metric_cache.write().await;
-            cache.entry(device_id.to_string())
+            cache
+                .entry(device_id.to_string())
                 .or_default()
                 .insert(metric_name.to_string(), (value.clone(), now));
         }
@@ -908,7 +1121,9 @@ impl MqttDeviceManager {
             if let Some(device) = devices_guard.get_mut(device_id) {
                 device.last_seen = now;
                 device.status = super::mdl_format::ConnectionStatus::Online;
-                device.current_values.insert(metric_name.to_string(), (value.clone(), now));
+                device
+                    .current_values
+                    .insert(metric_name.to_string(), (value.clone(), now));
             }
         }
 
@@ -923,12 +1138,45 @@ impl MqttDeviceManager {
             if let Err(e) = storage.write(device_id, &metric_def.name, data_point).await {
                 tracing::error!("Failed to write HASS device telemetry: {}", e);
             } else {
-                tracing::info!("Stored HASS device {} metric {} = {:?} (topic: {})",
-                    device_id, metric_def.name, value, topic);
+                tracing::info!(
+                    "Stored HASS device {} metric {} = {:?} (topic: {})",
+                    device_id,
+                    metric_def.name,
+                    value,
+                    topic
+                );
             }
         }
 
-        tracing::info!("HASS device {} state updated: {} = {:?}", device_id, metric_def.name, value);
+        // Publish DeviceMetric event to EventBus
+        if let Some(bus) = event_bus {
+            use edge_ai_core::{MetricValue as CoreMetricValue, NeoTalkEvent};
+            use serde_json::json;
+            // Convert our MetricValue to core's MetricValue
+            let core_value = match &value {
+                super::mdl::MetricValue::Integer(i) => CoreMetricValue::Integer(*i),
+                super::mdl::MetricValue::Float(f) => CoreMetricValue::Float(*f),
+                super::mdl::MetricValue::String(s) => CoreMetricValue::String(s.clone()),
+                super::mdl::MetricValue::Boolean(b) => CoreMetricValue::Boolean(*b),
+                super::mdl::MetricValue::Binary(_) => CoreMetricValue::Json(json!(null)),
+                super::mdl::MetricValue::Null => CoreMetricValue::Json(json!(null)),
+            };
+            bus.publish(NeoTalkEvent::DeviceMetric {
+                device_id: device_id.to_string(),
+                metric: metric_name.to_string(),
+                value: core_value,
+                timestamp: now.timestamp(),
+                quality: None,
+            })
+            .await;
+        }
+
+        tracing::info!(
+            "HASS device {} state updated: {} = {:?}",
+            device_id,
+            metric_def.name,
+            value
+        );
     }
 
     /// Handle discovery announcement
@@ -936,6 +1184,7 @@ impl MqttDeviceManager {
         payload: &[u8],
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
         mdl_registry: &MdlRegistry,
+        event_bus: &Option<Arc<EventBus>>,
     ) {
         let announcement: DiscoveryAnnouncement = match serde_json::from_slice(payload) {
             Ok(a) => a,
@@ -945,7 +1194,11 @@ impl MqttDeviceManager {
             }
         };
 
-        tracing::info!("Discovered device: {} (type: {})", announcement.device_id, announcement.device_type);
+        tracing::info!(
+            "Discovered device: {} (type: {})",
+            announcement.device_id,
+            announcement.device_type
+        );
 
         // Check if device type exists
         let device_type = match mdl_registry.get(&announcement.device_type).await {
@@ -956,13 +1209,15 @@ impl MqttDeviceManager {
             }
         };
 
+        let now = chrono::Utc::now();
+
         // Create or update device instance
         let instance = DeviceInstance {
             device_type: announcement.device_type.clone(),
             device_id: announcement.device_id.clone(),
             name: announcement.name.clone(),
             status: super::mdl_format::ConnectionStatus::Online,
-            last_seen: chrono::Utc::now(),
+            last_seen: now,
             config: announcement.config.clone(),
             current_values: HashMap::new(),
             adapter_id: None,
@@ -970,8 +1225,28 @@ impl MqttDeviceManager {
 
         let mut devices_guard = devices.write().await;
         devices_guard.insert(announcement.device_id.clone(), instance);
+        drop(devices_guard);
 
-        tracing::info!("Device {} registered with {} metrics", announcement.device_id, device_type.uplink.metrics.len());
+        tracing::info!(
+            "Device {} registered with {} metrics",
+            announcement.device_id,
+            device_type.uplink.metrics.len()
+        );
+
+        // Publish DeviceOnline event to EventBus
+        if let Some(bus) = event_bus {
+            use edge_ai_core::NeoTalkEvent;
+            bus.publish(NeoTalkEvent::DeviceOnline {
+                device_id: announcement.device_id.clone(),
+                device_type: announcement.device_type.clone(),
+                timestamp: now.timestamp(),
+            })
+            .await;
+            tracing::debug!(
+                "Published DeviceOnline event for {}",
+                announcement.device_id
+            );
+        }
     }
 
     /// Handle metric message from device
@@ -981,9 +1256,12 @@ impl MqttDeviceManager {
         payload: &[u8],
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
         mdl_registry: &MdlRegistry,
-        metric_cache: &Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
+        metric_cache: &Arc<
+            RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
+        >,
         time_series_storage: &Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
         storage: &Arc<RwLock<Option<Arc<MdlStorage>>>>,
+        event_bus: &Option<Arc<EventBus>>,
     ) {
         // Parse topic: device/{device_type}/{device_id}/uplink or /downlink
         // Extract device_type and device_id directly from topic - no registration needed!
@@ -1001,7 +1279,11 @@ impl MqttDeviceManager {
         let device_type = match mdl_registry.get(&device_type_name).await {
             Some(dt) => dt,
             None => {
-                tracing::warn!("Unknown device type: {} from topic: {}", device_type_name, topic);
+                tracing::warn!(
+                    "Unknown device type: {} from topic: {}",
+                    device_type_name,
+                    topic
+                );
                 return;
             }
         };
@@ -1009,19 +1291,31 @@ impl MqttDeviceManager {
         // Handle uplink data
         if direction == Some("uplink") {
             // Log payload size for debugging
-            tracing::info!("Received uplink from device {} (type: {}), payload size: {} bytes",
-                device_id, device_type_name, payload.len());
+            tracing::info!(
+                "Received uplink from device {} (type: {}), payload size: {} bytes",
+                device_id,
+                device_type_name,
+                payload.len()
+            );
 
             // Warn about large payloads
             if payload.len() > 100_000 {
-                tracing::warn!("Large payload detected: {} bytes from device {}", payload.len(), device_id);
+                tracing::warn!(
+                    "Large payload detected: {} bytes from device {}",
+                    payload.len(),
+                    device_id
+                );
             }
 
             // Try to parse payload as JSON with multiple metrics
             let json_result: Result<serde_json::Value, _> = serde_json::from_slice(payload);
             if let Ok(json_value) = json_result {
-                tracing::info!("Parsed JSON payload from device {}: {}", device_id,
-                    serde_json::to_string_pretty(&json_value).unwrap_or_else(|_| "<complex>".to_string()));
+                tracing::info!(
+                    "Parsed JSON payload from device {}: {}",
+                    device_id,
+                    serde_json::to_string_pretty(&json_value)
+                        .unwrap_or_else(|_| "<complex>".to_string())
+                );
 
                 let mut cache = metric_cache.write().await;
 
@@ -1032,7 +1326,11 @@ impl MqttDeviceManager {
                     let mut devices_mut = devices.write().await;
                     is_new_device = !devices_mut.contains_key(&device_id);
                     let device = devices_mut.entry(device_id.clone()).or_insert_with(|| {
-                        tracing::info!("Auto-registered device: {} (type: {})", device_id, device_type_name);
+                        tracing::info!(
+                            "Auto-registered device: {} (type: {})",
+                            device_id,
+                            device_type_name
+                        );
                         DeviceInstance {
                             device_type: device_type_name.clone(),
                             device_id: device_id.clone(),
@@ -1053,11 +1351,33 @@ impl MqttDeviceManager {
                     if let Some(store) = storage.read().await.as_ref() {
                         if let Some(device) = devices.read().await.get(&device_id).cloned() {
                             if let Err(e) = store.save_device_instance(&device).await {
-                                tracing::warn!("Failed to persist auto-registered device {}: {}", device_id, e);
+                                tracing::warn!(
+                                    "Failed to persist auto-registered device {}: {}",
+                                    device_id,
+                                    e
+                                );
                             } else {
-                                tracing::info!("Persisted auto-registered device {} to storage", device_id);
+                                tracing::info!(
+                                    "Persisted auto-registered device {} to storage",
+                                    device_id
+                                );
                             }
                         }
+                    }
+
+                    // Publish DeviceOnline event for new device
+                    if let Some(bus) = event_bus {
+                        use edge_ai_core::NeoTalkEvent;
+                        bus.publish(NeoTalkEvent::DeviceOnline {
+                            device_id: device_id.clone(),
+                            device_type: device_type_name.clone(),
+                            timestamp: now.timestamp(),
+                        })
+                        .await;
+                        tracing::debug!(
+                            "Published DeviceOnline event for auto-registered device {}",
+                            device_id
+                        );
                     }
                 }
 
@@ -1065,7 +1385,11 @@ impl MqttDeviceManager {
                 let ts_storage = time_series_storage.read().await;
 
                 // Log device type info
-                tracing::info!("Device type {} has {} metrics defined", device_type_name, device_type.uplink.metrics.len());
+                tracing::info!(
+                    "Device type {} has {} metrics defined",
+                    device_type_name,
+                    device_type.uplink.metrics.len()
+                );
 
                 // Match each metric definition against the JSON payload
                 let mut metrics_found = 0;
@@ -1074,14 +1398,18 @@ impl MqttDeviceManager {
                         Ok(value) => {
                             metrics_found += 1;
                             // Update metric cache
-                            cache.entry(device_id.clone()).or_default()
+                            cache
+                                .entry(device_id.clone())
+                                .or_default()
                                 .insert(metric_def.name.clone(), (value.clone(), now));
 
                             // Update device.current_values
                             {
                                 let mut devices_mut = devices.write().await;
                                 if let Some(device) = devices_mut.get_mut(&device_id) {
-                                    device.current_values.insert(metric_def.name.clone(), (value.clone(), now));
+                                    device
+                                        .current_values
+                                        .insert(metric_def.name.clone(), (value.clone(), now));
                                 }
                             }
 
@@ -1092,33 +1420,96 @@ impl MqttDeviceManager {
                                     value: value.clone(),
                                     quality: None,
                                 };
-                                if let Err(e) = storage.write(&device_id, &metric_def.name, data_point).await {
+                                if let Err(e) = storage
+                                    .write(&device_id, &metric_def.name, data_point)
+                                    .await
+                                {
                                     tracing::error!("Failed to write telemetry data: {}", e);
                                 } else {
-                                    tracing::info!("Stored metric {} = {:?} for device {}", metric_def.name, value, device_id);
+                                    tracing::info!(
+                                        "Stored metric {} = {:?} for device {}",
+                                        metric_def.name,
+                                        value,
+                                        device_id
+                                    );
                                 }
                             }
 
-                            tracing::info!("Received metric {} for device {}: {:?}", metric_def.name, device_id, value);
+                            // Publish DeviceMetric event to EventBus
+                            if let Some(bus) = event_bus {
+                                use edge_ai_core::{MetricValue as CoreMetricValue, NeoTalkEvent};
+                                use serde_json::json;
+                                // Convert our MetricValue to core's MetricValue
+                                let core_value = match &value {
+                                    super::mdl::MetricValue::Integer(i) => {
+                                        CoreMetricValue::Integer(*i)
+                                    }
+                                    super::mdl::MetricValue::Float(f) => CoreMetricValue::Float(*f),
+                                    super::mdl::MetricValue::String(s) => {
+                                        CoreMetricValue::String(s.clone())
+                                    }
+                                    super::mdl::MetricValue::Boolean(b) => {
+                                        CoreMetricValue::Boolean(*b)
+                                    }
+                                    super::mdl::MetricValue::Binary(_) => {
+                                        CoreMetricValue::Json(json!(null))
+                                    }
+                                    super::mdl::MetricValue::Null => {
+                                        CoreMetricValue::Json(json!(null))
+                                    }
+                                };
+                                bus.publish(NeoTalkEvent::DeviceMetric {
+                                    device_id: device_id.clone(),
+                                    metric: metric_def.name.clone(),
+                                    value: core_value,
+                                    timestamp: now.timestamp(),
+                                    quality: None,
+                                })
+                                .await;
+                            }
+
+                            tracing::info!(
+                                "Received metric {} for device {}: {:?}",
+                                metric_def.name,
+                                device_id,
+                                value
+                            );
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to parse metric '{}' from device {}: {}", metric_def.name, device_id, e);
+                            tracing::warn!(
+                                "Failed to parse metric '{}' from device {}: {}",
+                                metric_def.name,
+                                device_id,
+                                e
+                            );
                         }
                     }
                 }
 
                 if metrics_found == 0 {
-                    tracing::warn!("No metrics matched from device type {} for device {}. Payload: {}",
-                        device_type_name, device_id,
-                        String::from_utf8_lossy(&payload[..payload.len().min(200)]));
+                    tracing::warn!(
+                        "No metrics matched from device type {} for device {}. Payload: {}",
+                        device_type_name,
+                        device_id,
+                        String::from_utf8_lossy(&payload[..payload.len().min(200)])
+                    );
                 } else {
-                    tracing::info!("Successfully processed {} metrics for device {}", metrics_found, device_id);
+                    tracing::info!(
+                        "Successfully processed {} metrics for device {}",
+                        metrics_found,
+                        device_id
+                    );
                 }
             } else {
-                tracing::error!("Failed to parse JSON payload from device {}: {}, payload: {}",
+                tracing::error!(
+                    "Failed to parse JSON payload from device {}: {}, payload: {}",
                     device_id,
-                    json_result.err().map(|e| e.to_string()).unwrap_or_else(|| "unknown".to_string()),
-                    String::from_utf8_lossy(&payload[..payload.len().min(200)]));
+                    json_result
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "unknown".to_string()),
+                    String::from_utf8_lossy(&payload[..payload.len().min(200)])
+                );
             }
         }
         // Downlink messages are handled separately via command sending
@@ -1139,16 +1530,25 @@ impl MqttDeviceManager {
         let all_types = self.mdl_registry.list().await;
         // Filter out old HASS individual entity device types (those with "hass_discovery" category)
         // These are replaced by aggregated HASS devices
-        all_types.into_iter()
+        all_types
+            .into_iter()
             .filter(|dt| !dt.categories.contains(&"hass_discovery".to_string()))
             .collect()
     }
 
     /// Add a device manually (without discovery)
-    pub async fn add_device(&self, device_id: String, device_type: String, name: Option<String>, adapter_id: Option<String>, config: HashMap<String, String>) -> Result<(), DeviceError> {
+    pub async fn add_device(
+        &self,
+        device_id: String,
+        device_type: String,
+        name: Option<String>,
+        adapter_id: Option<String>,
+        config: HashMap<String, String>,
+    ) -> Result<(), DeviceError> {
         // Check if device type exists
-        let _type_def = self.mdl_registry.get(&device_type).await
-            .ok_or_else(|| DeviceError::InvalidParameter(format!("Unknown device type: {}", device_type)))?;
+        let _type_def = self.mdl_registry.get(&device_type).await.ok_or_else(|| {
+            DeviceError::InvalidParameter(format!("Unknown device type: {}", device_type))
+        })?;
 
         // Create device instance
         let instance = DeviceInstance {
@@ -1178,7 +1578,9 @@ impl MqttDeviceManager {
         let hass_state_topics: Vec<String> = {
             let devices = self.devices.read().await;
             if let Some(device) = devices.get(device_id) {
-                device.config.iter()
+                device
+                    .config
+                    .iter()
                     .filter(|(k, _)| k.starts_with("hass_state:"))
                     .map(|(_, v)| v.clone())
                     .collect()
@@ -1188,8 +1590,9 @@ impl MqttDeviceManager {
         };
 
         let mut devices = self.devices.write().await;
-        devices.remove(device_id)
-            .ok_or_else(|| DeviceError::InvalidParameter(format!("Device not found: {}", device_id)))?;
+        devices.remove(device_id).ok_or_else(|| {
+            DeviceError::InvalidParameter(format!("Device not found: {}", device_id))
+        })?;
 
         // Remove from metric cache
         let mut cache = self.metric_cache.write().await;
@@ -1199,7 +1602,11 @@ impl MqttDeviceManager {
         let mut state_map = self.hass_state_topic_map.write().await;
         for state_topic in hass_state_topics {
             if let Some((mapped_device_id, _)) = state_map.remove(&state_topic) {
-                tracing::info!("Removed HASS state topic mapping: {} -> {}", state_topic, mapped_device_id);
+                tracing::info!(
+                    "Removed HASS state topic mapping: {} -> {}",
+                    state_topic,
+                    mapped_device_id
+                );
             }
         }
 
@@ -1223,26 +1630,55 @@ impl MqttDeviceManager {
     }
 
     /// Read a metric value from a device
-    pub async fn read_metric(&self, device_id: &str, metric_name: &str) -> Result<MetricValue, DeviceError> {
+    pub async fn read_metric(
+        &self,
+        device_id: &str,
+        metric_name: &str,
+    ) -> Result<MetricValue, DeviceError> {
         let cache = self.metric_cache.read().await;
 
-        cache.get(device_id)
+        cache
+            .get(device_id)
             .and_then(|m| m.get(metric_name))
             .map(|(v, _)| v.clone())
-            .ok_or_else(|| DeviceError::InvalidMetric(format!("Metric {} not found for device {}", metric_name, device_id)))
+            .ok_or_else(|| {
+                DeviceError::InvalidMetric(format!(
+                    "Metric {} not found for device {}",
+                    metric_name, device_id
+                ))
+            })
     }
 
     /// Send a command to a device
-    pub async fn send_command(&self, device_id: &str, command_name: &str, params: HashMap<String, MetricValue>) -> Result<(), DeviceError> {
-        let device = self.get_device(device_id).await
-            .ok_or_else(|| DeviceError::InvalidParameter(format!("Device not found: {}", device_id)))?;
+    pub async fn send_command(
+        &self,
+        device_id: &str,
+        command_name: &str,
+        params: HashMap<String, MetricValue>,
+    ) -> Result<(), DeviceError> {
+        let device = self.get_device(device_id).await.ok_or_else(|| {
+            DeviceError::InvalidParameter(format!("Device not found: {}", device_id))
+        })?;
 
-        let device_type = self.mdl_registry.get(&device.device_type).await
-            .ok_or_else(|| DeviceError::InvalidParameter(format!("Device type not found: {}", device.device_type)))?;
+        let device_type = self
+            .mdl_registry
+            .get(&device.device_type)
+            .await
+            .ok_or_else(|| {
+                DeviceError::InvalidParameter(format!(
+                    "Device type not found: {}",
+                    device.device_type
+                ))
+            })?;
 
-        let command = device_type.downlink.commands.iter()
+        let command = device_type
+            .downlink
+            .commands
+            .iter()
             .find(|c| c.name == command_name)
-            .ok_or_else(|| DeviceError::InvalidCommand(format!("Command not found: {}", command_name)))?;
+            .ok_or_else(|| {
+                DeviceError::InvalidCommand(format!("Command not found: {}", command_name))
+            })?;
 
         let payload = self.mdl_registry.build_command_payload(command, &params)?;
 
@@ -1250,17 +1686,26 @@ impl MqttDeviceManager {
         let topic = if let Some(command_topics) = device.config.get("hass_command_topic") {
             // HASS devices may have multiple command topics (comma-separated)
             // Use the first one for now (all entities typically share the same device command topic)
-            command_topics.split(',').next().unwrap_or(command_topics).to_string()
+            command_topics
+                .split(',')
+                .next()
+                .unwrap_or(command_topics)
+                .to_string()
         } else {
             // Use the standard downlink topic format
-            self.mdl_registry.downlink_topic(&device.device_type, device_id)
+            self.mdl_registry
+                .downlink_topic(&device.device_type, device_id)
         };
 
         let client_guard = self.mqtt_client.read().await;
-        let client_wrapper = client_guard.as_ref()
+        let client_wrapper = client_guard
+            .as_ref()
             .ok_or_else(|| DeviceError::NotConnected(DeviceId::new()))?;
 
-        client_wrapper.client.publish(&topic, rumqttc::QoS::AtLeastOnce, false, payload).await
+        client_wrapper
+            .client
+            .publish(&topic, rumqttc::QoS::AtLeastOnce, false, payload)
+            .await
             .map_err(|e| DeviceError::Communication(e.to_string()))?;
 
         Ok(())
@@ -1303,7 +1748,10 @@ impl MqttDeviceManager {
                 // Subscribe to both 4-part and 5-part topic formats
                 let hass_topics = discovery_subscription_patterns(None);
                 for hass_topic in &hass_topics {
-                    wrapper.client.subscribe(hass_topic, rumqttc::QoS::AtLeastOnce).await
+                    wrapper
+                        .client
+                        .subscribe(hass_topic, rumqttc::QoS::AtLeastOnce)
+                        .await
                         .map_err(|e| DeviceError::Communication(e.to_string()))?;
                     tracing::info!("Started HASS discovery: subscribed to {}", hass_topic);
                 }
@@ -1337,16 +1785,27 @@ impl MqttDeviceManager {
     /// Register a HASS device state topic mapping
     /// When a HASS device is registered, this maps its state_topic to (device_id, metric_name)
     /// so that state updates can be routed to the correct device and metric
-    pub async fn register_hass_state_topic(&self, device_id: &str, metric_name: &str, state_topic: &str) -> Result<(), DeviceError> {
+    pub async fn register_hass_state_topic(
+        &self,
+        device_id: &str,
+        metric_name: &str,
+        state_topic: &str,
+    ) -> Result<(), DeviceError> {
         // Add the mapping: state_topic -> (device_id, metric_name)
-        self.hass_state_topic_map.write().await.insert(state_topic.to_string(), (device_id.to_string(), metric_name.to_string()));
+        self.hass_state_topic_map.write().await.insert(
+            state_topic.to_string(),
+            (device_id.to_string(), metric_name.to_string()),
+        );
 
         // Also store in device config for persistence
         {
             let mut devices = self.devices.write().await;
             if let Some(device) = devices.get_mut(device_id) {
                 // Store as "hass_state:{metric_name}" -> "state_topic"
-                device.config.insert(format!("hass_state:{}", metric_name), state_topic.to_string());
+                device.config.insert(
+                    format!("hass_state:{}", metric_name),
+                    state_topic.to_string(),
+                );
                 // Persist to storage
                 if let Err(e) = self.save_device_instance(device).await {
                     tracing::warn!("Failed to persist HASS state topic mapping: {:?}", e);
@@ -1356,11 +1815,24 @@ impl MqttDeviceManager {
 
         // Subscribe to the state topic if connected
         if let Some(wrapper) = self.mqtt_client.read().await.as_ref() {
-            wrapper.client.subscribe(state_topic, rumqttc::QoS::AtLeastOnce).await
+            wrapper
+                .client
+                .subscribe(state_topic, rumqttc::QoS::AtLeastOnce)
+                .await
                 .map_err(|e| DeviceError::Communication(e.to_string()))?;
-            tracing::info!("Subscribed to HASS state topic: {} -> device {}, metric {}", state_topic, device_id, metric_name);
+            tracing::info!(
+                "Subscribed to HASS state topic: {} -> device {}, metric {}",
+                state_topic,
+                device_id,
+                metric_name
+            );
         } else {
-            tracing::info!("HASS state topic registered (will subscribe when connected): {} -> device {}, metric {}", state_topic, device_id, metric_name);
+            tracing::info!(
+                "HASS state topic registered (will subscribe when connected): {} -> device {}, metric {}",
+                state_topic,
+                device_id,
+                metric_name
+            );
         }
 
         Ok(())
@@ -1410,8 +1882,10 @@ impl MqttDeviceManager {
                     let metric_name = key.strip_prefix("hass_state:").unwrap_or(key);
                     let state_topic = value.clone();
                     // Update the map synchronously
-                    self.hass_state_topic_map.write().await
-                        .insert(state_topic.clone(), (device_id.clone(), metric_name.to_string()));
+                    self.hass_state_topic_map.write().await.insert(
+                        state_topic.clone(),
+                        (device_id.clone(), metric_name.to_string()),
+                    );
                     topic_mappings.push((device_id.clone(), metric_name.to_string(), state_topic));
                 }
             }
@@ -1425,17 +1899,28 @@ impl MqttDeviceManager {
                     // Use short timeout and fire-and-forget for subscriptions
                     match tokio::time::timeout(
                         Duration::from_millis(500),
-                        wrapper.client.subscribe(&state_topic, rumqttc::QoS::AtLeastOnce)
-                    ).await {
+                        wrapper
+                            .client
+                            .subscribe(&state_topic, rumqttc::QoS::AtLeastOnce),
+                    )
+                    .await
+                    {
                         Ok(Ok(_)) => {
                             tracing::debug!("Subscribed to HASS state topic: {}", state_topic);
                         }
                         Ok(Err(e)) => {
-                            tracing::debug!("Failed to subscribe to HASS state topic {}: {:?}", state_topic, e);
+                            tracing::debug!(
+                                "Failed to subscribe to HASS state topic {}: {:?}",
+                                state_topic,
+                                e
+                            );
                         }
                         Err(_) => {
                             // Silently skip timeout - subscription may succeed later via HASS discovery
-                            tracing::trace!("Timeout subscribing to HASS state topic: {} (will retry via discovery)", state_topic);
+                            tracing::trace!(
+                                "Timeout subscribing to HASS state topic: {} (will retry via discovery)",
+                                state_topic
+                            );
                         }
                     }
                 }
@@ -1447,7 +1932,12 @@ impl MqttDeviceManager {
 
     /// Get discovered HASS devices
     pub async fn get_hass_discovered_devices(&self) -> Vec<DiscoveredHassDevice> {
-        self.hass_discovered_devices.read().await.values().cloned().collect()
+        self.hass_discovered_devices
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Get discovered HASS devices aggregated by physical device
@@ -1463,8 +1953,15 @@ impl MqttDeviceManager {
     }
 
     /// Get a specific discovered HASS device by entity_id
-    pub async fn get_hass_discovered_device(&self, entity_id: &str) -> Option<DiscoveredHassDevice> {
-        self.hass_discovered_devices.read().await.get(entity_id).cloned()
+    pub async fn get_hass_discovered_device(
+        &self,
+        entity_id: &str,
+    ) -> Option<DiscoveredHassDevice> {
+        self.hass_discovered_devices
+            .read()
+            .await
+            .get(entity_id)
+            .cloned()
     }
 }
 
@@ -1478,97 +1975,18 @@ pub struct MqttDevice {
 }
 
 impl MqttDevice {
-    pub fn new(name: String, device_type: String, device_id: String, manager: Arc<MqttDeviceManager>) -> Self {
+    pub fn new(
+        name: String,
+        device_type: String,
+        device_id: String,
+        manager: Arc<MqttDeviceManager>,
+    ) -> Self {
         Self {
             id: DeviceId::new(),
             name,
             device_type,
             device_id,
             manager,
-        }
-    }
-}
-
-#[async_trait]
-impl Device for MqttDevice {
-    fn id(&self) -> &DeviceId {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn device_type(&self) -> DeviceCategory {
-        DeviceCategory::Sensor
-    }
-
-    fn capabilities(&self) -> Vec<DeviceCapability> {
-        vec![
-            DeviceCapability::ReadNumeric,
-            DeviceCapability::ReadData,
-            DeviceCapability::ExecuteCommand,
-        ]
-    }
-
-    fn metrics(&self) -> Vec<super::mdl::MetricDefinition> {
-        vec![]
-    }
-
-    fn commands(&self) -> Vec<String> {
-        vec![]
-    }
-
-    async fn read_metric(&self, metric: &str) -> Result<MetricValue, DeviceError> {
-        self.manager.read_metric(&self.device_id, metric).await
-    }
-
-    async fn write_command(&self, command: &Command) -> Result<Option<MetricValue>, DeviceError> {
-        let mut params = HashMap::new();
-        for (k, v) in &command.parameters {
-            params.insert(k.clone(), v.value.clone());
-        }
-        self.manager.send_command(&self.device_id, &command.name, params).await?;
-        Ok(None)
-    }
-
-    async fn connect(&mut self) -> Result<(), DeviceError> {
-        // Manager handles connection
-        Ok(())
-    }
-
-    async fn disconnect(&mut self) -> Result<(), DeviceError> {
-        Ok(())
-    }
-
-    async fn is_connected(&self) -> bool {
-        matches!(self.manager.connection_status().await, ConnectionStatus::Connected)
-    }
-
-    async fn state(&self) -> DeviceState {
-        DeviceState {
-            status: self.manager.connection_status().await,
-            last_seen: Some(chrono::Utc::now()),
-            error: None,
-        }
-    }
-
-    fn info(&self) -> DeviceInfo {
-        DeviceInfo {
-            id: self.id.clone(),
-            name: self.name.clone(),
-            device_type: DeviceCategory::Sensor,
-            protocol: "mqtt".to_string(),
-            status: ConnectionStatus::Connected,
-            capabilities: vec![
-                DeviceCapability::ReadNumeric,
-                DeviceCapability::ReadData,
-                DeviceCapability::ExecuteCommand,
-            ],
-            metrics: vec![],
-            commands: vec![],
-            location: None,
-            metadata: HashMap::new(),
         }
     }
 }

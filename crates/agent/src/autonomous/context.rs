@@ -3,20 +3,20 @@
 //! This module provides data collection capabilities for gathering
 //! system state information to support autonomous decision making.
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use edge_ai_core::eventbus::EventBus;
-use edge_ai_core::event::NeoTalkEvent;
-use edge_ai_storage::TimeSeriesStore;
-use edge_ai_rules::RuleHistoryStorage;
 use edge_ai_alerts::AlertManager;
+use edge_ai_core::event::NeoTalkEvent;
+use edge_ai_core::eventbus::EventBus;
+use edge_ai_rules::RuleHistoryStorage;
+use edge_ai_storage::TimeSeriesStore;
 
-use super::review::{DeviceStatus, RuleStatistics, AlertSummary, SystemMetrics};
+use super::review::{AlertSummary, DeviceStatus, RuleStatistics, SystemMetrics};
 
 /// System context containing all collected data for analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,23 +182,33 @@ impl ContextCollector {
             match tokio::time::timeout(timeout_duration - start.elapsed(), rx.recv()).await {
                 Ok(Some((event, _))) => {
                     match event {
-                        NeoTalkEvent::DeviceOnline { device_id, device_type, timestamp } => {
+                        NeoTalkEvent::DeviceOnline {
+                            device_id,
+                            device_type,
+                            timestamp,
+                        } => {
                             let status = DeviceStatus {
                                 device_id: device_id.clone(),
                                 name: device_id.clone(), // Use ID as name for now
                                 device_type,
                                 online: true,
-                                last_seen: DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now),
+                                last_seen: DateTime::from_timestamp(timestamp, 0)
+                                    .unwrap_or_else(Utc::now),
                                 metrics: HashMap::new(),
                                 health_score: Some(100.0), // Online = healthy
                             };
                             status_map.insert(device_id, status);
                         }
-                        NeoTalkEvent::DeviceOffline { device_id, reason: _, timestamp } => {
+                        NeoTalkEvent::DeviceOffline {
+                            device_id,
+                            reason: _,
+                            timestamp,
+                        } => {
                             // Update existing or create offline status
                             if let Some(status) = status_map.get_mut(&device_id) {
                                 status.online = false;
-                                status.last_seen = DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
+                                status.last_seen =
+                                    DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now);
                                 status.health_score = Some(0.0);
                             } else {
                                 let status = DeviceStatus {
@@ -206,20 +216,33 @@ impl ContextCollector {
                                     name: device_id.clone(),
                                     device_type: "unknown".to_string(),
                                     online: false,
-                                    last_seen: DateTime::from_timestamp(timestamp, 0).unwrap_or_else(Utc::now),
+                                    last_seen: DateTime::from_timestamp(timestamp, 0)
+                                        .unwrap_or_else(Utc::now),
                                     metrics: HashMap::new(),
                                     health_score: Some(0.0),
                                 };
                                 status_map.insert(device_id, status);
                             }
                         }
-                        NeoTalkEvent::DeviceMetric { device_id, metric, value, quality: _, timestamp } => {
+                        NeoTalkEvent::DeviceMetric {
+                            device_id,
+                            metric,
+                            value,
+                            quality: _,
+                            timestamp,
+                        } => {
                             // Update metrics for the device
                             if let Some(status) = status_map.get_mut(&device_id) {
                                 let num_value = match value {
                                     edge_ai_core::event::MetricValue::Float(v) => v,
                                     edge_ai_core::event::MetricValue::Integer(v) => v as f64,
-                                    edge_ai_core::event::MetricValue::Boolean(v) => if v { 1.0 } else { 0.0 },
+                                    edge_ai_core::event::MetricValue::Boolean(v) => {
+                                        if v {
+                                            1.0
+                                        } else {
+                                            0.0
+                                        }
+                                    }
                                     _ => 0.0,
                                 };
                                 status.metrics.insert(metric, num_value);
@@ -247,8 +270,7 @@ impl ContextCollector {
         if let Some(history) = &self.rule_history {
             use edge_ai_rules::HistoryFilter;
 
-            let filter = HistoryFilter::new()
-                .with_time_range(time_range.start, time_range.end);
+            let filter = HistoryFilter::new().with_time_range(time_range.start, time_range.end);
 
             let entries = history.query(&filter).await.unwrap_or_default();
 
@@ -303,7 +325,8 @@ impl ContextCollector {
             // Count alerts by status and severity
             for alert in all_alerts {
                 // Check if alert was created within time range
-                let in_range = alert.timestamp >= time_range.start && alert.timestamp <= time_range.end;
+                let in_range =
+                    alert.timestamp >= time_range.start && alert.timestamp <= time_range.end;
 
                 if in_range || matches!(alert.status, AlertStatus::Active) {
                     match alert.status {
@@ -318,7 +341,9 @@ impl ContextCollector {
 
                     // Count by severity (Emergency and Critical are "critical", Warning is "warning")
                     match alert.severity {
-                        AlertSeverity::Emergency | AlertSeverity::Critical => summary.critical_alerts += 1,
+                        AlertSeverity::Emergency | AlertSeverity::Critical => {
+                            summary.critical_alerts += 1
+                        }
                         AlertSeverity::Warning => summary.warning_alerts += 1,
                         _ => {}
                     }
@@ -385,7 +410,7 @@ impl ContextCollector {
             if let Ok(mut sys) = sysinfo::System::new_with_specifics(
                 sysinfo::RefreshKind::new()
                     .with_cpu(sysinfo::CpuRefreshKind::new())
-                    .with_memory(sysinfo::MemoryRefreshKind::new())
+                    .with_memory(sysinfo::MemoryRefreshKind::new()),
             ) {
                 sys.refresh_cpu();
                 sys.refresh_memory();
@@ -406,7 +431,9 @@ impl ContextCollector {
                     let total_disk = disk.total_space();
                     let available_disk = disk.available_space();
                     if total_disk > 0 {
-                        metrics.disk_usage = Some(((total_disk - available_disk) as f64 / total_disk as f64) * 100.0);
+                        metrics.disk_usage = Some(
+                            ((total_disk - available_disk) as f64 / total_disk as f64) * 100.0,
+                        );
                     }
                 }
             }
@@ -426,14 +453,16 @@ impl ContextCollector {
                             if let Some(val) = line.split_whitespace().nth(1) {
                                 total_mem = val.parse().unwrap_or(0);
                             }
-                        } else if line.starts_with("MemAvailable:") || line.starts_with("MemFree:") {
+                        } else if line.starts_with("MemAvailable:") || line.starts_with("MemFree:")
+                        {
                             if let Some(val) = line.split_whitespace().nth(1) {
                                 free_mem += val.parse().unwrap_or(0);
                             }
                         }
                     }
                     if total_mem > 0 {
-                        metrics.memory_usage = Some(((total_mem - free_mem) as f64 / total_mem as f64) * 100.0);
+                        metrics.memory_usage =
+                            Some(((total_mem - free_mem) as f64 / total_mem as f64) * 100.0);
                     }
                 }
 
@@ -492,9 +521,7 @@ impl ContextCollector {
         let max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
         // Calculate standard deviation
-        let variance = values.iter()
-            .map(|&x| (x - avg).powi(2))
-            .sum::<f64>() / count as f64;
+        let variance = values.iter().map(|&x| (x - avg).powi(2)).sum::<f64>() / count as f64;
         let std_dev = variance.sqrt();
 
         MetricAggregation {
@@ -614,18 +641,14 @@ mod tests {
 
     #[test]
     fn test_metric_aggregation_calculations() {
-        let values = vec
-![1.0, 2.0, 3.0, 4.0, 5.0];
-        let count = values.len()
-;
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let count = values.len();
         let sum: f64 = values.iter().sum();
         let avg = sum / count as f64;
         let min = 1.0;
         let max = 5.0;
 
-        let variance = values.iter()
-            .map(|&x| (x - avg).powi(2))
-            .sum::<f64>() / count as f64;
+        let variance = values.iter().map(|&x| (x - avg).powi(2)).sum::<f64>() / count as f64;
         let std_dev = variance.sqrt();
 
         assert_eq!(avg, 3.0);
@@ -667,15 +690,11 @@ mod tests {
     #[test]
     fn test_median() {
         let agg = MetricAggregation::default();
-        let odd_values = vec
-![1.0, 2.0, 3.0, 4.0, 5.0];
-        let even_values = vec
-![1.0, 2.0, 3.0, 4.0];
+        let odd_values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let even_values = vec![1.0, 2.0, 3.0, 4.0];
 
-        assert_eq!(agg.median(odd_values)
-, 3.0);
-        assert_eq!(agg.median(even_values)
-, 2.5);
+        assert_eq!(agg.median(odd_values), 3.0);
+        assert_eq!(agg.median(even_values), 2.5);
     }
 
     #[tokio::test]

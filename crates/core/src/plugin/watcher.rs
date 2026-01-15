@@ -4,13 +4,13 @@
 //! and hot-reload them when they change, without requiring a service restart.
 
 use crate::plugin::PluginError;
-use notify::{ RecommendedWatcher, Watcher, Event, EventKind};
+use notify::{Event, EventKind, RecommendedWatcher, Watcher};
 use serde_json::Value;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use std::ops::Deref;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 /// Callback for when a configuration file changes.
 pub type ConfigChangeCallback = Arc<dyn Fn(&PathBuf, &Value) + Send + Sync>;
@@ -55,11 +55,14 @@ impl ConfigWatcher {
 
         // Spawn the watcher task
         let handle = tokio::spawn(async move {
-            let mut _watcher = match RecommendedWatcher::new(move |res| {
-                if let Ok(event) = res {
-                    let _ = tx.send(event);
-                }
-            }, notify::Config::default()) {
+            let mut _watcher = match RecommendedWatcher::new(
+                move |res| {
+                    if let Ok(event) = res {
+                        let _ = tx.send(event);
+                    }
+                },
+                notify::Config::default(),
+            ) {
                 Ok(w) => w,
                 Err(e) => {
                     tracing::error!("Failed to create file watcher: {}", e);
@@ -89,11 +92,7 @@ impl ConfigWatcher {
     /// # Arguments
     /// * `path` - Path to the configuration file
     /// * `callback` - Function to call when the file changes
-    pub async fn watch<F>(
-        &self,
-        path: impl AsRef<Path>,
-        callback: F,
-    ) -> Result<(), PluginError>
+    pub async fn watch<F>(&self, path: impl AsRef<Path>, callback: F) -> Result<(), PluginError>
     where
         F: Fn(&PathBuf, &Value) + Send + Sync + 'static,
     {
@@ -166,22 +165,26 @@ impl ConfigWatcher {
 
     /// Load configuration from file.
     fn load_config(path: &Path) -> Result<Value, PluginError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| PluginError::InitializationFailed(format!("Failed to read config: {}", e)))?;
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            PluginError::InitializationFailed(format!("Failed to read config: {}", e))
+        })?;
 
         // Determine format from extension
         let config = match path.extension().and_then(|e| e.to_str()) {
-            Some("json") => serde_json::from_str::<Value>(&content)
-                .map_err(|e| PluginError::InitializationFailed(format!("Failed to parse JSON: {}", e)))?,
+            Some("json") => serde_json::from_str::<Value>(&content).map_err(|e| {
+                PluginError::InitializationFailed(format!("Failed to parse JSON: {}", e))
+            })?,
             Some("toml") => {
-                let toml_value: toml::Value = toml::from_str(&content)
-                    .map_err(|e| PluginError::InitializationFailed(format!("Failed to parse TOML: {}", e)))?;
-                serde_json::to_value(&toml_value)
-                    .map_err(|e| PluginError::InitializationFailed(format!("Failed to convert TOML: {}", e)))?
+                let toml_value: toml::Value = toml::from_str(&content).map_err(|e| {
+                    PluginError::InitializationFailed(format!("Failed to parse TOML: {}", e))
+                })?;
+                serde_json::to_value(&toml_value).map_err(|e| {
+                    PluginError::InitializationFailed(format!("Failed to convert TOML: {}", e))
+                })?
             }
             _ => {
                 return Err(PluginError::InitializationFailed(
-                    "Unknown config format (expected .json or .toml)".to_string()
+                    "Unknown config format (expected .json or .toml)".to_string(),
                 ));
             }
         };
@@ -245,8 +248,10 @@ impl ConfigWatcher {
                 let mut last_modified = last_modified.write().await;
                 let should = match *last_modified {
                     Some(last_time) => {
-                        now.duration_since(last_time).unwrap_or(Duration::ZERO)
-                            .as_millis() >= debounce_ms as u128
+                        now.duration_since(last_time)
+                            .unwrap_or(Duration::ZERO)
+                            .as_millis()
+                            >= debounce_ms as u128
                     }
                     None => true,
                 };
@@ -293,11 +298,7 @@ impl ConfigReloadManager {
     }
 
     /// Register a callback for a specific file.
-    pub async fn register<F>(
-        &self,
-        path: impl AsRef<Path>,
-        callback: F,
-    ) -> Result<(), PluginError>
+    pub async fn register<F>(&self, path: impl AsRef<Path>, callback: F) -> Result<(), PluginError>
     where
         F: Fn(&PathBuf, &Value) + Send + Sync + 'static,
     {
@@ -390,10 +391,7 @@ impl<T: 'static> HotConfig<T> {
     /// # Arguments
     /// * `path` - Path to the configuration file
     /// * `converter` - Function to convert JSON value to T
-    pub async fn new<F>(
-        path: impl AsRef<Path>,
-        converter: F,
-    ) -> Result<Self, PluginError>
+    pub async fn new<F>(path: impl AsRef<Path>, converter: F) -> Result<Self, PluginError>
     where
         F: Fn(&Value) -> Result<T, PluginError> + Send + Sync + 'static,
     {

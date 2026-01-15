@@ -1,13 +1,16 @@
 //! Session management handlers.
 
-use axum::{extract::{Path, State, Query}, response::Json};
-use axum::extract::ws::{WebSocketUpgrade, WebSocket, Message as AxumMessage};
-use futures::stream::{StreamExt, Stream};
+use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
+use axum::{
+    extract::{Path, Query, State},
+    response::Json,
+};
+use futures::stream::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use std::pin::Pin;
 use tokio::sync::mpsc;
 
 use edge_ai_agent::AgentEvent;
@@ -44,7 +47,10 @@ async fn process_stream_to_channel(
                 event_count += 1;
                 let event_json = match &event {
                     AgentEvent::Thinking { content } => {
-                        tracing::debug!("Sending Thinking event: {} chars", content.chars().count());
+                        tracing::debug!(
+                            "Sending Thinking event: {} chars",
+                            content.chars().count()
+                        );
                         json!({
                             "type": "Thinking",
                             "content": content,
@@ -52,8 +58,11 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::Content { content } => {
-                        tracing::debug!("Sending Content event: {} chars (event #{})",
-                            content.chars().count(), event_count);
+                        tracing::debug!(
+                            "Sending Content event: {} chars (event #{})",
+                            content.chars().count(),
+                            event_count
+                        );
                         json!({
                             "type": "Content",
                             "content": content,
@@ -69,8 +78,16 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
-                    AgentEvent::ToolCallEnd { tool, result, success } => {
-                        tracing::debug!("Sending ToolCallEnd event: {}, success: {}", tool, success);
+                    AgentEvent::ToolCallEnd {
+                        tool,
+                        result,
+                        success,
+                    } => {
+                        tracing::debug!(
+                            "Sending ToolCallEnd event: {}, success: {}",
+                            tool,
+                            success
+                        );
                         json!({
                             "type": "ToolCallEnd",
                             "tool": tool,
@@ -87,11 +104,70 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
+                    AgentEvent::Intent {
+                        category,
+                        display_name,
+                        confidence,
+                        keywords,
+                    } => {
+                        tracing::debug!(
+                            "Sending Intent event: {} (confidence: {:.2})",
+                            display_name,
+                            confidence.unwrap_or(0.0)
+                        );
+                        json!({
+                            "type": "Intent",
+                            "category": category,
+                            "displayName": display_name,
+                            "confidence": confidence,
+                            "keywords": keywords,
+                            "sessionId": session_id,
+                        })
+                    }
+                    AgentEvent::Plan { step, stage } => {
+                        tracing::debug!("Sending Plan event: {} ({})", step, stage);
+                        json!({
+                            "type": "Plan",
+                            "step": step,
+                            "stage": stage,
+                            "sessionId": session_id,
+                        })
+                    }
                     AgentEvent::End => {
-                        tracing::debug!("Sending End event (total events: {})", event_count);
+                        tracing::info!("*** Sending End event (total events: {}) ***", event_count);
                         end_event_sent = true;
                         json!({
                             "type": "end",
+                            "sessionId": session_id,
+                        })
+                    }
+                    AgentEvent::Progress {
+                        message,
+                        stage,
+                        elapsed_ms,
+                        ..
+                    } => {
+                        tracing::debug!("Sending Progress event: {} ({})", message, stage.as_deref().unwrap_or("unknown"));
+                        json!({
+                            "type": "Progress",
+                            "message": message,
+                            "stage": stage,
+                            "elapsedMs": elapsed_ms,
+                            "sessionId": session_id,
+                        })
+                    }
+                    AgentEvent::Heartbeat { timestamp } => {
+                        json!({
+                            "type": "Heartbeat",
+                            "timestamp": timestamp,
+                            "sessionId": session_id,
+                        })
+                    }
+                    AgentEvent::Warning { message } => {
+                        tracing::debug!("Sending Warning event: {}", message);
+                        json!({
+                            "type": "Warning",
+                            "message": message,
                             "sessionId": session_id,
                         })
                     }
@@ -163,9 +239,7 @@ async fn process_stream_to_channel(
     }
 }
 use crate::models::{
-    ChatRequest, ChatResponse, ErrorResponse,
-    pagination::Pagination,
-    common::ApiResponse,
+    ChatRequest, ChatResponse, ErrorResponse, common::ApiResponse, pagination::Pagination,
 };
 
 use super::ServerState;
@@ -185,7 +259,10 @@ pub struct SessionListItem {
 pub async fn create_session_handler(
     State(state): State<ServerState>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    let session_id = state.session_manager.create_session().await
+    let session_id = state
+        .session_manager
+        .create_session()
+        .await
         .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
 
     Ok(Json(ApiResponse::success(json!({
@@ -204,8 +281,12 @@ pub struct ListSessionsQuery {
     pub page_size: u32,
 }
 
-fn default_page() -> u32 { 1 }
-fn default_page_size() -> u32 { 20 }
+fn default_page() -> u32 {
+    1
+}
+fn default_page_size() -> u32 {
+    20
+}
 
 /// List all sessions with pagination.
 pub async fn list_sessions_handler(
@@ -232,10 +313,7 @@ pub async fn list_sessions_handler(
 
     let meta = pagination.meta(total_count);
 
-    Ok(Json(ApiResponse::paginated(
-        paginated_sessions,
-        meta,
-    )))
+    Ok(Json(ApiResponse::paginated(paginated_sessions, meta)))
 }
 
 /// Get session info.
@@ -243,7 +321,10 @@ pub async fn get_session_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    let agent = state.session_manager.get_session(&id).await
+    let agent = state
+        .session_manager
+        .get_session(&id)
+        .await
         .map_err(|_| ErrorResponse::not_found("Session"))?;
 
     Ok(Json(ApiResponse::success(json!({
@@ -257,7 +338,10 @@ pub async fn get_session_history_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    let history = state.session_manager.get_history(&id).await
+    let history = state
+        .session_manager
+        .get_history(&id)
+        .await
         .map_err(|_| ErrorResponse::not_found("Session"))?;
 
     Ok(Json(ApiResponse::success(json!({
@@ -271,7 +355,10 @@ pub async fn delete_session_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    state.session_manager.remove_session(&id).await
+    state
+        .session_manager
+        .remove_session(&id)
+        .await
         .map_err(|e| {
             // Check if it's a NotFound error
             if format!("{}", e).contains("Session:") || format!("{}", e).contains("not found") {
@@ -301,7 +388,10 @@ pub async fn update_session_handler(
     Path(id): Path<String>,
     Json(req): Json<UpdateSessionRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
-    state.session_manager.update_session_title(&id, req.title).await
+    state
+        .session_manager
+        .update_session_title(&id, req.title)
+        .await
         .map_err(|e| ErrorResponse::with_message(e.to_string()))?;
 
     Ok(Json(ApiResponse::success(json!({
@@ -329,12 +419,17 @@ pub async fn chat_handler(
     Path(id): Path<String>,
     Json(req): Json<ChatRequest>,
 ) -> Result<Json<ChatResponse>, ErrorResponse> {
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     // Add a 120-second timeout to support thinking models
     // QWEN3 with thinking enabled can take 60-90 seconds for complex queries
     // due to the model's repetitive thinking generation, especially with longer context
-    let response = match timeout(Duration::from_secs(120), state.session_manager.process_message(&id, &req.message)).await {
+    let response = match timeout(
+        Duration::from_secs(120),
+        state.session_manager.process_message(&id, &req.message),
+    )
+    .await
+    {
         Ok(Ok(resp)) => resp,
         Ok(Err(e)) => return Err(ErrorResponse::with_message(e.to_string())),
         Err(_) => {
@@ -368,29 +463,28 @@ pub async fn ws_chat_handler(
 ) -> axum::response::Response {
     // Extract and validate JWT token
     let session_info = match params.get("token") {
-        Some(token) => {
-            match state.auth_user_state.validate_token(token) {
-                Ok(info) => {
-                    tracing::info!(
-                        username = %info.username,
-                        role = info.role.as_str(),
-                        "WebSocket authenticated via JWT"
-                    );
-                    Some(info)
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
-                    return ws.on_upgrade(|mut socket| {
-                        async move {
-                            let _ = socket.send(AxumMessage::Text(
-                                json!({"type": "Error", "message": "Invalid or expired token"}).to_string()
-                            )).await;
-                            let _ = socket.close().await;
-                        }
-                    });
-                }
+        Some(token) => match state.auth_user_state.validate_token(token) {
+            Ok(info) => {
+                tracing::info!(
+                    username = %info.username,
+                    role = info.role.as_str(),
+                    "WebSocket authenticated via JWT"
+                );
+                Some(info)
             }
-        }
+            Err(e) => {
+                tracing::warn!(error = %e, "JWT validation failed, rejecting WebSocket connection");
+                return ws.on_upgrade(|mut socket| async move {
+                    let _ = socket
+                        .send(AxumMessage::Text(
+                            json!({"type": "Error", "message": "Invalid or expired token"})
+                                .to_string(),
+                        ))
+                        .await;
+                    let _ = socket.close().await;
+                });
+            }
+        },
         None => {
             tracing::warn!("No authentication provided, rejecting WebSocket connection");
             return ws.on_upgrade(|mut socket| {
@@ -422,7 +516,8 @@ async fn handle_ws_socket(
     let mut device_update_rx = state.device_update_tx.subscribe();
 
     // Heartbeat interval
-    let mut heartbeat_interval = tokio::time::interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
+    let mut heartbeat_interval =
+        tokio::time::interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
 
     // Channel for receiving LLM stream events from spawned tasks
     // This keeps the main event loop responsive to WebSocket pings
@@ -433,7 +528,8 @@ async fn handle_ws_socket(
         "type": "system",
         "content": "Connected to Edge AI Agent",
         "sessionId": session_id,
-    }).to_string();
+    })
+    .to_string();
 
     if socket.send(AxumMessage::Text(welcome)).await.is_err() {
         return;
@@ -604,14 +700,17 @@ async fn handle_ws_socket(
             stream_event = stream_rx.recv() => {
                 match stream_event {
                     Some(event) => {
+                        tracing::debug!("WS sending event: {}", event.json.chars().take(100).collect::<String>());
                         if socket.send(AxumMessage::Text(event.json)).await.is_err() {
                             // Client disconnected, stop processing stream events
+                            tracing::warn!("WS send failed, client disconnected");
                             break;
                         }
                     }
                     None => {
                         // Channel closed (all tasks dropped their senders)
                         // This is normal - continue waiting for new messages
+                        tracing::debug!("WS channel closed (task completed)");
                     }
                 }
             }

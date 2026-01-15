@@ -5,10 +5,10 @@
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use tokio::sync::{mpsc, RwLock, Semaphore};
 use serde::{Deserialize, Serialize};
+use tokio::sync::{RwLock, Semaphore, mpsc};
 
-use crate::command::{CommandRequest, CommandId};
+use crate::command::{CommandId, CommandRequest};
 
 /// Queue statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,7 +114,10 @@ impl CommandQueue {
     /// Enqueue a command.
     pub async fn enqueue(&self, command: CommandRequest) -> Result<(), QueueError> {
         // Check semaphore for available slots
-        let _permit = self.semaphore.acquire().await
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
             .map_err(|_| QueueError::Closed)?;
 
         let command_id = command.id.clone();
@@ -143,9 +146,7 @@ impl CommandQueue {
     /// Try to dequeue the next command (non-blocking).
     pub async fn try_dequeue(&self) -> Option<CommandRequest> {
         let mut inner = self.inner.write().await;
-        inner.queue.pop().map(|item| {
-            item.command
-        })
+        inner.queue.pop().map(|item| item.command)
     }
 
     /// Get queue statistics.
@@ -218,7 +219,7 @@ pub enum QueueError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::{CommandSource, CommandPriority};
+    use crate::command::{CommandPriority, CommandSource};
 
     #[tokio::test]
     async fn test_queue_enqueue_dequeue() {

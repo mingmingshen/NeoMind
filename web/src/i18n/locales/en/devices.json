@@ -87,6 +87,7 @@
     "name": "Name",
     "type": "Type",
     "adapter": "Adapter",
+    "plugin": "Plugin",
     "status": "Status",
     "lastOnline": "Last Online",
     "actions": "Actions"
@@ -100,8 +101,8 @@
       "status": "Status",
       "lastOnline": "Last Online",
       "adapter": "Adapter/Broker",
-      "uplinkTopic": "Uplink Topic (Device → System)",
-      "downlinkTopic": "Downlink Topic (System → Device)"
+      "telemetryTopic": "Telemetry Topic (Device → System)",
+      "commandTopic": "Command Topic (System → Device)"
     },
     "tabs": {
       "connection": "Connection Details",
@@ -123,7 +124,12 @@
       "noData": "No history data available for this metric"
     },
     "noHistory": "No history data available",
-    "noMetrics": "No metrics data available"
+    "noMetrics": "No metrics data available",
+    "rawData": {
+      "title": "Raw Data",
+      "records": "records",
+      "noData": "No raw data available"
+    }
   },
   "history": {
     "time": "Time",
@@ -239,6 +245,20 @@
     "loading": "Loading device types...",
     "noTypes": "No device types",
     "startUsing": "Click \"Add Type\" above to define device metrics and commands",
+    "deviceTypes": "Device Types",
+    "totalTypes": "Total Types",
+    "formMode": "Form",
+    "jsonMode": "JSON",
+    "aiMode": "AI",
+    "validationError": "Validation Error",
+    "requiredFields": "Required fields are missing",
+    "generatedFilled": "Device type generated! Review and edit in the form.",
+    "validation": {
+      "deviceTypeRequired": "Type ID is required",
+      "nameRequired": "Name is required",
+      "metricNameRequired": "Metric name is required",
+      "commandNameRequired": "Command name is required"
+    },
     "headers": {
       "id": "Type ID",
       "name": "Name",
@@ -275,12 +295,12 @@
       "nameExample": "e.g. Temperature & Humidity Sensor",
       "description": "Device Description",
       "descExample": "Describe the device's functionality and purpose...",
-      "uplink": "Uplink Data Sample (Device → System)",
-      "uplinkExample": "e.g. {\"temperature\": 25.5, \"humidity\": 60}",
-      "uplinkHint": "Enter sample data reported by device (JSON format)",
-      "downlink": "Downlink Data Sample (System → Device)",
-      "downlinkExample": "e.g. {\"command\": \"set_interval\", \"interval\": 60}",
-      "downlinkHint": "Enter sample command to send to device (optional)"
+      "metrics": "Metrics Example (Device → System)",
+      "metricsExample": "e.g. {\"temperature\": 25.5, \"humidity\": 60}",
+      "metricsHint": "Enter sample data reported by device (JSON format)",
+      "commands": "Commands Example (System → Device)",
+      "commandsExample": "e.g. {\"command\": \"set_interval\", \"interval\": 60}",
+      "commandsHint": "Enter sample command(s). Supports multiple JSON: {\"action\": \"on\"} {\"action\": \"off\"}"
     },
     "advanced": {
       "format": "JSON format device type definition",
@@ -305,9 +325,8 @@
     "view": {
       "title": "Device Type Details",
       "basicInfo": "Basic Information",
-      "uplink": "Uplink Metrics",
-      "downlink": "Downlink Commands",
       "id": "Type ID",
+      "typeId": "Type ID",
       "name": "Name",
       "description": "Description",
       "noDescription": "No description",
@@ -320,19 +339,20 @@
       "unit": "Unit: {{unit}}",
       "topic": "Topic: {{topic}}",
       "noMetrics": "No metrics defined",
-      "noCommands": "No commands defined"
+      "noCommands": "No commands defined",
+      "parameters": "Parameters",
+      "params": "params"
     },
     "edit": {
       "title": "Edit Device Type",
       "basicInfo": "Basic Information",
-      "uplink": "Uplink Metrics",
-      "downlink": "Downlink Commands",
       "typeId": "Type ID",
       "idReadOnly": "Type ID cannot be modified",
       "typeName": "Type Name",
       "typeNamePlaceholder": "e.g. MQTT Sensor",
       "description": "Description",
       "descPlaceholder": "Device type description",
+      "definitionMode": "Definition Mode",
       "metrics": "Metrics Definition ({{count}})",
       "addMetric": "Add Metric",
       "noMetrics": "No metrics defined",
@@ -340,10 +360,14 @@
       "displayNamePlaceholder": "Temperature",
       "fieldName": "Field Name",
       "fieldNamePlaceholder": "field_name",
+      "fieldNameHint": "Supports nested keys (up to 10 levels), e.g. temp.value.new or data.sensor.reading.temperature",
       "dataType": "Data Type",
       "unit": "Unit (optional)",
       "unitPlaceholder": "℃, kg, m...",
       "newMetric": "New Metric",
+      "uplinkSamples": "Uplink Data Samples",
+      "samplesDescription": "Enter sample uplink data (one JSON object per line). LLM will use these samples to understand the data structure.",
+      "samplesHint": "One JSON object per line. For example: {\"temperature\": 25.5}",
       "commands": "Commands Definition ({{count}})",
       "addCommand": "Add Command",
       "noCommands": "No commands defined",
@@ -351,8 +375,23 @@
       "cmdName": "Command Name",
       "cmdNamePlaceholder": "command_name",
       "topicPlaceholder": "device/command/xxx",
+      "payloadTemplate": "Payload Template",
+      "payloadTemplateHint": "Use ${param} for variable substitution",
+      "llmHints": "LLM Usage Hints",
+      "llmHintsPlaceholder": "Describe when and how to use this command...",
+      "llmHintsDescription": "Provide hints for LLM to understand when to call this command and how to use it.",
+      "commandSamples": "Command Samples",
+      "commandSamplesHint": "One JSON object per line. For example: {\"action\": \"on\"}",
+      "defaultValue": "Default",
+      "noParameters": "No parameters",
       "newCommand": "New Command",
       "saving": "Saving..."
+    },
+    "mode": {
+      "full": "Full Mode",
+      "fullDescription": "Define detailed metrics structure with data types and validation",
+      "simple": "Simple Mode",
+      "simpleDescription": "Store raw data, LLM interprets structure from samples"
     },
     "update": {
       "success": "Saved successfully",

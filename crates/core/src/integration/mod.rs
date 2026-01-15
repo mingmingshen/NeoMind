@@ -321,10 +321,7 @@ pub enum IntegrationCommand {
     },
 
     /// Query current state.
-    Query {
-        target: String,
-        query_type: String,
-    },
+    Query { target: String, query_type: String },
 }
 
 /// Response from an integration command.
@@ -520,8 +517,14 @@ mod tests {
     fn test_integration_type() {
         assert_eq!(IntegrationType::Hass.as_str(), "hass");
         assert_eq!(IntegrationType::Mqtt.as_str(), "mqtt");
-        assert_eq!(IntegrationType::from_str("mqtt"), Some(IntegrationType::Mqtt));
-        assert_eq!(IntegrationType::from_str("unknown"), Some(IntegrationType::Custom("unknown".to_string())));
+        assert_eq!(
+            IntegrationType::from_str("mqtt"),
+            Some(IntegrationType::Mqtt)
+        );
+        assert_eq!(
+            IntegrationType::from_str("unknown"),
+            Some(IntegrationType::Custom("unknown".to_string()))
+        );
     }
 
     #[test]

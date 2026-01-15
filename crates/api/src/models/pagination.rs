@@ -32,10 +32,9 @@ impl PaginationParams {
     /// Create pagination params from a query map.
     pub fn from_query_map(query: &HashMap<String, String>) -> Self {
         Self {
-            page: query.get("page")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(1),
-            page_size: query.get("page_size")
+            page: query.get("page").and_then(|s| s.parse().ok()).unwrap_or(1),
+            page_size: query
+                .get("page_size")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(DEFAULT_PAGE_SIZE)
                 .min(MAX_PAGE_SIZE),
@@ -143,7 +142,11 @@ impl From<Query<PaginationParams>> for Pagination {
 }
 
 /// Helper to create a paginated response.
-pub fn paginated<T>(data: Vec<T>, pagination: &Pagination, total_count: u32) -> PaginatedResponse<T> {
+pub fn paginated<T>(
+    data: Vec<T>,
+    pagination: &Pagination,
+    total_count: u32,
+) -> PaginatedResponse<T> {
     PaginatedResponse {
         data,
         pagination: pagination.meta(total_count),

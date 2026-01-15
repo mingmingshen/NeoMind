@@ -4,10 +4,10 @@
 //! supporting multiple backends (Hailo, Candle, Cloud, etc.).
 
 use async_trait::async_trait;
-use std::pin::Pin;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use futures::Stream;
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::{Arc, RwLock};
 
 use super::modality::{ImageContent, ModalityContent};
 use crate::message::{Message, MessageRole};
@@ -153,7 +153,7 @@ impl Default for GenerationParams {
             stop: None,
             frequency_penalty: Some(0.0),
             presence_penalty: Some(0.0),
-            thinking_enabled: None,  // Let backend decide based on model capabilities
+            thinking_enabled: None, // Let backend decide based on model capabilities
         }
     }
 }
@@ -244,7 +244,11 @@ impl LlmInput {
                 let text = msg.text();
                 msg.content = crate::message::Content::text(format!(
                     "{} <image>",
-                    if text.is_empty() { "Describe this image." } else { &text }
+                    if text.is_empty() {
+                        "Describe this image."
+                    } else {
+                        &text
+                    }
                 ));
             }
         }
@@ -416,11 +420,13 @@ impl BackendRegistry {
         &self,
         config: &serde_json::Value,
     ) -> Result<Box<dyn LlmRuntime>, LlmError> {
-        let backend_id = config.get("backend")
+        let backend_id = config
+            .get("backend")
             .and_then(|v| v.as_str())
             .ok_or_else(|| LlmError::InvalidInput("Missing 'backend' field in config".into()))?;
 
-        let factory = self.get_factory(backend_id)
+        let factory = self
+            .get_factory(backend_id)
             .ok_or_else(|| LlmError::BackendUnavailable(backend_id.to_string()))?;
 
         factory.validate_config(config)?;
@@ -438,8 +444,13 @@ impl BackendRegistry {
     }
 
     /// Check if a backend meets the given requirements.
-    fn meets_requirements(&self, backend_id: &str, req: &BackendRequirements) -> Result<bool, LlmError> {
-        let factory = self.get_factory(backend_id)
+    fn meets_requirements(
+        &self,
+        backend_id: &str,
+        req: &BackendRequirements,
+    ) -> Result<bool, LlmError> {
+        let factory = self
+            .get_factory(backend_id)
             .ok_or_else(|| LlmError::BackendUnavailable(backend_id.to_string()))?;
 
         // Create a temp instance to check capabilities
@@ -540,7 +551,8 @@ impl BackendMetrics {
         self.successful_requests += 1;
         self.total_tokens += tokens;
         self.avg_latency_ms = (self.avg_latency_ms * (self.total_requests - 1) as f64
-            + latency_ms as f64) / self.total_requests as f64;
+            + latency_ms as f64)
+            / self.total_requests as f64;
         self.last_request = Some(std::time::SystemTime::now());
     }
 
@@ -650,12 +662,16 @@ impl BackendCapabilities {
 
     /// Check if all specified capabilities are supported.
     pub fn supports_all(&self, capabilities: &[&str]) -> bool {
-        capabilities.iter().all(|cap| self.modalities.contains(&cap.to_string()))
+        capabilities
+            .iter()
+            .all(|cap| self.modalities.contains(&cap.to_string()))
     }
 
     /// Check if any of the specified capabilities are supported.
     pub fn supports_any(&self, capabilities: &[&str]) -> bool {
-        capabilities.iter().any(|cap| self.modalities.contains(&cap.to_string()))
+        capabilities
+            .iter()
+            .any(|cap| self.modalities.contains(&cap.to_string()))
     }
 
     /// Add a capability.
@@ -810,7 +826,8 @@ impl LlmRuntime for DynamicLlmRuntime {
     }
 
     async fn generate(&self, input: LlmInput) -> Result<LlmOutput, LlmError> {
-        let backend = self.default_backend()
+        let backend = self
+            .default_backend()
             .ok_or_else(|| LlmError::BackendUnavailable(format!("{:?}", self.default_backend)))?;
         backend.generate(input).await
     }
@@ -819,7 +836,8 @@ impl LlmRuntime for DynamicLlmRuntime {
         &self,
         input: LlmInput,
     ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
-        let backend = self.default_backend()
+        let backend = self
+            .default_backend()
             .ok_or_else(|| LlmError::BackendUnavailable(format!("{:?}", self.default_backend)))?;
         backend.generate_stream(input).await
     }

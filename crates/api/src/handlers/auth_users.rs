@@ -1,14 +1,14 @@
 //! User authentication API handlers.
 
 use axum::{
-    extract::{Path, State, Extension},
+    extract::{Extension, Path, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
 };
 
 use crate::auth_users::{
-    AuthUserState, AuthError, LoginRequest, RegisterRequest,
-    ChangePasswordRequest, UserInfo, SessionInfo, UserRole, LoginResponse,
+    AuthError, AuthUserState, ChangePasswordRequest, LoginRequest, LoginResponse, RegisterRequest,
+    SessionInfo, UserInfo, UserRole,
 };
 use crate::server::ServerState;
 
@@ -17,7 +17,10 @@ pub async fn login_handler(
     State(state): State<ServerState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AuthError> {
-    let response = state.auth_user_state.login(&req.username, &req.password).await?;
+    let response = state
+        .auth_user_state
+        .login(&req.username, &req.password)
+        .await?;
     Ok(Json(response))
 }
 
@@ -28,7 +31,10 @@ pub async fn register_handler(
     Json(req): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), AuthError> {
     let role = req.role.unwrap_or(UserRole::User);
-    let (user, token) = state.auth_user_state.register(&req.username, &req.password, role).await?;
+    let (user, token) = state
+        .auth_user_state
+        .register(&req.username, &req.password, role)
+        .await?;
     let response = serde_json::json!({
         "token": token,
         "user": user
@@ -44,7 +50,9 @@ pub async fn logout_handler(
     // Note: In a real implementation, you'd track which token to invalidate
     // For now, we just acknowledge the logout
     tracing::info!(username = %user.username, "User logged out");
-    Ok(Json(serde_json::json!({"message": "Logged out successfully"})))
+    Ok(Json(
+        serde_json::json!({"message": "Logged out successfully"}),
+    ))
 }
 
 /// Get current user info handler.
@@ -65,8 +73,13 @@ pub async fn change_password_handler(
     Extension(user): Extension<SessionInfo>,
     Json(req): Json<ChangePasswordRequest>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    state.auth_user_state.change_password(&user.username, &req.old_password, &req.new_password).await?;
-    Ok(Json(serde_json::json!({"message": "Password changed successfully"})))
+    state
+        .auth_user_state
+        .change_password(&user.username, &req.old_password, &req.new_password)
+        .await?;
+    Ok(Json(
+        serde_json::json!({"message": "Password changed successfully"}),
+    ))
 }
 
 /// List all users handler (admin only).
@@ -96,7 +109,10 @@ pub async fn create_user_handler(
 
     let role = req.role.unwrap_or(UserRole::User);
     let role_str = role.as_str(); // Store role string before moving role
-    let (user, _token) = state.auth_user_state.register(&req.username, &req.password, role).await?;
+    let (user, _token) = state
+        .auth_user_state
+        .register(&req.username, &req.password, role)
+        .await?;
 
     tracing::info!(
         admin = %admin_user.username,
@@ -121,7 +137,9 @@ pub async fn delete_user_handler(
 
     // Prevent self-deletion
     if username == admin_user.username {
-        return Err(AuthError::InvalidInput("Cannot delete your own account".into()));
+        return Err(AuthError::InvalidInput(
+            "Cannot delete your own account".into(),
+        ));
     }
 
     state.auth_user_state.delete_user(&username).await?;
@@ -132,5 +150,7 @@ pub async fn delete_user_handler(
         "Admin deleted user"
     );
 
-    Ok(Json(serde_json::json!({"message": format!("User '{}' deleted successfully", username)})))
+    Ok(Json(
+        serde_json::json!({"message": format!("User '{}' deleted successfully", username)}),
+    ))
 }

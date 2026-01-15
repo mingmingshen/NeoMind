@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { LoadingState, EmptyStateInline, Pagination, BulkActionBar, ActionBar, StatusBadge } from "@/components/shared"
+import { Badge } from "@/components/ui/badge"
 import { Eye, Trash2, Home, Server, Plus, Radar } from "lucide-react"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -180,6 +181,7 @@ export function DeviceList({
                 <TableHead>{t('devices:headers.name')}</TableHead>
                 <TableHead>{t('devices:headers.type')}</TableHead>
                 <TableHead>{t('devices:headers.adapter')}</TableHead>
+                <TableHead>{t('devices:headers.plugin')}</TableHead>
                 <TableHead align="center">{t('devices:headers.status')}</TableHead>
                 <TableHead>{t('devices:headers.lastOnline')}</TableHead>
                 <TableHead align="right">{t('devices:headers.actions')}</TableHead>
@@ -187,7 +189,7 @@ export function DeviceList({
             </TableHeader>
             <TableBody>
               {devices.length === 0 ? (
-                <EmptyStateInline title={t('devices:noDevices')} colSpan={8} />
+                <EmptyStateInline title={t('devices:noDevices')} colSpan={9} />
               ) : (
                 paginatedDevices.map((device) => (
                   <TableRow key={device.id} className={cn(selectedIds.has(device.id) && "bg-muted/50")}>
@@ -200,7 +202,22 @@ export function DeviceList({
                   <TableCell className="font-mono text-xs">{device.id}</TableCell>
                   <TableCell>{device.name || "-"}</TableCell>
                   <TableCell className="text-xs">{device.device_type}</TableCell>
-                  <TableCell>{device.plugin_name || "-"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {device.adapter_type || 'mqtt'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {device.plugin_name ? (
+                      <Badge variant="secondary" className="text-xs">
+                        {device.plugin_name}
+                      </Badge>
+                    ) : device.adapter_id ? (
+                      <span className="text-xs text-muted-foreground font-mono">{device.adapter_id}</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{t('devices:builtinMqtt')}</span>
+                    )}
+                  </TableCell>
                   <TableCell align="center">
                     <StatusBadge status={device.status} />
                   </TableCell>

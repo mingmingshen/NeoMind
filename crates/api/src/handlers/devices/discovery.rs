@@ -6,9 +6,9 @@ use std::collections::HashMap;
 
 use edge_ai_devices::discovery::DeviceDiscovery;
 
+use super::models::{DiscoveredDeviceDto, DiscoveryRequest};
 use crate::handlers::common::{HandlerResult, ok};
 use crate::models::ErrorResponse;
-use super::models::{DiscoveryRequest, DiscoveredDeviceDto};
 
 /// Discover devices by scanning a host.
 pub async fn discover_devices_handler(
@@ -17,19 +17,23 @@ pub async fn discover_devices_handler(
     let discovery = DeviceDiscovery::new();
 
     // Use provided ports or common service ports
-    let ports = req.ports.unwrap_or_else(|| vec![
-        1883, // MQTT
-        8883, // MQTT over SSL
-        502,  // Modbus TCP
-        80,   // HTTP
-        443,  // HTTPS
-        5683, // CoAP
-    ]);
+    let ports = req.ports.unwrap_or_else(|| {
+        vec![
+            1883, // MQTT
+            8883, // MQTT over SSL
+            502,  // Modbus TCP
+            80,   // HTTP
+            443,  // HTTPS
+            5683, // CoAP
+        ]
+    });
 
     let timeout = req.timeout_ms.unwrap_or(500);
 
     // Scan ports
-    let open_ports = discovery.scan_ports(&req.host, ports.clone(), timeout).await
+    let open_ports = discovery
+        .scan_ports(&req.host, ports.clone(), timeout)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Discovery failed: {:?}", e)))?;
 
     // Convert discovered devices to DTOs
@@ -49,7 +53,15 @@ pub async fn discover_devices_handler(
         info.insert("port".to_string(), port.to_string());
 
         // Generate a temporary ID for the discovered device
-        let id = format!("{}_{}", device_type.as_deref().unwrap_or("unknown"), uuid::Uuid::new_v4().to_string().chars().take(8).collect::<String>());
+        let id = format!(
+            "{}_{}",
+            device_type.as_deref().unwrap_or("unknown"),
+            uuid::Uuid::new_v4()
+                .to_string()
+                .chars()
+                .take(8)
+                .collect::<String>()
+        );
 
         discovered.push(DiscoveredDeviceDto {
             id,

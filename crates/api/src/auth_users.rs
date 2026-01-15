@@ -32,14 +32,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use base64::prelude::*;
+use hmac::{Hmac, Mac};
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
-use sha2::{Sha256, Digest};
-use hmac::{Hmac, Mac};
-use base64::prelude::*;
+use tracing::{error, info, warn};
 
 use axum::{
     extract::State,
@@ -176,22 +176,24 @@ impl AuthUserState {
     /// Create a new auth state with user management.
     pub fn new() -> Self {
         let db_path = "data/users.redb";
-        let jwt_secret = std::env::var("NEOTALK_JWT_SECRET")
-            .unwrap_or_else(|_| {
-                // Generate a random secret (warning: changes on restart!)
-                uuid::Uuid::new_v4().to_string().replace("-", "")
-            });
+        let jwt_secret = std::env::var("NEOTALK_JWT_SECRET").unwrap_or_else(|_| {
+            // Generate a random secret (warning: changes on restart!)
+            uuid::Uuid::new_v4().to_string().replace("-", "")
+        });
 
         // Load users from database
         let users = Self::load_users_from_db(db_path).unwrap_or_default();
 
         // Create default admin user if no users exist
         let users = if users.is_empty() {
-            info!(category = "auth", "No users found, creating default admin user");
+            info!(
+                category = "auth",
+                "No users found, creating default admin user"
+            );
             let default_admin = User {
                 id: uuid::Uuid::new_v4().to_string(),
                 username: "admin".to_string(),
-                password_hash: Self::hash_password("admin123"),  // Default password
+                password_hash: Self::hash_password("admin123"), // Default password
                 role: UserRole::Admin,
                 created_at: chrono::Utc::now().timestamp(),
                 last_login: None,
@@ -236,7 +238,12 @@ impl AuthUserState {
         }
 
         if !users.is_empty() {
-            info!(category = "auth", count = users.len(), "Loaded {} user(s) from database", users.len());
+            info!(
+                category = "auth",
+                count = users.len(),
+                "Loaded {} user(s) from database",
+                users.len()
+            );
         }
 
         Ok(users)
@@ -246,7 +253,7 @@ impl AuthUserState {
     fn save_user_to_db(path: &str, user: &User) {
         let username = user.username.clone();
         let user_bytes = bincode::serialize(user).unwrap_or_default();
-        let path = path.to_string();  // Convert to owned String for 'static
+        let path = path.to_string(); // Convert to owned String for 'static
 
         std::thread::spawn(move || {
             if let Ok(db) = Database::open(&path) {
@@ -254,7 +261,7 @@ impl AuthUserState {
                     let _ = (|| -> Result<(), Box<dyn std::error::Error>> {
                         let mut table = write_txn.open_table(USERS_TABLE)?;
                         table.insert(username.as_str(), user_bytes.as_slice())?;
-                        drop(table);  // Drop table before committing
+                        drop(table); // Drop table before committing
                         write_txn.commit()?;
                         Ok(())
                     })();
@@ -266,12 +273,11 @@ impl AuthUserState {
     /// Hash password using bcrypt (secure for production use).
     /// Uses default cost factor (12) which provides good security.
     fn hash_password(password: &str) -> String {
-        bcrypt::hash(password, bcrypt::DEFAULT_COST)
-            .unwrap_or_else(|e| {
-                error!(category = "auth", error = %e, "Failed to hash password");
-                // Fallback to a simple hash on error (should not happen)
-                format!("fallback_hash_{}", password)
-            })
+        bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_else(|e| {
+            error!(category = "auth", error = %e, "Failed to hash password");
+            // Fallback to a simple hash on error (should not happen)
+            format!("fallback_hash_{}", password)
+        })
     }
 
     /// Verify password against bcrypt hash.
@@ -304,9 +310,8 @@ impl AuthUserState {
         let now = chrono::Utc::now().timestamp();
         let expires_at = now + self.session_duration;
 
-        let header = BASE64_URL_SAFE_NO_PAD.encode(
-            json!({"alg": "HS256", "typ": "JWT"}).to_string()
-        );
+        let header =
+            BASE64_URL_SAFE_NO_PAD.encode(json!({"alg": "HS256", "typ": "JWT"}).to_string());
         let payload = BASE64_URL_SAFE_NO_PAD.encode(
             json!({
                 "sub": user.id,
@@ -314,7 +319,8 @@ impl AuthUserState {
                 "role": user.role.as_str(),
                 "iat": now,
                 "exp": expires_at,
-            }).to_string()
+            })
+            .to_string(),
         );
         let signature = {
             let data = format!("{}.{}", header, payload);
@@ -344,7 +350,8 @@ impl AuthUserState {
         }
 
         // Decode payload
-        let payload_bytes = BASE64_URL_SAFE_NO_PAD.decode(parts[1])
+        let payload_bytes = BASE64_URL_SAFE_NO_PAD
+            .decode(parts[1])
             .map_err(|_| AuthError::InvalidToken("Invalid payload encoding".into()))?;
         let payload_str = String::from_utf8(payload_bytes)
             .map_err(|_| AuthError::InvalidToken("Invalid payload UTF-8".into()))?;
@@ -368,13 +375,22 @@ impl AuthUserState {
     }
 
     /// Register a new user.
-    pub async fn register(&self, username: &str, password: &str, role: UserRole) -> Result<(UserInfo, String), AuthError> {
+    pub async fn register(
+        &self,
+        username: &str,
+        password: &str,
+        role: UserRole,
+    ) -> Result<(UserInfo, String), AuthError> {
         // Validate username
         if username.len() < 3 {
-            return Err(AuthError::InvalidInput("Username must be at least 3 characters".into()));
+            return Err(AuthError::InvalidInput(
+                "Username must be at least 3 characters".into(),
+            ));
         }
         if password.len() < 6 {
-            return Err(AuthError::InvalidInput("Password must be at least 6 characters".into()));
+            return Err(AuthError::InvalidInput(
+                "Password must be at least 6 characters".into(),
+            ));
         }
 
         // Check if user exists
@@ -405,14 +421,22 @@ impl AuthUserState {
         // Generate token
         let token = self.generate_token(&user);
 
-        info!(category = "auth", username = username, role = role.as_str(), "User registered");
+        info!(
+            category = "auth",
+            username = username,
+            role = role.as_str(),
+            "User registered"
+        );
 
-        Ok((UserInfo {
-            id: user.id,
-            username: user.username.clone(),
-            role: user.role,
-            created_at: user.created_at,
-        }, token))
+        Ok((
+            UserInfo {
+                id: user.id,
+                username: user.username.clone(),
+                role: user.role,
+                created_at: user.created_at,
+            },
+            token,
+        ))
     }
 
     /// Login user and return token.
@@ -420,7 +444,8 @@ impl AuthUserState {
         // Clone user data before releasing lock
         let (user_id, user_role, user_created_at) = {
             let users = self.users.read().await;
-            let user = users.get(username)
+            let user = users
+                .get(username)
                 .ok_or_else(|| AuthError::InvalidCredentials)?;
 
             if !user.active {
@@ -482,30 +507,42 @@ impl AuthUserState {
     /// List all users (admin only).
     pub async fn list_users(&self) -> Vec<UserInfo> {
         let users = self.users.read().await;
-        users.values().map(|u| UserInfo {
-            id: u.id.clone(),
-            username: u.username.clone(),
-            role: u.role.clone(),
-            created_at: u.created_at,
-        }).collect()
+        users
+            .values()
+            .map(|u| UserInfo {
+                id: u.id.clone(),
+                username: u.username.clone(),
+                role: u.role.clone(),
+                created_at: u.created_at,
+            })
+            .collect()
     }
 
     /// Delete user.
     pub async fn delete_user(&self, username: &str) -> Result<(), AuthError> {
         let mut users = self.users.write().await;
-        users.remove(username)
+        users
+            .remove(username)
             .ok_or_else(|| AuthError::UserNotFound)?;
         Ok(())
     }
 
     /// Change password.
-    pub async fn change_password(&self, username: &str, old_password: &str, new_password: &str) -> Result<(), AuthError> {
+    pub async fn change_password(
+        &self,
+        username: &str,
+        old_password: &str,
+        new_password: &str,
+    ) -> Result<(), AuthError> {
         if new_password.len() < 6 {
-            return Err(AuthError::InvalidInput("Password must be at least 6 characters".into()));
+            return Err(AuthError::InvalidInput(
+                "Password must be at least 6 characters".into(),
+            ));
         }
 
         let mut users = self.users.write().await;
-        let user = users.get_mut(username)
+        let user = users
+            .get_mut(username)
             .ok_or_else(|| AuthError::UserNotFound)?;
 
         if !Self::verify_password(old_password, &user.password_hash) {
@@ -557,10 +594,15 @@ impl std::error::Error for AuthError {}
 impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, message): (HttpStatusCode, String) = match self {
-            AuthError::InvalidCredentials => (HttpStatusCode::UNAUTHORIZED, "Invalid username or password".into()),
+            AuthError::InvalidCredentials => (
+                HttpStatusCode::UNAUTHORIZED,
+                "Invalid username or password".into(),
+            ),
             AuthError::UserExists => (HttpStatusCode::CONFLICT, "User already exists".into()),
             AuthError::UserNotFound => (HttpStatusCode::NOT_FOUND, "User not found".into()),
-            AuthError::UserDisabled => (HttpStatusCode::FORBIDDEN, "User account is disabled".into()),
+            AuthError::UserDisabled => {
+                (HttpStatusCode::FORBIDDEN, "User account is disabled".into())
+            }
             AuthError::InvalidToken(msg) => (HttpStatusCode::UNAUTHORIZED, msg),
             AuthError::ExpiredToken => (HttpStatusCode::UNAUTHORIZED, "Token has expired".into()),
             AuthError::InvalidInput(msg) => (HttpStatusCode::BAD_REQUEST, msg),
@@ -589,7 +631,8 @@ pub async fn jwt_auth_middleware(
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| AuthError::InvalidToken("Missing Authorization header".into()))?;
 
-    let token = auth_header.strip_prefix("Bearer ")
+    let token = auth_header
+        .strip_prefix("Bearer ")
         .ok_or_else(|| AuthError::InvalidToken("Invalid Authorization format".into()))?;
 
     // Validate token using auth_user_state from ServerState
@@ -637,7 +680,10 @@ mod tests {
     #[tokio::test]
     async fn test_user_registration() {
         let auth = AuthUserState::new();
-        let (user, token) = auth.register("testuser", "password123", UserRole::User).await.unwrap();
+        let (user, token) = auth
+            .register("testuser", "password123", UserRole::User)
+            .await
+            .unwrap();
         assert_eq!(user.username, "testuser");
         assert!(!token.is_empty());
     }
@@ -645,7 +691,9 @@ mod tests {
     #[tokio::test]
     async fn test_user_login() {
         let auth = AuthUserState::new();
-        auth.register("testuser", "password123", UserRole::User).await.unwrap();
+        auth.register("testuser", "password123", UserRole::User)
+            .await
+            .unwrap();
 
         let response = auth.login("testuser", "password123").await.unwrap();
         assert_eq!(response.user.username, "testuser");
@@ -655,7 +703,10 @@ mod tests {
     #[tokio::test]
     async fn test_token_validation() {
         let auth = AuthUserState::new();
-        let (_, token) = auth.register("testuser", "password123", UserRole::User).await.unwrap();
+        let (_, token) = auth
+            .register("testuser", "password123", UserRole::User)
+            .await
+            .unwrap();
 
         let session = auth.validate_token(&token).unwrap();
         assert_eq!(session.username, "testuser");

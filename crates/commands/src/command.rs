@@ -61,10 +61,16 @@ impl CommandSource {
         match self {
             CommandSource::User { user_id, .. } => format!("user:{}", user_id),
             CommandSource::Llm { decision_id, .. } => {
-                format!("llm:{}", decision_id.as_ref().unwrap_or(&"unknown".to_string()))
+                format!(
+                    "llm:{}",
+                    decision_id.as_ref().unwrap_or(&"unknown".to_string())
+                )
             }
             CommandSource::Rule { rule_id, .. } => format!("rule:{}", rule_id),
-            CommandSource::Workflow { workflow_id, step_id } => {
+            CommandSource::Workflow {
+                workflow_id,
+                step_id,
+            } => {
                 format!("workflow:{}:{}", workflow_id, step_id)
             }
             CommandSource::Schedule { schedule_id } => format!("schedule:{}", schedule_id),
@@ -162,7 +168,10 @@ impl CommandStatus {
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            CommandStatus::Completed | CommandStatus::Failed | CommandStatus::Cancelled | CommandStatus::Timeout
+            CommandStatus::Completed
+                | CommandStatus::Failed
+                | CommandStatus::Cancelled
+                | CommandStatus::Timeout
         )
     }
 
@@ -257,8 +266,10 @@ impl RetryPolicy {
     /// Calculate retry delay for a given attempt.
     pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
         let delay = (self.initial_delay_ms as f64
-            * self.backoff_multiplier.powi(attempt.saturating_sub(1) as i32))
-            .min(self.max_delay_ms as f64) as u64;
+            * self
+                .backoff_multiplier
+                .powi(attempt.saturating_sub(1) as i32))
+        .min(self.max_delay_ms as f64) as u64;
         Duration::from_millis(delay)
     }
 
@@ -327,11 +338,7 @@ pub struct CommandRequest {
 
 impl CommandRequest {
     /// Create a new command request.
-    pub fn new(
-        device_id: DeviceId,
-        command_name: String,
-        source: CommandSource,
-    ) -> Self {
+    pub fn new(device_id: DeviceId, command_name: String, source: CommandSource) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             device_id,
@@ -404,8 +411,7 @@ impl CommandRequest {
 
     /// Check if command can be retried.
     pub fn can_retry(&self) -> bool {
-        self.status.is_retryable()
-            && self.attempt < self.retry_policy.max_attempts
+        self.status.is_retryable() && self.attempt < self.retry_policy.max_attempts
     }
 
     /// Increment attempt counter.

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use redb::{Database, ReadableTable, TableDefinition};
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use axum::{
     extract::State,
@@ -76,7 +76,10 @@ impl AuthState {
 
         // If no keys exist, generate a default one
         let keys = if keys.is_empty() {
-            info!(category = "auth", "No API keys found, generating default key");
+            info!(
+                category = "auth",
+                "No API keys found, generating default key"
+            );
             Self::generate_default_key(&crypto)
         } else {
             keys
@@ -90,7 +93,10 @@ impl AuthState {
     }
 
     /// Load API keys from redb database.
-    fn load_from_db(path: &str, crypto: &CryptoService) -> Result<HashMap<String, (String, ApiKeyInfo)>, Box<dyn std::error::Error>> {
+    fn load_from_db(
+        path: &str,
+        crypto: &CryptoService,
+    ) -> Result<HashMap<String, (String, ApiKeyInfo)>, Box<dyn std::error::Error>> {
         let db = Database::open(path)?;
         let read_txn = db.begin_read()?;
 
@@ -135,7 +141,12 @@ impl AuthState {
         }
 
         if !keys.is_empty() {
-            info!(category = "auth", count = keys.len(), "Loaded {} API key(s) from encrypted database", keys.len());
+            info!(
+                category = "auth",
+                count = keys.len(),
+                "Loaded {} API key(s) from encrypted database",
+                keys.len()
+            );
         }
 
         Ok(keys)
@@ -161,7 +172,9 @@ impl AuthState {
             }
 
             // Insert all current keys (already encrypted)
-            let keys = self.api_keys.try_read()
+            let keys = self
+                .api_keys
+                .try_read()
                 .map_err(|_| "Failed to acquire read lock")?;
 
             for (hash, (encrypted, info)) in keys.iter() {
@@ -212,9 +225,14 @@ impl AuthState {
                 active: true,
             };
             let hash = crypto.hash_api_key(&default_key);
-            let encrypted = crypto.encrypt_str(&default_key).unwrap_or_else(|_| default_key.clone());
+            let encrypted = crypto
+                .encrypt_str(&default_key)
+                .unwrap_or_else(|_| default_key.clone());
             keys.insert(hash, (encrypted, info));
-            info!(category = "auth", "Loaded default API key from NEOTALK_API_KEY");
+            info!(
+                category = "auth",
+                "Loaded default API key from NEOTALK_API_KEY"
+            );
         }
 
         keys
@@ -235,10 +253,12 @@ impl AuthState {
     /// Returns the masked keys (first 8 chars only) with info.
     pub async fn list_keys(&self) -> Vec<(String, ApiKeyInfo)> {
         let keys = self.api_keys.read().await;
-        keys.iter().map(|(k, (_, v))| {
-            // Return masked key (hash) with info
-            (k.clone(), v.clone())
-        }).collect()
+        keys.iter()
+            .map(|(k, (_, v))| {
+                // Return masked key (hash) with info
+                (k.clone(), v.clone())
+            })
+            .collect()
     }
 
     /// Create a new API key and persist to database.
@@ -253,7 +273,10 @@ impl AuthState {
         };
 
         let hash = self.crypto.hash_api_key(&key);
-        let encrypted = self.crypto.encrypt_str(&key).unwrap_or_else(|_| key.clone());
+        let encrypted = self
+            .crypto
+            .encrypt_str(&key)
+            .unwrap_or_else(|_| key.clone());
 
         {
             let mut keys = self.api_keys.write().await;
@@ -383,7 +406,9 @@ pub async fn api_key_middleware(
         });
 
     let api_key = api_key.ok_or_else(|| {
-        AuthError::unauthorized("Missing API key. Provide X-API-Key header or Authorization: Bearer <key>")
+        AuthError::unauthorized(
+            "Missing API key. Provide X-API-Key header or Authorization: Bearer <key>",
+        )
     })?;
 
     // Validate the key
@@ -392,7 +417,8 @@ pub async fn api_key_middleware(
     }
 
     // Store the validated key in request extensions for later use
-    req.extensions_mut().insert(ValidatedApiKey(api_key.to_string()));
+    req.extensions_mut()
+        .insert(ValidatedApiKey(api_key.to_string()));
 
     Ok(next.run(req).await)
 }
@@ -419,7 +445,8 @@ pub async fn optional_auth_middleware(
                 .get("authorization")
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.strip_prefix("Bearer "))
-        }) {
+        })
+    {
         if auth.validate_key(api_key) {
             req.extensions_mut()
                 .insert(ValidatedApiKey(api_key.to_string()));
@@ -472,13 +499,16 @@ pub async fn hybrid_auth_middleware(
 
     if let Some(key) = api_key {
         if state.auth_state.validate_key(key) {
-            req.extensions_mut().insert(ValidatedApiKey(key.to_string()));
+            req.extensions_mut()
+                .insert(ValidatedApiKey(key.to_string()));
             return Ok(next.run(req).await);
         }
     }
 
     // Neither JWT nor API key was provided/valid
-    Err(AuthError::unauthorized("Authentication required. Provide a valid JWT token or API key."))
+    Err(AuthError::unauthorized(
+        "Authentication required. Provide a valid JWT token or API key.",
+    ))
 }
 
 #[cfg(test)]
@@ -503,7 +533,9 @@ mod tests {
     async fn test_create_and_delete_key() {
         let auth = AuthState::new();
 
-        let (key, info) = auth.create_key("Test Key".to_string(), vec!["*".to_string()]).await;
+        let (key, info) = auth
+            .create_key("Test Key".to_string(), vec!["*".to_string()])
+            .await;
         assert!(auth.validate_key(&key));
         assert_eq!(info.name, "Test Key");
 

@@ -130,10 +130,7 @@ pub async fn create_key_handler(
 
     let (key, info) = state.auth_state.create_key(req.name, permissions).await;
 
-    Ok(Json(CreateKeyResponse {
-        api_key: key,
-        info,
-    }))
+    Ok(Json(CreateKeyResponse { api_key: key, info }))
 }
 
 /// Delete an API key by ID (requires authentication).
@@ -149,7 +146,10 @@ pub async fn delete_key_handler(
     }
     // Find the key by ID and delete it
     let keys = state.auth_state.list_keys().await;
-    let key_to_delete = keys.iter().find(|(_, info)| info.id == id).map(|(k, _)| k.clone());
+    let key_to_delete = keys
+        .iter()
+        .find(|(_, info)| info.id == id)
+        .map(|(k, _)| k.clone());
 
     if let Some(key) = key_to_delete {
         if state.auth_state.delete_key(&key).await {
@@ -172,9 +172,7 @@ pub async fn delete_key_handler(
 }
 
 /// Get authentication status (public endpoint - no auth required).
-pub async fn auth_status_handler(
-    State(state): State<ServerState>,
-) -> Json<AuthStatusResponse> {
+pub async fn auth_status_handler(State(state): State<ServerState>) -> Json<AuthStatusResponse> {
     let keys = state.auth_state.list_keys().await;
     let key_count = keys.len();
 

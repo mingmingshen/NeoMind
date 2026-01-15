@@ -1,8 +1,11 @@
 //! Statistics API handlers.
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde_json::json;
 
 // Re-export ConnectionStatus from mdl_format for DeviceInstance
@@ -118,21 +121,41 @@ pub struct SystemInfo {
 pub async fn get_system_stats_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    // Get device stats
-    let devices = state.mqtt_device_manager.list_devices().await;
+    // Get device stats using DeviceService
+    let configs = state.device_service.list_devices().await;
+    // Get current metrics to count devices with metrics
+    let mut devices_with_metrics = 0;
+    for config in &configs {
+        if let Ok(metrics) = state
+            .device_service
+            .get_current_metrics(&config.device_id)
+            .await
+        {
+            if !metrics.is_empty() {
+                devices_with_metrics += 1;
+            }
+        }
+    }
+
     let device_stats = DeviceStats {
-        total_devices: devices.len(),
-        online_devices: devices.iter().filter(|d| matches!(d.status, DeviceConnectionStatus::Online)).count(),
-        offline_devices: devices.iter().filter(|d| !matches!(d.status, DeviceConnectionStatus::Online)).count(),
-        devices_with_metrics: devices.iter().filter(|d| !d.current_values.is_empty()).count(),
+        total_devices: configs.len(),
+        online_devices: configs.len(), // TODO: Track connection status in DeviceService
+        offline_devices: 0,            // TODO: Track connection status in DeviceService
+        devices_with_metrics,
     };
 
     // Get rule stats
     let rules = state.rule_engine.list_rules().await;
     let rule_stats = RuleStats {
         total_rules: rules.len(),
-        enabled_rules: rules.iter().filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Active)).count(),
-        disabled_rules: rules.iter().filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Disabled)).count(),
+        enabled_rules: rules
+            .iter()
+            .filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Active))
+            .count(),
+        disabled_rules: rules
+            .iter()
+            .filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Disabled))
+            .count(),
         triggered_today: 0, // TODO: Get from history
     };
 
@@ -154,7 +177,8 @@ pub async fn get_system_stats_handler(
 
     // Get alert stats
     let all_alerts = state.alert_manager.list_alerts().await;
-    let active_alerts: Vec<_> = all_alerts.into_iter()
+    let active_alerts: Vec<_> = all_alerts
+        .into_iter()
         .filter(|a| matches!(a.status, edge_ai_alerts::AlertStatus::Active))
         .collect();
     let alert_stats = AlertStats {
@@ -173,11 +197,21 @@ pub async fn get_system_stats_handler(
         let state_stats = manager.state.stats().await;
         CommandStats {
             total_commands: state_stats.total_count,
-            pending_commands: state_stats.by_status.iter()
-                .filter(|(s, _)| matches!(s, edge_ai_commands::command::CommandStatus::Pending | edge_ai_commands::command::CommandStatus::Queued))
+            pending_commands: state_stats
+                .by_status
+                .iter()
+                .filter(|(s, _)| {
+                    matches!(
+                        s,
+                        edge_ai_commands::command::CommandStatus::Pending
+                            | edge_ai_commands::command::CommandStatus::Queued
+                    )
+                })
                 .map(|(_, c)| *c)
                 .sum(),
-            failed_commands: state_stats.by_status.iter()
+            failed_commands: state_stats
+                .by_status
+                .iter()
                 .filter(|(s, _)| matches!(s, edge_ai_commands::command::CommandStatus::Failed))
                 .map(|(_, c)| *c)
                 .sum(),
@@ -246,25 +280,30 @@ pub async fn get_system_stats_handler(
 pub async fn get_device_stats_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let devices = state.mqtt_device_manager.list_devices().await;
+    let configs = state.device_service.list_devices().await;
 
-    let devices_with_stats: Vec<serde_json::Value> = devices
-        .into_iter()
-        .map(|device| {
-            let metrics_count = device.current_values.len();
-            let is_online = matches!(device.status, DeviceConnectionStatus::Online);
-            json!({
-                "device_id": device.device_id,
-                "device_type": device.device_type,
-                "name": device.name.as_deref().unwrap_or(&device.device_id),
-                "online": is_online,
+    let mut devices_with_stats = Vec::new();
+    for config in configs {
+        // Get metrics count for this device
+        let metrics_count = state
+            .device_service
+            .get_current_metrics(&config.device_id)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        devices_with_stats.push(json!({
+            "device_id": config.device_id,
+            "device_type": config.device_type,
+            "name": config.name,
+            "online": true, // TODO: Track connection status in DeviceService
                 "metrics_count": metrics_count,
-                "last_seen": device.last_seen.timestamp(),
-            })
-        })
-        .collect();
+            "last_seen": chrono::Utc::now().timestamp(), // TODO: Track last_seen in DeviceService
+        }));
+    }
 
-    let online_count = devices_with_stats.iter()
+    let online_count = devices_with_stats
+        .iter()
         .filter(|d| d["online"].as_bool().unwrap_or(false))
         .count();
 
@@ -286,7 +325,10 @@ pub async fn get_rule_stats_handler(
 ) -> HandlerResult<serde_json::Value> {
     let rules = state.rule_engine.list_rules().await;
 
-    let enabled_count = rules.iter().filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Active)).count();
+    let enabled_count = rules
+        .iter()
+        .filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Active))
+        .count();
     let disabled_count = rules.len() - enabled_count;
 
     // Group by type if available

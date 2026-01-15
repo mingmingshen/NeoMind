@@ -199,7 +199,11 @@ impl MidTermMemory {
             let mut entries = self.entries.write().await;
             if entries.len() >= self.max_entries {
                 // Find oldest entry and remove it
-                if let Some(oldest_id) = entries.values().min_by_key(|e| e.timestamp).map(|e| e.id.clone()) {
+                if let Some(oldest_id) = entries
+                    .values()
+                    .min_by_key(|e| e.timestamp)
+                    .map(|e| e.id.clone())
+                {
                     entries.remove(&oldest_id);
                 }
             }

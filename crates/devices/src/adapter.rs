@@ -4,8 +4,8 @@
 //! (MQTT, Modbus, HTTP, etc.) into the NeoTalk platform through a unified interface.
 
 use crate::mdl::MetricValue;
-use edge_ai_core::{EventBus, NeoTalkEvent};
 use async_trait::async_trait;
+use edge_ai_core::{EventBus, NeoTalkEvent};
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -71,9 +71,7 @@ pub enum DeviceEvent {
     },
 
     /// Device discovery event
-    Discovery {
-        device: DiscoveredDeviceInfo,
-    },
+    Discovery { device: DiscoveredDeviceInfo },
 
     /// Device command result
     CommandResult {
@@ -109,24 +107,30 @@ impl DeviceEvent {
     /// Convert to NeoTalkEvent.
     pub fn to_neotalk_event(self) -> NeoTalkEvent {
         match self {
-            Self::Metric { device_id, metric, value, timestamp } => {
-                NeoTalkEvent::DeviceMetric {
-                    device_id,
-                    metric,
-                    value: convert_metric_value(value),
-                    timestamp,
-                    quality: None,
-                }
-            }
-            Self::State { device_id, old_state: _, new_state, timestamp } => {
+            Self::Metric {
+                device_id,
+                metric,
+                value,
+                timestamp,
+            } => NeoTalkEvent::DeviceMetric {
+                device_id,
+                metric,
+                value: convert_metric_value(value),
+                timestamp,
+                quality: None,
+            },
+            Self::State {
+                device_id,
+                old_state: _,
+                new_state,
+                timestamp,
+            } => {
                 match new_state {
-                    ConnectionStatus::Connected => {
-                        NeoTalkEvent::DeviceOnline {
-                            device_id,
-                            device_type: "unknown".to_string(),
-                            timestamp,
-                        }
-                    }
+                    ConnectionStatus::Connected => NeoTalkEvent::DeviceOnline {
+                        device_id,
+                        device_type: "unknown".to_string(),
+                        timestamp,
+                    },
                     ConnectionStatus::Disconnected | ConnectionStatus::Error => {
                         NeoTalkEvent::DeviceOffline {
                             device_id,
@@ -152,15 +156,19 @@ impl DeviceEvent {
                     timestamp: device.timestamp,
                 }
             }
-            Self::CommandResult { device_id, command, success, result, timestamp } => {
-                NeoTalkEvent::DeviceCommandResult {
-                    device_id,
-                    command,
-                    success,
-                    result: result.map(|r| serde_json::json!(r)),
-                    timestamp,
-                }
-            }
+            Self::CommandResult {
+                device_id,
+                command,
+                success,
+                result,
+                timestamp,
+            } => NeoTalkEvent::DeviceCommandResult {
+                device_id,
+                command,
+                success,
+                result: result.map(|r| serde_json::json!(r)),
+                timestamp,
+            },
         }
     }
 }
@@ -178,7 +186,7 @@ fn convert_metric_value(value: MetricValue) -> edge_ai_core::MetricValue {
 }
 
 /// Device connection status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConnectionStatus {
     /// Device is disconnected
     Disconnected,
@@ -254,12 +262,16 @@ impl DiscoveredDeviceInfo {
 ///
 /// All device adapters (MQTT, Modbus, HTTP, etc.) implement this trait
 /// to provide a unified interface for the adapter manager.
+///
+/// Simplified architecture: Adapters should automatically use templates from DeviceRegistry
+/// to parse data. The adapter receives raw protocol data and uses the device's template
+/// to convert it to DeviceEvents.
 #[async_trait]
 pub trait DeviceAdapter: Send + Sync {
     /// Get the adapter name.
     fn name(&self) -> &str;
 
-    /// Get the adapter type identifier.
+    /// Get the adapter type identifier (e.g., "mqtt", "modbus", "hass").
     fn adapter_type(&self) -> &'static str {
         "base"
     }
@@ -270,6 +282,7 @@ pub trait DeviceAdapter: Send + Sync {
     /// Start the adapter.
     ///
     /// This should connect to the data source and begin emitting events.
+    /// The adapter should use templates from DeviceRegistry to parse incoming data.
     async fn start(&self) -> AdapterResult<()>;
 
     /// Stop the adapter.
@@ -280,6 +293,7 @@ pub trait DeviceAdapter: Send + Sync {
     /// Subscribe to device events from this adapter.
     ///
     /// Returns a stream of device events. Multiple subscribers are supported.
+    /// Events should be automatically parsed using device templates.
     fn subscribe(&self) -> Pin<Box<dyn Stream<Item = DeviceEvent> + Send + '_>>;
 
     /// Get the number of devices currently managed by this adapter.
@@ -287,6 +301,42 @@ pub trait DeviceAdapter: Send + Sync {
 
     /// Get a list of device IDs managed by this adapter.
     fn list_devices(&self) -> Vec<String>;
+
+    /// Send a command to a device via this adapter.
+    ///
+    /// The adapter should use the device's connection configuration and template
+    /// to determine how to send the command (topic, payload format, etc.).
+    ///
+    /// # Arguments
+    /// - `device_id`: The device to send the command to
+    /// - `command_name`: The command name from the device template
+    /// - `payload`: The pre-built command payload (from template)
+    /// - `topic`: Optional topic override (if None, adapter should use device config)
+    async fn send_command(
+        &self,
+        device_id: &str,
+        command_name: &str,
+        payload: String,
+        topic: Option<String>,
+    ) -> AdapterResult<()>;
+
+    /// Get the connection status of this adapter.
+    ///
+    /// For adapters that manage connections (e.g., MQTT), this returns the
+    /// current connection state. For stateless adapters, this may always return Connected.
+    fn connection_status(&self) -> ConnectionStatus;
+
+    /// Subscribe to a device's data stream (for protocols that support subscriptions).
+    ///
+    /// This is typically used for MQTT adapters to subscribe to device topics.
+    /// Other adapters may implement this as a no-op.
+    async fn subscribe_device(&self, device_id: &str) -> AdapterResult<()>;
+
+    /// Unsubscribe from a device's data stream.
+    ///
+    /// This is typically used for MQTT adapters to unsubscribe from device topics.
+    /// Other adapters may implement this as a no-op.
+    async fn unsubscribe_device(&self, device_id: &str) -> AdapterResult<()>;
 }
 
 /// Adapter configuration.
@@ -370,7 +420,8 @@ impl EventPublishingAdapter {
 
         self.adapter.start().await?;
 
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Spawn event forwarding task
         let adapter = self.adapter.clone();
@@ -397,90 +448,14 @@ impl EventPublishingAdapter {
 
     /// Stop the adapter.
     pub async fn stop(&self) -> AdapterResult<()> {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         self.adapter.stop().await
     }
 
     /// Subscribe to events from this adapter.
     pub fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {
         self.event_tx.subscribe()
-    }
-}
-
-/// Adapter manager for managing multiple device adapters.
-pub struct AdapterManager {
-    /// Registered adapters
-    adapters: Vec<Arc<EventPublishingAdapter>>,
-    /// Event bus
-    event_bus: EventBus,
-}
-
-impl AdapterManager {
-    /// Create a new adapter manager.
-    pub fn new(event_bus: EventBus) -> Self {
-        Self {
-            adapters: Vec::new(),
-            event_bus,
-        }
-    }
-
-    /// Get the event bus used by this manager.
-    pub fn event_bus(&self) -> &EventBus {
-        &self.event_bus
-    }
-
-    /// Register an adapter with the manager.
-    pub fn register(&mut self, adapter: Arc<dyn DeviceAdapter>) -> Arc<EventPublishingAdapter> {
-        let wrapper = Arc::new(EventPublishingAdapter::new(adapter, self.event_bus.clone()));
-        self.adapters.push(wrapper.clone());
-        wrapper
-    }
-
-    /// Start all registered adapters.
-    pub async fn start_all(&self) -> AdapterResult<()> {
-        for adapter in &self.adapters {
-            if let Err(e) = adapter.start().await {
-                tracing::warn!("Failed to start adapter {}: {}", adapter.adapter().name(), e);
-            }
-        }
-        Ok(())
-    }
-
-    /// Stop all registered adapters.
-    pub async fn stop_all(&self) -> AdapterResult<()> {
-        for adapter in &self.adapters {
-            let _ = adapter.stop().await;
-        }
-        Ok(())
-    }
-
-    /// Get all registered adapters.
-    pub fn adapters(&self) -> &[Arc<EventPublishingAdapter>] {
-        &self.adapters
-    }
-
-    /// Get an adapter by name.
-    pub fn get_adapter(&self, name: &str) -> Option<&Arc<EventPublishingAdapter>> {
-        self.adapters
-            .iter()
-            .find(|a| a.adapter().name() == name)
-    }
-
-    /// Get the total number of devices across all adapters.
-    pub fn total_device_count(&self) -> usize {
-        self.adapters
-            .iter()
-            .map(|a| a.adapter().device_count())
-            .sum()
-    }
-
-    /// Get all device IDs from all adapters.
-    pub fn list_all_devices(&self) -> Vec<String> {
-        let mut devices = Vec::new();
-        for adapter in &self.adapters {
-            devices.extend(adapter.adapter().list_devices());
-        }
-        devices
     }
 }
 
@@ -511,7 +486,10 @@ impl MockAdapter {
     }
 
     /// Publish a test event.
-    pub fn publish_event(&self, event: DeviceEvent) -> Result<(), broadcast::error::SendError<DeviceEvent>> {
+    pub fn publish_event(
+        &self,
+        event: DeviceEvent,
+    ) -> Result<(), broadcast::error::SendError<DeviceEvent>> {
         self.event_tx.send(event).map(|_| ())
     }
 }
@@ -527,12 +505,14 @@ impl DeviceAdapter for MockAdapter {
     }
 
     async fn start(&self) -> AdapterResult<()> {
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
     async fn stop(&self) -> AdapterResult<()> {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -552,6 +532,35 @@ impl DeviceAdapter for MockAdapter {
 
     fn list_devices(&self) -> Vec<String> {
         self.devices.clone()
+    }
+
+    async fn send_command(
+        &self,
+        _device_id: &str,
+        _command_name: &str,
+        _payload: String,
+        _topic: Option<String>,
+    ) -> AdapterResult<()> {
+        // Mock adapter always succeeds
+        Ok(())
+    }
+
+    fn connection_status(&self) -> ConnectionStatus {
+        if self.is_running() {
+            ConnectionStatus::Connected
+        } else {
+            ConnectionStatus::Disconnected
+        }
+    }
+
+    async fn subscribe_device(&self, _device_id: &str) -> AdapterResult<()> {
+        // Mock adapter always succeeds
+        Ok(())
+    }
+
+    async fn unsubscribe_device(&self, _device_id: &str) -> AdapterResult<()> {
+        // Mock adapter always succeeds
+        Ok(())
     }
 }
 
@@ -655,12 +664,14 @@ mod tests {
 
         let mut rx = adapter.subscribe();
 
-        adapter.publish_event(DeviceEvent::Metric {
-            device_id: "test".to_string(),
-            metric: "temp".to_string(),
-            value: MetricValue::Float(25.0),
-            timestamp: 0,
-        }).unwrap();
+        adapter
+            .publish_event(DeviceEvent::Metric {
+                device_id: "test".to_string(),
+                metric: "temp".to_string(),
+                value: MetricValue::Float(25.0),
+                timestamp: 0,
+            })
+            .unwrap();
 
         let event = rx.next().await;
         assert!(event.is_some());

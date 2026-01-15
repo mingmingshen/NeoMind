@@ -34,56 +34,34 @@
 //! }
 //! ```
 
-pub mod concurrency;
-pub mod error;
 pub mod agent;
-pub mod session;
-pub mod llm;
-pub mod tools;
 pub mod autonomous;
+pub mod concurrency;
 pub mod context_selector;
-pub mod translation;
+pub mod error;
+pub mod llm;
 pub mod prompts;
+pub mod session;
+pub mod tools;
+pub mod translation;
 
 // Re-export commonly used types
-pub use concurrency::{
-    SessionConcurrencyLimiter,
-    GlobalConcurrencyLimiter,
-    SessionPermit,
-    GlobalPermit,
-    ConcurrencyStats,
-    DEFAULT_PER_SESSION_LIMIT,
-    DEFAULT_GLOBAL_LIMIT,
-};
-pub use error::{AgentError, NeoTalkError, Result};
 pub use agent::{
-    Agent,
-    AgentConfig,
-    AgentEvent,
-    AgentMessage,
-    AgentResponse,
-    ToolCall,
-    SessionState,
-    LlmBackend,
-    FallbackRule,
-    default_fallback_rules,
-    process_fallback,
-};
-pub use session::SessionManager;
-pub use tools::{
-    EventIntegratedToolRegistry,
-    ToolExecutionHistory,
-    ToolExecutionRecord,
-    ToolExecutionStats,
+    Agent, AgentConfig, AgentEvent, AgentMessage, AgentResponse, FallbackRule, LlmBackend,
+    SessionState, ToolCall, default_fallback_rules, process_fallback,
 };
 pub use autonomous::{
-    AutonomousAgent,
-    AutonomousConfig,
-    ReviewType,
-    AgentState,
-    ReviewContext,
-    ReviewResult,
+    AgentState, AutonomousAgent, AutonomousConfig, ReviewContext, ReviewResult, ReviewType,
     SystemReview,
+};
+pub use concurrency::{
+    ConcurrencyStats, DEFAULT_GLOBAL_LIMIT, DEFAULT_PER_SESSION_LIMIT, GlobalConcurrencyLimiter,
+    GlobalPermit, SessionConcurrencyLimiter, SessionPermit,
+};
+pub use error::{AgentError, NeoTalkError, Result};
+pub use session::SessionManager;
+pub use tools::{
+    EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
 };
 
 /// Version information
@@ -107,10 +85,16 @@ mod tests {
         assert!(!session_id.is_empty());
 
         // Process messages
-        let response1 = manager.process_message(&session_id, "列出设备").await.unwrap();
+        let response1 = manager
+            .process_message(&session_id, "列出设备")
+            .await
+            .unwrap();
         assert!(!response1.message.content.is_empty());
 
-        let response2 = manager.process_message(&session_id, "列出规则").await.unwrap();
+        let response2 = manager
+            .process_message(&session_id, "列出规则")
+            .await
+            .unwrap();
         assert!(!response2.message.content.is_empty());
 
         // Check history

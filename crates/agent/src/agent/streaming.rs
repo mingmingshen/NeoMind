@@ -6,7 +6,7 @@
 //! - Maximum tool call iterations
 //! - Repetition detection
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,10 +15,11 @@ use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use super::staged::{IntentCategory, IntentClassifier, IntentResult};
+use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
+use super::types::{AgentEvent, AgentInternalState, AgentMessage, ToolCall};
 use crate::error::{AgentError, Result};
 use crate::llm::LlmInterface;
-use super::types::{AgentEvent, AgentMessage, SessionState, ToolCall};
-use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
 
 /// Configuration for stream processing safeguards
 pub struct StreamSafeguards {
@@ -32,22 +33,57 @@ pub struct StreamSafeguards {
     pub max_tool_iterations: usize,
     /// Maximum consecutive similar chunks to detect loops (default: 3)
     pub max_repetition_count: usize,
+    /// Heartbeat interval to keep connection alive (default: 10s)
+    pub heartbeat_interval: Duration,
+    /// Progress update interval during long operations (default: 5s)
+    pub progress_interval: Duration,
+    /// Optional interrupt signal - when set, stream should stop gracefully
+    /// This allows users to interrupt long thinking processes
+    pub interrupt_signal: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 impl Default for StreamSafeguards {
     fn default() -> Self {
         Self {
-            // Increased timeout to 40 seconds for thinking models
-            max_stream_duration: Duration::from_secs(40),
-            // Since thinking is NOT included in context, we can allow much more
-            // qwen3-vl:2b can generate extensive thinking before responding
-            max_thinking_length: 100000,  // 100K chars - thinking not in context
+            // Increased timeout to 120 seconds for thinking models
+            // qwen3-vl:2b can take a long time thinking before generating content
+            max_stream_duration: Duration::from_secs(120),
+            // No limit on thinking content - let the model think as much as needed
+            max_thinking_length: usize::MAX,
             max_content_length: usize::MAX,
             // Tool iterations limit - 3 is sufficient for most multi-step queries
             max_tool_iterations: 3,
             // Repetition detection threshold
             max_repetition_count: 3,
+            // Heartbeat every 10 seconds to prevent WebSocket timeout
+            heartbeat_interval: Duration::from_secs(10),
+            // Progress update every 5 seconds during long operations
+            progress_interval: Duration::from_secs(5),
+            // No interrupt signal by default
+            interrupt_signal: None,
         }
+    }
+}
+
+impl StreamSafeguards {
+    /// Create a new StreamSafeguards with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the interrupt signal for this stream
+    /// Returns a sender that can be used to trigger the interrupt
+    pub fn with_interrupt_signal(mut self, rx: tokio::sync::watch::Receiver<bool>) -> Self {
+        self.interrupt_signal = Some(rx);
+        self
+    }
+
+    /// Create an interruptible stream with a (tx, rx) pair
+    /// Returns (safeguards, sender) where sender can be used to interrupt
+    pub fn with_interrupt() -> (Self, tokio::sync::watch::Sender<bool>) {
+        let (tx, rx) = tokio::sync::watch::channel(false);
+        let safeguards = Self::default().with_interrupt_signal(rx);
+        (safeguards, tx)
     }
 }
 
@@ -91,8 +127,8 @@ pub fn cleanup_thinking_content(thinking: &str) -> String {
     // Pass 2: Limit consecutive occurrences of common filler words
     // Using character-based iteration to avoid UTF-8 issues
     let filler_words = [
-        ("可能", 3),  // Max 3 consecutive "可能"
-        ("或者", 2),  // Max 2 consecutive "或者"
+        ("可能", 3), // Max 3 consecutive "可能"
+        ("或者", 2), // Max 2 consecutive "或者"
         ("也许", 2),
     ];
 
@@ -155,14 +191,14 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
     // Check for repetitive words/phrases within a single chunk first
     // This catches cases where the model returns one large chunk with repetitive thinking
     let repetitive_phrases = [
-        ("可能", 10),   // "maybe" - shouldn't appear >10 times
-        ("或者", 8),   // "or"
-        ("也许", 8),   // "perhaps"
+        ("可能", 10), // "maybe" - shouldn't appear >10 times
+        ("或者", 8),  // "or"
+        ("也许", 8),  // "perhaps"
         ("temperature", 8),
         ("温度", 10),
         ("sensor", 8),
         ("传感器", 8),
-        ("可能", 10),  // "possible" (Chinese)
+        ("可能", 10), // "possible" (Chinese)
     ];
 
     for (phrase, limit) in repetitive_phrases {
@@ -170,7 +206,9 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
         if count > limit {
             tracing::warn!(
                 "Single-chunk repetition detected: '{}' appears {} times (limit: {})",
-                phrase, count, limit
+                phrase,
+                count,
+                limit
             );
             return true;
         }
@@ -184,10 +222,12 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
 
     // Check if the last N chunks are very similar
     let recent = &recent_chunks[recent_chunks.len().saturating_sub(threshold)..];
-    let similar_count = recent.iter()
+    let similar_count = recent
+        .iter()
         .filter(|chunk| {
             // Check similarity: at least 80% character overlap
-            let overlap = chunk.chars()
+            let overlap = chunk
+                .chars()
                 .zip(new_chunk.chars())
                 .filter(|(a, b)| a == b)
                 .count();
@@ -202,7 +242,8 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
 
     // === COMBINED PHRASE-LEVEL REPETITION DETECTION ===
     // Check for repetitive words/phrases across all chunks
-    let combined: String = recent_chunks.iter()
+    let combined: String = recent_chunks
+        .iter()
         .map(|s| s.as_str())
         .chain(std::iter::once(new_chunk))
         .collect::<Vec<&str>>()
@@ -210,10 +251,13 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
 
     for (phrase, limit) in repetitive_phrases {
         let count = combined.matches(phrase).count();
-        if count > limit * 2 {  // Higher limit for combined text
+        if count > limit * 2 {
+            // Higher limit for combined text
             tracing::warn!(
                 "Combined repetition detected: '{}' appears {} times (limit: {})",
-                phrase, count, limit * 2
+                phrase,
+                count,
+                limit * 2
             );
             return true;
         }
@@ -251,7 +295,8 @@ impl ToolResultCache {
     }
 
     fn cleanup_expired(&mut self) {
-        self.entries.retain(|_, (_, timestamp)| timestamp.elapsed() < self.ttl);
+        self.entries
+            .retain(|_, (_, timestamp)| timestamp.elapsed() < self.ttl);
     }
 
     /// Generate cache key from tool name and arguments
@@ -269,8 +314,36 @@ const NON_CACHEABLE_TOOLS: &[&str] = &[
     "delete_device",
 ];
 
+/// Simple query tools that can return results directly without LLM follow-up
+/// These tools return structured data that users want to see as-is
+/// Skipping LLM follow-up for these tools:
+/// 1. Reduces latency (no second LLM call)
+/// 2. Eliminates unnecessary thinking content
+/// 3. Provides exact data from tools without LLM reformatting
+const SIMPLE_QUERY_TOOLS: &[&str] = &[
+    "list_devices",
+    "list_rules",
+    "list_scenarios",
+    "list_workflows",
+    "query_rule_history",
+    "query_workflow_status",
+    "get_device_metrics",
+];
+
 fn is_tool_cacheable(name: &str) -> bool {
     !NON_CACHEABLE_TOOLS.contains(&name)
+}
+
+/// Check if all tools in the result set are simple query tools
+/// that can return results directly without LLM follow-up
+fn should_return_directly(tool_results: &[(String, String)]) -> bool {
+    if tool_results.is_empty() {
+        return false;
+    }
+    // All tools must be simple query tools
+    tool_results
+        .iter()
+        .all(|(name, _)| SIMPLE_QUERY_TOOLS.contains(&name.as_str()))
 }
 
 /// Format tool results into a user-friendly response
@@ -289,36 +362,203 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                 "list_devices" => {
                     // Format device list as a table
                     if let Some(devices) = json_value.get("devices").and_then(|d| d.as_array()) {
-                        response.push_str(&format!("已找到 {} 个设备：\n\n", devices.len()));
+                        response.push_str(&format!("## 设备列表 (共 {} 个)\n\n", devices.len()));
                         response.push_str("| 设备名称 | 状态 | 类型 |\n");
                         response.push_str("|---------|------|------|\n");
                         for device in devices {
-                            let name = device.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
-                            let status = device.get("status").and_then(|s| s.as_str()).unwrap_or("未知");
-                            let device_type = device.get("type").and_then(|t| t.as_str()).unwrap_or("未知");
-                            response.push_str(&format!("| {} | {} | {} |\n", name, status, device_type));
+                            let name = device
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("未知");
+                            let status = device
+                                .get("status")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("未知");
+                            let device_type = device
+                                .get("type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("未知");
+                            response.push_str(&format!(
+                                "| {} | {} | {} |\n",
+                                name, status, device_type
+                            ));
                         }
+                    } else {
+                        response.push_str("未找到任何设备。\n");
+                    }
+                }
+                "list_rules" => {
+                    // Format rule list
+                    if let Some(rules) = json_value.get("rules").and_then(|r| r.as_array()) {
+                        response.push_str(&format!("## 自动化规则 (共 {} 个)\n\n", rules.len()));
+                        for rule in rules {
+                            let name = rule.get("name").and_then(|n| n.as_str()).unwrap_or("未知");
+                            let enabled = rule
+                                .get("enabled")
+                                .and_then(|e| e.as_bool())
+                                .unwrap_or(false);
+                            let status = if enabled {
+                                "✓ 已启用"
+                            } else {
+                                "✗ 已禁用"
+                            };
+                            response.push_str(&format!("- **{}** {}\n", name, status));
+                        }
+                    } else if let Some(count) = json_value.get("count").and_then(|c| c.as_u64()) {
+                        response.push_str(&format!("## 自动化规则 (共 {} 个)\n", count));
+                    } else {
+                        response.push_str("未找到任何自动化规则。\n");
+                    }
+                }
+                "list_scenarios" => {
+                    if let Some(scenarios) = json_value.get("scenarios").and_then(|s| s.as_array())
+                    {
+                        response.push_str(&format!("## 场景列表 (共 {} 个)\n\n", scenarios.len()));
+                        for scenario in scenarios {
+                            let name = scenario
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("未知");
+                            response.push_str(&format!("- {}\n", name));
+                        }
+                    } else {
+                        response.push_str("未找到任何场景。\n");
+                    }
+                }
+                "list_workflows" => {
+                    if let Some(workflows) = json_value.get("workflows").and_then(|w| w.as_array())
+                    {
+                        response
+                            .push_str(&format!("## 工作流列表 (共 {} 个)\n\n", workflows.len()));
+                        for workflow in workflows {
+                            let name = workflow
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("未知");
+                            let status = workflow
+                                .get("status")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("未知");
+                            response.push_str(&format!("- **{}** ({})\n", name, status));
+                        }
+                    } else {
+                        response.push_str("未找到任何工作流。\n");
+                    }
+                }
+                "query_rule_history" => {
+                    if let Some(history) = json_value.get("history").and_then(|h| h.as_array()) {
+                        response
+                            .push_str(&format!("## 规则执行历史 (共 {} 条)\n\n", history.len()));
+                        for (i, entry) in history.iter().enumerate().take(10) {
+                            // Limit to 10 entries
+                            let name = entry
+                                .get("rule_name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("未知");
+                            let success = entry
+                                .get("success")
+                                .and_then(|s| s.as_bool())
+                                .unwrap_or(false);
+                            let status = if success { "✓ 成功" } else { "✗ 失败" };
+                            response.push_str(&format!("- **{}** {}\n", name, status));
+                            if i == 9 {
+                                response.push_str(&format!(
+                                    "\n... (还有 {} 条记录)\n",
+                                    history.len().saturating_sub(10)
+                                ));
+                                break;
+                            }
+                        }
+                    } else {
+                        response.push_str("未找到执行历史记录。\n");
+                    }
+                }
+                "query_workflow_status" => {
+                    if let Some(executions) =
+                        json_value.get("executions").and_then(|e| e.as_array())
+                    {
+                        response.push_str(&format!(
+                            "## 工作流执行状态 (共 {} 条)\n\n",
+                            executions.len()
+                        ));
+                        for (i, exec) in executions.iter().enumerate().take(10) {
+                            let wf_id = exec
+                                .get("workflow_id")
+                                .and_then(|w| w.as_str())
+                                .unwrap_or("未知");
+                            let status = exec
+                                .get("status")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("未知");
+                            response.push_str(&format!("- **{}** - {}\n", wf_id, status));
+                            if i == 9 {
+                                response.push_str(&format!(
+                                    "\n... (还有 {} 条记录)\n",
+                                    executions.len().saturating_sub(10)
+                                ));
+                                break;
+                            }
+                        }
+                    } else {
+                        response.push_str("未找到执行记录。\n");
+                    }
+                }
+                "get_device_metrics" => {
+                    if let Some(metrics) = json_value.get("metrics").and_then(|m| m.as_array()) {
+                        response.push_str("## 设备指标\n\n");
+                        for metric in metrics {
+                            let name = metric
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("未知");
+                            let value = metric
+                                .get("value")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("未知");
+                            response.push_str(&format!("- **{}**: {}\n", name, value));
+                        }
+                    } else {
+                        response.push_str("未找到设备指标。\n");
                     }
                 }
                 "query_data" => {
                     // Format query result
                     if let Some(data) = json_value.get("data") {
-                        response.push_str(&format!("查询结果：{}\n", serde_json::to_string_pretty(data).unwrap_or_default()));
+                        response.push_str(&format!(
+                            "## 查询结果\n\n```\n{}\n```\n",
+                            serde_json::to_string_pretty(data).unwrap_or_default()
+                        ));
                     } else {
-                        response.push_str(&format!("查询结果：{}\n", result));
+                        response.push_str(&format!("查询完成。\n"));
                     }
                 }
                 "control_device" | "send_command" => {
-                    response.push_str("命令执行成功。\n");
+                    response.push_str("✓ 命令执行成功。\n");
+                }
+                "create_rule" => {
+                    if let Some(rule_id) = json_value.get("rule_id").and_then(|r| r.as_str()) {
+                        response.push_str(&format!("✓ 规则创建成功 (ID: {})\n", rule_id));
+                    } else {
+                        response.push_str("✓ 规则创建成功。\n");
+                    }
+                }
+                "trigger_workflow" => {
+                    if let Some(execution_id) =
+                        json_value.get("execution_id").and_then(|e| e.as_str())
+                    {
+                        response.push_str(&format!("✓ 工作流已触发 (执行ID: {})\n", execution_id));
+                    } else {
+                        response.push_str("✓ 工作流已触发。\n");
+                    }
                 }
                 _ => {
                     // Generic formatting for other tools
-                    response.push_str(&format!("{} 执行完成。\n", tool_name));
+                    response.push_str(&format!("✓ {} 执行完成。\n", tool_name));
                 }
             }
         } else {
             // Result is not valid JSON, use as-is
-            response.push_str(&format!("{} 执行完成。\n", tool_name));
+            response.push_str(&format!("✓ {} 执行完成。\n", tool_name));
         }
     }
 
@@ -369,7 +609,8 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                 result.push(msg.clone());
             } else {
                 // Compress old tool results
-                let tool_names: Vec<&str> = msg.tool_calls
+                let tool_names: Vec<&str> = msg
+                    .tool_calls
                     .as_ref()
                     .iter()
                     .flat_map(|calls| calls.iter().map(|t| t.name.as_str()))
@@ -454,27 +695,23 @@ fn build_context_window(messages: &[AgentMessage]) -> Vec<AgentMessage> {
 /// - Maximum tool call iterations (5)
 pub async fn process_stream_events(
     llm_interface: Arc<LlmInterface>,
-    short_term_memory: Arc<tokio::sync::RwLock<Vec<AgentMessage>>>,
-    state: Arc<RwLock<SessionState>>,
+    internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
     tools: Arc<edge_ai_tools::ToolRegistry>,
     user_message: &str,
 ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
     process_stream_events_with_safeguards(
         llm_interface,
-        short_term_memory,
-        state,
+        internal_state,
         tools,
         user_message,
         StreamSafeguards::default(),
-    ).await
+    )
+    .await
 }
 
-/// Process a user message with streaming response and custom safeguards.
-/// Now async - no more block_in_place causing thread pool exhaustion
 pub async fn process_stream_events_with_safeguards(
     llm_interface: Arc<LlmInterface>,
-    short_term_memory: Arc<tokio::sync::RwLock<Vec<AgentMessage>>>,
-    state: Arc<RwLock<SessionState>>,
+    internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
     tools: Arc<edge_ai_tools::ToolRegistry>,
     user_message: &str,
     safeguards: StreamSafeguards,
@@ -485,13 +722,20 @@ pub async fn process_stream_events_with_safeguards(
     // Bypass LLM for simple, common interactions to improve speed and reliability
     let trimmed = user_message.trim();
     let greeting_patterns = [
-        "你好", "您好", "hi", "hello", "嗨", "在吗",
-        "早上好", "下午好", "晚上好",
+        "你好",
+        "您好",
+        "hi",
+        "hello",
+        "嗨",
+        "在吗",
+        "早上好",
+        "下午好",
+        "晚上好",
     ];
 
-    let is_greeting = greeting_patterns.iter().any(|&pat| {
-        trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat)
-    });
+    let is_greeting = greeting_patterns
+        .iter()
+        .any(|&pat| trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat));
 
     if is_greeting && trimmed.len() < 20 {
         // Fast response for greetings - no LLM call needed
@@ -500,12 +744,11 @@ pub async fn process_stream_events_with_safeguards(
             • 查看设备列表 - 说「列出设备」\n\
             • 查询设备数据 - 说「查询温度」\n\
             • 创建自动化规则 - 说「创建规则」\n\
-            • 查看所有规则 - 说「列出规则」"
+            • 查看所有规则 - 说「列出规则」",
         );
 
         // Pure async - no block_in_place
-        short_term_memory.write().await.push(greeting_response);
-        state.write().await.increment_messages();
+        internal_state.write().await.push_message(greeting_response);
 
         let response_content = "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
             • 查看设备列表 - 说「列出设备」\n\
@@ -519,24 +762,122 @@ pub async fn process_stream_events_with_safeguards(
         }));
     }
 
+    // === INTENT RECOGNITION: Understand user intent before LLM call ===
+    // This helps reduce cognitive load and provides better visualization
+    let classifier = IntentClassifier::default();
+    let intent_result = classifier.classify(&user_message);
+
+    tracing::info!(
+        "Intent recognized: category={:?}, confidence={:.2}, keywords={:?}",
+        intent_result.category,
+        intent_result.confidence,
+        intent_result.keywords
+    );
+
+    // Prepare intent and plan events for frontend visualization
+    let intent_event = AgentEvent::intent(
+        format!("{:?}", intent_result.category),
+        intent_result.category.display_name(),
+        intent_result.confidence,
+        intent_result.keywords.clone(),
+    );
+
+    // Plan steps based on intent
+    let plan_steps = match intent_result.category {
+        IntentCategory::Device => vec![
+            ("识别用户查询意图", "Intent"),
+            ("获取设备列表", "Execution"),
+            ("返回设备信息", "Response"),
+        ],
+        IntentCategory::Rule => vec![
+            ("识别规则查询意图", "Intent"),
+            ("获取规则列表", "Execution"),
+            ("返回规则信息", "Response"),
+        ],
+        IntentCategory::Workflow => vec![
+            ("识别工作流查询意图", "Intent"),
+            ("获取工作流列表", "Execution"),
+            ("返回工作流信息", "Response"),
+        ],
+        IntentCategory::Data => vec![
+            ("识别数据查询意图", "Intent"),
+            ("查询设备数据", "Execution"),
+            ("返回数据结果", "Response"),
+        ],
+        IntentCategory::General => vec![("理解用户问题", "Intent"), ("生成回复", "Response")],
+    };
+
+    // === COMPLEX INTENT DETECTION FOR MULTI-ROUND TOOL CALLING ===
+    // Complex intents require multi-step tool calling (e.g., conditional actions)
+    // Examples: "如果温度超过30度就打开空调", "查询设备状态并记录"
+    let is_complex_intent = is_complex_multi_step_intent(&user_message);
+
+    tracing::info!(
+        "Complex intent detection: is_complex={}, message={}",
+        is_complex_intent,
+        user_message.chars().take(50).collect::<String>()
+    );
+
     // === FIX 1: Get conversation history and pass to LLM ===
     // This prevents the LLM from repeating actions or calling tools again
     // Pure async - no block_in_place
-    let memory = short_term_memory.read().await;
-    let history_messages = memory.clone();
-    drop(memory); // Release lock before calling LLM
+    let state_guard = internal_state.read().await;
+    let history_messages = state_guard.memory.clone();
+    drop(state_guard); // Release lock before calling LLM
 
     let history_for_llm: Vec<edge_ai_core::Message> = build_context_window(&history_messages)
         .iter()
         .map(|msg| msg.to_core())
         .collect::<Vec<_>>();
 
-    tracing::debug!("Passing {} messages from history to LLM", history_for_llm.len());
+    tracing::debug!(
+        "Passing {} messages from history to LLM",
+        history_for_llm.len()
+    );
 
-    // Get the stream from llm_interface - pure async call
-    let stream = llm_interface.chat_stream_with_history(&user_message, &history_for_llm)
-        .await
-        .map_err(|e| AgentError::Llm(e.to_string()))?;
+    // === INTENT-BASED THINKING CONTROL ===
+    // For simple list-type queries, disable thinking to get faster responses
+    // This prevents the model from using all tokens for thinking
+    let use_thinking = match intent_result.category {
+        // Disable thinking for simple list queries
+        IntentCategory::Device => {
+            // Check if it's a simple list query (no complex context)
+            !user_message.contains("在线")
+                && !user_message.contains("状态")
+                && !user_message.contains("控制")
+        }
+        IntentCategory::Rule => {
+            !user_message.contains("历史")
+                && !user_message.contains("创建")
+                && !user_message.contains("启用")
+        }
+        IntentCategory::Workflow => {
+            !user_message.contains("执行")
+                && !user_message.contains("触发")
+                && !user_message.contains("状态")
+        }
+        // Keep thinking enabled for complex queries
+        IntentCategory::Data | IntentCategory::General => true,
+    };
+
+    tracing::info!(
+        "Intent-based thinking control: category={:?}, thinking_enabled={}",
+        intent_result.category,
+        use_thinking
+    );
+
+    // Get the stream from llm_interface - with or without thinking based on intent
+    let stream_result = if use_thinking {
+        llm_interface
+            .chat_stream_with_history(&user_message, &history_for_llm)
+            .await
+    } else {
+        llm_interface
+            .chat_stream_no_thinking_with_history(&user_message, &history_for_llm)
+            .await
+    };
+
+    let stream = stream_result.map_err(|e| AgentError::Llm(e.to_string()))?;
 
     Ok(Box::pin(async_stream::stream! {
         let mut stream = stream;
@@ -551,529 +892,552 @@ pub async fn process_stream_events_with_safeguards(
         // === SAFEGUARD: Track stream start time for timeout ===
         let stream_start = Instant::now();
 
+        // === KEEPALIVE: Track last event time for heartbeat ===
+        let mut last_event_time = Instant::now();
+        let mut last_progress_time = Instant::now();
+        let mut current_stage = "thinking";
+
+        // === TIMEOUT WARNING FLAGS ===
+        let mut timeout_warned = false;
+        let mut long_thinking_warned = false;
+
         // === SAFEGUARD: Track recent chunks for repetition detection ===
         let mut recent_chunks: Vec<String> = Vec::new();
         const RECENT_CHUNK_WINDOW: usize = 10;
 
         // === SAFEGUARD: Track recently executed tools to prevent loops ===
-        // Store tool names that were executed in this session (last 5 tools)
-        let mut recently_executed_tools: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(5);
+        let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
 
-        // === Stream and forward events ===
-        while let Some(result) = StreamExt::next(&mut stream).await {
-            // === SAFEGUARD: Check global timeout ===
-            if stream_start.elapsed() > safeguards.max_stream_duration {
-                tracing::warn!("Stream timeout reached after {:?}", stream_start.elapsed());
-                yield AgentEvent::error("Response timeout - stream took too long".to_string());
-                break;
-            }
-            
-            match result {
-                Ok((text, is_thinking)) => {
-                    if text.is_empty() {
-                        continue;
-                    }
-                    
-                    // === SAFEGUARD: Check for repetitive content (loop detection) ===
-                    if detect_repetition(&recent_chunks, &text, safeguards.max_repetition_count) {
-                        tracing::warn!("Repetition detected in LLM output, breaking loop");
-                        yield AgentEvent::error("Detected repetitive output - stopping to prevent loop".to_string());
-                        break;
-                    }
-                    recent_chunks.push(text.clone());
-                    if recent_chunks.len() > RECENT_CHUNK_WINDOW {
-                        recent_chunks.remove(0);
-                    }
+        // === SAFEGUARD: Track multi-round tool calling iterations ===
+        let mut tool_iteration_count = 0usize;
+        const MAX_TOOL_ITERATIONS: usize = 5;
 
-                    // thinking: send immediately with length check
-                    if is_thinking {
-                        // === CRITICAL FIX: Check thinking limit BEFORE sending ===
-                        // Don't accumulate or send if we're already at the limit
-                        if safeguards.max_thinking_length != usize::MAX
-                            && thinking_content.len() >= safeguards.max_thinking_length
-                        {
-                            tracing::warn!(
-                                "Thinking already at max length ({}), ignoring additional chunks",
-                                thinking_content.len()
-                            );
-                            continue; // Skip this chunk entirely
-                        }
+        // === INTENT & PLAN VISUALIZATION ===
+        // Send intent and plan events first to show user what's happening
+        yield intent_event;
+        last_event_time = Instant::now();
 
-                        // Check if adding this chunk would exceed the limit
-                        if safeguards.max_thinking_length != usize::MAX
-                            && thinking_content.len() + text.len() > safeguards.max_thinking_length
-                        {
-                            // Only send partial chunk up to the limit
-                            let remaining = safeguards.max_thinking_length - thinking_content.len();
-                            if remaining > 0 && !text.is_empty() {
-                                // Safe truncate: take min of remaining and text length
-                                let truncate_len = remaining.min(text.len());
-                                let truncated = &text[..truncate_len];
-                                thinking_content.push_str(truncated);
-                                yield AgentEvent::thinking(truncated.to_string());
-                            }
-                            tracing::warn!(
-                                "Thinking content would exceed max length ({} + {} > {}), forcing termination",
-                                thinking_content.len(),
-                                text.len(),
-                                safeguards.max_thinking_length
-                            );
-                            yield AgentEvent::error(format!(
-                                "Thinking limit reached ({} chars), stopping to prevent slow response",
-                                safeguards.max_thinking_length
-                            ));
-                            break;
-                        }
-
-                        thinking_content.push_str(&text);
-                        has_thinking = true;
-                        yield AgentEvent::thinking(text);
-                        continue;
-                    }
-
-                    // content: need to check for tool calls
-                    has_content = true;
-
-                    // === SAFEGUARD: Check content length (only if limit is set) ===
-                    if safeguards.max_content_length != usize::MAX
-                        && content_before_tools.len() + buffer.len() + text.len() > safeguards.max_content_length
-                    {
-                        tracing::warn!("Content exceeded max length ({}), stopping stream", safeguards.max_content_length);
-                        yield AgentEvent::error("Response too long - content limit reached".to_string());
-                        break;
-                    }
-
-                    buffer.push_str(&text);
-
-                    // Check for tool calls in buffer
-                    if let Some(tool_start) = buffer.find("<tool_calls>") {
-                        let before_tool = &buffer[..tool_start];
-                        if !before_tool.is_empty() {
-                            content_before_tools.push_str(before_tool);
-                            yield AgentEvent::content(before_tool.to_string());
-                        }
-
-                        if let Some(tool_end) = buffer.find("</tool_calls>") {
-                            let tool_content = buffer[tool_start..tool_end + 13].to_string();
-                            buffer = buffer[tool_end + 13..].to_string();
-
-                            if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
-                                // === SAFEGUARD: Check for duplicate tool calls to prevent loops ===
-                                let mut duplicate_found = false;
-                                for call in &calls {
-                                    if recently_executed_tools.contains(&call.name) {
-                                        tracing::warn!(
-                                            "Tool '{}' was recently executed - potential loop detected",
-                                            call.name
-                                        );
-                                        yield AgentEvent::error(format!(
-                                            "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
-                                            call.name
-                                        ));
-                                        duplicate_found = true;
-                                        tool_calls.clear();
-                                        break;
-                                    }
-                                }
-
-                                if duplicate_found {
-                                    // Loop was detected, skip this batch
-                                    break;
-                                }
-
-                                tool_calls = calls;
-                                tool_calls_detected = true;
-                            }
-                            break;
-                        } else {
-                            continue; // wait for more data
-                        }
-                    }
-
-                    // No tool calls - stream content immediately
-                    if !tool_calls_detected && !buffer.is_empty() {
-                        // Check if buffer contains start of tool calls
-                        if !buffer.contains("<tool_calls") {
-                            // No tool calls in buffer, emit content
-                            content_before_tools.push_str(&buffer);
-                            yield AgentEvent::content(buffer.clone());
-                            buffer.clear();
-                        } else {
-                            // Buffer contains partial tool call XML, check if it's complete
-                            // If complete but parsing failed, filter out the XML before emitting
-                            if buffer.contains("</tool_calls>") {
-                                // Tool calls are complete but parsing failed
-                                // Filter out any tool call XML and emit remaining content
-                                let filtered = if let Some(tool_start) = buffer.find("<tool_calls>") {
-                                    if let Some(tool_end) = buffer.find("</tool_calls>") {
-                                        // Remove tool call block, keep content before and after
-                                        let before = &buffer[..tool_start];
-                                        let after = &buffer[tool_end + 13..];
-                                        format!("{}{}", before, after)
-                                    } else {
-                                        buffer.clone()
-                                    }
-                                } else {
-                                    buffer.clone()
-                                };
-
-                                if !filtered.is_empty() {
-                                    content_before_tools.push_str(&filtered);
-                                    yield AgentEvent::content(filtered);
-                                }
-                                buffer.clear();
-                            }
-                            // If tool calls are incomplete, wait for more data
-                        }
-                    }
-                }
-                Err(e) => {
-                    yield AgentEvent::error(e.to_string());
-                    break;
-                }
-            }
+        for (step, stage) in &plan_steps {
+            yield AgentEvent::plan(*step, *stage);
         }
 
-        // Emit any remaining buffer (after filtering out tool call XML)
-        if !buffer.is_empty() {
-            // Filter out any tool call XML that might remain in the buffer
-            let filtered_content = if buffer.contains("<tool_calls>") {
-                // Remove tool call blocks from buffer
-                let mut result = buffer.clone();
-                while let Some(start) = result.find("<tool_calls>") {
-                    if let Some(end) = result.find("</tool_calls>") {
-                        result.replace_range(start..=end + 12, "");
-                    } else {
-                        break;
-                    }
-                }
-                result
-            } else {
-                buffer.clone()
-            };
+        // === MULTI-ROUND TOOL CALLING LOOP ===
+        // For complex intents, we may need multiple rounds of tool calling
+        'multi_round_loop: loop {
+            if tool_iteration_count > 0 {
+                tracing::info!("Starting tool iteration round {}", tool_iteration_count + 1);
 
-            if !filtered_content.is_empty() {
-                content_before_tools.push_str(&filtered_content);
-                yield AgentEvent::content(filtered_content);
-            }
-        }
+                // For subsequent rounds, we need a new LLM call with tools enabled
+                let state_guard = internal_state.read().await;
+                let history_for_round = build_context_window(&state_guard.memory);
+                drop(state_guard);
 
-        // === Handle empty responses ===
-        // With increased thinking limit, model should complete and output actual content
-        let has_content = !content_before_tools.is_empty();
-        let has_thinking = !thinking_content.is_empty();
+                let history_for_llm: Vec<edge_ai_core::Message> = history_for_round
+                    .iter()
+                    .map(|msg| msg.to_core())
+                    .collect::<Vec<_>>();
 
-        // IMPORTANT: If tool calls were detected, DON'T save the initial message yet.
-        // We'll save a complete message (with tool_calls and final response) in Phase 2.
-        // If no tool calls, save the response now.
-        if !tool_calls_detected {
-            // Handle empty response case (should be rare with increased thinking limit)
-            let response_to_save = if !has_content && !has_thinking {
-                // Complete empty response - shouldn't happen but handle it
-                let fallback = "您好，我是NeoTalk助手，请问有什么可以帮助您的？".to_string();
-                yield AgentEvent::content(fallback.clone());
-                fallback
-            } else {
-                content_before_tools.clone()
-            };
+                // Use tools enabled, no thinking for subsequent rounds
+                let round_stream_result = llm_interface.chat_stream_no_thinking_with_history(
+                    "请继续处理之前的工具执行结果。如果需要更多工具调用，请使用工具。如果任务完成，请给出最终回复。",
+                    &history_for_llm
+                ).await;
 
-            let initial_msg = if !thinking_content.is_empty() {
-                // Clean up repetitive thinking content before storing
-                let cleaned_thinking = cleanup_thinking_content(&thinking_content);
-                let original_len = thinking_content.len();
-                let cleaned_len = cleaned_thinking.len();
-
-                if original_len > cleaned_len {
-                    tracing::info!(
-                        "Thinking content cleaned: {} chars -> {} chars ({}% reduction)",
-                        original_len,
-                        cleaned_len,
-                        (original_len - cleaned_len) * 100 / original_len
-                    );
-                }
-
-                AgentMessage::assistant_with_thinking(&response_to_save, &cleaned_thinking)
-            } else {
-                AgentMessage::assistant(&response_to_save)
-            };
-            short_term_memory.write().await.push(initial_msg);
-        }
-
-        // === PHASE 2: Handle tool calls if detected ===
-        if tool_calls_detected {
-            tracing::info!("Starting PARALLEL tool execution");
-            
-            // === SAFEGUARD: Limit number of tool calls to prevent infinite loops ===
-            if tool_calls.len() > safeguards.max_tool_iterations {
-                tracing::warn!(
-                    "Too many tool calls ({}) requested, limiting to {}",
-                    tool_calls.len(),
-                    safeguards.max_tool_iterations
-                );
-                yield AgentEvent::error(format!(
-                    "Too many tool calls requested ({}), limiting to {}",
-                    tool_calls.len(),
-                    safeguards.max_tool_iterations
-                ));
-                tool_calls.truncate(safeguards.max_tool_iterations);
-            }
-            let tool_calls_to_execute = tool_calls.clone();
-
-            // Create cache for this batch of tool executions (5 minute TTL)
-            let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
-
-            // Execute all tool calls in parallel
-            let tool_futures: Vec<_> = tool_calls_to_execute.iter().map(|tool_call| {
-                let tools_clone = tools.clone();
-                let cache_clone = cache.clone();
-                let name = tool_call.name.clone();
-                let arguments = tool_call.arguments.clone();
-                let name_clone = name.clone();
-
-                async move {
-                    // Emit start event before execution
-                    (name.clone(), ToolExecutionResult {
-                        name: name_clone,
-                        result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
-                    })
-                }
-            }).collect();
-
-            // Execute all tools in parallel and collect results
-            let tool_results_executed = futures::future::join_all(tool_futures).await;
-
-            // Process results and update tool_calls with execution results
-            let mut tool_calls_with_results: Vec<ToolCall> = Vec::new();
-            let mut tool_call_results: Vec<(String, String)> = Vec::new();
-
-            for (name, execution) in tool_results_executed {
-                yield AgentEvent::tool_call_start(&name, tool_calls.iter().find(|t| t.name == name).map(|t| t.arguments.clone()).unwrap_or_default());
-
-                match execution.result {
-                    Ok(output) => {
-                        let result_value = if output.success {
-                            output.data.clone()
-                        } else {
-                            output.error.clone().map(|e| serde_json::json!({"error": e}))
-                                .unwrap_or_else(|| serde_json::json!("Error"))
-                        };
-                        let result_str = if output.success {
-                            serde_json::to_string(&output.data).unwrap_or_else(|_| "Success".to_string())
-                        } else {
-                            output.error.clone().unwrap_or_else(|| "Error".to_string())
-                        };
-
-                        // Find the original tool call and add result
-                        for tc in &tool_calls {
-                            if tc.name == name {
-                                tool_calls_with_results.push(ToolCall {
-                                    name: tc.name.clone(),
-                                    id: tc.id.clone(),
-                                    arguments: tc.arguments.clone(),
-                                    result: Some(result_value.clone()),
-                                });
-                                break;
-                            }
-                        }
-
-                        yield AgentEvent::tool_call_end(&name, &result_str, output.success);
-                        tool_call_results.push((name.clone(), result_str));
-                    }
+                let round_stream = match round_stream_result {
+                    Ok(s) => s,
                     Err(e) => {
-                        let error_msg = format!("工具执行失败: {}", e);
-                        let error_value = serde_json::json!({"error": error_msg});
-
-                        // Find the original tool call and add error result
-                        for tc in &tool_calls {
-                            if tc.name == name {
-                                tool_calls_with_results.push(ToolCall {
-                                    name: tc.name.clone(),
-                                    id: tc.id.clone(),
-                                    arguments: tc.arguments.clone(),
-                                    result: Some(error_value.clone()),
-                                });
-                                break;
-                            }
-                        }
-
-                        yield AgentEvent::tool_call_end(&name, &error_msg, false);
-                        tool_call_results.push((name.clone(), error_msg));
+                        tracing::error!("Round {} LLM call failed: {}", tool_iteration_count + 1, e);
+                        yield AgentEvent::error(format!("工具调用失败: {}", e));
+                        break 'multi_round_loop;
                     }
+                };
+
+                stream = Box::pin(round_stream);
+                buffer = String::new();
+                tool_calls.clear();
+                content_before_tools = String::new();
+            }
+
+            // === PHASE 1: Stream initial response (thinking + content + tool calls) ===
+            while let Some(result) = StreamExt::next(&mut stream).await {
+                let elapsed = stream_start.elapsed();
+
+                // Check timeout with early warning at 80% of max duration
+                let timeout_threshold = safeguards.max_stream_duration;
+                let warning_threshold = timeout_threshold.mul_f32(0.8);
+
+                if elapsed > timeout_threshold {
+                    tracing::warn!("Stream timeout ({:?} elapsed, max: {:?}), forcing completion", elapsed, timeout_threshold);
+                    yield AgentEvent::error(format!("请求超时（已用时{:.1}秒），正在完成处理...", elapsed.as_secs_f64()));
+                    break;
+                } else if elapsed > warning_threshold && !timeout_warned {
+                    tracing::warn!("Stream approaching timeout ({:.1}s elapsed, max: {:.1}s)", elapsed.as_secs_f64(), timeout_threshold.as_secs_f64());
+                    yield AgentEvent::warning(format!("响应时间较长（已用时{:.1}秒），请耐心等待...", elapsed.as_secs_f64()));
+                    timeout_warned = true;
                 }
-            }
 
-            // === SAFEGUARD: Update recently executed tools list to prevent loops ===
-            // Only add tools that succeeded to the list
-            for (name, _result) in &tool_call_results {
-                if !recently_executed_tools.contains(name) {
-                    recently_executed_tools.push_back(name.clone());
-                    if recently_executed_tools.len() > 5 {
-                        recently_executed_tools.pop_front();
-                    }
-                    tracing::debug!("Added '{}' to recently executed tools (now: {:?})", name, recently_executed_tools);
+                // Special warning for extended thinking with no content
+                if has_thinking && !has_content && elapsed > Duration::from_secs(60) && !long_thinking_warned {
+                    tracing::warn!("Extended thinking detected ({:.1}s) with no content yet", elapsed.as_secs_f64());
+                    yield AgentEvent::warning("模型正在进行深度思考，可能需要更长时间...".to_string());
+                    long_thinking_warned = true;
                 }
-            }
 
-            // === FIX 2: Phase 2 - Direct tool result formatting ===
-            // Instead of calling LLM again (which causes empty responses and delays),
-            // we directly format and return the tool results.
-            // This is faster and more reliable for simple tool queries.
-
-            // Step 1: Save the initial assistant message WITH tool call results
-            // This ensures frontend can display complete tool call status
-            let initial_msg = if !thinking_content.is_empty() {
-                AgentMessage::assistant_with_tools_and_thinking(
-                    &content_before_tools,  // Content before tool calls
-                    tool_calls_with_results,  // Tool calls WITH results
-                    &thinking_content,
-                )
-            } else {
-                AgentMessage::assistant_with_tools(
-                    &content_before_tools,
-                    tool_calls_with_results,  // Tool calls WITH results
-                )
-            };
-            short_term_memory.write().await.push(initial_msg);
-
-            // Step 2: Add tool result messages to history for LLM context
-            for (tool_name, result_str) in &tool_call_results {
-                let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
-                short_term_memory.write().await.push(tool_result_msg);
-            }
-
-            // Step 3: Call LLM again to generate final response based on tool results
-            // The LLM should see: conversation history + tool call + tool result
-            // And generate a natural response to the user
-            tracing::info!("Phase 2: Generating follow-up response based on tool results");
-
-            // Get the conversation history (including the tool results we just added)
-            // Pure async - no block_in_place
-            let history = short_term_memory.read().await;
-            let history_messages: Vec<edge_ai_core::Message> = history.iter()
-                .map(|msg| msg.to_core())
-                .collect::<Vec<_>>();
-            drop(history); // Release lock
-
-            // Phase 2: Use the specialized function that disables both tools and thinking
-            // This prevents infinite thinking loops and provides faster responses
-            // The history already contains tool calls and results, so LLM knows what happened
-            let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
-                "请根据工具执行结果生成简洁的回复。", &history_messages
-            ).await;
-
-            let followup_stream = match followup_stream_result {
-                Ok(stream) => stream,
-                Err(e) => {
-                    tracing::error!("Phase 2 LLM call failed: {}", e);
-                    // Fallback to formatted tool results
-                    let fallback_text = format_tool_results(&tool_call_results);
-                    for chunk in fallback_text.chars().collect::<Vec<_>>().chunks(20) {
-                        let chunk_str: String = chunk.iter().collect();
-                        if !chunk_str.is_empty() {
-                            yield AgentEvent::content(chunk_str);
-                        }
-                    }
+                // Check for interrupt signal
+                // We clone the value to avoid holding the guard across await
+                let is_interrupted = safeguards.interrupt_signal.as_ref().map(|rx| *rx.borrow()).unwrap_or(false);
+                if is_interrupted {
+                    tracing::info!("Stream interrupted by user");
+                    yield AgentEvent::content("\n\n[已中断]".to_string());
                     yield AgentEvent::end();
                     return;
                 }
-            };
 
-            // Stream the follow-up response
-            let mut followup_stream = Box::pin(followup_stream);
-            let mut final_response_content = String::new();
-            let mut phase2_thinking_chars = 0usize;
-            let followup_start = Instant::now();
+                // === KEEPALIVE: Send heartbeat if no events for too long ===
+                if last_event_time.elapsed() > safeguards.heartbeat_interval {
+                    yield AgentEvent::heartbeat();
+                    last_event_time = Instant::now();
+                }
 
-            while let Some(result) = StreamExt::next(&mut followup_stream).await {
-                // Phase 2 timeout - don't wait too long
-                if followup_start.elapsed() > Duration::from_secs(30) {
-                    tracing::warn!("Phase 2 timeout (>30s), forcing completion");
-                    break;
+                // === PROGRESS: Send progress update during long operations ===
+                if last_progress_time.elapsed() > safeguards.progress_interval {
+                    let stage_name = if has_thinking && !has_content {
+                        "thinking"
+                    } else if tool_calls_detected {
+                        "executing"
+                    } else {
+                        "generating"
+                    };
+                    let elapsed_ms = elapsed.as_millis() as u64;
+                    yield AgentEvent::progress(
+                        format!("正在{}...", match stage_name {
+                            "thinking" => "思考",
+                            "executing" => "执行工具",
+                            _ => "生成回复",
+                        }),
+                        stage_name,
+                        elapsed_ms
+                    );
+                    last_progress_time = Instant::now();
+                    current_stage = stage_name;
                 }
 
                 match result {
-                    Ok((chunk, is_thinking)) => {
-                        if chunk.is_empty() {
+                    Ok((text, is_thinking)) => {
+                        if text.is_empty() {
                             continue;
                         }
-                        if is_thinking {
-                            // Track thinking characters for Phase 2
-                            phase2_thinking_chars += chunk.chars().count();
 
-                            // SAFEGUARD: Limit Phase 2 thinking to prevent infinite loops
-                            // Use a lower limit than Phase 1 since Phase 2 should be brief
-                            const MAX_PHASE2_THINKING: usize = 5000;
-                            if phase2_thinking_chars > MAX_PHASE2_THINKING {
-                                tracing::warn!(
-                                    "Phase 2 thinking exceeds limit ({} > {}), forcing content generation",
-                                    phase2_thinking_chars, MAX_PHASE2_THINKING
-                                );
-                                // Don't break - just stop sending thinking and wait for content
-                                continue;
+                        // === SAFEGUARD: Repetition detection ===
+                        recent_chunks.push(text.clone());
+                        if recent_chunks.len() > RECENT_CHUNK_WINDOW {
+                            recent_chunks.remove(0);
+                        }
+
+                        if detect_repetition(&recent_chunks, &text, safeguards.max_repetition_count) {
+                            tracing::warn!("Repetition detected, stopping stream");
+                            yield AgentEvent::error("检测到重复内容，正在完成处理...".to_string());
+                            break;
+                        }
+
+                        if is_thinking {
+                            // No thinking limit - let the model think as much as needed
+                            thinking_content.push_str(&text);
+                            has_thinking = true;
+                            yield AgentEvent::thinking(text);
+                            last_event_time = Instant::now();
+                            continue;
+                        }
+
+                        // content: need to check for tool calls
+                        has_content = true;
+                        last_event_time = Instant::now();
+
+                        if safeguards.max_content_length != usize::MAX
+                            && content_before_tools.len() + buffer.len() + text.len() > safeguards.max_content_length
+                        {
+                            tracing::warn!("Content exceeded max length ({}), stopping stream", safeguards.max_content_length);
+                            yield AgentEvent::error("Response too long - content limit reached".to_string());
+                            break;
+                        }
+
+                        buffer.push_str(&text);
+
+                        // Check for tool calls in buffer
+                        if let Some(tool_start) = buffer.find("<tool_calls>") {
+                            let before_tool = &buffer[..tool_start];
+                            if !before_tool.is_empty() {
+                                content_before_tools.push_str(before_tool);
+                                yield AgentEvent::content(before_tool.to_string());
                             }
 
-                            // Phase 2 thinking - still send it but could be limited if needed
-                            yield AgentEvent::thinking(chunk.clone());
-                        } else {
-                            yield AgentEvent::content(chunk.clone());
-                            final_response_content.push_str(&chunk);
+                            if let Some(tool_end) = buffer.find("</tool_calls>") {
+                                let tool_content = buffer[tool_start..tool_end + 13].to_string();
+                                buffer = buffer[tool_end + 13..].to_string();
+
+                                if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
+                                    let mut duplicate_found = false;
+                                    for call in &calls {
+                                        if recently_executed_tools.contains(&call.name) {
+                                            tracing::warn!(
+                                                "Tool '{}' was recently executed - potential loop detected",
+                                                call.name
+                                            );
+                                            yield AgentEvent::error(format!(
+                                                "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                                call.name
+                                            ));
+                                            duplicate_found = true;
+                                            tool_calls.clear();
+                                            break;
+                                        }
+                                    }
+
+                                    if !duplicate_found {
+                                        tool_calls_detected = true;
+                                        tool_calls.extend(calls);
+                                    }
+                                }
+                            }
                         }
                     }
                     Err(e) => {
-                        tracing::error!("Phase 2 stream error: {}", e);
+                        tracing::error!("Stream error: {}", e);
+                        yield AgentEvent::error(format!("Stream error: {}", e));
                         break;
                     }
                 }
             }
 
-            // === FIX: Handle empty Phase 2 response ===
-            // If Phase 2 produced no actual content (only thinking), use a fallback
-            if final_response_content.is_empty() {
-                tracing::warn!(
-                    "Phase 2 produced no content ({} chars of thinking), using fallback",
-                    phase2_thinking_chars
-                );
+            // === PHASE 2: Handle tool calls if detected ===
+            if tool_calls_detected {
+                tracing::info!("Starting tool execution round {}", tool_iteration_count + 1);
 
-                // Generate a meaningful fallback based on tool results
-                let fallback = if tool_call_results.len() == 1 {
-                    // Single tool result - format it nicely
-                    let (tool_name, result_str) = &tool_call_results[0];
-                    if tool_name == "list_devices" {
-                        // Try to parse and format device list
-                        if let Ok(json_val) = serde_json::from_str::<Value>(result_str) {
-                            if let Some(devices) = json_val.get("devices").and_then(|d| d.as_array()) {
-                                format!("已找到 {} 个设备。", devices.len())
-                            } else {
-                                "设备查询完成。".to_string()
-                            }
-                        } else {
-                            "设备查询完成。".to_string()
-                        }
-                    } else {
-                        format!("{} 执行完成。", tool_name)
+                if tool_calls.len() > safeguards.max_tool_iterations {
+                    tracing::warn!(
+                        "Too many tool calls ({}) requested, limiting to {}",
+                        tool_calls.len(),
+                        safeguards.max_tool_iterations
+                    );
+                    yield AgentEvent::error(format!(
+                        "Too many tool calls requested ({}), limiting to {}",
+                        tool_calls.len(),
+                        safeguards.max_tool_iterations
+                    ));
+                    tool_calls.truncate(safeguards.max_tool_iterations);
+                }
+                let tool_calls_to_execute = tool_calls.clone();
+
+                // Create cache for this batch of tool executions
+                let cache = Arc::new(RwLock::new(ToolResultCache::new(Duration::from_secs(300))));
+
+                // Execute all tool calls in parallel
+                let tool_futures: Vec<_> = tool_calls_to_execute.iter().map(|tool_call| {
+                    let tools_clone = tools.clone();
+                    let cache_clone = cache.clone();
+                    let name = tool_call.name.clone();
+                    let arguments = tool_call.arguments.clone();
+                    let name_clone = name.clone();
+
+                    async move {
+                        (name.clone(), ToolExecutionResult {
+                            name: name_clone,
+                            result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
+                        })
                     }
-                } else if tool_call_results.len() > 1 {
-                    // Multiple tools executed
-                    format!("已执行 {} 个工具操作。", tool_call_results.len())
+                }).collect();
+
+                let tool_results_executed = futures::future::join_all(tool_futures).await;
+
+                // Process results
+                let mut tool_calls_with_results: Vec<ToolCall> = Vec::new();
+                let mut tool_call_results: Vec<(String, String)> = Vec::new();
+
+                for (name, execution) in tool_results_executed {
+                    yield AgentEvent::tool_call_start(&name, tool_calls.iter().find(|t| t.name == name).map(|t| t.arguments.clone()).unwrap_or_default());
+
+                    match execution.result {
+                        Ok(output) => {
+                            let result_value = if output.success {
+                                output.data.clone()
+                            } else {
+                                output.error.clone().map(|e| serde_json::json!({"error": e}))
+                                    .unwrap_or_else(|| serde_json::json!("Error"))
+                            };
+                            let result_str = if output.success {
+                                serde_json::to_string(&output.data).unwrap_or_else(|_| "Success".to_string())
+                            } else {
+                                output.error.clone().unwrap_or_else(|| "Error".to_string())
+                            };
+
+                            for tc in &tool_calls {
+                                if tc.name == name {
+                                    tool_calls_with_results.push(ToolCall {
+                                        name: tc.name.clone(),
+                                        id: tc.id.clone(),
+                                        arguments: tc.arguments.clone(),
+                                        result: Some(result_value.clone()),
+                                    });
+                                    break;
+                                }
+                            }
+
+                            yield AgentEvent::tool_call_end(&name, &result_str, output.success);
+                            tool_call_results.push((name.clone(), result_str));
+                        }
+                        Err(e) => {
+                            let error_msg = format!("工具执行失败: {}", e);
+                            let error_value = serde_json::json!({"error": error_msg});
+
+                            for tc in &tool_calls {
+                                if tc.name == name {
+                                    tool_calls_with_results.push(ToolCall {
+                                        name: tc.name.clone(),
+                                        id: tc.id.clone(),
+                                        arguments: tc.arguments.clone(),
+                                        result: Some(error_value.clone()),
+                                    });
+                                    break;
+                                }
+                            }
+
+                            yield AgentEvent::tool_call_end(&name, &error_msg, false);
+                            tool_call_results.push((name.clone(), error_msg));
+                        }
+                    }
+                }
+
+                // Update recently executed tools list
+                for (name, _result) in &tool_call_results {
+                    if !recently_executed_tools.contains(name) {
+                        recently_executed_tools.push_back(name.clone());
+                        if recently_executed_tools.len() > 5 {
+                            recently_executed_tools.pop_front();
+                        }
+                        tracing::debug!("Added '{}' to recently executed tools (now: {:?})", name, recently_executed_tools);
+                    }
+                }
+
+                // === PHASE 3: Generate follow-up response ===
+                // For complex intents, check if we need more tool calls
+                if is_complex_intent && tool_iteration_count < MAX_TOOL_ITERATIONS - 1 {
+                    tracing::info!("Complex intent: Checking if more tool calls needed (iteration {}/{})",
+                        tool_iteration_count + 1, MAX_TOOL_ITERATIONS);
+
+                    // Save results to memory
+                    for (tool_name, result_str) in &tool_call_results {
+                        let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
+                        internal_state.write().await.push_message(tool_result_msg);
+                    }
+
+                    // Increment iteration count and loop back
+                    tool_iteration_count += 1;
+                    tool_calls_detected = false;
+                    tool_calls.clear();
+
+                    // Continue the loop to make another LLM call with tools
+                    continue 'multi_round_loop;
+                }
+
+                // === SIMPLE INTENT OR MAX ITERATIONS REACHED: Final response ===
+                // Save the initial message with thinking
+                let response_to_save = if content_before_tools.is_empty() {
+                    // No content before tools - use empty string, don't show meaningless fallback
+                    String::new()
                 } else {
-                    // No tools produced results - shouldn't happen
-                    "处理完成。".to_string()
+                    content_before_tools.clone()
                 };
 
-                yield AgentEvent::content(fallback.clone());
-                final_response_content = fallback;
+                let initial_msg = if !thinking_content.is_empty() {
+                    let cleaned_thinking = cleanup_thinking_content(&thinking_content);
+                    AgentMessage::assistant_with_thinking(&response_to_save, &cleaned_thinking)
+                } else {
+                    AgentMessage::assistant(&response_to_save)
+                };
+                internal_state.write().await.push_message(initial_msg);
+
+                // Add tool result messages to history
+                for (tool_name, result_str) in &tool_call_results {
+                    let tool_result_msg = AgentMessage::tool_result(tool_name, result_str);
+                    internal_state.write().await.push_message(tool_result_msg);
+                }
+
+                // Trim history
+                let state_guard = internal_state.read().await;
+                let mut history_messages: Vec<edge_ai_core::Message> = state_guard.memory.iter()
+                    .map(|msg| msg.to_core())
+                    .collect::<Vec<_>>();
+                drop(state_guard);
+
+                if history_messages.len() > 6 {
+                    let keep_count = 6;
+                    tracing::info!("Trimming history from {} to {} messages",
+                        history_messages.len(), keep_count);
+                    let split_idx = history_messages.len() - keep_count;
+                    history_messages = history_messages.split_off(split_idx);
+                }
+
+                // Direct return for simple query tools
+                let simple_query_tools = ["list_devices", "list_rules", "list_workflows", "list_alerts"];
+                let is_simple_query = tool_call_results.len() == 1
+                    && simple_query_tools.contains(&tool_call_results[0].0.as_str());
+
+                if is_simple_query {
+                    let (_tool_name, result_str) = &tool_call_results[0];
+                    if let Ok(json_val) = serde_json::from_str::<Value>(result_str) {
+                        let final_text = if let Some(devices) = json_val.get("devices").and_then(|d| d.as_array()) {
+                            format!("已找到 {} 个设备。", devices.len())
+                        } else if let Some(rules) = json_val.get("rules").and_then(|r| r.as_array()) {
+                            format!("已找到 {} 条规则。", rules.len())
+                        } else if let Some(workflows) = json_val.get("workflows").and_then(|w| w.as_array()) {
+                            format!("已找到 {} 个工作流。", workflows.len())
+                        } else {
+                            "查询完成。".to_string()
+                        };
+
+                        yield AgentEvent::content(final_text.clone());
+                        let final_msg = AgentMessage::assistant(&final_text);
+                        internal_state.write().await.push_message(final_msg);
+                        yield AgentEvent::end();
+                        return;
+                    }
+                }
+
+                // Phase 2 LLM call for follow-up
+                tracing::info!("Phase 2: Generating follow-up response");
+
+                let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
+                    "请根据工具执行结果生成简洁的回复。", &history_messages
+                ).await;
+
+                let followup_stream = match followup_stream_result {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        tracing::error!("Phase 2 LLM call failed: {}", e);
+                        let fallback_text = format_tool_results(&tool_call_results);
+                        for chunk in fallback_text.chars().collect::<Vec<_>>().chunks(20) {
+                            let chunk_str: String = chunk.iter().collect();
+                            if !chunk_str.is_empty() {
+                                yield AgentEvent::content(chunk_str);
+                            }
+                        }
+                        yield AgentEvent::end();
+                        return;
+                    }
+                };
+
+                let mut followup_stream = Box::pin(followup_stream);
+                let mut final_response_content = String::new();
+                let followup_start = Instant::now();
+
+                while let Some(result) = StreamExt::next(&mut followup_stream).await {
+                    if followup_start.elapsed() > Duration::from_secs(30) {
+                        tracing::warn!("Phase 2 timeout (>30s), forcing completion");
+                        break;
+                    }
+
+                    match result {
+                        Ok((chunk, is_thinking)) => {
+                            if chunk.is_empty() {
+                                continue;
+                            }
+                            if !is_thinking {
+                                yield AgentEvent::content(chunk.clone());
+                                final_response_content.push_str(&chunk);
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Phase 2 stream error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                if final_response_content.is_empty() {
+                    let fallback = if tool_call_results.len() == 1 {
+                        format!("{} 执行完成。", tool_call_results[0].0)
+                    } else if tool_call_results.len() > 1 {
+                        format!("已执行 {} 个工具操作。", tool_call_results.len())
+                    } else {
+                        "处理完成。".to_string()
+                    };
+                    yield AgentEvent::content(fallback.clone());
+                    final_response_content = fallback;
+                }
+
+                let final_msg = AgentMessage::assistant(&final_response_content);
+                internal_state.write().await.push_message(final_msg);
+
+                tracing::info!("Tool execution and Phase 2 response complete");
+            } else {
+                // No tool calls - save response directly
+                let response_to_save = if content_before_tools.is_empty() {
+                    // No content and no tools - use empty string
+                    String::new()
+                } else {
+                    content_before_tools.clone()
+                };
+
+                let initial_msg = if !thinking_content.is_empty() {
+                    let cleaned_thinking = cleanup_thinking_content(&thinking_content);
+                    AgentMessage::assistant_with_thinking(&response_to_save, &cleaned_thinking)
+                } else {
+                    AgentMessage::assistant(&response_to_save)
+                };
+                internal_state.write().await.push_message(initial_msg);
+
+                // Yield any remaining content
+                if !buffer.is_empty() {
+                    yield AgentEvent::content(buffer.clone());
+                }
             }
 
-            // Save the final assistant response to memory
-            let final_msg = AgentMessage::assistant(&final_response_content);
-            short_term_memory.write().await.push(final_msg);
-
-            tracing::info!("Tool execution and Phase 2 response complete");
+            // Break the loop after processing
+            break 'multi_round_loop;
         }
 
-        state.write().await.increment_messages();
         yield AgentEvent::end();
     }))
+}
+
+/// Detect if the user's intent requires multi-step tool calling.
+/// Complex intents include conditional logic, chained operations, etc.
+fn is_complex_multi_step_intent(message: &str) -> bool {
+    let complex_patterns = [
+        // Conditional patterns
+        ("如果", "就"),
+        ("如果", "则"),
+        ("当", "时"),
+        ("超过", "就"),
+        // Chained operation patterns
+        ("查询", "然后"),
+        ("检查", "之后"),
+        // Multiple operation indicators
+        ("并且", ""),
+        ("同时", ""),
+        ("和", ""),
+    ];
+
+    let lower = message.to_lowercase();
+
+    for (first, second) in complex_patterns {
+        if !second.is_empty() {
+            if lower.contains(first) && lower.contains(second) {
+                return true;
+            }
+        } else if lower.contains(first) {
+            // Check if message has multiple verbs indicating multiple steps
+            let verb_count = ["查询", "检查", "执行", "打开", "关闭", "启动", "停止"]
+                .iter()
+                .filter(|v| lower.contains(*v))
+                .count();
+            if verb_count > 1 {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Execute a tool with retry logic for transient errors and caching.
@@ -1145,7 +1509,9 @@ async fn execute_with_retry_impl(
         }
     }
 
-    Err(edge_ai_tools::ToolError::Execution("Max retries exceeded".to_string()))
+    Err(edge_ai_tools::ToolError::Execution(
+        "Max retries exceeded".to_string(),
+    ))
 }
 
 /// Convert AgentEvent stream to String stream for backward compatibility.
@@ -1240,7 +1606,10 @@ mod tests {
         let chunks: Vec<TestResult<(String, bool)>> = vec![
             Ok(("让我帮您".to_string(), false)),
             Ok(("查询设备".to_string(), false)),
-            Ok(("<tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>".to_string(), false)),
+            Ok((
+                "<tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>".to_string(),
+                false,
+            )),
         ];
 
         let mut stream = futures::stream::iter(chunks);
@@ -1279,7 +1648,10 @@ mod tests {
             Ok(("需要调用list_devices".to_string(), true)),
             Ok(("好的，我来".to_string(), false)),
             Ok(("查询一下".to_string(), false)),
-            Ok(("<tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>".to_string(), false)),
+            Ok((
+                "<tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>".to_string(),
+                false,
+            )),
         ];
 
         let mut stream = futures::stream::iter(chunks);
@@ -1331,10 +1703,15 @@ mod tests {
         }
 
         assert_eq!(thinking, "这是我的思考过程继续思考");
-        assert!(content.is_empty(), "Content should be empty for thinking-only response");
+        assert!(
+            content.is_empty(),
+            "Content should be empty for thinking-only response"
+        );
         println!("✓ Thinking-only test passed");
         println!("  Thinking should be emitted as content: {}", thinking);
-        println!("  NOTE: In production, thinking content is emitted as final content when no actual content received");
+        println!(
+            "  NOTE: In production, thinking content is emitted as final content when no actual content received"
+        );
     }
 
     /// Test scenario 6: Content split across multiple chunks with Chinese characters
@@ -1405,9 +1782,9 @@ mod tests {
     async fn test_empty_chunk_handling() {
         let chunks: Vec<TestResult<(String, bool)>> = vec![
             Ok(("开始".to_string(), false)),
-            Ok(("".to_string(), false)),  // Empty chunk
+            Ok(("".to_string(), false)), // Empty chunk
             Ok(("继续".to_string(), false)),
-            Ok(("".to_string(), false)),  // Another empty chunk
+            Ok(("".to_string(), false)), // Another empty chunk
             Ok(("结束".to_string(), false)),
         ];
 
@@ -1459,8 +1836,16 @@ mod tests {
         assert!(chinese_tokens > 0 && chinese_tokens < 20);
 
         println!("✓ Token estimation test passed");
-        println!("  English ({} chars): ~{} tokens", english.chars().count(), english_tokens);
-        println!("  Chinese ({} chars): ~{} tokens", chinese.chars().count(), chinese_tokens);
+        println!(
+            "  English ({} chars): ~{} tokens",
+            english.chars().count(),
+            english_tokens
+        );
+        println!(
+            "  Chinese ({} chars): ~{} tokens",
+            chinese.chars().count(),
+            chinese_tokens
+        );
     }
 
     /// Test tool cache key generation

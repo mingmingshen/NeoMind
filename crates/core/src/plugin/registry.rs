@@ -4,12 +4,15 @@
 //! of different types (LLM backends, storage backends, device adapters, etc.)
 //! with support for dynamic loading, lifecycle management, and state tracking.
 
-use super::{PluginError, Result, ExtendedPluginMetadata, PluginType, PluginState, PluginStats, StateMachine, UnifiedPlugin, DynUnifiedPlugin, PluginRegistryEvent};
+use super::{
+    DynUnifiedPlugin, ExtendedPluginMetadata, PluginError, PluginRegistryEvent, PluginState,
+    PluginStats, PluginType, Result, StateMachine, UnifiedPlugin,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 
 /// Options for loading a plugin.
 #[derive(Debug, Clone)]
@@ -220,7 +223,8 @@ impl UnifiedPluginRegistry {
     /// List plugins by type.
     pub async fn list_by_type(&self, plugin_type: PluginType) -> Vec<PluginInfo> {
         let plugins = self.plugins.read().await;
-        plugins.values()
+        plugins
+            .values()
             .filter(|p| p.info.plugin_type == plugin_type)
             .map(|p| p.info.clone())
             .collect()
@@ -229,7 +233,8 @@ impl UnifiedPluginRegistry {
     /// Initialize a plugin.
     pub async fn initialize(&self, id: &str, config: &Value) -> Result<()> {
         let plugins = self.plugins.read().await;
-        let instance = plugins.get(id)
+        let instance = plugins
+            .get(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         let mut plugin = instance.plugin.write().await;
@@ -241,7 +246,9 @@ impl UnifiedPluginRegistry {
 
         let mut plugins = self.plugins.write().await;
         if let Some(instance) = plugins.get_mut(id) {
-            instance.state_machine.transition(PluginState::Initialized, "Initialize called".to_string())?;
+            instance
+                .state_machine
+                .transition(PluginState::Initialized, "Initialize called".to_string())?;
             instance.info.state = PluginState::Initialized;
         }
 
@@ -252,12 +259,14 @@ impl UnifiedPluginRegistry {
     /// Start a plugin.
     pub async fn start(&self, id: &str) -> Result<()> {
         let plugins = self.plugins.read().await;
-        let instance = plugins.get(id)
+        let instance = plugins
+            .get(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         if !instance.info.enabled {
             return Err(PluginError::InitializationFailed(format!(
-                "Plugin {} is disabled", id
+                "Plugin {} is disabled",
+                id
             )));
         }
 
@@ -270,7 +279,9 @@ impl UnifiedPluginRegistry {
 
         let mut plugins = self.plugins.write().await;
         if let Some(instance) = plugins.get_mut(id) {
-            instance.state_machine.transition(PluginState::Running, "Start called".to_string())?;
+            instance
+                .state_machine
+                .transition(PluginState::Running, "Start called".to_string())?;
             instance.info.state = PluginState::Running;
             instance.info.stats.record_start();
         }
@@ -282,7 +293,8 @@ impl UnifiedPluginRegistry {
     /// Stop a plugin.
     pub async fn stop(&self, id: &str) -> Result<()> {
         let plugins = self.plugins.read().await;
-        let instance = plugins.get(id)
+        let instance = plugins
+            .get(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         let start_time = instance.info.stats.last_start_time;
@@ -295,12 +307,15 @@ impl UnifiedPluginRegistry {
 
         let mut plugins = self.plugins.write().await;
         if let Some(instance) = plugins.get_mut(id) {
-            instance.state_machine.transition(PluginState::Stopped, "Stop called".to_string())?;
+            instance
+                .state_machine
+                .transition(PluginState::Stopped, "Stop called".to_string())?;
             instance.info.state = PluginState::Stopped;
 
             // Calculate duration
             if let Some(start) = start_time {
-                let duration_ms = (chrono::Utc::now().timestamp_millis() - start.timestamp_millis()) as u64;
+                let duration_ms =
+                    (chrono::Utc::now().timestamp_millis() - start.timestamp_millis()) as u64;
                 instance.info.stats.record_stop(duration_ms);
             }
         }
@@ -312,7 +327,8 @@ impl UnifiedPluginRegistry {
     /// Enable a plugin.
     pub async fn enable(&self, id: &str) -> Result<()> {
         let mut plugins = self.plugins.write().await;
-        let instance = plugins.get_mut(id)
+        let instance = plugins
+            .get_mut(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         instance.info.enabled = true;
@@ -328,7 +344,8 @@ impl UnifiedPluginRegistry {
         }
 
         let mut plugins = self.plugins.write().await;
-        let instance = plugins.get_mut(id)
+        let instance = plugins
+            .get_mut(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         instance.info.enabled = false;
@@ -348,7 +365,8 @@ impl UnifiedPluginRegistry {
     /// Health check for a plugin.
     pub async fn health_check(&self, id: &str) -> Result<()> {
         let plugins = self.plugins.read().await;
-        let instance = plugins.get(id)
+        let instance = plugins
+            .get(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         let plugin = instance.plugin.read().await;
@@ -376,7 +394,8 @@ impl UnifiedPluginRegistry {
     /// Execute a plugin command.
     pub async fn execute_command(&self, id: &str, command: &str, args: &Value) -> Result<Value> {
         let plugins = self.plugins.read().await;
-        let instance = plugins.get(id)
+        let instance = plugins
+            .get(id)
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         let plugin = instance.plugin.read().await;
@@ -391,8 +410,12 @@ impl UnifiedPluginRegistry {
         let mut loaded = 0;
 
         for search_path in paths.iter() {
-            let entries = std::fs::read_dir(search_path)
-                .map_err(|e| PluginError::InitializationFailed(format!("Failed to read search path {:?}: {}", search_path, e)))?;
+            let entries = std::fs::read_dir(search_path).map_err(|e| {
+                PluginError::InitializationFailed(format!(
+                    "Failed to read search path {:?}: {}",
+                    search_path, e
+                ))
+            })?;
 
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -405,7 +428,9 @@ impl UnifiedPluginRegistry {
                             .then(|| path.extension().and_then(|e| e.to_str()) == Some("so"))
                             .unwrap_or_else(|| {
                                 cfg!(target_os = "windows")
-                                    .then(|| path.extension().and_then(|e| e.to_str()) == Some("dll"))
+                                    .then(|| {
+                                        path.extension().and_then(|e| e.to_str()) == Some("dll")
+                                    })
                                     .unwrap_or(false)
                             })
                     });
@@ -441,7 +466,9 @@ impl UnifiedPluginRegistry {
 
     /// Reload a plugin (for hot-reload support).
     pub async fn reload(&self, id: &str) -> Result<()> {
-        let info = self.get_info(id).await
+        let info = self
+            .get_info(id)
+            .await
             .ok_or_else(|| PluginError::NotFound(id.to_string()))?;
 
         // If it's a native plugin with a path, reload it

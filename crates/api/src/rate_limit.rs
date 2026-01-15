@@ -24,7 +24,7 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            max_requests: 100,      // 100 requests
+            max_requests: 100,                     // 100 requests
             per_duration: Duration::from_secs(60), // per 60 seconds
             warn_interval: Duration::from_secs(5), // Log warning at most once per 5 seconds per client
         }
@@ -68,10 +68,12 @@ impl RateLimiter {
         let window_start = now - self.config.per_duration;
 
         // Get or create the client's state
-        let state = clients.entry(client_key.to_string()).or_insert_with(|| ClientState {
-            history: Vec::new(),
-            last_warning: None,
-        });
+        let state = clients
+            .entry(client_key.to_string())
+            .or_insert_with(|| ClientState {
+                history: Vec::new(),
+                last_warning: None,
+            });
 
         // Remove old requests outside the time window
         state.history.retain(|&timestamp| timestamp > window_start);
@@ -80,11 +82,16 @@ impl RateLimiter {
         if state.history.len() >= self.config.max_requests as usize {
             let oldest = state.history.first().copied();
             if let Some(oldest_timestamp) = oldest {
-                let wait_time = self.config.per_duration.saturating_sub(now - oldest_timestamp);
+                let wait_time = self
+                    .config
+                    .per_duration
+                    .saturating_sub(now - oldest_timestamp);
 
                 // Check if we should log a warning (debounced)
                 let should_warn = match state.last_warning {
-                    Some(last_warning) => now.saturating_duration_since(last_warning) >= self.config.warn_interval,
+                    Some(last_warning) => {
+                        now.saturating_duration_since(last_warning) >= self.config.warn_interval
+                    }
                     None => true,
                 };
 
@@ -164,12 +171,12 @@ impl IntoResponse for RateLimitExceeded {
 
 /// Extract client identifier from request.
 /// Uses API key (if authenticated) or IP address.
-pub fn extract_client_id(headers: &HeaderMap, connect_info: Option<&ConnectInfo<SocketAddr>>) -> String {
+pub fn extract_client_id(
+    headers: &HeaderMap,
+    connect_info: Option<&ConnectInfo<SocketAddr>>,
+) -> String {
     // Try to get API key first (for authenticated requests)
-    if let Some(api_key) = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-    {
+    if let Some(api_key) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
         // Use a hash of the API key to avoid logging actual keys
         return format!("apikey:_{:x}", hash_string(api_key));
     }
@@ -181,7 +188,10 @@ pub fn extract_client_id(headers: &HeaderMap, connect_info: Option<&ConnectInfo<
     }
 
     // Ultimate fallback
-    format!("session:{}", hash_string(&std::time::Instant::now().elapsed().as_nanos().to_string()))
+    format!(
+        "session:{}",
+        hash_string(&std::time::Instant::now().elapsed().as_nanos().to_string())
+    )
 }
 
 /// Simple hash for anonymizing sensitive data.
@@ -212,6 +222,7 @@ mod tests {
         let limiter = RateLimiter::with_config(RateLimitConfig {
             max_requests: 2,
             per_duration: Duration::from_secs(1),
+            warn_interval: Duration::from_secs(1),
         });
 
         // First request should succeed

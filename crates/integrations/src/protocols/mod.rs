@@ -10,12 +10,12 @@ pub mod modbus;
 
 // Re-exports
 #[cfg(feature = "hass")]
-pub use hass::{HassIntegration, HassConfig, create_hass_integration};
+pub use hass::{HassConfig, HassIntegration, create_hass_integration};
 
 #[cfg(feature = "modbus")]
-pub use modbus::{ModbusIntegration, ModbusConfig, create_modbus_integration};
+pub use modbus::{ModbusConfig, ModbusIntegration, create_modbus_integration};
 
-use crate::{IntegrationMetadata, IntegrationType, IntegrationState};
+use crate::{IntegrationMetadata, IntegrationState, IntegrationType};
 use edge_ai_core::integration::IntegrationEvent;
 use futures::Stream;
 use std::pin::Pin;
@@ -49,7 +49,8 @@ impl BaseIntegration {
 
     /// Set running state.
     pub fn set_running(&self, running: bool) {
-        self.state.store(running, std::sync::atomic::Ordering::Relaxed);
+        self.state
+            .store(running, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get the state as IntegrationState.
@@ -76,10 +77,16 @@ mod tests {
         let integration = BaseIntegration::new("test", "Test Integration", IntegrationType::Mqtt);
         assert_eq!(integration.metadata.id, "test");
         assert!(!integration.is_running());
-        assert_eq!(integration.to_integration_state(), IntegrationState::Disconnected);
+        assert_eq!(
+            integration.to_integration_state(),
+            IntegrationState::Disconnected
+        );
 
         integration.set_running(true);
         assert!(integration.is_running());
-        assert_eq!(integration.to_integration_state(), IntegrationState::Connected);
+        assert_eq!(
+            integration.to_integration_state(),
+            IntegrationState::Connected
+        );
     }
 }

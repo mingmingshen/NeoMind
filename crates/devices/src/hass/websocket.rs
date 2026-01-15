@@ -1,12 +1,12 @@
 //! Home Assistant WebSocket client for real-time state updates.
 
-use super::entities::{HassConnectionConfig, HassEvent, HassEntityState, HassAuth};
+use super::entities::{HassAuth, HassConnectionConfig, HassEntityState, HassEvent};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use tokio_tungstenite::{connect_async, tungstenite::Message, WebSocketStream};
 use thiserror::Error;
+use tokio::sync::{RwLock, mpsc};
+use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 
 /// Errors that can occur with the WebSocket connection.
 #[derive(Debug, Error)]
@@ -49,10 +49,7 @@ pub enum HassWsEventData {
         new_state: Option<HassEntityState>,
     },
     /// Device triggered
-    DeviceTriggered {
-        device_id: String,
-        data: JsonValue,
-    },
+    DeviceTriggered { device_id: String, data: JsonValue },
     /// Service called
     ServiceCalled {
         domain: String,
@@ -60,10 +57,7 @@ pub enum HassWsEventData {
         service_data: JsonValue,
     },
     /// Raw event (for any other event type)
-    RawEvent {
-        event_type: String,
-        data: JsonValue,
-    },
+    RawEvent { event_type: String, data: JsonValue },
 }
 
 /// Subscription request for WebSocket events.
@@ -133,13 +127,10 @@ impl HassWebSocketClient {
         let (mut write, mut read) = ws_stream.split();
 
         // Wait for auth required message
-        let auth_msg = read
-            .next()
-            .await
-            .ok_or(HassWsError::ConnectionClosed)??;
+        let auth_msg = read.next().await.ok_or(HassWsError::ConnectionClosed)??;
 
-        let auth_json: JsonValue = serde_json::from_str(&auth_msg.to_string())
-            .map_err(|_| HassWsError::InvalidMessage)?;
+        let auth_json: JsonValue =
+            serde_json::from_str(&auth_msg.to_string()).map_err(|_| HassWsError::InvalidMessage)?;
 
         // Check if auth is required
         if auth_json["type"] != "auth_required" {
@@ -169,10 +160,7 @@ impl HassWebSocketClient {
             .map_err(|e| HassWsError::SendError(e.to_string()))?;
 
         // Wait for auth response
-        let auth_response = read
-            .next()
-            .await
-            .ok_or(HassWsError::ConnectionClosed)??;
+        let auth_response = read.next().await.ok_or(HassWsError::ConnectionClosed)??;
 
         let auth_response_json: JsonValue = serde_json::from_str(&auth_response.to_string())
             .map_err(|_| HassWsError::InvalidMessage)?;
@@ -327,9 +315,7 @@ impl HassWebSocketClient {
         let json: JsonValue =
             serde_json::from_str(&text).map_err(|_| HassWsError::InvalidMessage)?;
 
-        let event_type = json["type"]
-            .as_str()
-            .ok_or(HassWsError::InvalidMessage)?;
+        let event_type = json["type"].as_str().ok_or(HassWsError::InvalidMessage)?;
 
         match event_type {
             "event" => {
@@ -363,22 +349,15 @@ impl HassWebSocketClient {
 
     /// Parse an event message into structured data.
     fn parse_event(json: &JsonValue) -> Result<HassWsEventData, HassWsError> {
-        let event = json
-            .get("event")
-            .ok_or(HassWsError::InvalidMessage)?;
+        let event = json.get("event").ok_or(HassWsError::InvalidMessage)?;
 
-        let event_type = event["event_type"]
-            .as_str()
-            .unwrap_or("unknown");
+        let event_type = event["event_type"].as_str().unwrap_or("unknown");
 
         let data = event.get("data").cloned().unwrap_or(JsonValue::Null);
 
         match event_type {
             "state_changed" => {
-                let entity_id = data["entity_id"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
+                let entity_id = data["entity_id"].as_str().unwrap_or("").to_string();
 
                 let old_state = data
                     .get("old_state")
@@ -395,31 +374,16 @@ impl HassWebSocketClient {
                 })
             }
             "device_triggered" => {
-                let device_id = data["device_id"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
+                let device_id = data["device_id"].as_str().unwrap_or("").to_string();
 
-                Ok(HassWsEventData::DeviceTriggered {
-                    device_id,
-                    data,
-                })
+                Ok(HassWsEventData::DeviceTriggered { device_id, data })
             }
             "call_service" => {
-                let domain = data["domain"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
+                let domain = data["domain"].as_str().unwrap_or("").to_string();
 
-                let service = data["service"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_string();
+                let service = data["service"].as_str().unwrap_or("").to_string();
 
-                let service_data = data
-                    .get("service_data")
-                    .cloned()
-                    .unwrap_or(JsonValue::Null);
+                let service_data = data.get("service_data").cloned().unwrap_or(JsonValue::Null);
 
                 Ok(HassWsEventData::ServiceCalled {
                     domain,

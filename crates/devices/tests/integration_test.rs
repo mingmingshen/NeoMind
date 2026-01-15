@@ -12,7 +12,9 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 mod mqtt_mock_device;
-use mqtt_mock_device::{MqttMockDevice, Dht22MockDevice, IpCameraMockDevice, ImageSensorMockDevice};
+use mqtt_mock_device::{
+    Dht22MockDevice, ImageSensorMockDevice, IpCameraMockDevice, MqttMockDevice,
+};
 
 /// Get test broker port
 fn test_broker_port() -> u16 {
@@ -26,17 +28,21 @@ async fn test_full_device_lifecycle() {
     let broker_port = test_broker_port();
 
     // 1. Create and initialize MqttDeviceManager
-    let config = edge_ai_devices::MqttManagerConfig::new("localhost")
-        .with_port(broker_port);
-    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new("test-broker", config));
+    let config = edge_ai_devices::MqttManagerConfig::new("localhost").with_port(broker_port);
+    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new(
+        "test-broker",
+        config,
+    ));
 
     // Initialize storage
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = edge_ai_devices::MdlStorage::new(db);
+    let storage = edge_ai_devices::MdlStorage::memory().expect("Failed to create memory storage");
     manager.mdl_registry().set_storage(storage).await;
 
     // Connect to broker
-    manager.connect().await.expect("Failed to connect to broker");
+    manager
+        .connect()
+        .await
+        .expect("Failed to connect to broker");
     sleep(Duration::from_millis(100)).await;
 
     // 2. Register device type
@@ -60,7 +66,10 @@ async fn test_full_device_lifecycle() {
     assert_eq!(device.device_type, "dht22_sensor");
 
     // 5. Simulate device data reporting
-    mock_device.publish_reading(25.5, 60.0).await.expect("Failed to publish reading");
+    mock_device
+        .publish_reading(25.5, 60.0)
+        .await
+        .expect("Failed to publish reading");
     sleep(Duration::from_millis(100)).await;
 
     // 6. Verify data was received
@@ -73,8 +82,13 @@ async fn test_full_device_lifecycle() {
 
     // 7. Send command to device
     let mut params = std::collections::HashMap::new();
-    params.insert("interval".to_string(), edge_ai_devices::MetricValue::Integer(120));
-    let result = manager.send_command("dht22_test_001", "set_interval", params).await;
+    params.insert(
+        "interval".to_string(),
+        edge_ai_devices::MetricValue::Integer(120),
+    );
+    let result = manager
+        .send_command("dht22_test_001", "set_interval", params)
+        .await;
     assert!(result.is_ok(), "Should be able to send command");
 
     // 8. Clean up
@@ -91,13 +105,14 @@ async fn test_image_device_data_flow() {
     let broker_port = test_broker_port();
 
     // 1. Create manager
-    let config = edge_ai_devices::MqttManagerConfig::new("localhost")
-        .with_port(broker_port);
-    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new("test-broker", config));
+    let config = edge_ai_devices::MqttManagerConfig::new("localhost").with_port(broker_port);
+    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new(
+        "test-broker",
+        config,
+    ));
 
     // Initialize storage
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = edge_ai_devices::MdlStorage::new(db);
+    let storage = edge_ai_devices::MdlStorage::memory().expect("Failed to create memory storage");
     manager.mdl_registry().set_storage(storage).await;
 
     // Register device types
@@ -146,7 +161,10 @@ async fn test_image_device_data_flow() {
     assert!(resolution.is_ok());
 
     // 7. Test motion detection
-    camera.publish_motion(true).await.expect("Failed to publish motion");
+    camera
+        .publish_motion(true)
+        .await
+        .expect("Failed to publish motion");
     sleep(Duration::from_millis(50)).await;
 
     let motion = manager.read_metric("cam_test_001", "motion_detected").await;
@@ -154,9 +172,17 @@ async fn test_image_device_data_flow() {
 
     // 8. Test capture command
     let mut params = std::collections::HashMap::new();
-    params.insert("format".to_string(), edge_ai_devices::MetricValue::String("png".to_string()));
-    params.insert("quality".to_string(), edge_ai_devices::MetricValue::Integer(90));
-    let result = manager.send_command("cam_test_001", "capture_image", params).await;
+    params.insert(
+        "format".to_string(),
+        edge_ai_devices::MetricValue::String("png".to_string()),
+    );
+    params.insert(
+        "quality".to_string(),
+        edge_ai_devices::MetricValue::Integer(90),
+    );
+    let result = manager
+        .send_command("cam_test_001", "capture_image", params)
+        .await;
     assert!(result.is_ok());
 
     // Clean up
@@ -169,12 +195,13 @@ async fn test_image_device_data_flow() {
 async fn test_image_sensor_data_flow() {
     let broker_port = test_broker_port();
 
-    let config = edge_ai_devices::MqttManagerConfig::new("localhost")
-        .with_port(broker_port);
-    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new("test-broker", config));
+    let config = edge_ai_devices::MqttManagerConfig::new("localhost").with_port(broker_port);
+    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new(
+        "test-broker",
+        config,
+    ));
 
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = edge_ai_devices::MdlStorage::new(db);
+    let storage = edge_ai_devices::MdlStorage::memory().expect("Failed to create memory storage");
     manager.mdl_registry().set_storage(storage).await;
 
     let device_types = edge_ai_devices::builtin_device_types();
@@ -196,7 +223,9 @@ async fn test_image_sensor_data_flow() {
     sleep(Duration::from_millis(100)).await;
 
     // Verify image data
-    let image_data = manager.read_metric("img_sensor_test_001", "image_data").await;
+    let image_data = manager
+        .read_metric("img_sensor_test_001", "image_data")
+        .await;
     assert!(image_data.is_ok());
     match image_data.unwrap() {
         edge_ai_devices::MetricValue::Binary(data) => {
@@ -209,14 +238,23 @@ async fn test_image_sensor_data_flow() {
     }
 
     // Verify metadata
-    let width = manager.read_metric("img_sensor_test_001", "image_width").await;
+    let width = manager
+        .read_metric("img_sensor_test_001", "image_width")
+        .await;
     assert_eq!(width.unwrap(), edge_ai_devices::MetricValue::Integer(640));
 
-    let height = manager.read_metric("img_sensor_test_001", "image_height").await;
+    let height = manager
+        .read_metric("img_sensor_test_001", "image_height")
+        .await;
     assert_eq!(height.unwrap(), edge_ai_devices::MetricValue::Integer(480));
 
-    let format = manager.read_metric("img_sensor_test_001", "image_format").await;
-    assert_eq!(format.unwrap(), edge_ai_devices::MetricValue::String("png".to_string()));
+    let format = manager
+        .read_metric("img_sensor_test_001", "image_format")
+        .await;
+    assert_eq!(
+        format.unwrap(),
+        edge_ai_devices::MetricValue::String("png".to_string())
+    );
 
     manager.disconnect().await.unwrap();
 }
@@ -227,12 +265,13 @@ async fn test_image_sensor_data_flow() {
 async fn test_multiple_device_types() {
     let broker_port = test_broker_port();
 
-    let config = edge_ai_devices::MqttManagerConfig::new("localhost")
-        .with_port(broker_port);
-    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new("test-broker", config));
+    let config = edge_ai_devices::MqttManagerConfig::new("localhost").with_port(broker_port);
+    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new(
+        "test-broker",
+        config,
+    ));
 
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = edge_ai_devices::MdlStorage::new(db);
+    let storage = edge_ai_devices::MdlStorage::memory().expect("Failed to create memory storage");
     manager.mdl_registry().set_storage(storage).await;
 
     // Register all built-in types
@@ -247,9 +286,15 @@ async fn test_multiple_device_types() {
     sleep(Duration::from_millis(100)).await;
 
     // Create different device types
-    let dht22 = Dht22MockDevice::new("dht22_multi_001", "localhost", broker_port).await.unwrap();
-    let camera = IpCameraMockDevice::new("cam_multi_001", "localhost", broker_port).await.unwrap();
-    let sensor = ImageSensorMockDevice::new("sensor_multi_001", "localhost", broker_port).await.unwrap();
+    let dht22 = Dht22MockDevice::new("dht22_multi_001", "localhost", broker_port)
+        .await
+        .unwrap();
+    let camera = IpCameraMockDevice::new("cam_multi_001", "localhost", broker_port)
+        .await
+        .unwrap();
+    let sensor = ImageSensorMockDevice::new("sensor_multi_001", "localhost", broker_port)
+        .await
+        .unwrap();
 
     // Announce all
     dht22.announce().await.unwrap();
@@ -262,10 +307,8 @@ async fn test_multiple_device_types() {
     assert_eq!(devices.len(), 3, "Should have 3 devices");
 
     // Check device types
-    let device_types_found: std::collections::HashSet<String> = devices
-        .iter()
-        .map(|d| d.device_type.clone())
-        .collect();
+    let device_types_found: std::collections::HashSet<String> =
+        devices.iter().map(|d| d.device_type.clone()).collect();
     assert!(device_types_found.contains("dht22_sensor"));
     assert!(device_types_found.contains("ip_camera"));
     assert!(device_types_found.contains("image_sensor"));
@@ -277,14 +320,23 @@ async fn test_multiple_device_types() {
     sleep(Duration::from_millis(100)).await;
 
     // Verify metrics
-    let temp = manager.read_metric("dht22_multi_001", "temperature").await.unwrap();
+    let temp = manager
+        .read_metric("dht22_multi_001", "temperature")
+        .await
+        .unwrap();
     assert_eq!(temp, edge_ai_devices::MetricValue::Float(22.5));
 
     let cam_image = manager.read_metric("cam_multi_001", "image").await.unwrap();
     assert!(matches!(cam_image, edge_ai_devices::MetricValue::Binary(_)));
 
-    let sensor_image = manager.read_metric("sensor_multi_001", "image_data").await.unwrap();
-    assert!(matches!(sensor_image, edge_ai_devices::MetricValue::Binary(_)));
+    let sensor_image = manager
+        .read_metric("sensor_multi_001", "image_data")
+        .await
+        .unwrap();
+    assert!(matches!(
+        sensor_image,
+        edge_ai_devices::MetricValue::Binary(_)
+    ));
 
     manager.disconnect().await.unwrap();
 }
@@ -295,12 +347,13 @@ async fn test_multiple_device_types() {
 async fn test_command_execution() {
     let broker_port = test_broker_port();
 
-    let config = edge_ai_devices::MqttManagerConfig::new("localhost")
-        .with_port(broker_port);
-    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new("test-broker", config));
+    let config = edge_ai_devices::MqttManagerConfig::new("localhost").with_port(broker_port);
+    let manager = std::sync::Arc::new(edge_ai_devices::MqttDeviceManager::new(
+        "test-broker",
+        config,
+    ));
 
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = edge_ai_devices::MdlStorage::new(db);
+    let storage = edge_ai_devices::MdlStorage::memory().expect("Failed to create memory storage");
     manager.mdl_registry().set_storage(storage).await;
 
     let device_types = edge_ai_devices::builtin_device_types();
@@ -319,26 +372,50 @@ async fn test_command_execution() {
 
     // Test capture_image command
     let mut params = std::collections::HashMap::new();
-    params.insert("format".to_string(), edge_ai_devices::MetricValue::String("jpeg".to_string()));
-    params.insert("quality".to_string(), edge_ai_devices::MetricValue::Integer(95));
+    params.insert(
+        "format".to_string(),
+        edge_ai_devices::MetricValue::String("jpeg".to_string()),
+    );
+    params.insert(
+        "quality".to_string(),
+        edge_ai_devices::MetricValue::Integer(95),
+    );
 
-    let result = manager.send_command("cam_cmd_001", "capture_image", params).await;
+    let result = manager
+        .send_command("cam_cmd_001", "capture_image", params)
+        .await;
     assert!(result.is_ok(), "Command should succeed");
 
     // Test set_resolution command
     let mut params2 = std::collections::HashMap::new();
-    params2.insert("width".to_string(), edge_ai_devices::MetricValue::Integer(1280));
-    params2.insert("height".to_string(), edge_ai_devices::MetricValue::Integer(720));
+    params2.insert(
+        "width".to_string(),
+        edge_ai_devices::MetricValue::Integer(1280),
+    );
+    params2.insert(
+        "height".to_string(),
+        edge_ai_devices::MetricValue::Integer(720),
+    );
 
-    let result2 = manager.send_command("cam_cmd_001", "set_resolution", params2).await;
+    let result2 = manager
+        .send_command("cam_cmd_001", "set_resolution", params2)
+        .await;
     assert!(result2.is_ok(), "Resolution command should succeed");
 
     // Test motion_detection command
     let mut params3 = std::collections::HashMap::new();
-    params3.insert("enabled".to_string(), edge_ai_devices::MetricValue::Boolean(true));
-    params3.insert("sensitivity".to_string(), edge_ai_devices::MetricValue::Integer(75));
+    params3.insert(
+        "enabled".to_string(),
+        edge_ai_devices::MetricValue::Boolean(true),
+    );
+    params3.insert(
+        "sensitivity".to_string(),
+        edge_ai_devices::MetricValue::Integer(75),
+    );
 
-    let result3 = manager.send_command("cam_cmd_001", "enable_motion_detection", params3).await;
+    let result3 = manager
+        .send_command("cam_cmd_001", "enable_motion_detection", params3)
+        .await;
     assert!(result3.is_ok(), "Motion detection command should succeed");
 
     manager.disconnect().await.unwrap();

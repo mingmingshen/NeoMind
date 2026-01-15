@@ -4,9 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use edge_ai_core::config::{
+    self, endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
+};
 use edge_ai_core::llm::backend::{BackendId, LlmError, LlmRuntime};
-use edge_ai_core::config::{self, endpoints, models, env_vars,
-                            normalize_ollama_endpoint, normalize_openai_endpoint};
 
 #[cfg(feature = "cloud")]
 use crate::backends::{CloudConfig, CloudProvider, CloudRuntime, OllamaConfig, OllamaRuntime};
@@ -93,8 +94,8 @@ impl LlmConfig {
     pub fn from_env() -> Result<Self, LlmError> {
         #[cfg(feature = "cloud")]
         {
-            let provider = std::env::var(env_vars::LLM_PROVIDER)
-                .unwrap_or_else(|_| "ollama".to_string());
+            let provider =
+                std::env::var(env_vars::LLM_PROVIDER).unwrap_or_else(|_| "ollama".to_string());
 
             match provider.to_lowercase().as_str() {
                 "ollama" => {
@@ -184,6 +185,13 @@ pub struct GenerationParams {
     pub max_tokens: usize,
 }
 
+/// Maximum tokens we allow for any LLM generation.
+/// This prevents excessive token usage while still allowing reasonable responses.
+/// Adjusted: 2048 -> 4096 -> 8192
+/// qwen3-vl:2b generates ~4000-6000 tokens of thinking before content
+/// We need enough room for both thinking AND actual response content
+pub const MAX_GENERATION_TOKENS: usize = 8192;
+
 fn default_temperature() -> f32 {
     0.7
 }
@@ -193,7 +201,7 @@ fn default_top_p() -> f32 {
 }
 
 fn default_max_tokens() -> usize {
-    usize::MAX
+    MAX_GENERATION_TOKENS
 }
 
 impl Default for GenerationParams {

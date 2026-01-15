@@ -3,9 +3,9 @@
 //! This module integrates the rule engine with the NeoTalk event bus,
 //! enabling automatic rule evaluation when device metrics are published.
 
-use crate::engine::{RuleEngine, RuleId, CompiledRule, ValueProvider};
-use crate::dsl::{RuleError, RuleCondition};
-use edge_ai_core::{EventBus, NeoTalkEvent, MetricValue};
+use crate::dsl::{RuleCondition, RuleError};
+use crate::engine::{CompiledRule, RuleEngine, RuleId, ValueProvider};
+use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
@@ -50,10 +50,7 @@ impl EventDrivenRuleEngine {
     ///
     /// The engine will subscribe to DeviceMetric events and automatically
     /// evaluate rules when relevant metrics are updated.
-    pub fn new(
-        value_provider: Arc<dyn ValueProvider>,
-        event_bus: EventBus,
-    ) -> Self {
+    pub fn new(value_provider: Arc<dyn ValueProvider>, event_bus: EventBus) -> Self {
         let engine = RuleEngine::new(value_provider);
         let value_cache = Arc::new(RwLock::new(std::collections::HashMap::new()));
 
@@ -104,7 +101,8 @@ impl EventDrivenRuleEngine {
                             value,
                             timestamp: _,
                             quality: _,
-                        } = event {
+                        } = event
+                        {
                             // Cache the value
                             if let Some(numeric_value) = extract_numeric_value(&value) {
                                 let mut cache = value_cache.write().await;
@@ -116,9 +114,13 @@ impl EventDrivenRuleEngine {
                                     &device_id,
                                     &metric,
                                     numeric_value,
-                                ).await {
-                                    error!("Failed to evaluate rules for {}.{}: {}",
-                                          device_id, metric, e);
+                                )
+                                .await
+                                {
+                                    error!(
+                                        "Failed to evaluate rules for {}.{}: {}",
+                                        device_id, metric, e
+                                    );
                                 }
                             }
                         }
@@ -157,13 +159,15 @@ impl EventDrivenRuleEngine {
         // to get the list of rules and evaluate them.
 
         // Publish a generic rule evaluation event
-        let _ = event_bus.publish(NeoTalkEvent::DeviceMetric {
-            device_id: device_id.to_string(),
-            metric: metric.to_string(),
-            value: MetricValue::float(value),
-            timestamp: chrono::Utc::now().timestamp(),
-            quality: None,
-        }).await;
+        let _ = event_bus
+            .publish(NeoTalkEvent::DeviceMetric {
+                device_id: device_id.to_string(),
+                metric: metric.to_string(),
+                value: MetricValue::float(value),
+                timestamp: chrono::Utc::now().timestamp(),
+                quality: None,
+            })
+            .await;
 
         Ok(())
     }
@@ -232,9 +236,7 @@ pub struct CachedValueProvider {
 
 impl CachedValueProvider {
     /// Create a new cached value provider.
-    pub fn new(
-        cache: Arc<RwLock<std::collections::HashMap<(String, String), f64>>>,
-    ) -> Self {
+    pub fn new(cache: Arc<RwLock<std::collections::HashMap<(String, String), f64>>>) -> Self {
         Self { cache }
     }
 }
@@ -244,7 +246,9 @@ impl ValueProvider for CachedValueProvider {
         // In a real implementation, this would use async
         // For now, we use try_read to avoid blocking
         if let Ok(cache) = self.cache.try_read() {
-            cache.get(&(device_id.to_string(), metric.to_string())).copied()
+            cache
+                .get(&(device_id.to_string(), metric.to_string()))
+                .copied()
         } else {
             None
         }
@@ -263,7 +267,8 @@ pub fn evaluate_rule_condition(
     value: f64,
 ) -> Option<bool> {
     // Check if this condition matches the device/metric
-    if condition.device_id != device_id && condition.device_id != "*" && condition.device_id != "+" {
+    if condition.device_id != device_id && condition.device_id != "*" && condition.device_id != "+"
+    {
         return None;
     }
     if condition.metric != metric && metric != "*" {
@@ -305,9 +310,18 @@ mod tests {
 
         assert_eq!(extract_numeric_value(&MetricValue::Float(42.5)), Some(42.5));
         assert_eq!(extract_numeric_value(&MetricValue::Integer(10)), Some(10.0));
-        assert_eq!(extract_numeric_value(&MetricValue::Boolean(true)), Some(1.0));
-        assert_eq!(extract_numeric_value(&MetricValue::Boolean(false)), Some(0.0));
-        assert_eq!(extract_numeric_value(&MetricValue::String("test".to_string())), None);
+        assert_eq!(
+            extract_numeric_value(&MetricValue::Boolean(true)),
+            Some(1.0)
+        );
+        assert_eq!(
+            extract_numeric_value(&MetricValue::Boolean(false)),
+            Some(0.0)
+        );
+        assert_eq!(
+            extract_numeric_value(&MetricValue::String("test".to_string())),
+            None
+        );
     }
 
     #[tokio::test]
@@ -340,8 +354,8 @@ mod tests {
 
     #[test]
     fn test_evaluate_rule_condition() {
-        use crate::dsl::RuleCondition;
         use crate::dsl::ComparisonOperator;
+        use crate::dsl::RuleCondition;
 
         let condition = RuleCondition {
             device_id: "sensor1".to_string(),
@@ -351,13 +365,22 @@ mod tests {
         };
 
         // Matching device and metric, condition met
-        assert_eq!(evaluate_rule_condition(&condition, "sensor1", "temperature", 75.0), Some(true));
+        assert_eq!(
+            evaluate_rule_condition(&condition, "sensor1", "temperature", 75.0),
+            Some(true)
+        );
 
         // Matching device and metric, condition not met
-        assert_eq!(evaluate_rule_condition(&condition, "sensor1", "temperature", 25.0), Some(false));
+        assert_eq!(
+            evaluate_rule_condition(&condition, "sensor1", "temperature", 25.0),
+            Some(false)
+        );
 
         // Non-matching device
-        assert_eq!(evaluate_rule_condition(&condition, "sensor2", "temperature", 75.0), None);
+        assert_eq!(
+            evaluate_rule_condition(&condition, "sensor2", "temperature", 75.0),
+            None
+        );
 
         // Wildcard device match
         let wildcard_condition = RuleCondition {
@@ -366,6 +389,9 @@ mod tests {
             operator: ComparisonOperator::GreaterThan,
             threshold: 50.0,
         };
-        assert_eq!(evaluate_rule_condition(&wildcard_condition, "sensor1", "temperature", 75.0), Some(true));
+        assert_eq!(
+            evaluate_rule_condition(&wildcard_condition, "sensor1", "temperature", 75.0),
+            Some(true)
+        );
     }
 }

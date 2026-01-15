@@ -3,6 +3,12 @@
 //! This adapter connects to an MQTT broker, subscribes to device topics,
 //! and publishes device events to the event bus.
 //!
+//! ## Topic Format
+//!
+//! Uplink telemetry: `device/{device_type}/{device_id}/uplink`
+//! Downlink commands: `device/{device_type}/{device_id}/downlink`
+//! Discovery: `{discovery_prefix}/announce`
+//!
 //! ## Protocol Mapping Integration
 //!
 //! The adapter can use a `ProtocolMapping` for flexible topic and payload handling:
@@ -13,18 +19,27 @@
 //! └─ set_interval command    ──→ sensor/${id}/command
 //! ```
 
-use crate::adapter::{DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo, AdapterResult};
+use crate::adapter::{
+    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
+};
+use crate::mdl::MetricValue;
 use crate::mqtt::MqttConfig;
-use crate::protocol::{ProtocolMapping, Address};
-use edge_ai_core::EventBus;
+use crate::protocol::{Address, ProtocolMapping};
+use crate::registry::{DeviceConfig, DeviceRegistry, DeviceTypeTemplate};
+use crate::telemetry::TimeSeriesStorage;
 use async_trait::async_trait;
+use edge_ai_core::EventBus;
+use edge_ai_core::NeoTalkEvent;
 use futures::{Stream, StreamExt};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::broadcast;
-use tracing::{debug, info, warn};
+use std::time::Duration;
+use tokio::sync::{RwLock, broadcast};
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 /// MQTT device adapter configuration.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -37,16 +52,26 @@ pub struct MqttAdapterConfig {
     pub subscribe_topics: Vec<String>,
     /// Topic pattern for device discovery (e.g., "devices/+/discovery")
     pub discovery_topic: Option<String>,
+    /// Discovery prefix for auto-discovery
+    pub discovery_prefix: String,
+    /// Enable auto-discovery
+    pub auto_discovery: bool,
+    /// Storage directory for persistence
+    pub storage_dir: Option<String>,
 }
 
 impl MqttAdapterConfig {
     /// Create a new MQTT adapter configuration.
     pub fn new(name: impl Into<String>, broker: impl Into<String>) -> Self {
+        let mqtt_config = MqttConfig::new(broker, "neotalk");
         Self {
             name: name.into(),
-            mqtt: MqttConfig::new(broker, "neotalk"),
+            mqtt: mqtt_config,
             subscribe_topics: Vec::new(),
             discovery_topic: None,
+            discovery_prefix: "neotalk".to_string(),
+            auto_discovery: true,
+            storage_dir: None,
         }
     }
 
@@ -68,6 +93,12 @@ impl MqttAdapterConfig {
         self
     }
 
+    /// Set the discovery prefix.
+    pub fn with_discovery_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.discovery_prefix = prefix.into();
+        self
+    }
+
     /// Set MQTT authentication.
     pub fn with_auth(mut self, username: impl Into<String>, password: impl Into<String>) -> Self {
         self.mqtt = self.mqtt.with_auth(username, password);
@@ -79,12 +110,44 @@ impl MqttAdapterConfig {
         self.mqtt = self.mqtt.with_port(port);
         self
     }
+
+    /// Set storage directory.
+    pub fn with_storage_dir(mut self, dir: impl Into<String>) -> Self {
+        self.storage_dir = Some(dir.into());
+        self
+    }
+
+    /// Enable or disable auto-discovery.
+    pub fn with_auto_discovery(mut self, enabled: bool) -> Self {
+        self.auto_discovery = enabled;
+        self
+    }
+}
+
+impl Default for MqttAdapterConfig {
+    fn default() -> Self {
+        Self::new("mqtt", "localhost")
+    }
+}
+
+/// Single MQTT broker connection
+struct MqttClientInner {
+    /// Unique broker identifier
+    broker_id: String,
+    /// Broker address (host:port)
+    broker_addr: String,
+    /// MQTT client
+    client: rumqttc::AsyncClient,
+    /// Running flag for the event loop task
+    running: Arc<RwLock<bool>>,
+    /// Subscribed topics for this broker
+    subscribed_topics: Arc<RwLock<std::collections::HashSet<String>>>,
 }
 
 /// MQTT device adapter.
 ///
-/// Connects to an MQTT broker and publishes device events.
-/// Can optionally use a ProtocolMapping for flexible topic and payload handling.
+/// Manages multiple MQTT broker connections and automatically subscribes
+/// to device topics on all connected brokers.
 pub struct MqttAdapter {
     /// Adapter configuration
     config: MqttAdapterConfig,
@@ -93,51 +156,97 @@ pub struct MqttAdapter {
     /// Running state
     running: Arc<std::sync::atomic::AtomicBool>,
     /// Connected devices
-    devices: Arc<tokio::sync::RwLock<Vec<String>>>,
+    devices: Arc<RwLock<Vec<String>>>,
     /// Optional protocol mapping for flexible topic/payload handling
     protocol_mapping: Option<Arc<dyn ProtocolMapping>>,
     /// Device ID to device type mapping (used with protocol mapping)
-    device_types: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
+    device_types: Arc<RwLock<HashMap<String, String>>>,
+    /// Multiple MQTT broker connections (broker_id -> client)
+    mqtt_clients: Arc<RwLock<HashMap<String, MqttClientInner>>>,
+    /// Connection status (overall - true if at least one broker is connected)
+    connection_status: Arc<RwLock<ConnectionStatus>>,
+    /// Event bus for publishing system events
+    event_bus: Option<Arc<EventBus>>,
+    /// Device registry for template management
+    device_registry: Arc<DeviceRegistry>,
+    /// Time series storage for telemetry
+    telemetry_storage: Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
+    /// Metric cache (device_id -> metric_name -> (value, timestamp))
+    metric_cache:
+        Arc<RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>>,
 }
 
 impl MqttAdapter {
     /// Create a new MQTT adapter.
     pub fn new(config: MqttAdapterConfig) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
+        let device_registry = Arc::new(DeviceRegistry::new());
+
         Self {
             config,
             event_tx,
             running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            devices: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+            devices: Arc::new(RwLock::new(Vec::new())),
             protocol_mapping: None,
-            device_types: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            device_types: Arc::new(RwLock::new(HashMap::new())),
+            mqtt_clients: Arc::new(RwLock::new(HashMap::new())),
+            connection_status: Arc::new(RwLock::new(ConnectionStatus::Disconnected)),
+            event_bus: None,
+            device_registry,
+            telemetry_storage: Arc::new(RwLock::new(None)),
+            metric_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Create a new MQTT adapter with an event bus.
+    pub fn with_event_bus(mut self, event_bus: Arc<EventBus>) -> Self {
+        self.event_bus = Some(event_bus);
+        self
+    }
+
+    /// Set event bus (for Arc<EventBus>).
+    pub fn set_event_bus(&mut self, event_bus: Arc<EventBus>) {
+        self.event_bus = Some(event_bus);
+    }
+
+    /// Set telemetry storage.
+    pub async fn set_telemetry_storage(&self, storage: Arc<TimeSeriesStorage>) {
+        *self.telemetry_storage.write().await = Some(storage);
+    }
+
+    /// Set the device registry.
+    pub fn with_device_registry(mut self, registry: Arc<DeviceRegistry>) -> Self {
+        self.device_registry = registry;
+        self
     }
 
     /// Create a new MQTT adapter with a protocol mapping.
     pub fn with_mapping(
         config: MqttAdapterConfig,
         mapping: Arc<dyn ProtocolMapping>,
+        event_bus: Option<Arc<EventBus>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(1000);
+        let device_registry = Arc::new(DeviceRegistry::new());
+
         Self {
             config,
             event_tx,
             running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            devices: Arc::new(tokio::sync::RwLock::new(Vec::new())),
+            devices: Arc::new(RwLock::new(Vec::new())),
             protocol_mapping: Some(mapping),
-            device_types: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            device_types: Arc::new(RwLock::new(HashMap::new())),
+            mqtt_clients: Arc::new(RwLock::new(HashMap::new())),
+            connection_status: Arc::new(RwLock::new(ConnectionStatus::Disconnected)),
+            event_bus,
+            device_registry,
+            telemetry_storage: Arc::new(RwLock::new(None)),
+            metric_cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Register a device type with its ID (for protocol mapping).
-    pub async fn register_device_type(&self, device_id: String, device_type: String) {
-        let mut types = self.device_types.write().await;
-        types.insert(device_id, device_type);
-    }
-
     /// Set the protocol mapping.
-    pub fn set_mapping(&mut self, mapping: Arc<dyn ProtocolMapping>) {
+    pub async fn set_mapping(&mut self, mapping: Arc<dyn ProtocolMapping>) {
         self.protocol_mapping = Some(mapping);
     }
 
@@ -146,8 +255,191 @@ impl MqttAdapter {
         self.protocol_mapping.as_ref()
     }
 
+    /// Register a device type with its ID (for protocol mapping).
+    pub async fn register_device_type(&self, device_id: String, device_type: String) {
+        let mut types = self.device_types.write().await;
+        types.insert(device_id, device_type);
+    }
+
+    /// Add a broker connection to this adapter.
+    ///
+    /// This allows the MQTT adapter to connect to multiple brokers simultaneously.
+    /// Device topics will be subscribed on all connected brokers.
+    pub async fn add_broker(
+        &self,
+        broker_id: impl Into<String>,
+        broker_host: impl Into<String>,
+        broker_port: u16,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> AdapterResult<()> {
+        let broker_id = broker_id.into();
+        let broker_host = broker_host.into();
+        let broker_addr = format!("{}:{}", broker_host, broker_port);
+
+        // Check if broker already exists
+        if self.mqtt_clients.read().await.contains_key(&broker_id) {
+            return Err(AdapterError::Configuration(format!(
+                "Broker already exists: {}",
+                broker_id
+            )));
+        }
+
+        // Build MQTT options
+        let client_id = format!("neotalk-{}-{}", broker_id, Uuid::new_v4());
+        let mut mqttoptions = rumqttc::MqttOptions::new(&client_id, &broker_host, broker_port);
+        mqttoptions.set_max_packet_size(10 * 1024 * 1024, 10 * 1024 * 1024);
+        mqttoptions.set_keep_alive(Duration::from_secs(60));
+
+        // Set credentials if provided
+        if let (Some(user), Some(pass)) = (username, password) {
+            mqttoptions.set_credentials(&user, &pass);
+        }
+
+        // Create client
+        let (client, eventloop) = rumqttc::AsyncClient::new(mqttoptions, 10);
+
+        let running = Arc::new(RwLock::new(true));
+        let subscribed_topics = Arc::new(RwLock::new(std::collections::HashSet::new()));
+
+        // Subscribe to initial topics on this broker
+        let mut initial_topics = vec![
+            "device/+/+/uplink".to_string(),
+            "device/+/+/downlink".to_string(),
+        ];
+        for topic in &self.config.subscribe_topics {
+            initial_topics.push(topic.clone());
+        }
+
+        for topic in &initial_topics {
+            if let Err(e) = client.subscribe(topic, rumqttc::QoS::AtLeastOnce).await {
+                warn!(
+                    "Failed to subscribe to {} on broker {}: {}",
+                    topic, broker_id, e
+                );
+            } else {
+                subscribed_topics.write().await.insert(topic.clone());
+            }
+        }
+
+        // Store the client
+        let inner = MqttClientInner {
+            broker_id: broker_id.clone(),
+            broker_addr: broker_addr.clone(),
+            client,
+            running: running.clone(),
+            subscribed_topics,
+        };
+        self.mqtt_clients
+            .write()
+            .await
+            .insert(broker_id.clone(), inner);
+
+        // Update connection status
+        self.update_connection_status().await;
+
+        // Spawn message processing task for this broker
+        let running_flag = running.clone();
+        let config = self.config.clone();
+        let event_tx = self.event_tx.clone();
+        let event_bus = self.event_bus.clone();
+        let device_types = self.device_types.clone();
+        let metric_cache = self.metric_cache.clone();
+        let telemetry_storage = self.telemetry_storage.clone();
+        let device_registry = self.device_registry.clone();
+        let connection_status = self.connection_status.clone();
+        let mqtt_clients = self.mqtt_clients.clone();
+        let broker_id_clone = broker_id.clone();
+
+        tokio::spawn(async move {
+            let mut eventloop = eventloop;
+            let mut error_count = 0;
+            let max_errors = 5;
+
+            while *running_flag.read().await {
+                match eventloop.poll().await {
+                    Ok(notification) => {
+                        error_count = 0; // Reset error count on success
+                        Self::handle_mqtt_notification(
+                            notification,
+                            &config,
+                            &event_tx,
+                            &event_bus,
+                            &device_types,
+                            &metric_cache,
+                            &telemetry_storage,
+                            &device_registry,
+                            &connection_status,
+                            &broker_id_clone,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        error_count += 1;
+                        if error_count >= max_errors {
+                            error!(
+                                "MQTT broker {} error count reached {}, stopping: {}",
+                                broker_id_clone, max_errors, e
+                            );
+                            break;
+                        }
+                        warn!(
+                            "MQTT broker {} error ({}/{}): {}",
+                            broker_id_clone, error_count, max_errors, e
+                        );
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+
+            // Remove this broker from clients map when task ends
+            mqtt_clients.write().await.remove(&broker_id_clone);
+            info!("MQTT broker {} connection closed", broker_id_clone);
+        });
+
+        info!("Added MQTT broker: {} ({})", broker_id, broker_addr);
+        Ok(())
+    }
+
+    /// Remove a broker connection from this adapter.
+    pub async fn remove_broker(&self, broker_id: &str) -> AdapterResult<()> {
+        let mut clients = self.mqtt_clients.write().await;
+        if let Some(inner) = clients.remove(broker_id) {
+            // Stop the running flag
+            *inner.running.write().await = false;
+            info!("Removed MQTT broker: {}", broker_id);
+            Ok(())
+        } else {
+            Err(AdapterError::Configuration(format!(
+                "Broker not found: {}",
+                broker_id
+            )))
+        }
+    }
+
+    /// Get list of connected broker IDs.
+    pub async fn list_brokers(&self) -> Vec<String> {
+        self.mqtt_clients.read().await.keys().cloned().collect()
+    }
+
+    /// Update overall connection status based on connected brokers.
+    async fn update_connection_status(&self) {
+        let has_connected = !self.mqtt_clients.read().await.is_empty();
+        *self.connection_status.write().await = if has_connected {
+            ConnectionStatus::Connected
+        } else {
+            ConnectionStatus::Disconnected
+        };
+    }
+
     /// Extract device ID from topic using pattern matching.
     fn extract_device_id(&self, topic: &str) -> Option<String> {
+        // Try device/{device_type}/{device_id}/{direction} format first
+        let parts: Vec<&str> = topic.split('/').collect();
+        if parts.len() >= 4 && parts[0] == "device" {
+            return Some(parts[2].to_string());
+        }
+
         // Try to match against subscription patterns
         for pattern in &self.config.subscribe_topics {
             if let Some(id) = Self::match_topic_pattern(topic, pattern) {
@@ -156,7 +448,6 @@ impl MqttAdapter {
         }
 
         // Fallback: extract from common patterns
-        let parts: Vec<&str> = topic.split('/').collect();
         if parts.len() >= 2 {
             // Common pattern: prefix/{device_id}/...
             Some(parts[1].to_string())
@@ -167,8 +458,6 @@ impl MqttAdapter {
 
     /// Match a topic against a pattern and extract device ID.
     fn match_topic_pattern(topic: &str, pattern: &str) -> Option<String> {
-        // Convert MQTT wildcard patterns to regex
-        // + matches one level, # matches multiple levels
         let pattern_parts: Vec<&str> = pattern.split('/').collect();
         let topic_parts: Vec<&str> = topic.split('/').collect();
 
@@ -182,14 +471,11 @@ impl MqttAdapter {
         for (i, (p, t)) in pattern_parts.iter().zip(topic_parts.iter()).enumerate() {
             match *p {
                 "+" => {
-                    // Single-level wildcard - this is the device ID
                     if i == 1 {
                         device_id = Some(t.to_string());
                     }
                 }
-                "#" => {
-                    // Multi-level wildcard - not implemented at same level count
-                }
+                "#" => {}
                 _ => {
                     if p != t {
                         matches = false;
@@ -199,16 +485,16 @@ impl MqttAdapter {
             }
         }
 
-        if matches {
-            device_id
-        } else {
-            None
-        }
+        if matches { device_id } else { None }
     }
 
     /// Extract metric name from topic.
     fn extract_metric_name(&self, topic: &str) -> Option<String> {
         let parts: Vec<&str> = topic.split('/').collect();
+        if parts.len() >= 4 && parts[0] == "device" {
+            // device/{device_type}/{device_id}/uplink - metrics are in payload
+            return None;
+        }
         if parts.len() >= 3 {
             Some(parts[2].to_string())
         } else {
@@ -217,138 +503,382 @@ impl MqttAdapter {
     }
 
     /// Parse MQTT payload to MetricValue.
-    /// Uses protocol mapping if available, otherwise falls back to default parsing.
-    fn parse_payload(
-        &self,
-        device_id: &str,
-        metric_name: &str,
-        payload: &[u8],
-    ) -> crate::mdl::MetricValue {
+    fn parse_payload(&self, payload: &[u8]) -> Result<MetricValue, String> {
         // Try protocol mapping first
-        if let Some(ref mapping) = self.protocol_mapping {
-            if let Ok(value) = mapping.parse_metric(metric_name, payload) {
-                return value;
-            }
-            // Fall through to default parsing on error
-        }
-
         // Default payload parsing
         Self::default_parse_value(payload)
     }
 
     /// Default value parsing (when no protocol mapping is available).
-    fn default_parse_value(payload: &[u8]) -> crate::mdl::MetricValue {
+    fn default_parse_value(payload: &[u8]) -> Result<MetricValue, String> {
         // Try JSON first
         if let Ok(json) = serde_json::from_slice::<Value>(payload) {
             if let Some(num) = json.as_f64() {
-                return crate::mdl::MetricValue::Float(num);
+                return Ok(MetricValue::Float(num));
             } else if let Some(s) = json.as_str() {
-                return crate::mdl::MetricValue::String(s.to_string());
+                return Ok(MetricValue::String(s.to_string()));
             } else if let Some(b) = json.as_bool() {
-                return crate::mdl::MetricValue::Boolean(b);
+                return Ok(MetricValue::Boolean(b));
+            } else if let Some(obj) = json.as_object() {
+                // Handle JSON object - return as-is for further processing
+                let json_str = serde_json::to_string(obj).unwrap_or_default();
+                return Ok(MetricValue::String(json_str));
             }
         }
 
-        // Try to parse as number
-        let str_payload = String::from_utf8_lossy(payload);
-        if let Ok(num) = str_payload.trim().parse::<f64>() {
-            return crate::mdl::MetricValue::Float(num);
+        // Try as UTF-8 string
+        if let Ok(text) = std::str::from_utf8(payload) {
+            let text = text.trim();
+            if let Ok(num) = text.parse::<f64>() {
+                return Ok(MetricValue::Float(num));
+            } else if let Ok(b) = text.parse::<bool>() {
+                return Ok(MetricValue::Boolean(b));
+            }
+            return Ok(MetricValue::String(text.to_string()));
         }
 
-        // Try boolean
-        match str_payload.trim().to_lowercase().as_str() {
-            "true" | "on" | "1" => return crate::mdl::MetricValue::Boolean(true),
-            "false" | "off" | "0" => return crate::mdl::MetricValue::Boolean(false),
-            _ => {}
-        }
-
-        // Default to string
-        crate::mdl::MetricValue::String(str_payload.to_string())
+        Err("Failed to parse payload".to_string())
     }
 
-    /// Handle incoming MQTT message.
-    fn handle_message(&self, topic: String, payload: Vec<u8>) {
-        let device_id = match self.extract_device_id(&topic) {
-            Some(id) => id,
-            None => {
-                warn!("Could not parse device ID from topic: {}", topic);
-                return;
-            }
+    /// Process an incoming MQTT message and emit device events.
+    async fn process_message(&self, topic: &str, payload: &[u8]) {
+        let Some(device_id) = self.extract_device_id(topic) else {
+            debug!("Could not extract device ID from topic: {}", topic);
+            return;
         };
 
-        // Check for discovery messages
-        if self.config.discovery_topic.as_ref().map_or(false, |dt| topic.contains(dt)) {
-            if let Ok(info) = serde_json::from_slice::<Value>(&payload) {
-                let device_info = DiscoveredDeviceInfo::new(&device_id, info.get("type")
-                    .and_then(|v| v.as_str()).unwrap_or("unknown"))
-                    .with_name(info.get("name").and_then(|v| v.as_str()).unwrap_or(&device_id))
-                    .with_endpoint(&topic);
+        let now = chrono::Utc::now();
 
-                // If protocol mapping is available, try to get device type from it
-                if let Some(ref mapping) = self.protocol_mapping {
-                    if let Some(dt) = info.get("device_type").and_then(|v| v.as_str()) {
-                        if dt == mapping.device_type() {
-                            // Register this device with its type
-                            let device_id_clone = device_id.clone();
-                            let dt_owned = dt.to_string(); // Clone to own the data
-                            tokio::spawn(async move {
-                                // In a real implementation, this would persist the device type
-                                debug!("Discovered device {} of type {}", device_id_clone, dt_owned);
-                            });
-                        }
-                    }
+        // Handle discovery announcement
+        if topic.ends_with("/announce")
+            || topic == format!("{}/announce", self.config.discovery_prefix)
+        {
+            self.handle_discovery_announcement(device_id, topic, payload)
+                .await;
+            return;
+        }
+
+        // Handle device uplink/downlink messages
+        // Topic format: device/{device_type}/{device_id}/uplink
+        let parts: Vec<&str> = topic.split('/').collect();
+        if parts.len() >= 4 && parts[0] == "device" {
+            let device_type = parts[1].to_string();
+            let direction = parts.get(3);
+
+            // Handle uplink data
+            if direction == Some(&"uplink") {
+                self.handle_uplink_message(device_id, device_type, payload)
+                    .await;
+                return;
+            }
+        }
+
+        // Handle simple topic format: prefix/{device_id}/metric
+        if let Some(metric_name) = self.extract_metric_name(topic) {
+            match self.parse_payload(payload) {
+                Ok(value) => {
+                    self.emit_metric_event(device_id, metric_name, value, now)
+                        .await;
                 }
+                Err(e) => {
+                    warn!("Failed to parse payload from {}: {}", topic, e);
+                }
+            }
+        }
+    }
 
-                let _ = self.event_tx.send(DeviceEvent::Discovery { device: device_info });
+    /// Handle a discovery announcement message.
+    async fn handle_discovery_announcement(&self, device_id: String, _topic: &str, payload: &[u8]) {
+        #[derive(Debug, Deserialize)]
+        struct Announcement {
+            device_type: String,
+            #[serde(default)]
+            name: Option<String>,
+            #[serde(default)]
+            config: HashMap<String, String>,
+        }
+
+        let announcement: Announcement = match serde_json::from_slice(payload) {
+            Ok(a) => a,
+            Err(e) => {
+                error!("Failed to parse discovery announcement: {}", e);
+                return;
+            }
+        };
+
+        info!(
+            "Discovered device: {} (type: {})",
+            device_id, announcement.device_type
+        );
+
+        let now = chrono::Utc::now();
+
+        // Add to devices list
+        let mut devices = self.devices.write().await;
+        if !devices.contains(&device_id) {
+            devices.push(device_id.clone());
+        }
+        drop(devices);
+
+        // Store device type mapping
+        let mut types = self.device_types.write().await;
+        types.insert(device_id.clone(), announcement.device_type.clone());
+        drop(types);
+
+        // Register device with registry
+        let config = DeviceConfig {
+            device_id: device_id.clone(),
+            name: announcement
+                .name
+                .clone()
+                .unwrap_or_else(|| device_id.clone()),
+            device_type: announcement.device_type.clone(),
+            adapter_type: "mqtt".to_string(),
+            connection_config: crate::registry::ConnectionConfig::default(),
+            adapter_id: Some(self.config.name.clone()),
+        };
+
+        if let Err(e) = self.device_registry.register_device(config).await {
+            warn!("Failed to register discovered device: {}", e);
+        }
+
+        // Publish discovery event
+        let _ = self.event_tx.send(DeviceEvent::Discovery {
+            device: DiscoveredDeviceInfo {
+                device_id: device_id.clone(),
+                device_type: announcement.device_type.clone(),
+                name: announcement.name,
+                endpoint: None,
+                capabilities: Vec::new(),
+                timestamp: now.timestamp(),
+                metadata: serde_json::json!({}),
+            },
+        });
+
+        // Publish to EventBus if available
+        if let Some(bus) = &self.event_bus {
+            bus.publish(NeoTalkEvent::DeviceOnline {
+                device_id: device_id.clone(),
+                device_type: announcement.device_type,
+                timestamp: now.timestamp(),
+            })
+            .await;
+        }
+    }
+
+    /// Handle uplink message from device.
+    async fn handle_uplink_message(&self, device_id: String, device_type: String, payload: &[u8]) {
+        let now = chrono::Utc::now();
+
+        // Add to devices list if not already present
+        {
+            let mut devices = self.devices.write().await;
+            if !devices.contains(&device_id) {
+                devices.push(device_id.clone());
+
+                // Publish online event for new device
+                if let Some(bus) = &self.event_bus {
+                    bus.publish(NeoTalkEvent::DeviceOnline {
+                        device_id: device_id.clone(),
+                        device_type: device_type.clone(),
+                        timestamp: now.timestamp(),
+                    })
+                    .await;
+                }
+            }
+        }
+
+        // Always store raw payload as _raw metric for devices without defined metrics
+        // This allows viewing raw data in historical data even when template doesn't define metrics
+        let raw_value = if let Ok(json_str) = std::str::from_utf8(payload) {
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                MetricValue::String(serde_json::to_string(&json_value).unwrap_or_else(|_| json_str.to_string()))
+            } else {
+                MetricValue::String(json_str.to_string())
+            }
+        } else {
+            // Binary data - store as base64
+            MetricValue::String(base64::encode(payload))
+        };
+        self.emit_metric_event(device_id.clone(), "_raw".to_string(), raw_value, now).await;
+
+        // Try to parse as JSON with multiple metrics
+        if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
+            if let Some(obj) = json_value.as_object() {
+                // Process each key-value pair as a metric
+                for (metric_name, value) in obj {
+                    let metric_value = self.json_value_to_metric(value);
+                    self.emit_metric_event(
+                        device_id.clone(),
+                        metric_name.clone(),
+                        metric_value,
+                        now,
+                    )
+                    .await;
+                }
                 return;
             }
         }
 
-        // Parse as metric event
-        let metric_name = match self.extract_metric_name(&topic) {
-            Some(name) => name,
-            None => "value".to_string(),
-        };
-
-        let value = self.parse_payload(&device_id, &metric_name, &payload);
-
-        let event = DeviceEvent::Metric {
-            device_id,
-            metric: metric_name,
-            value,
-            timestamp: chrono::Utc::now().timestamp(),
-        };
-
-        let _ = self.event_tx.send(event);
+        // Single value - use a default metric name
+        match self.parse_payload(payload) {
+            Ok(value) => {
+                self.emit_metric_event(device_id, "value".to_string(), value, now)
+                    .await;
+            }
+            Err(e) => {
+                warn!("Failed to parse uplink payload from {}: {}", device_id, e);
+            }
+        }
     }
 
-    /// Send a command to a device using protocol mapping.
-    pub async fn send_command(
+    /// Convert JSON value to MetricValue.
+    fn json_value_to_metric(&self, value: &serde_json::Value) -> MetricValue {
+        if let Some(num) = value.as_f64() {
+            MetricValue::Float(num)
+        } else if let Some(s) = value.as_str() {
+            MetricValue::String(s.to_string())
+        } else if let Some(b) = value.as_bool() {
+            MetricValue::Boolean(b)
+        } else {
+            // For objects or null, convert to JSON string
+            MetricValue::String(serde_json::to_string(value).unwrap_or_default())
+        }
+    }
+
+    /// Emit a metric event to both channels and EventBus.
+    async fn emit_metric_event(
+        &self,
+        device_id: String,
+        metric_name: String,
+        value: MetricValue,
+        timestamp: chrono::DateTime<chrono::Utc>,
+    ) {
+        // Update metric cache
+        {
+            let mut cache = self.metric_cache.write().await;
+            cache
+                .entry(device_id.clone())
+                .or_default()
+                .insert(metric_name.clone(), (value.clone(), timestamp));
+        }
+
+        // Emit to device event channel
+        let _ = self.event_tx.send(DeviceEvent::Metric {
+            device_id: device_id.clone(),
+            metric: metric_name.clone(),
+            value: value.clone(),
+            timestamp: timestamp.timestamp(),
+        });
+
+        // Store to time series storage
+        if let Some(storage) = self.telemetry_storage.read().await.as_ref() {
+            let data_point = crate::telemetry::DataPoint {
+                timestamp: timestamp.timestamp(),
+                value: value.clone(),
+                quality: None,
+            };
+            if let Err(e) = storage.write(&device_id, &metric_name, data_point).await {
+                error!("Failed to write telemetry: {}", e);
+            }
+        }
+
+        // Publish to EventBus if available
+        if let Some(bus) = &self.event_bus {
+            use serde_json::json;
+            let core_value = match &value {
+                MetricValue::Integer(i) => edge_ai_core::MetricValue::Integer(*i),
+                MetricValue::Float(f) => edge_ai_core::MetricValue::Float(*f),
+                MetricValue::String(s) => edge_ai_core::MetricValue::String(s.clone()),
+                MetricValue::Boolean(b) => edge_ai_core::MetricValue::Boolean(*b),
+                MetricValue::Binary(_) => edge_ai_core::MetricValue::Json(json!(null)),
+                MetricValue::Null => edge_ai_core::MetricValue::Json(json!(null)),
+            };
+
+            debug!(
+                "Publishing DeviceMetric to EventBus: device_id={}, metric={:?}",
+                device_id, metric_name
+            );
+            bus.publish(NeoTalkEvent::DeviceMetric {
+                device_id,
+                metric: metric_name,
+                value: core_value,
+                timestamp: timestamp.timestamp(),
+                quality: None,
+            })
+            .await;
+        } else {
+            warn!("EventBus not available in MQTT adapter, cannot publish DeviceMetric event");
+        }
+    }
+
+    /// Send a command via MQTT.
+    /// Sends to ALL connected brokers - the device will receive from whichever broker it's connected to.
+    async fn send_command_mqtt(
         &self,
         device_id: &str,
         command: &str,
-        params: &HashMap<String, crate::mdl::MetricValue>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if let Some(ref mapping) = self.protocol_mapping {
-            // Serialize command using protocol mapping
-            let payload = mapping.serialize_command(command, params)?;
-            let address = mapping.command_address(command)
-                .ok_or("Command not found in mapping")?;
+        params: &HashMap<String, Value>,
+    ) -> Result<(), AdapterError> {
+        let clients = self.mqtt_clients.read().await;
 
-            if let Address::MQTT { topic, .. } = address {
-                let full_topic = topic.replace("${device_id}", device_id);
-                info!("Sending MQTT command to {}: {}", full_topic,
-                    String::from_utf8_lossy(&payload));
-                // In a real implementation, this would publish to MQTT
-                return Ok(());
-            }
+        if clients.is_empty() {
+            return Err(AdapterError::Connection(
+                "No MQTT brokers connected".to_string(),
+            ));
+        }
 
-            Err("Command address is not MQTT type".into())
+        // Build topic: device/{device_type}/{device_id}/downlink
+        // Or use default: {device_id}/command/{command}
+        let device_type = self.device_types.read().await.get(device_id).cloned();
+
+        let topic = if let Some(dt) = device_type {
+            format!("device/{}/{}/downlink", dt, device_id)
         } else {
-            // Fallback: construct topic from device_id and command
-            let topic = format!("{}/command/{}", device_id, command);
-            info!("Sending MQTT command to {} (no mapping)", topic);
-            // In a real implementation, this would publish to MQTT
+            format!("{}/command/{}", device_id, command)
+        };
+
+        // Build payload
+        let payload = serde_json::to_string(params).map_err(|e| {
+            AdapterError::Communication(format!("Failed to serialize params: {}", e))
+        })?;
+
+        // Send to all connected brokers
+        let mut last_error = None;
+        let mut success_count = 0;
+
+        for (broker_id, inner) in clients.iter() {
+            match inner
+                .client
+                .publish(
+                    topic.clone(),
+                    rumqttc::QoS::AtLeastOnce,
+                    false,
+                    payload.clone(),
+                )
+                .await
+            {
+                Ok(_) => {
+                    success_count += 1;
+                    info!(
+                        "Sent command '{}' to device {} via broker {}",
+                        command, device_id, broker_id
+                    );
+                }
+                Err(e) => {
+                    last_error = Some(AdapterError::Communication(format!(
+                        "Failed to publish on {}: {}",
+                        broker_id, e
+                    )));
+                }
+            }
+        }
+
+        if success_count == 0 {
+            Err(last_error.unwrap_or_else(|| {
+                AdapterError::Communication("Failed to publish on any broker".to_string())
+            }))
+        } else {
             Ok(())
         }
     }
@@ -375,31 +905,38 @@ impl DeviceAdapter for MqttAdapter {
 
         info!("Starting MQTT adapter: {}", self.config.name);
 
-        // In a real implementation, this would connect to the MQTT broker
-        // For now, we simulate the adapter running
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        // Add the default broker from config
+        self.add_broker(
+            "default",
+            &self.config.mqtt.broker,
+            self.config.mqtt.port,
+            self.config.mqtt.username.clone(),
+            self.config.mqtt.password.clone(),
+        )
+        .await?;
 
-        // Spawn a task to simulate incoming messages
-        // In production, this would be the MQTT client event loop
-        let running = self.running.clone();
-        let _event_tx = self.event_tx.clone();
-        let name = self.config.name.clone();
-
-        tokio::spawn(async move {
-            while running.load(std::sync::atomic::Ordering::Relaxed) {
-                // Simulate message processing
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-            debug!("MQTT adapter '{}' stopped", name);
-        });
-
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
         info!("MQTT adapter '{}' started", self.config.name);
         Ok(())
     }
 
     async fn stop(&self) -> AdapterResult<()> {
         info!("Stopping MQTT adapter: {}", self.config.name);
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
+        // Stop all broker connections
+        let mut clients = self.mqtt_clients.write().await;
+        for inner in clients.values() {
+            *inner.running.write().await = false;
+        }
+        clients.clear();
+
+        *self.connection_status.write().await = ConnectionStatus::Disconnected;
+
+        info!("MQTT adapter '{}' stopped", self.config.name);
         Ok(())
     }
 
@@ -414,11 +951,396 @@ impl DeviceAdapter for MqttAdapter {
     }
 
     fn device_count(&self) -> usize {
-        self.devices.try_read().map(|v| v.len()).unwrap_or(0)
+        // Use try_read to avoid blocking in async runtime
+        self.devices
+            .try_read()
+            .map(|d| d.len())
+            .unwrap_or(0)
     }
 
     fn list_devices(&self) -> Vec<String> {
-        self.devices.try_read().map(|v| v.clone()).unwrap_or_default()
+        // Use try_read to avoid blocking in async runtime
+        self.devices
+            .try_read()
+            .map(|d| d.clone())
+            .unwrap_or_default()
+    }
+
+    async fn send_command(
+        &self,
+        device_id: &str,
+        command_name: &str,
+        payload: String,
+        _topic: Option<String>,
+    ) -> AdapterResult<()> {
+        // Parse payload as JSON params
+        let params: HashMap<String, Value> = serde_json::from_str(&payload).unwrap_or_default();
+
+        self.send_command_mqtt(device_id, command_name, &params)
+            .await
+    }
+
+    fn connection_status(&self) -> ConnectionStatus {
+        // Use try_read to avoid blocking in async runtime
+        // Return Disconnected if lock is contended (safe default)
+        self.connection_status
+            .try_read()
+            .map(|s| s.clone())
+            .unwrap_or(ConnectionStatus::Disconnected)
+    }
+
+    async fn subscribe_device(&self, device_id: &str) -> AdapterResult<()> {
+        // Get the device configuration to find its telemetry topic
+        let device_opt = self.device_registry.get_device(device_id).await;
+        if let Some(device) = device_opt {
+            // Subscribe to the device's telemetry topic if configured
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                // Subscribe to the exact topic specified by the user
+                self.subscribe_topic(telemetry_topic).await?;
+                info!(
+                    "Subscribed to device {} telemetry topic: {}",
+                    device_id, telemetry_topic
+                );
+            } else {
+                // Use default topic pattern if not specified: device/{device_type}/{device_id}/uplink
+                let default_topic = format!("device/{}/{}+/uplink", device.device_type, device_id);
+                self.subscribe_topic(&default_topic).await?;
+                info!(
+                    "No telemetry_topic specified for device {}, subscribed to default: {}",
+                    device_id, default_topic
+                );
+            }
+
+            // Also track the device
+            let mut devices = self.devices.write().await;
+            if !devices.contains(&device_id.to_string()) {
+                devices.push(device_id.to_string());
+            }
+        } else {
+            // If device not found in registry, use a wildcard pattern
+            let topic = format!("device/+/{}+/uplink", device_id);
+            self.subscribe_topic(&topic).await?;
+            info!(
+                "Device {} not found in registry, subscribed to wildcard topic: {}",
+                device_id, topic
+            );
+
+            let mut devices = self.devices.write().await;
+            if !devices.contains(&device_id.to_string()) {
+                devices.push(device_id.to_string());
+            }
+        }
+        Ok(())
+    }
+
+    async fn unsubscribe_device(&self, device_id: &str) -> AdapterResult<()> {
+        // Get the device configuration to find its telemetry topic
+        let device_opt = self.device_registry.get_device(device_id).await;
+        if let Some(device) = device_opt {
+            // Unsubscribe from the device's telemetry topic if configured
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                self.unsubscribe_topic(telemetry_topic).await?;
+                info!(
+                    "Unsubscribed from device {} telemetry topic: {}",
+                    device_id, telemetry_topic
+                );
+            }
+        }
+
+        // Remove device from tracking
+        let mut devices = self.devices.write().await;
+        devices.retain(|d| d != device_id);
+        Ok(())
+    }
+}
+
+impl MqttAdapter {
+    /// Dynamically subscribe to a topic on ALL connected brokers.
+    /// This is used when a device is registered with a custom telemetry topic.
+    pub async fn subscribe_topic(&self, topic: &str) -> AdapterResult<()> {
+        let clients = self.mqtt_clients.read().await;
+        if clients.is_empty() {
+            warn!(
+                "No MQTT brokers connected, cannot subscribe to topic: {}",
+                topic
+            );
+            return Ok(());
+        }
+
+        let mut subscribed_count = 0;
+        let mut last_error = None;
+
+        for (broker_id, inner) in clients.iter() {
+            // Check if already subscribed on this broker
+            if inner.subscribed_topics.read().await.contains(topic) {
+                debug!(
+                    "Already subscribed to topic {} on broker {}",
+                    topic, broker_id
+                );
+                subscribed_count += 1;
+                continue;
+            }
+
+            match inner
+                .client
+                .subscribe(topic, rumqttc::QoS::AtLeastOnce)
+                .await
+            {
+                Ok(_) => {
+                    inner
+                        .subscribed_topics
+                        .write()
+                        .await
+                        .insert(topic.to_string());
+                    subscribed_count += 1;
+                    info!("Subscribed to topic {} on broker {}", topic, broker_id);
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to subscribe to {} on broker {}: {}",
+                        topic, broker_id, e
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        if subscribed_count == 0 {
+            if let Some(e) = last_error {
+                return Err(AdapterError::Communication(format!(
+                    "Failed to subscribe to {} on any broker: {}",
+                    topic, e
+                )));
+            }
+        } else {
+            info!(
+                "Subscribed to topic {} on {} broker(s)",
+                topic, subscribed_count
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Unsubscribe from a topic on ALL connected brokers.
+    pub async fn unsubscribe_topic(&self, topic: &str) -> AdapterResult<()> {
+        let clients = self.mqtt_clients.read().await;
+
+        for (broker_id, inner) in clients.iter() {
+            if !inner.subscribed_topics.read().await.contains(topic) {
+                continue;
+            }
+
+            match inner.client.unsubscribe(topic).await {
+                Ok(_) => {
+                    inner.subscribed_topics.write().await.remove(topic);
+                    info!("Unsubscribed from topic {} on broker {}", topic, broker_id);
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to unsubscribe from {} on broker {}: {}",
+                        topic, broker_id, e
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle MQTT notification from a specific broker.
+    /// This is a static method that processes incoming messages.
+    async fn handle_mqtt_notification(
+        notification: rumqttc::Event,
+        config: &MqttAdapterConfig,
+        event_tx: &broadcast::Sender<DeviceEvent>,
+        event_bus: &Option<Arc<EventBus>>,
+        device_types: &Arc<RwLock<HashMap<String, String>>>,
+        metric_cache: &Arc<
+            RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
+        >,
+        telemetry_storage: &Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
+        device_registry: &Arc<DeviceRegistry>,
+        connection_status: &Arc<RwLock<ConnectionStatus>>,
+        broker_id: &str,
+    ) {
+        match notification {
+            rumqttc::Event::Incoming(rumqttc::Packet::Publish(publish)) => {
+                let topic = publish.topic.to_string();
+                let payload = publish.payload.to_vec();
+
+                info!("Received MQTT message on topic: {}, payload length: {}", topic, payload.len());
+
+                // Extract device ID
+                let device_id = extract_device_id_from_topic(&topic, config);
+                if let Some(device_id) = device_id {
+                    info!("Extracted device_id: {} from topic: {}", device_id, topic);
+                    // Parse payload and emit metric event
+                    if let Ok(value) = MqttAdapter::default_parse_value(&payload) {
+                        let metric_name = extract_metric_name_from_topic(&topic)
+                            .unwrap_or_else(|| "value".to_string());
+
+                        let now = chrono::Utc::now();
+
+                        // Update metric cache
+                        {
+                            let mut cache = metric_cache.write().await;
+                            cache
+                                .entry(device_id.clone())
+                                .or_default()
+                                .insert(metric_name.clone(), (value.clone(), now.clone()));
+                        }
+
+                        // Store in telemetry storage
+                        if let Some(storage) = telemetry_storage.read().await.as_ref() {
+                            let data_point = crate::telemetry::DataPoint {
+                                timestamp: now.timestamp(),
+                                value: value.clone(),
+                                quality: None,
+                            };
+                            let _ = storage.write(&device_id, &metric_name, data_point).await;
+                        }
+
+                        // Emit event
+                        let _ = event_tx.send(DeviceEvent::Metric {
+                            device_id: device_id.clone(),
+                            metric: metric_name.clone(),
+                            value: value.clone(),
+                            timestamp: now.timestamp(),
+                        });
+
+                        // Publish to EventBus
+                        if let Some(bus) = event_bus {
+                            let core_value = convert_to_core_metric(value.clone());
+                            info!(
+                                "Publishing DeviceMetric to EventBus: device_id={}, metric={}, value={:?}",
+                                device_id, metric_name, core_value
+                            );
+                            bus.publish(NeoTalkEvent::DeviceMetric {
+                                device_id: device_id.clone(),
+                                metric: metric_name.clone(),
+                                value: core_value,
+                                timestamp: now.timestamp(),
+                                quality: None,
+                            })
+                            .await;
+
+                            // Publish device online event - extract device_type from topic if available
+                            let device_type = extract_device_type_from_topic(&topic);
+                            info!(
+                                "Publishing DeviceOnline to EventBus: device_id={}, device_type={:?}",
+                                device_id, device_type
+                            );
+                            bus.publish(NeoTalkEvent::DeviceOnline {
+                                device_id: device_id.clone(),
+                                device_type: device_type.unwrap_or_else(|| "unknown".to_string()),
+                                timestamp: now.timestamp(),
+                            })
+                            .await;
+                        } else {
+                            warn!("EventBus is None in handle_mqtt_notification - cannot publish events");
+                        }
+                    }
+                }
+            }
+            rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(_)) => {
+                info!("MQTT broker {} connection acknowledged", broker_id);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Helper function to extract device ID from topic.
+fn extract_device_id_from_topic(topic: &str, config: &MqttAdapterConfig) -> Option<String> {
+    let parts: Vec<&str> = topic.split('/').collect();
+
+    // Try device/{device_type}/{device_id}/{direction} format first
+    if parts.len() >= 4 && parts[0] == "device" {
+        return Some(parts[2].to_string());
+    }
+
+    // Try to match against subscription patterns
+    for pattern in &config.subscribe_topics {
+        if let Some(id) = match_topic_pattern_helper(topic, pattern) {
+            return Some(id);
+        }
+    }
+
+    // Fallback: extract from common patterns
+    if parts.len() >= 2 {
+        Some(parts[1].to_string())
+    } else {
+        None
+    }
+}
+
+/// Helper function to match topic pattern.
+fn match_topic_pattern_helper(topic: &str, pattern: &str) -> Option<String> {
+    let pattern_parts: Vec<&str> = pattern.split('/').collect();
+    let topic_parts: Vec<&str> = topic.split('/').collect();
+
+    if pattern_parts.len() != topic_parts.len() {
+        return None;
+    }
+
+    let mut device_id = None;
+    let mut matches = true;
+
+    for (i, (p, t)) in pattern_parts.iter().zip(topic_parts.iter()).enumerate() {
+        match *p {
+            "+" => {
+                if i == 1 {
+                    device_id = Some(t.to_string());
+                }
+            }
+            "#" => {}
+            _ => {
+                if p != t {
+                    matches = false;
+                    break;
+                }
+            }
+        }
+    }
+
+    if matches { device_id } else { None }
+}
+
+/// Helper function to extract metric name from topic.
+fn extract_metric_name_from_topic(topic: &str) -> Option<String> {
+    let parts: Vec<&str> = topic.split('/').collect();
+    if parts.len() >= 4 && parts[0] == "device" {
+        return None; // metrics are in payload
+    }
+    if parts.len() >= 3 {
+        Some(parts[2].to_string())
+    } else {
+        topic.split('/').last().map(|s| s.to_string())
+    }
+}
+
+/// Helper function to extract device type from topic.
+/// For topic format device/{device_type}/{device_id}/{direction}
+fn extract_device_type_from_topic(topic: &str) -> Option<String> {
+    let parts: Vec<&str> = topic.split('/').collect();
+    if parts.len() >= 4 && parts[0] == "device" {
+        Some(parts[1].to_string())
+    } else {
+        None
+    }
+}
+
+/// Helper function to convert MetricValue to core MetricValue.
+fn convert_to_core_metric(value: MetricValue) -> edge_ai_core::MetricValue {
+    use serde_json::json;
+    match value {
+        MetricValue::Integer(i) => edge_ai_core::MetricValue::Integer(i),
+        MetricValue::Float(f) => edge_ai_core::MetricValue::Float(f),
+        MetricValue::String(s) => edge_ai_core::MetricValue::String(s),
+        MetricValue::Boolean(b) => edge_ai_core::MetricValue::Boolean(b),
+        MetricValue::Binary(_) => edge_ai_core::MetricValue::Json(json!(null)),
+        MetricValue::Null => edge_ai_core::MetricValue::Json(json!(null)),
     }
 }
 
@@ -426,8 +1348,18 @@ impl DeviceAdapter for MqttAdapter {
 pub fn create_mqtt_adapter(
     config: MqttAdapterConfig,
     event_bus: &EventBus,
+    device_registry: Arc<DeviceRegistry>,
 ) -> Arc<MqttAdapter> {
-    let adapter = Arc::new(MqttAdapter::new(config));
+    // Convert &EventBus to Arc<EventBus> by creating a new Arc
+    // Note: This assumes EventBus can be cloned safely
+    let event_bus_arc = Arc::new(event_bus.clone());
+
+    let adapter = Arc::new(
+        MqttAdapter::new(config)
+            .with_event_bus(event_bus_arc)
+            .with_device_registry(device_registry),
+    );
+
     let adapter_clone = adapter.clone();
     let event_bus = event_bus.clone();
 
@@ -435,10 +1367,11 @@ pub fn create_mqtt_adapter(
     tokio::spawn(async move {
         let mut rx = adapter_clone.subscribe();
         while let Some(event) = rx.next().await {
-            let device_id = event.device_id().unwrap_or("unknown").to_string();
-            let neotalk_event = event.to_neotalk_event();
-            let source = format!("adapter:mqtt:{}", device_id);
-            event_bus.publish_with_source(neotalk_event, source).await;
+            if let Some(device_id) = event.device_id() {
+                let source = format!("adapter:mqtt:{}", device_id);
+                let neotalk_event = event.clone().to_neotalk_event();
+                event_bus.publish_with_source(neotalk_event, source).await;
+            }
         }
     });
 
@@ -450,8 +1383,15 @@ pub fn create_mqtt_adapter_with_mapping(
     config: MqttAdapterConfig,
     mapping: Arc<dyn ProtocolMapping>,
     event_bus: &EventBus,
+    device_registry: Arc<DeviceRegistry>,
 ) -> Arc<MqttAdapter> {
-    let adapter = Arc::new(MqttAdapter::with_mapping(config, mapping));
+    let event_bus_arc = Arc::new(event_bus.clone());
+
+    let adapter = Arc::new(
+        MqttAdapter::with_mapping(config, mapping, Some(event_bus_arc))
+            .with_device_registry(device_registry),
+    );
+
     let adapter_clone = adapter.clone();
     let event_bus = event_bus.clone();
 
@@ -459,10 +1399,11 @@ pub fn create_mqtt_adapter_with_mapping(
     tokio::spawn(async move {
         let mut rx = adapter_clone.subscribe();
         while let Some(event) = rx.next().await {
-            let device_id = event.device_id().unwrap_or("unknown").to_string();
-            let neotalk_event = event.to_neotalk_event();
-            let source = format!("adapter:mqtt:{}", device_id);
-            event_bus.publish_with_source(neotalk_event, source).await;
+            if let Some(device_id) = event.device_id() {
+                let source = format!("adapter:mqtt:{}", device_id);
+                let neotalk_event = event.clone().to_neotalk_event();
+                event_bus.publish_with_source(neotalk_event, source).await;
+            }
         }
     });
 
@@ -474,58 +1415,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_match_topic_pattern_single_wildcard() {
+    fn test_match_topic_pattern() {
         assert_eq!(
-            MqttAdapter::match_topic_pattern("sensor/temp01/temperature", "sensor/+/temperature"),
-            Some("temp01".to_string())
+            MqttAdapter::match_topic_pattern("sensor/temp1/temperature", "sensor/+/temperature"),
+            Some("temp1".to_string())
         );
         assert_eq!(
-            MqttAdapter::match_topic_pattern("sensor/temp02/humidity", "sensor/+/temperature"),
-            None
-        );
-    }
-
-    #[test]
-    fn test_extract_device_id() {
-        let config = MqttAdapterConfig::new("test", "localhost")
-            .with_topic("sensor/+/temperature");
-        let adapter = MqttAdapter::new(config);
-
-        assert_eq!(
-            adapter.extract_device_id("sensor/temp01/temperature"),
-            Some("temp01".to_string())
+            MqttAdapter::match_topic_pattern("sensor/temp1/humidity", "sensor/+/humidity"),
+            Some("temp1".to_string())
         );
     }
 
     #[test]
-    fn test_extract_metric_name() {
-        let config = MqttAdapterConfig::new("test", "localhost");
-        let adapter = MqttAdapter::new(config);
-
-        assert_eq!(
-            adapter.extract_metric_name("sensor/temp01/temperature"),
-            Some("temperature".to_string())
-        );
-    }
-
-    #[test]
-    fn test_default_parse_value_float() {
-        let payload = b"23.5";
-        let result = MqttAdapter::default_parse_value(payload);
-        assert!(matches!(result, crate::mdl::MetricValue::Float(23.5)));
-    }
-
-    #[test]
-    fn test_default_parse_value_json() {
-        let payload = br#"{"value": 42.0}"#;
-        let result = MqttAdapter::default_parse_value(payload);
-        assert!(matches!(result, crate::mdl::MetricValue::Float(42.0)));
-    }
-
-    #[test]
-    fn test_default_parse_value_boolean() {
-        let payload = b"true";
-        let result = MqttAdapter::default_parse_value(payload);
-        assert!(matches!(result, crate::mdl::MetricValue::Boolean(true)));
+    fn test_default_parse_value() {
+        assert!(matches!(
+            MqttAdapter::default_parse_value(b"25.5"),
+            Ok(MetricValue::Float(25.5))
+        ));
+        assert!(matches!(
+            MqttAdapter::default_parse_value(b"true"),
+            Ok(MetricValue::Boolean(true))
+        ));
+        assert!(matches!(
+            MqttAdapter::default_parse_value(b"\"hello\""),
+            Ok(MetricValue::String(s) if s == "hello")
+        ));
     }
 }

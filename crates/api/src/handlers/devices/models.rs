@@ -3,20 +3,37 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-/// Simple device info for API responses.
+/// Device info for API responses (with all fields needed by frontend)
 #[derive(Debug, Serialize)]
 pub struct DeviceDto {
     pub id: String,
-    pub name: Option<String>,
+    pub device_id: String,
+    pub name: String,
     pub device_type: String,
+    pub adapter_type: String,
     pub status: String,
     pub last_seen: String,
+    pub online: bool,
     /// Plugin ID that manages this device (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_id: Option<String>,
     /// Plugin name that manages this device (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plugin_name: Option<String>,
+    /// Adapter/Plugin ID that manages this device
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_id: Option<String>,
+    /// Metric and command counts (from template)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metric_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_count: Option<usize>,
+    /// Current metric values
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_values: Option<HashMap<String, serde_json::Value>>,
+    /// Legacy config field for backward compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<HashMap<String, String>>,
 }
 
 /// Device type info for API responses.
@@ -26,6 +43,7 @@ pub struct DeviceTypeDto {
     pub name: String,
     pub description: String,
     pub categories: Vec<String>,
+    pub mode: String,
     pub metric_count: usize,
     pub command_count: usize,
 }
@@ -46,9 +64,79 @@ pub struct AddDeviceRequest {
     /// Optional device ID (auto-generated if not provided)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
-    /// Optional device name
+    /// Device name
+    pub name: String,
+    /// Adapter type (mqtt, modbus, hass, etc.)
+    pub adapter_type: String,
+    /// Connection configuration (protocol-specific)
+    pub connection_config: serde_json::Value,
+}
+
+/// Request to update an existing device.
+/// All fields are optional - only provided fields will be updated.
+#[derive(Debug, Deserialize)]
+pub struct UpdateDeviceRequest {
+    /// Device name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Adapter type (mqtt, modbus, hass, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_type: Option<String>,
+    /// Connection configuration (protocol-specific)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_config: Option<serde_json::Value>,
+    /// Adapter/Plugin ID that manages this device
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_id: Option<String>,
+}
+
+/// Pagination query parameters
+#[derive(Debug, Deserialize)]
+pub struct PaginationQuery {
+    /// Page number (1-indexed)
+    pub page: Option<usize>,
+    /// Number of items per page
+    pub limit: Option<usize>,
+    /// Filter by device type
+    pub device_type: Option<String>,
+    /// Filter by connection status
+    pub status: Option<String>,
+}
+
+/// Pagination metadata
+#[derive(Debug, Serialize)]
+pub struct PaginationMeta {
+    /// Current page number
+    pub page: usize,
+    /// Number of items per page
+    pub limit: usize,
+    /// Total number of items
+    pub total: usize,
+    /// Total number of pages
+    pub total_pages: usize,
+    /// Whether there is a next page
+    pub has_next: bool,
+    /// Whether there is a previous page
+    pub has_prev: bool,
+}
+
+impl PaginationMeta {
+    /// Create pagination metadata
+    pub fn new(page: usize, limit: usize, total: usize) -> Self {
+        let total_pages = if total == 0 {
+            0
+        } else {
+            (total + limit - 1) / limit
+        };
+        Self {
+            page,
+            limit,
+            total,
+            total_pages,
+            has_next: page < total_pages,
+            has_prev: page > 1,
+        }
+    }
 }
 
 /// Request to send a command to a device.

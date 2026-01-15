@@ -364,7 +364,8 @@ mod tests {
             device_id: "test".to_string(),
             device_type: "sensor".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         // Publish a rule event (should be filtered out)
         bus.publish(NeoTalkEvent::RuleTriggered {
@@ -373,7 +374,8 @@ mod tests {
             trigger_value: 42.0,
             actions: vec!["action".to_string()],
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         // Should only receive the device event
         let received = rx.recv().await.unwrap();
@@ -384,16 +386,17 @@ mod tests {
     #[tokio::test]
     async fn test_custom_filter() {
         let bus = EventBus::new();
-        let mut rx = bus.filter().custom(|event| {
-            matches!(event, NeoTalkEvent::DeviceMetric { .. })
-        });
+        let mut rx = bus
+            .filter()
+            .custom(|event| matches!(event, NeoTalkEvent::DeviceMetric { .. }));
 
         // Publish various events
         bus.publish(NeoTalkEvent::DeviceOnline {
             device_id: "test".to_string(),
             device_type: "sensor".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         bus.publish(NeoTalkEvent::DeviceMetric {
             device_id: "test".to_string(),
@@ -401,7 +404,8 @@ mod tests {
             value: MetricValue::float(25.0),
             timestamp: 0,
             quality: None,
-        }).await;
+        })
+        .await;
 
         // Should only receive the metric event
         let received = rx.recv().await.unwrap();
@@ -420,7 +424,8 @@ mod tests {
                 timestamp: 0,
             },
             "test_adapter",
-        ).await;
+        )
+        .await;
 
         let received = rx.recv().await.unwrap();
         assert_eq!(received.1.source, "test_adapter");
@@ -431,9 +436,7 @@ mod tests {
         let bus = EventBus::new();
         let mut rx = bus.filter().llm_events();
 
-        let actions = vec![
-            ProposedAction::notify_user("Test notification"),
-        ];
+        let actions = vec![ProposedAction::notify_user("Test notification")];
 
         bus.publish(NeoTalkEvent::LlmDecisionProposed {
             decision_id: "dec-1".to_string(),
@@ -443,7 +446,8 @@ mod tests {
             actions,
             confidence: 0.85,
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         let received = rx.recv().await.unwrap();
         assert!(received.0.is_llm_event());
@@ -496,7 +500,8 @@ mod tests {
             device_id: "test".to_string(),
             device_type: "sensor".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         bus.publish(NeoTalkEvent::RuleTriggered {
             rule_id: "rule1".to_string(),
@@ -504,7 +509,8 @@ mod tests {
             trigger_value: 1.0,
             actions: vec![],
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         bus.publish(NeoTalkEvent::WorkflowTriggered {
             workflow_id: "wf1".to_string(),
@@ -512,13 +518,15 @@ mod tests {
             trigger_data: None,
             execution_id: "exec1".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         bus.publish(NeoTalkEvent::PeriodicReviewTriggered {
             review_id: "rev1".to_string(),
             review_type: "hourly".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         bus.publish(NeoTalkEvent::AlertCreated {
             alert_id: "alert1".to_string(),
@@ -526,13 +534,23 @@ mod tests {
             severity: "info".to_string(),
             message: "Test message".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         // Verify each receiver got its event
-        assert_eq!(device_rx.recv().await.unwrap().0.type_name(), "DeviceOnline");
+        assert_eq!(
+            device_rx.recv().await.unwrap().0.type_name(),
+            "DeviceOnline"
+        );
         assert_eq!(rule_rx.recv().await.unwrap().0.type_name(), "RuleTriggered");
-        assert_eq!(workflow_rx.recv().await.unwrap().0.type_name(), "WorkflowTriggered");
-        assert_eq!(llm_rx.recv().await.unwrap().0.type_name(), "PeriodicReviewTriggered");
+        assert_eq!(
+            workflow_rx.recv().await.unwrap().0.type_name(),
+            "WorkflowTriggered"
+        );
+        assert_eq!(
+            llm_rx.recv().await.unwrap().0.type_name(),
+            "PeriodicReviewTriggered"
+        );
         assert_eq!(alert_rx.recv().await.unwrap().0.type_name(), "AlertCreated");
     }
 
@@ -544,11 +562,13 @@ mod tests {
         let mut rx = bus.subscribe();
 
         tokio::spawn(async move {
-            bus_clone.publish(NeoTalkEvent::DeviceOnline {
-                device_id: "test".to_string(),
-                device_type: "sensor".to_string(),
-                timestamp: 0,
-            }).await;
+            bus_clone
+                .publish(NeoTalkEvent::DeviceOnline {
+                    device_id: "test".to_string(),
+                    device_type: "sensor".to_string(),
+                    timestamp: 0,
+                })
+                .await;
         });
 
         let received = rx.recv().await.unwrap();
@@ -568,7 +588,8 @@ mod tests {
             device_id: "test".to_string(),
             device_type: "sensor".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         // Should be able to try_recv now
         let received = rx.try_recv().unwrap();
@@ -587,7 +608,8 @@ mod tests {
             trigger_value: 1.0,
             actions: vec![],
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         // Should return None since filter doesn't match
         assert!(rx.try_recv().is_none());
@@ -597,7 +619,8 @@ mod tests {
             device_id: "test".to_string(),
             device_type: "sensor".to_string(),
             timestamp: 0,
-        }).await;
+        })
+        .await;
 
         // Should return the matching event
         let received = rx.try_recv().unwrap();

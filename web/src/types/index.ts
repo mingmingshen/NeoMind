@@ -34,55 +34,85 @@ export interface ChangePasswordRequest {
 export interface Device {
   id: string
   device_id: string  // Same as id, included for backend compatibility
-  name?: string
-  device_type: string
+  name: string
+  device_type: string  // Reference to template
+  adapter_type: string  // "mqtt" | "modbus" | "hass"
+  connection_config?: ConnectionConfig  // Optional - only in detail view
   status: string
   last_seen: string
+  online: boolean
   current_values?: Record<string, unknown>
   // Associated plugin information
   plugin_id?: string
   plugin_name?: string
-  adapter_type?: 'mqtt' | 'modbus' | 'hass' | 'http' | 'custom'
-  // Device config (contains HASS state topic mappings for HASS devices)
-  config?: Record<string, string>
-  // Metric and command counts
+  adapter_id?: string
+  // Metric and command counts (from template)
   metric_count?: number
   command_count?: number
+  // Legacy fields for backward compatibility
+  config?: Record<string, string>
 }
+
+export interface ConnectionConfig {
+  // MQTT-specific
+  telemetry_topic?: string
+  command_topic?: string
+  json_path?: string
+  // Modbus-specific
+  host?: string
+  port?: number
+  slave_id?: number
+  register_map?: Record<string, number>
+  // HASS-specific
+  entity_id?: string
+  // Additional protocol-specific parameters
+  [key: string]: unknown
+}
+
+export type DeviceTypeMode = 'simple' | 'full'
 
 export interface DeviceType {
   device_type: string
   name: string
   description: string
   categories: string[]
-  metric_count: number
-  command_count: number
-  uplink?: {
-    metrics: MetricDefinition[]
-  }
-  downlink?: {
-    commands: CommandDefinition[]
-  }
+  // Mode: simple (raw data + LLM) or full (structured definitions)
+  mode?: DeviceTypeMode
+  // Simplified: directly list metrics and commands, no uplink/downlink nesting
+  // Optional - only included when fetching full details
+  metrics?: MetricDefinition[]
+  commands?: CommandDefinition[]
+  // Samples for Simple mode - raw data examples
+  uplink_samples?: Record<string, unknown>[]  // Sample uplink data
+  // Optional counts for display purposes
+  metric_count?: number
+  command_count?: number
 }
 
 export interface MetricDefinition {
   name: string
   display_name: string
-  topic: string
-  value_template?: string
-  data_type: string
+  data_type: 'integer' | 'float' | 'string' | 'boolean' | 'binary'
   unit?: string
   min?: number
   max?: number
   required?: boolean
+  // Legacy fields for backward compatibility
+  topic?: string
+  value_template?: string
 }
 
 export interface CommandDefinition {
   name: string
-  display_name?: string
-  topic: string
-  payload_template: string
-  parameters?: ParameterDefinition[]
+  display_name: string
+  payload_template: string  // Template string, supports ${param} variables
+  parameters: ParameterDefinition[]
+  // Sample command payloads (for Simple mode / LLM reference)
+  samples?: Record<string, unknown>[]
+  // LLM hints for command usage
+  llm_hints?: string
+  // Legacy fields for backward compatibility
+  topic?: string
   response_topic?: string
   timeout_ms?: number
 }
@@ -259,10 +289,13 @@ export interface ApiResponse<T> {
 }
 
 // Request Types
+// Request to add a new device (updated for new architecture)
 export interface AddDeviceRequest {
-  device_type: string
   device_id?: string
-  name?: string
+  name: string
+  device_type: string  // Must reference an existing template
+  adapter_type: string  // "mqtt" | "modbus" | "hass"
+  connection_config: ConnectionConfig
 }
 
 export interface SendCommandRequest {

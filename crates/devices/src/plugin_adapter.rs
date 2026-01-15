@@ -3,17 +3,17 @@
 //! This module provides a bridge between the DeviceAdapter trait and the UnifiedPlugin trait,
 //! allowing device adapters (MQTT, Modbus, HASS, etc.) to be managed as plugins.
 
+use anyhow::anyhow;
+use futures::StreamExt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
-use futures::StreamExt;
-use anyhow::anyhow;
 
-use crate::adapter::{DeviceAdapter, AdapterError};
+use crate::adapter::{AdapterError, DeviceAdapter};
 use edge_ai_core::EventBus;
 use edge_ai_core::plugin::{
-    ExtendedPluginMetadata, PluginType, PluginState, PluginError, PluginStats,
-    StateMachine, PluginMetadata, PluginPermission,
+    ExtendedPluginMetadata, PluginError, PluginMetadata, PluginPermission, PluginState,
+    PluginStats, PluginType, StateMachine,
 };
 
 /// Wrapper that makes a DeviceAdapter compatible with UnifiedPlugin.
@@ -36,10 +36,7 @@ pub struct DeviceAdapterPlugin {
 
 impl DeviceAdapterPlugin {
     /// Create a new device adapter plugin.
-    pub fn new(
-        adapter: Arc<dyn DeviceAdapter>,
-        event_bus: EventBus,
-    ) -> Self {
+    pub fn new(adapter: Arc<dyn DeviceAdapter>, event_bus: EventBus) -> Self {
         let adapter_name = adapter.name();
         let adapter_type = adapter.adapter_type();
 
@@ -108,7 +105,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for DeviceAdapterPlugin {
     }
 
     async fn initialize(&mut self, _config: &serde_json::Value) -> Result<(), PluginError> {
-        self.state_machine.transition(PluginState::Initialized, "Initialization".to_string())
+        self.state_machine
+            .transition(PluginState::Initialized, "Initialization".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
         Ok(())
     }
@@ -120,11 +118,13 @@ impl edge_ai_core::plugin::UnifiedPlugin for DeviceAdapterPlugin {
         }
 
         // Start the underlying adapter
-        self.adapter.start().await
-            .map_err(|e| PluginError::InitializationFailed(format!("Failed to start adapter: {}", e)))?;
+        self.adapter.start().await.map_err(|e| {
+            PluginError::InitializationFailed(format!("Failed to start adapter: {}", e))
+        })?;
 
         // Update state
-        self.state_machine.transition(PluginState::Running, "Start".to_string())
+        self.state_machine
+            .transition(PluginState::Running, "Start".to_string())
             .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
 
         self.running.store(true, Ordering::Relaxed);
@@ -163,11 +163,14 @@ impl edge_ai_core::plugin::UnifiedPlugin for DeviceAdapterPlugin {
         }
 
         // Stop the underlying adapter
-        self.adapter.stop().await
+        self.adapter
+            .stop()
+            .await
             .map_err(|e| PluginError::ExecutionFailed(format!("Failed to stop adapter: {}", e)))?;
 
         // Update state
-        self.state_machine.transition(PluginState::Stopped, "Stop".to_string())
+        self.state_machine
+            .transition(PluginState::Stopped, "Stop".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         self.stats.record_stop(0);
@@ -182,7 +185,8 @@ impl edge_ai_core::plugin::UnifiedPlugin for DeviceAdapterPlugin {
         }
 
         // Transition to loaded state
-        self.state_machine.transition(PluginState::Loaded, "Shutdown".to_string())
+        self.state_machine
+            .transition(PluginState::Loaded, "Shutdown".to_string())
             .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
 
         Ok(())
@@ -211,7 +215,11 @@ impl edge_ai_core::plugin::UnifiedPlugin for DeviceAdapterPlugin {
         stats
     }
 
-    async fn handle_command(&self, command: &str, _args: &serde_json::Value) -> Result<serde_json::Value, PluginError> {
+    async fn handle_command(
+        &self,
+        command: &str,
+        _args: &serde_json::Value,
+    ) -> Result<serde_json::Value, PluginError> {
         match command {
             "list_devices" => {
                 let devices = self.adapter.list_devices();
@@ -224,27 +232,21 @@ impl edge_ai_core::plugin::UnifiedPlugin for DeviceAdapterPlugin {
                 let count = self.adapter.device_count();
                 Ok(serde_json::json!({ "count": count }))
             }
-            "status" => {
-                Ok(serde_json::json!({
-                    "running": self.adapter.is_running(),
-                    "state": self.get_state(),
-                    "adapter_type": self.adapter.adapter_type(),
-                    "name": self.adapter.name(),
-                }))
-            }
-            "get_info" => {
-                Ok(serde_json::json!({
-                    "id": self.metadata.base.id,
-                    "name": self.metadata.base.name,
-                    "adapter_type": self.adapter.adapter_type(),
-                    "running": self.adapter.is_running(),
-                    "device_count": self.adapter.device_count(),
-                    "version": self.metadata.version.to_string(),
-                }))
-            }
-            _ => {
-                Err(PluginError::Other(anyhow!("Unknown command: {}", command)))
-            }
+            "status" => Ok(serde_json::json!({
+                "running": self.adapter.is_running(),
+                "state": self.get_state(),
+                "adapter_type": self.adapter.adapter_type(),
+                "name": self.adapter.name(),
+            })),
+            "get_info" => Ok(serde_json::json!({
+                "id": self.metadata.base.id,
+                "name": self.metadata.base.name,
+                "adapter_type": self.adapter.adapter_type(),
+                "running": self.adapter.is_running(),
+                "device_count": self.adapter.device_count(),
+                "version": self.metadata.version.to_string(),
+            })),
+            _ => Err(PluginError::Other(anyhow!("Unknown command: {}", command))),
         }
     }
 }

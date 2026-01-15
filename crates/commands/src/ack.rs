@@ -2,11 +2,11 @@
 //!
 //! Manages acknowledgment tracking for commands sent to devices.
 
+use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc, Duration};
 
 use crate::command::{CommandId, CommandResult, CommandStatus};
 use crate::state::{CommandStateStore, StateError};
@@ -156,9 +156,7 @@ pub enum AckEvent {
         data: Option<serde_json::Value>,
     },
     /// Acknowledgment timeout
-    Timeout {
-        command_id: CommandId,
-    },
+    Timeout { command_id: CommandId },
     /// Acknowledgment failed
     Failed {
         command_id: CommandId,
@@ -187,10 +185,7 @@ pub struct AckHandler {
 
 impl AckHandler {
     /// Create a new acknowledgment handler.
-    pub fn new(
-        state: Arc<CommandStateStore>,
-        config: AckHandlerConfig,
-    ) -> Self {
+    pub fn new(state: Arc<CommandStateStore>, config: AckHandlerConfig) -> Self {
         let (event_tx, _event_rx) = mpsc::channel(1000);
 
         Self {
@@ -216,7 +211,7 @@ impl AckHandler {
         let state = self.state.clone();
         let running_flag = self.running.clone();
         let event_tx = self.event_tx.clone();
-        let check_interval = tokio::time:: Duration::from_millis(self.config.check_interval_ms);
+        let check_interval = tokio::time::Duration::from_millis(self.config.check_interval_ms);
         let auto_retry = self.config.auto_retry;
 
         let handle = tokio::spawn(async move {
@@ -246,7 +241,9 @@ impl AckHandler {
                         });
 
                         // Update state
-                        let _ = state.update_status(command_id, CommandStatus::Timeout).await;
+                        let _ = state
+                            .update_status(command_id, CommandStatus::Timeout)
+                            .await;
 
                         if auto_retry && ack.can_retry() {
                             to_retry.push(command_id.clone());
@@ -263,7 +260,9 @@ impl AckHandler {
                             timeout_secs: ack.timeout_secs,
                         });
                         // Update state back to sending
-                        let _ = state.update_status(&command_id, CommandStatus::Sending).await;
+                        let _ = state
+                            .update_status(&command_id, CommandStatus::Sending)
+                            .await;
                     }
                 }
             }
@@ -292,7 +291,11 @@ impl AckHandler {
     }
 
     /// Handle acknowledgment received.
-    pub async fn acknowledge(&self, command_id: &CommandId, data: Option<serde_json::Value>) -> Result<(), AckError> {
+    pub async fn acknowledge(
+        &self,
+        command_id: &CommandId,
+        data: Option<serde_json::Value>,
+    ) -> Result<(), AckError> {
         let mut pending = self.pending.write().await;
 
         if let Some(ack) = pending.get_mut(command_id) {
@@ -304,7 +307,10 @@ impl AckHandler {
             });
 
             // Update state
-            let _ = self.state.update_status(command_id, CommandStatus::WaitingAck).await;
+            let _ = self
+                .state
+                .update_status(command_id, CommandStatus::WaitingAck)
+                .await;
 
             Ok(())
         } else {
@@ -313,7 +319,11 @@ impl AckHandler {
     }
 
     /// Handle command completion.
-    pub async fn complete(&self, command_id: &CommandId, result: CommandResult) -> Result<(), AckError> {
+    pub async fn complete(
+        &self,
+        command_id: &CommandId,
+        result: CommandResult,
+    ) -> Result<(), AckError> {
         let mut pending = self.pending.write().await;
 
         if let Some(ack) = pending.get_mut(command_id) {
@@ -349,7 +359,10 @@ impl AckHandler {
             });
 
             // Update state
-            let _ = self.state.update_status(command_id, CommandStatus::Failed).await;
+            let _ = self
+                .state
+                .update_status(command_id, CommandStatus::Failed)
+                .await;
 
             Ok(())
         } else {
@@ -494,7 +507,12 @@ mod tests {
 
         handler.register("cmd1".to_string(), Some(30)).await;
 
-        let result = handler.acknowledge(&"cmd1".to_string(), Some(serde_json::json!({"status": "ok"}))).await;
+        let result = handler
+            .acknowledge(
+                &"cmd1".to_string(),
+                Some(serde_json::json!({"status": "ok"})),
+            )
+            .await;
         assert!(result.is_ok());
 
         let status = handler.get_status(&"cmd1".to_string()).await;

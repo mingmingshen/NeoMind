@@ -3,10 +3,10 @@
 //! Defines the abstraction layer for mapping device capabilities to
 //! protocol-specific addresses and data formats.
 
+use crate::mdl::{MetricDataType, MetricValue};
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::mdl::{MetricValue, MetricDataType};
-use serde_json::Value as JsonValue;
 
 /// Protocol-agnostic device capability definition.
 ///
@@ -269,11 +269,7 @@ pub trait ProtocolMapping: Send + Sync {
     /// Parse raw protocol data into a MetricValue.
     ///
     /// This handles protocol-specific data formats (JSON, binary, etc.)
-    fn parse_metric(
-        &self,
-        capability_name: &str,
-        raw_data: &[u8],
-    ) -> MappingResult<MetricValue>;
+    fn parse_metric(&self, capability_name: &str, raw_data: &[u8]) -> MappingResult<MetricValue>;
 
     /// Serialize command parameters into a protocol-specific payload.
     ///
@@ -340,10 +336,7 @@ pub struct CommandMappingConfig {
 
 impl MappingConfig {
     /// Create a new mapping config.
-    pub fn new(
-        protocol: impl Into<String>,
-        device_type: impl Into<String>,
-    ) -> Self {
+    pub fn new(protocol: impl Into<String>, device_type: impl Into<String>) -> Self {
         Self {
             protocol: protocol.into(),
             device_type: device_type.into(),
@@ -389,7 +382,8 @@ impl MappingConfig {
 
     /// Render a template by replacing ${device_id} with actual device ID.
     pub fn render_template(template: &str, device_id: &str) -> String {
-        template.replace("${device_id}", device_id)
+        template
+            .replace("${device_id}", device_id)
             .replace("${id}", device_id)
     }
 

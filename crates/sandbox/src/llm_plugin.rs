@@ -9,11 +9,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::RwLock;
 use wasmtime::{Engine, Module};
 
-use crate::{Sandbox, SandboxError, SandboxConfig};
+use crate::{Sandbox, SandboxConfig, SandboxError};
 
 /// WASM LLM plugin configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,12 +362,7 @@ impl WasmLlmPluginRegistry {
 
     /// List all registered plugins.
     pub async fn list(&self) -> Vec<String> {
-        self.plugins
-            .read()
-            .await
-            .keys()
-            .cloned()
-            .collect()
+        self.plugins.read().await.keys().cloned().collect()
     }
 
     /// Remove a plugin from the registry.

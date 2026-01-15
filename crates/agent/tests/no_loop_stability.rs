@@ -4,23 +4,22 @@
 //! 3. State updates correctly after tool execution
 //! 4. Long-term stability (30+ rounds)
 
+use async_trait::async_trait;
+use futures::{Stream, StreamExt};
+use serde_json::json;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use std::pin::Pin;
 use tokio::sync::RwLock;
-use serde_json::json;
-use futures::{Stream, StreamExt};
-use async_trait::async_trait;
 
+use edge_ai_agent::{agent::AgentEvent, session::SessionManager};
 use edge_ai_core::{
     EventBus,
-    llm::backend::{LlmRuntime, LlmInput, LlmOutput, FinishReason, TokenUsage, BackendId, StreamChunk, LlmError},
+    llm::backend::{
+        BackendId, FinishReason, LlmError, LlmInput, LlmOutput, LlmRuntime, StreamChunk, TokenUsage,
+    },
 };
-use edge_ai_agent::{
-    agent::AgentEvent,
-    session::SessionManager,
-};
-use edge_ai_tools::{ToolRegistryBuilder, Tool, ToolOutput, Result as ToolResult};
+use edge_ai_tools::{Result as ToolResult, Tool, ToolOutput, ToolRegistryBuilder};
 
 /// Mock LLM backend with tracking capabilities.
 struct MockLlmBackend {
@@ -79,9 +78,14 @@ impl LlmRuntime for MockLlmBackend {
     ) -> Result<Pin<Box<dyn Stream<Item = StreamChunk> + Send>>, LlmError> {
         *self.call_count.write().await += 1;
         let chunks = self.response_queue.read().await;
-        let cloned: Vec<StreamChunk> = chunks.iter().filter_map(|c| {
-            c.as_ref().ok().map(|(text, is_thinking)| Ok((text.clone(), *is_thinking)))
-        }).collect();
+        let cloned: Vec<StreamChunk> = chunks
+            .iter()
+            .filter_map(|c| {
+                c.as_ref()
+                    .ok()
+                    .map(|(text, is_thinking)| Ok((text.clone(), *is_thinking)))
+            })
+            .collect();
         Ok(Box::pin(futures::stream::iter(cloned)))
     }
 
@@ -148,7 +152,11 @@ impl Tool for StatefulMockTool {
                 updated
             }
             "increment" => {
-                let current_val = current_state["value"].as_str().unwrap_or("0").parse::<i32>().unwrap_or(0);
+                let current_val = current_state["value"]
+                    .as_str()
+                    .unwrap_or("0")
+                    .parse::<i32>()
+                    .unwrap_or(0);
                 let new_val = current_val + 1;
                 let updated = json!({
                     "last_action": "increment",
@@ -214,16 +222,21 @@ impl Tool for SimpleMockTool {
 
 /// Create simple chunks.
 fn create_simple_chunks(response: &str) -> Vec<StreamChunk> {
-    vec![
-        Ok((response.to_string(), false)),
-    ]
+    vec![Ok((response.to_string(), false))]
 }
 
 /// Create tool call chunks.
-fn create_tool_call_chunks(tool_name: &str, tool_args: serde_json::Value, final_response: &str) -> Vec<StreamChunk> {
+fn create_tool_call_chunks(
+    tool_name: &str,
+    tool_args: serde_json::Value,
+    final_response: &str,
+) -> Vec<StreamChunk> {
     vec![
         Ok((format!("Let me use {} to help you.", tool_name), true)),
-        Ok((format!("<tool_calls><invoke name=\"{}\">", tool_name), false)),
+        Ok((
+            format!("<tool_calls><invoke name=\"{}\">", tool_name),
+            false,
+        )),
         Ok((create_parameter_xml(&tool_args), false)),
         Ok((format!("</invoke></tool_calls>{}", final_response), false)),
     ]
@@ -240,7 +253,10 @@ fn create_parameter_xml(args: &serde_json::Value) -> String {
                 serde_json::Value::Bool(b) => b.to_string(),
                 _ => "null".to_string(),
             };
-            params.push_str(&format!("<parameter name=\"{}\" value=\"{}\"/>", key, value_str));
+            params.push_str(&format!(
+                "<parameter name=\"{}\" value=\"{}\"/>",
+                key, value_str
+            ));
         }
         params
     } else {
@@ -280,7 +296,9 @@ impl EventAnalyzer {
             AgentEvent::Thinking { .. } => {
                 self.thinking_chunks += 1;
                 self.current_thinking_sequence += 1;
-                self.max_thinking_sequence = self.max_thinking_sequence.max(self.current_thinking_sequence);
+                self.max_thinking_sequence = self
+                    .max_thinking_sequence
+                    .max(self.current_thinking_sequence);
             }
             AgentEvent::Content { .. } => {
                 self.content_chunks += 1;
@@ -315,11 +333,17 @@ impl EventAnalyzer {
 
     /// Check if response completed properly.
     fn is_complete(&self) -> bool {
-        self.has_end && !self.errors.iter().any(|e| e.contains("infinite") || e.contains("loop") || e.contains("too long"))
+        self.has_end
+            && !self
+                .errors
+                .iter()
+                .any(|e| e.contains("infinite") || e.contains("loop") || e.contains("too long"))
     }
 }
 
-async fn collect_and_analyze(stream: Pin<Box<dyn Stream<Item = AgentEvent> + Send>>) -> EventAnalyzer {
+async fn collect_and_analyze(
+    stream: Pin<Box<dyn Stream<Item = AgentEvent> + Send>>,
+) -> EventAnalyzer {
     let mut analyzer = EventAnalyzer::new();
     futures::pin_mut!(stream);
     while let Some(event) = stream.next().await {
@@ -351,19 +375,35 @@ async fn test_no_thinking_loop_after_tool_call() {
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
     // Test multiple rounds with tool calls
     let test_cases = vec![
-        ("Use stateful tool to set value to 5", "stateful_tool", json!({"action": "set", "value": "5"})),
+        (
+            "Use stateful tool to set value to 5",
+            "stateful_tool",
+            json!({"action": "set", "value": "5"}),
+        ),
         ("Use simple tool", "simple_tool", json!({})),
-        ("Increment the value", "stateful_tool", json!({"action": "increment"})),
-        ("Get current value", "stateful_tool", json!({"action": "get"})),
+        (
+            "Increment the value",
+            "stateful_tool",
+            json!({"action": "increment"}),
+        ),
+        (
+            "Get current value",
+            "stateful_tool",
+            json!({"action": "get"}),
+        ),
         ("Use simple tool again", "simple_tool", json!({})),
     ];
 
@@ -376,7 +416,7 @@ async fn test_no_thinking_loop_after_tool_call() {
         let chunks = create_tool_call_chunks(
             expected_tool,
             args.clone(),
-            &format!("{} executed successfully.", expected_tool)
+            &format!("{} executed successfully.", expected_tool),
         );
 
         mock_llm.set_response_chunks(chunks).await;
@@ -384,8 +424,9 @@ async fn test_no_thinking_loop_after_tool_call() {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             Duration::from_secs(10),
-            session_manager.process_message_events(&session_id, user_msg)
-        ).await;
+            session_manager.process_message_events(&session_id, user_msg),
+        )
+        .await;
 
         match result {
             Ok(Ok(stream)) => {
@@ -410,7 +451,11 @@ async fn test_no_thinking_loop_after_tool_call() {
 
                 // Verify tool was called
                 if !analyzer.tool_calls.contains(&expected_tool.to_string()) {
-                    panic!("Round {}: Expected tool '{}' not called", i + 1, expected_tool);
+                    panic!(
+                        "Round {}: Expected tool '{}' not called",
+                        i + 1,
+                        expected_tool
+                    );
                 }
 
                 // Verify LLM was called reasonable times (initial + follow-up, not infinite)
@@ -419,7 +464,11 @@ async fn test_no_thinking_loop_after_tool_call() {
 
                 // Should be called exactly 2 times: Phase 1 (detect tools) + Phase 2 (follow-up without tools)
                 if call_count > 3 {
-                    panic!("Round {}: Too many LLM calls ({}), possible loop detected", i + 1, call_count);
+                    panic!(
+                        "Round {}: Too many LLM calls ({}), possible loop detected",
+                        i + 1,
+                        call_count
+                    );
                 }
 
                 println!("  ✅ Round {} passed", i + 1);
@@ -455,19 +504,31 @@ async fn test_tool_state_persistence() {
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
     // Sequence of operations that should update state
     let operations = vec![
-        ("Set value to 10", json!({"action": "set", "value": "10"}), "10"),
+        (
+            "Set value to 10",
+            json!({"action": "set", "value": "10"}),
+            "10",
+        ),
         ("Increment", json!({"action": "increment"}), "11"),
         ("Increment again", json!({"action": "increment"}), "12"),
-        ("Set to 100", json!({"action": "set", "value": "100"}), "100"),
+        (
+            "Set to 100",
+            json!({"action": "set", "value": "100"}),
+            "100",
+        ),
         ("Increment", json!({"action": "increment"}), "101"),
     ];
 
@@ -484,15 +545,16 @@ async fn test_tool_state_persistence() {
         let chunks = create_tool_call_chunks(
             "state_tool",
             args.clone(),
-            &format!("Value is now {}", expected_value)
+            &format!("Value is now {}", expected_value),
         );
 
         mock_llm.set_response_chunks(chunks).await;
 
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            session_manager.process_message_events(&session_id, user_msg)
-        ).await;
+            session_manager.process_message_events(&session_id, user_msg),
+        )
+        .await;
 
         match result {
             Ok(Ok(stream)) => {
@@ -503,14 +565,22 @@ async fn test_tool_state_persistence() {
 
                 // Check the actual tool state
                 let state = stateful_tool.get_state().await;
-                println!("  Full state: {}", serde_json::to_string_pretty(&state).unwrap_or_else(|_| "N/A".to_string()));
+                println!(
+                    "  Full state: {}",
+                    serde_json::to_string_pretty(&state).unwrap_or_else(|_| "N/A".to_string())
+                );
                 let actual_value = state["value"].as_str().unwrap_or("not found");
 
                 println!("  Expected value: {}", expected_value);
                 println!("  Actual value: {}", actual_value);
 
                 if actual_value != *expected_value {
-                    panic!("Step {}: State not updated correctly. Expected {}, got {}", i + 1, expected_value, actual_value);
+                    panic!(
+                        "Step {}: State not updated correctly. Expected {}, got {}",
+                        i + 1,
+                        expected_value,
+                        actual_value
+                    );
                 }
 
                 println!("  ✅ Step {} passed - state persisted correctly", i + 1);
@@ -536,17 +606,27 @@ async fn test_long_term_stability_30_rounds() {
     let mock_llm = Arc::new(MockLlmBackend::new());
 
     let mut registry = ToolRegistryBuilder::new().build();
-    registry.register(Arc::new(SimpleMockTool { name: "tool_a".to_string() }));
-    registry.register(Arc::new(SimpleMockTool { name: "tool_b".to_string() }));
-    registry.register(Arc::new(SimpleMockTool { name: "tool_c".to_string() }));
+    registry.register(Arc::new(SimpleMockTool {
+        name: "tool_a".to_string(),
+    }));
+    registry.register(Arc::new(SimpleMockTool {
+        name: "tool_b".to_string(),
+    }));
+    registry.register(Arc::new(SimpleMockTool {
+        name: "tool_c".to_string(),
+    }));
 
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
@@ -566,7 +646,7 @@ async fn test_long_term_stability_30_rounds() {
         let chunks = create_tool_call_chunks(
             tool,
             json!({}),
-            &format!("Round {} complete with {}", round + 1, tool)
+            &format!("Round {} complete with {}", round + 1, tool),
         );
 
         mock_llm.set_response_chunks(chunks).await;
@@ -574,8 +654,9 @@ async fn test_long_term_stability_30_rounds() {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             Duration::from_secs(10),
-            session_manager.process_message_events(&session_id, &user_msg)
-        ).await;
+            session_manager.process_message_events(&session_id, &user_msg),
+        )
+        .await;
 
         let duration = start.elapsed();
         total_duration += duration;
@@ -598,13 +679,21 @@ async fn test_long_term_stability_30_rounds() {
                 }
 
                 if !analyzer.tool_calls.contains(&tool.to_string()) {
-                    println!("  ❌ Round {}: Expected tool '{}' not called", round + 1, tool);
+                    println!(
+                        "  ❌ Round {}: Expected tool '{}' not called",
+                        round + 1,
+                        tool
+                    );
                     round_passed = false;
                 }
 
                 let call_count = mock_llm.get_call_count().await;
                 if call_count > 3 {
-                    println!("  ❌ Round {}: Too many LLM calls ({})", round + 1, call_count);
+                    println!(
+                        "  ❌ Round {}: Too many LLM calls ({})",
+                        round + 1,
+                        call_count
+                    );
                     round_passed = false;
                 }
 
@@ -638,7 +727,10 @@ async fn test_long_term_stability_30_rounds() {
     println!("Passed: {}", passed_rounds);
     println!("Failed: {}", failed_rounds.len());
     println!("Total duration: {:?}", total_duration);
-    println!("Average per round: {:?}", total_duration / total_rounds as u32);
+    println!(
+        "Average per round: {:?}",
+        total_duration / total_rounds as u32
+    );
 
     if !failed_rounds.is_empty() {
         println!("Failed rounds: {:?}", failed_rounds);
@@ -666,10 +758,14 @@ async fn test_rapid_consecutive_tool_calls() {
     let session_manager = SessionManager::memory();
     session_manager.set_tool_registry(Arc::new(registry)).await;
 
-    let session_id = session_manager.create_session().await
+    let session_id = session_manager
+        .create_session()
+        .await
         .expect("Failed to create session");
 
-    let agent = session_manager.get_session(&session_id).await
+    let agent = session_manager
+        .get_session(&session_id)
+        .await
         .expect("Failed to get session");
     agent.set_custom_llm(mock_llm.clone()).await;
 
@@ -681,7 +777,7 @@ async fn test_rapid_consecutive_tool_calls() {
         let chunks = create_tool_call_chunks(
             &tool_name,
             json!({}),
-            &format!("Tool {} executed", tool_name)
+            &format!("Tool {} executed", tool_name),
         );
 
         mock_llm.set_response_chunks(chunks).await;
@@ -689,8 +785,9 @@ async fn test_rapid_consecutive_tool_calls() {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             Duration::from_secs(5),
-            session_manager.process_message_events(&session_id, &user_msg)
-        ).await;
+            session_manager.process_message_events(&session_id, &user_msg),
+        )
+        .await;
 
         let duration = start.elapsed();
 

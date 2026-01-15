@@ -2,7 +2,7 @@
 //!
 //! Provides persistent storage using the redb embedded database.
 
-use edge_ai_core::storage::{StorageBackend, StorageError, Result as CoreResult};
+use edge_ai_core::storage::{Result as CoreResult, StorageBackend, StorageError};
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::Path;
 use std::sync::Arc;
@@ -75,23 +75,19 @@ impl RedbBackend {
             // Use a temporary file instead.
             let temp_dir = std::env::temp_dir();
             let temp_path = temp_dir.join(format!("redb_{}", uuid::Uuid::new_v4()));
-            Database::create(&temp_path)
-                .map_err(|e| StorageError::Backend(e.to_string()))?
+            Database::create(&temp_path).map_err(|e| StorageError::Backend(e.to_string()))?
         } else {
             let path_ref = Path::new(path);
             if config.create_dirs {
                 if let Some(parent) = path_ref.parent() {
-                    std::fs::create_dir_all(parent)
-                        .map_err(|e| StorageError::Io(e))?;
+                    std::fs::create_dir_all(parent).map_err(|e| StorageError::Io(e))?;
                 }
             }
 
             if path_ref.exists() {
-                Database::open(path_ref)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                Database::open(path_ref).map_err(|e| StorageError::Backend(e.to_string()))?
             } else {
-                Database::create(path_ref)
-                    .map_err(|e| StorageError::Backend(e.to_string()))?
+                Database::create(path_ref).map_err(|e| StorageError::Backend(e.to_string()))?
             }
         };
 
@@ -103,7 +99,9 @@ impl RedbBackend {
 
     /// Open or create a redb backend at the given path.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::new(RedbBackendConfig::new(path.as_ref().to_string_lossy().to_string()))
+        Self::new(RedbBackendConfig::new(
+            path.as_ref().to_string_lossy().to_string(),
+        ))
     }
 
     /// Get the storage path.
@@ -124,21 +122,36 @@ impl RedbBackend {
 impl StorageBackend for RedbBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
         let namespaced = make_key(table, key);
-        let txn = self.db.begin_write().map_err(|e| StorageError::Backend(e.to_string()))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         {
-            let mut t = txn.open_table(UNIFIED_TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
-            t.insert(&*namespaced, value).map_err(|e| StorageError::Backend(e.to_string()))?;
+            let mut t = txn
+                .open_table(UNIFIED_TABLE)
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            t.insert(&*namespaced, value)
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
         }
-        txn.commit().map_err(|e| StorageError::Backend(e.to_string()))?;
+        txn.commit()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         Ok(())
     }
 
     fn read(&self, table: &str, key: &str) -> Result<Option<Vec<u8>>> {
         let namespaced = make_key(table, key);
-        let txn = self.db.begin_read().map_err(|e| StorageError::Backend(e.to_string()))?;
-        let t = txn.open_table(UNIFIED_TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let t = txn
+            .open_table(UNIFIED_TABLE)
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
-        match t.get(&*namespaced).map_err(|e| StorageError::Backend(e.to_string()))? {
+        match t
+            .get(&*namespaced)
+            .map_err(|e| StorageError::Backend(e.to_string()))?
+        {
             Some(value) => Ok(Some(value.value().to_vec())),
             None => Ok(None),
         }
@@ -146,12 +159,20 @@ impl StorageBackend for RedbBackend {
 
     fn delete(&self, table: &str, key: &str) -> Result<bool> {
         let namespaced = make_key(table, key);
-        let txn = self.db.begin_write().map_err(|e| StorageError::Backend(e.to_string()))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         let removed = {
-            let mut t = txn.open_table(UNIFIED_TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
-            t.remove(&*namespaced).map_err(|e| StorageError::Backend(e.to_string()))?.is_some()
+            let mut t = txn
+                .open_table(UNIFIED_TABLE)
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
+            t.remove(&*namespaced)
+                .map_err(|e| StorageError::Backend(e.to_string()))?
+                .is_some()
         };
-        txn.commit().map_err(|e| StorageError::Backend(e.to_string()))?;
+        txn.commit()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         Ok(removed)
     }
 
@@ -159,8 +180,13 @@ impl StorageBackend for RedbBackend {
         let table_prefix = format!("{}:{}", table, prefix);
         let table_prefix_len = table.len() + 1; // "table:"
 
-        let txn = self.db.begin_read().map_err(|e| StorageError::Backend(e.to_string()))?;
-        let t = txn.open_table(UNIFIED_TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
+        let t = txn
+            .open_table(UNIFIED_TABLE)
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
 
         let mut results = Vec::new();
         for item in t.iter().map_err(|e| StorageError::Backend(e.to_string()))? {
@@ -178,15 +204,22 @@ impl StorageBackend for RedbBackend {
     }
 
     fn write_batch(&self, table: &str, items: Vec<(String, Vec<u8>)>) -> Result<()> {
-        let txn = self.db.begin_write().map_err(|e| StorageError::Backend(e.to_string()))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         {
-            let mut t = txn.open_table(UNIFIED_TABLE).map_err(|e| StorageError::Backend(e.to_string()))?;
+            let mut t = txn
+                .open_table(UNIFIED_TABLE)
+                .map_err(|e| StorageError::Backend(e.to_string()))?;
             for (key, value) in items {
                 let namespaced = make_key(table, &key);
-                t.insert(&*namespaced, &*value).map_err(|e| StorageError::Backend(e.to_string()))?;
+                t.insert(&*namespaced, &*value)
+                    .map_err(|e| StorageError::Backend(e.to_string()))?;
             }
         }
-        txn.commit().map_err(|e| StorageError::Backend(e.to_string()))?;
+        txn.commit()
+            .map_err(|e| StorageError::Backend(e.to_string()))?;
         Ok(())
     }
 
@@ -201,8 +234,7 @@ mod tests {
 
     #[test]
     fn test_config_builder() {
-        let config = RedbBackendConfig::new("./data/test.db")
-            .with_create_dirs(false);
+        let config = RedbBackendConfig::new("./data/test.db").with_create_dirs(false);
 
         assert_eq!(config.path, "./data/test.db");
         assert!(!config.create_dirs);

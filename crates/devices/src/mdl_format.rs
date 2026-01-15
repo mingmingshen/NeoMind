@@ -4,74 +4,72 @@
 //!
 //! ## MDL Structure
 //!
+//! MDL supports two modes:
+//!
+//! ### Simple Mode (Raw data + LLM)
 //! ```json
 //! {
-//!   "device_type": "dht22_sensor",
-//!   "name": "DHT22 温湿度传感器",
-//!   "description": "基于 DHT22 的温湿度传感器",
-//!   "categories": ["sensor", "climate"],
-//!
+//!   "device_type": "camera",
+//!   "name": "AI Camera",
+//!   "mode": "simple",
+//!   "description": "AI摄像头，支持拍照和休眠",
 //!   "uplink": {
-//!     "metrics": [
-//!       {
-//!         "name": "temperature",
-//!         "display_name": "温度",
-//!         "data_type": "Float",
-//!         "unit": "°C",
-//!         "min": -40,
-//!         "max": 80
-//!       },
-//!       {
-//!         "name": "humidity",
-//!         "display_name": "湿度",
-//!         "data_type": "Float",
-//!         "unit": "%",
-//!         "min": 0,
-//!         "max": 100
-//!       }
+//!     "samples": [
+//!       {"cmd": "frame", "data": "base64...", "ts": 1234567890},
+//!       {"cmd": "status", "ai_enabled": true}
 //!     ]
 //!   },
-//!
 //!   "downlink": {
 //!     "commands": [
 //!       {
-//!         "name": "set_interval",
-//!         "display_name": "设置上报间隔",
-//!         "payload_template": "{\"action\": \"set_interval\", \"interval\": \"${{interval}}\"}",
-//!         "parameters": [
-//!           {
-//!             "name": "interval",
-//!             "display_name": "间隔时间",
-//!             "data_type": "Integer",
-//!             "default_value": 60,
-//!             "min": 10,
-//!             "max": 3600,
-//!             "unit": "秒"
-//!           }
-//!         ]
+//!         "name": "capture",
+//!         "display_name": "Capture",
+//!         "payload_template": "{\"cmd\": \"capture\", \"request_id\": \"${uuid}\", \"params\": ${params}}",
+//!         "samples": [
+//!           {"cmd": "capture", "params": {"enable_ai": true}}
+//!         ],
+//!         "llm_hints": "拍照命令，params.enable_ai 控制是否开启AI识别"
 //!       }
 //!     ]
 //!   }
 //! }
 //! ```
 //!
-//! ## MQTT Topic Format
-//!
-//! Topics are auto-generated based on device type and device ID:
-//! - **Uplink** (device → system): `device/{device_type}/${device_id}/uplink`
-//! - **Downlink** (system → device): `device/{device_type}/${device_id}/downlink`
-//!
-//! For example, a device with type `dht22_sensor` and ID `sensor_001` will:
-//! - Publish to: `device/dht22_sensor/sensor_001/uplink`
-//! - Receive commands on: `device/dht22_sensor/sensor_001/downlink`
+//! ### Full Mode (Structured templates)
+//! ```json
+//! {
+//!   "device_type": "dht22_sensor",
+//!   "mode": "full",
+//!   "uplink": {
+//!     "metrics": [
+//!       {
+//!         "name": "temperature",
+//!         "display_name": "温度",
+//!         "data_type": "Float",
+//!         "unit": "°C"
+//!       }
+//!     ]
+//!   },
+//!   "downlink": {
+//!     "commands": [
+//!       {
+//!         "name": "set_interval",
+//!         "parameters": [
+//!           {"name": "interval", "data_type": "Integer", "default_value": 60}
+//!         ]
+//!       }
+//!     ]
+//!   }
+//! }
+//! ```
 
+use redb::ReadableTable;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::RwLock;
-use redb::ReadableTable;
 
-use super::mdl::{MetricDataType, MetricValue, DeviceError};
+use super::mdl::{DeviceError, MetricDataType, MetricValue};
 
 /// MDL Device Type Definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,6 +89,12 @@ pub struct DeviceTypeDefinition {
     #[serde(default)]
     pub categories: Vec<String>,
 
+    /// Device type mode
+    /// - "simple": Raw data storage, LLM interprets
+    /// - "full": Structured metrics and parameters
+    #[serde(default = "default_device_mode")]
+    pub mode: DeviceTypeMode,
+
     /// Uplink configuration (device -> system)
     #[serde(default)]
     pub uplink: UplinkConfig,
@@ -100,12 +104,31 @@ pub struct DeviceTypeDefinition {
     pub downlink: DownlinkConfig,
 }
 
+/// Default device mode is "full" for backward compatibility
+fn default_device_mode() -> DeviceTypeMode {
+    DeviceTypeMode::Full
+}
+
+/// Device type mode
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeviceTypeMode {
+    /// Simple mode: Store raw JSON, LLM interprets
+    Simple,
+    /// Full mode: Structured metrics and parameters
+    Full,
+}
+
 /// Uplink configuration - data flowing from device to system
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UplinkConfig {
-    /// Metrics that this device publishes
+    /// Metrics that this device publishes (full mode)
     #[serde(default)]
     pub metrics: Vec<MetricDefinition>,
+
+    /// Sample uplink data for LLM reference (simple mode)
+    #[serde(default)]
+    pub samples: Vec<serde_json::Value>,
 }
 
 /// Downlink configuration - commands flowing from system to device
@@ -163,9 +186,17 @@ pub struct CommandDefinition {
     #[serde(default)]
     pub payload_template: String,
 
-    /// Command parameters
+    /// Command parameters (full mode)
     #[serde(default)]
     pub parameters: Vec<ParameterDefinition>,
+
+    /// Sample command payloads for LLM reference (simple mode)
+    #[serde(default)]
+    pub samples: Vec<serde_json::Value>,
+
+    /// LLM hints - natural language description for LLM
+    #[serde(default)]
+    pub llm_hints: String,
 }
 
 /// Parameter definition for commands
@@ -204,7 +235,10 @@ pub struct ParameterDefinition {
 }
 
 /// Extract a value from JSON using dot notation path (e.g., "values.temperature")
-fn extract_json_value(json: &serde_json::Value, path: &str) -> Result<serde_json::Value, DeviceError> {
+fn extract_json_value(
+    json: &serde_json::Value,
+    path: &str,
+) -> Result<serde_json::Value, DeviceError> {
     let parts: Vec<&str> = path.split('.').collect();
     let mut current = json;
 
@@ -228,7 +262,8 @@ fn extract_json_value(json: &serde_json::Value, path: &str) -> Result<serde_json
                     } else {
                         return Err(DeviceError::InvalidParameter(format!(
                             "Array index {} out of bounds (length: {})",
-                            index, arr.len()
+                            index,
+                            arr.len()
                         )));
                     }
                 } else {
@@ -251,7 +286,10 @@ fn extract_json_value(json: &serde_json::Value, path: &str) -> Result<serde_json
 }
 
 /// Convert a JSON value to MetricValue based on the expected data type
-fn json_value_to_metric(json: serde_json::Value, expected_type: &MetricDataType) -> Result<MetricValue, DeviceError> {
+fn json_value_to_metric(
+    json: serde_json::Value,
+    expected_type: &MetricDataType,
+) -> Result<MetricValue, DeviceError> {
     match (json, expected_type) {
         // Number types
         (serde_json::Value::Number(n), MetricDataType::Integer) => {
@@ -260,49 +298,54 @@ fn json_value_to_metric(json: serde_json::Value, expected_type: &MetricDataType)
             } else if let Some(f) = n.as_f64() {
                 Ok(MetricValue::Integer(f as i64))
             } else {
-                Err(DeviceError::InvalidParameter("Number out of range for Integer".into()))
+                Err(DeviceError::InvalidParameter(
+                    "Number out of range for Integer".into(),
+                ))
             }
         }
         (serde_json::Value::Number(n), MetricDataType::Float) => {
             if let Some(f) = n.as_f64() {
                 Ok(MetricValue::Float(f))
             } else {
-                Err(DeviceError::InvalidParameter("Number cannot be converted to Float".into()))
+                Err(DeviceError::InvalidParameter(
+                    "Number cannot be converted to Float".into(),
+                ))
             }
         }
 
         // Boolean type
-        (serde_json::Value::Bool(b), MetricDataType::Boolean) => {
-            Ok(MetricValue::Boolean(b))
-        }
+        (serde_json::Value::Bool(b), MetricDataType::Boolean) => Ok(MetricValue::Boolean(b)),
 
         // String type (also handles fallback for other types)
-        (serde_json::Value::String(s), MetricDataType::String) => {
-            Ok(MetricValue::String(s))
-        }
+        (serde_json::Value::String(s), MetricDataType::String) => Ok(MetricValue::String(s)),
 
         // Null type
-        (serde_json::Value::Null, _) => {
-            Ok(MetricValue::Null)
-        }
+        (serde_json::Value::Null, _) => Ok(MetricValue::Null),
 
         // Type coercion: try to convert to expected type
-        (serde_json::Value::String(s), MetricDataType::Integer) => {
-            s.trim().parse::<i64>()
-                .map(MetricValue::Integer)
-                .map_err(|_| DeviceError::InvalidParameter(format!("Cannot convert string '{}' to Integer", s)))
-        }
-        (serde_json::Value::String(s), MetricDataType::Float) => {
-            s.trim().parse::<f64>()
-                .map(MetricValue::Float)
-                .map_err(|_| DeviceError::InvalidParameter(format!("Cannot convert string '{}' to Float", s)))
-        }
+        (serde_json::Value::String(s), MetricDataType::Integer) => s
+            .trim()
+            .parse::<i64>()
+            .map(MetricValue::Integer)
+            .map_err(|_| {
+                DeviceError::InvalidParameter(format!("Cannot convert string '{}' to Integer", s))
+            }),
+        (serde_json::Value::String(s), MetricDataType::Float) => s
+            .trim()
+            .parse::<f64>()
+            .map(MetricValue::Float)
+            .map_err(|_| {
+                DeviceError::InvalidParameter(format!("Cannot convert string '{}' to Float", s))
+            }),
         (serde_json::Value::String(s), MetricDataType::Boolean) => {
             let lower = s.to_lowercase();
             match lower.as_str() {
                 "true" | "1" | "yes" | "on" => Ok(MetricValue::Boolean(true)),
                 "false" | "0" | "no" | "off" => Ok(MetricValue::Boolean(false)),
-                _ => Err(DeviceError::InvalidParameter(format!("Cannot convert string '{}' to Boolean", s))),
+                _ => Err(DeviceError::InvalidParameter(format!(
+                    "Cannot convert string '{}' to Boolean",
+                    s
+                ))),
             }
         }
 
@@ -313,30 +356,28 @@ fn json_value_to_metric(json: serde_json::Value, expected_type: &MetricDataType)
             } else if let Some(f) = n.as_f64() {
                 Ok(MetricValue::Boolean(f != 0.0))
             } else {
-                Err(DeviceError::InvalidParameter("Number cannot be converted to Boolean".into()))
+                Err(DeviceError::InvalidParameter(
+                    "Number cannot be converted to Boolean".into(),
+                ))
             }
         }
 
         // Any value to string conversion
-        (v, MetricDataType::String) => {
-            Ok(MetricValue::String(v.to_string()))
-        }
+        (v, MetricDataType::String) => Ok(MetricValue::String(v.to_string())),
 
         // Type mismatch
-        (v, expected) => {
-            Err(DeviceError::InvalidParameter(format!(
-                "Type mismatch: expected {:?}, got {}",
-                expected,
-                match v {
-                    serde_json::Value::Null => "null",
-                    serde_json::Value::Bool(_) => "boolean",
-                    serde_json::Value::Number(_) => "number",
-                    serde_json::Value::String(_) => "string",
-                    serde_json::Value::Array(_) => "array",
-                    serde_json::Value::Object(_) => "object",
-                }
-            )))
-        }
+        (v, expected) => Err(DeviceError::InvalidParameter(format!(
+            "Type mismatch: expected {:?}, got {}",
+            expected,
+            match v {
+                serde_json::Value::Null => "null",
+                serde_json::Value::Bool(_) => "boolean",
+                serde_json::Value::Number(_) => "number",
+                serde_json::Value::String(_) => "string",
+                serde_json::Value::Array(_) => "array",
+                serde_json::Value::Object(_) => "object",
+            }
+        ))),
     }
 }
 
@@ -434,30 +475,42 @@ impl MdlRegistry {
     fn validate(&self, def: &DeviceTypeDefinition) -> Result<(), DeviceError> {
         // Check device_type format
         if def.device_type.is_empty() {
-            return Err(DeviceError::InvalidParameter("device_type cannot be empty".into()));
+            return Err(DeviceError::InvalidParameter(
+                "device_type cannot be empty".into(),
+            ));
         }
 
         // Validate device_type only contains alphanumeric, underscore, hyphen
-        if !def.device_type.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+        if !def
+            .device_type
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
             return Err(DeviceError::InvalidParameter(
-                "device_type can only contain alphanumeric, underscore, and hyphen".into()
+                "device_type can only contain alphanumeric, underscore, and hyphen".into(),
             ));
         }
 
         // Validate metric definitions
         for metric in &def.uplink.metrics {
             if metric.name.is_empty() {
-                return Err(DeviceError::InvalidParameter("metric name cannot be empty".into()));
+                return Err(DeviceError::InvalidParameter(
+                    "metric name cannot be empty".into(),
+                ));
             }
         }
 
         // Validate command definitions
         for command in &def.downlink.commands {
             if command.name.is_empty() {
-                return Err(DeviceError::InvalidParameter("command name cannot be empty".into()));
+                return Err(DeviceError::InvalidParameter(
+                    "command name cannot be empty".into(),
+                ));
             }
             if command.payload_template.is_empty() {
-                return Err(DeviceError::InvalidParameter("command payload_template cannot be empty".into()));
+                return Err(DeviceError::InvalidParameter(
+                    "command payload_template cannot be empty".into(),
+                ));
             }
         }
 
@@ -476,7 +529,11 @@ impl MdlRegistry {
 
     /// Parse incoming MQTT payload based on metric definition
     /// The metric name can use dot notation to extract nested JSON values (e.g., "values.temperature")
-    pub fn parse_metric_value(&self, metric: &MetricDefinition, payload: &[u8]) -> Result<MetricValue, DeviceError> {
+    pub fn parse_metric_value(
+        &self,
+        metric: &MetricDefinition,
+        payload: &[u8],
+    ) -> Result<MetricValue, DeviceError> {
         // First, try to parse as JSON
         if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
             // Extract value using metric name as path (supports dot notation)
@@ -493,13 +550,15 @@ impl MdlRegistry {
         // Try to parse based on data type
         match metric.data_type {
             MetricDataType::Float => {
-                let value = payload_str.trim().parse::<f64>()
-                    .map_err(|_| DeviceError::InvalidParameter(format!("Invalid float: {}", payload_str)))?;
+                let value = payload_str.trim().parse::<f64>().map_err(|_| {
+                    DeviceError::InvalidParameter(format!("Invalid float: {}", payload_str))
+                })?;
                 Ok(MetricValue::Float(value))
             }
             MetricDataType::Integer => {
-                let value = payload_str.trim().parse::<i64>()
-                    .map_err(|_| DeviceError::InvalidParameter(format!("Invalid integer: {}", payload_str)))?;
+                let value = payload_str.trim().parse::<i64>().map_err(|_| {
+                    DeviceError::InvalidParameter(format!("Invalid integer: {}", payload_str))
+                })?;
                 Ok(MetricValue::Integer(value))
             }
             MetricDataType::Boolean => {
@@ -507,21 +566,28 @@ impl MdlRegistry {
                 let bool_val = match value.as_str() {
                     "true" | "1" | "on" | "yes" => true,
                     "false" | "0" | "off" | "no" => false,
-                    _ => return Err(DeviceError::InvalidParameter(format!("Invalid boolean: {}", payload_str))),
+                    _ => {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "Invalid boolean: {}",
+                            payload_str
+                        )));
+                    }
                 };
                 Ok(MetricValue::Boolean(bool_val))
             }
-            MetricDataType::String => {
-                Ok(MetricValue::String(payload_str.to_string()))
-            }
-            MetricDataType::Binary => {
-                Ok(MetricValue::Binary(payload.to_vec()))
-            }
+            MetricDataType::String => Ok(MetricValue::String(payload_str.to_string())),
+            MetricDataType::Binary => Ok(MetricValue::Binary(payload.to_vec())),
+            // For Enum types, treat as String
+            MetricDataType::Enum { .. } => Ok(MetricValue::String(payload_str.to_string())),
         }
     }
 
     /// Build command payload from parameters
-    pub fn build_command_payload(&self, command: &CommandDefinition, params: &HashMap<String, MetricValue>) -> Result<Vec<u8>, DeviceError> {
+    pub fn build_command_payload(
+        &self,
+        command: &CommandDefinition,
+        params: &HashMap<String, MetricValue>,
+    ) -> Result<Vec<u8>, DeviceError> {
         let mut payload = command.payload_template.clone();
 
         // Replace ${param} with actual values
@@ -532,7 +598,11 @@ impl MdlRegistry {
                 MetricValue::Float(v) => v.to_string(),
                 MetricValue::String(v) => format!("\"{}\"", v),
                 MetricValue::Boolean(v) => v.to_string(),
-                MetricValue::Binary(_) => return Err(DeviceError::InvalidParameter("Binary values not supported in command payload".into())),
+                MetricValue::Binary(_) => {
+                    return Err(DeviceError::InvalidParameter(
+                        "Binary values not supported in command payload".into(),
+                    ));
+                }
                 MetricValue::Null => "null".to_string(),
             };
             payload = payload.replace(&placeholder, &value_str);
@@ -540,15 +610,18 @@ impl MdlRegistry {
 
         // Validate that all placeholders were replaced
         if payload.contains("${") {
-            return Err(DeviceError::InvalidParameter("Not all required parameters were provided".into()));
+            return Err(DeviceError::InvalidParameter(
+                "Not all required parameters were provided".into(),
+            ));
         }
 
         // Validate as JSON only if it looks like JSON (starts with { or [)
         // This allows simple string payloads like "ON", "OFF" for HASS devices
         let trimmed = payload.trim();
         if trimmed.starts_with('{') || trimmed.starts_with('[') {
-            serde_json::from_str::<serde_json::Value>(&payload)
-                .map_err(|_| DeviceError::InvalidParameter("Generated payload is not valid JSON".into()))?;
+            serde_json::from_str::<serde_json::Value>(&payload).map_err(|_| {
+                DeviceError::InvalidParameter("Generated payload is not valid JSON".into())
+            })?;
         }
 
         Ok(payload.into_bytes())
@@ -571,8 +644,7 @@ pub struct MdlStorage {
 }
 
 // Table definition for MDL storage
-const MDL_TABLE: redb::TableDefinition<&str, &[u8]> =
-    redb::TableDefinition::new("mdl_definitions");
+const MDL_TABLE: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("mdl_definitions");
 
 /// Global MDL storage singleton (thread-safe).
 static MDL_STORAGE_SINGLETON: StdMutex<Option<Arc<MdlStorage>>> = StdMutex::new(None);
@@ -598,17 +670,22 @@ impl MdlStorage {
         // Create new storage and save to singleton
         let path_ref = path.as_ref();
         let db = if path_ref.exists() {
-            redb::Database::open(path_ref)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+            redb::Database::open(path_ref).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?
         } else {
-            redb::Database::create(path_ref)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+            redb::Database::create(path_ref).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?
         };
 
-        let storage = Arc::new(MdlStorage {
-            db,
-            path: path_str,
-        });
+        let storage = Arc::new(MdlStorage { db, path: path_str });
 
         // Ensure tables exist
         storage.ensure_tables()?;
@@ -619,32 +696,52 @@ impl MdlStorage {
 
     /// Ensure all required tables exist
     fn ensure_tables(&self) -> Result<(), DeviceError> {
-        let write_txn = self.db.begin_write()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let write_txn = self.db.begin_write().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         // Create tables if they don't exist (redb creates them on first open_table)
         {
-            let _ = write_txn.open_table(MDL_TABLE)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let _ = write_txn.open_table(MDL_TABLE).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
         }
         {
-            let _ = write_txn.open_table(DEVICE_INSTANCES_TABLE)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let _ = write_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
         }
 
-        write_txn.commit()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        write_txn.commit().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(())
     }
 
     /// Create an in-memory MDL storage
     pub fn memory() -> Result<Arc<Self>, DeviceError> {
-        let temp_path = std::env::temp_dir()
-            .join(format!("mdl_test_{}.redb", uuid::Uuid::new_v4()));
+        let temp_path =
+            std::env::temp_dir().join(format!("mdl_test_{}.redb", uuid::Uuid::new_v4()));
         // Use create for in-memory temp file
-        let db = redb::Database::create(&temp_path)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let db = redb::Database::create(&temp_path).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
         let storage = Arc::new(MdlStorage {
             db,
             path: temp_path.to_string_lossy().to_string(),
@@ -661,34 +758,61 @@ impl MdlStorage {
     /// Save a device type definition
     pub async fn save(&self, def: &DeviceTypeDefinition) -> Result<(), DeviceError> {
         let key = self.key(&def.device_type);
-        let value = serde_json::to_vec(def)
-            .map_err(|e| DeviceError::Serialization(e.to_string()))?;
+        let value =
+            serde_json::to_vec(def).map_err(|e| DeviceError::Serialization(e.to_string()))?;
 
-        let write_txn = self.db.begin_write()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let write_txn = self.db.begin_write().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         {
-            let mut table = write_txn.open_table(MDL_TABLE)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-            table.insert(key.as_str(), value.as_slice())
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let mut table = write_txn.open_table(MDL_TABLE).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
+            table.insert(key.as_str(), value.as_slice()).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
         }
 
-        write_txn.commit()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        write_txn.commit().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(())
     }
 
     /// Load a device type definition
-    pub async fn load(&self, device_type: &str) -> Result<Option<DeviceTypeDefinition>, DeviceError> {
+    pub async fn load(
+        &self,
+        device_type: &str,
+    ) -> Result<Option<DeviceTypeDefinition>, DeviceError> {
         let key = self.key(device_type);
 
-        let read_txn = self.db.begin_read()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let read_txn = self.db.begin_read().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let table = read_txn.open_table(MDL_TABLE)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let table = read_txn.open_table(MDL_TABLE).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         match table.get(key.as_str()) {
             Ok(Some(value)) => {
@@ -697,7 +821,10 @@ impl MdlStorage {
                 Ok(Some(def))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
+            Err(e) => Err(DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))),
         }
     }
 
@@ -705,18 +832,34 @@ impl MdlStorage {
     pub async fn delete(&self, device_type: &str) -> Result<(), DeviceError> {
         let key = self.key(device_type);
 
-        let write_txn = self.db.begin_write()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let write_txn = self.db.begin_write().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         {
-            let mut table = write_txn.open_table(MDL_TABLE)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-            table.remove(key.as_str())
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let mut table = write_txn.open_table(MDL_TABLE).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
+            table.remove(key.as_str()).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
         }
 
-        write_txn.commit()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        write_txn.commit().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(())
     }
@@ -725,18 +868,34 @@ impl MdlStorage {
     pub async fn load_all(&self) -> Result<Vec<DeviceTypeDefinition>, DeviceError> {
         let mut definitions = Vec::new();
 
-        let read_txn = self.db.begin_read()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let read_txn = self.db.begin_read().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let table = read_txn.open_table(MDL_TABLE)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let table = read_txn.open_table(MDL_TABLE).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let mut iter = table.iter()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let mut iter = table.iter().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         while let Some(result) = iter.next() {
-            let (_key, value) = result
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let (_key, value) = result.map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
             let def: DeviceTypeDefinition = serde_json::from_slice(value.value())
                 .map_err(|e| DeviceError::Serialization(e.to_string()))?;
@@ -751,18 +910,34 @@ impl MdlStorage {
     pub async fn list_ids(&self) -> Result<Vec<String>, DeviceError> {
         let mut ids = Vec::new();
 
-        let read_txn = self.db.begin_read()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let read_txn = self.db.begin_read().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let table = read_txn.open_table(MDL_TABLE)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let table = read_txn.open_table(MDL_TABLE).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let mut iter = table.iter()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let mut iter = table.iter().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         while let Some(result) = iter.next() {
-            let (key, _value) = result
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let (key, _value) = result.map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
             // Extract device type from key (remove "mdl:" prefix)
             let key_str = key.value();
@@ -777,34 +952,61 @@ impl MdlStorage {
     /// Save a device instance
     pub async fn save_device_instance(&self, instance: &DeviceInstance) -> Result<(), DeviceError> {
         let key = format!("device:{}", instance.device_id);
-        let value = serde_json::to_vec(instance)
-            .map_err(|e| DeviceError::Serialization(e.to_string()))?;
+        let value =
+            serde_json::to_vec(instance).map_err(|e| DeviceError::Serialization(e.to_string()))?;
 
-        let write_txn = self.db.begin_write()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let write_txn = self.db.begin_write().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         {
-            let mut table = write_txn.open_table(DEVICE_INSTANCES_TABLE)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-            table.insert(key.as_str(), value.as_slice())
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let mut table = write_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
+            table.insert(key.as_str(), value.as_slice()).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
         }
 
-        write_txn.commit()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        write_txn.commit().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(())
     }
 
     /// Load a device instance
-    pub async fn load_device_instance(&self, device_id: &str) -> Result<Option<DeviceInstance>, DeviceError> {
+    pub async fn load_device_instance(
+        &self,
+        device_id: &str,
+    ) -> Result<Option<DeviceInstance>, DeviceError> {
         let key = format!("device:{}", device_id);
 
-        let read_txn = self.db.begin_read()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let read_txn = self.db.begin_read().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let table = read_txn.open_table(DEVICE_INSTANCES_TABLE)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let table = read_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         match table.get(key.as_str()) {
             Ok(Some(value)) => {
@@ -813,7 +1015,10 @@ impl MdlStorage {
                 Ok(Some(instance))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))),
+            Err(e) => Err(DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))),
         }
     }
 
@@ -821,18 +1026,34 @@ impl MdlStorage {
     pub async fn delete_device_instance(&self, device_id: &str) -> Result<(), DeviceError> {
         let key = format!("device:{}", device_id);
 
-        let write_txn = self.db.begin_write()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let write_txn = self.db.begin_write().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         {
-            let mut table = write_txn.open_table(DEVICE_INSTANCES_TABLE)
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
-            table.remove(key.as_str())
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let mut table = write_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
+            table.remove(key.as_str()).map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
         }
 
-        write_txn.commit()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        write_txn.commit().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         Ok(())
     }
@@ -841,18 +1062,34 @@ impl MdlStorage {
     pub async fn load_all_device_instances(&self) -> Result<Vec<DeviceInstance>, DeviceError> {
         let mut instances = Vec::new();
 
-        let read_txn = self.db.begin_read()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let read_txn = self.db.begin_read().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let table = read_txn.open_table(DEVICE_INSTANCES_TABLE)
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let table = read_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
-        let mut iter = table.iter()
-            .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        let mut iter = table.iter().map_err(|e| {
+            DeviceError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })?;
 
         while let Some(result) = iter.next() {
-            let (_key, value) = result
-                .map_err(|e| DeviceError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            let (_key, value) = result.map_err(|e| {
+                DeviceError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                ))
+            })?;
 
             let instance: DeviceInstance = serde_json::from_slice(value.value())
                 .map_err(|e| DeviceError::Serialization(e.to_string()))?;
@@ -1003,5 +1240,110 @@ mod tests {
         assert_eq!(def.downlink.commands.len(), 1);
         assert_eq!(def.downlink.commands[0].name, "set_state");
         assert_eq!(def.downlink.commands[0].parameters.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_json_value_nested_2_levels() {
+        let json = serde_json::json!({
+            "temp": {
+                "value": 25.5
+            }
+        });
+
+        let result = extract_json_value(&json, "temp.value").unwrap();
+        assert_eq!(result, serde_json::json!(25.5));
+    }
+
+    #[test]
+    fn test_extract_json_value_nested_5_levels() {
+        let json = serde_json::json!({
+            "data": {
+                "sensor": {
+                    "reading": {
+                        "temperature": 22.3
+                    }
+                }
+            }
+        });
+
+        let result = extract_json_value(&json, "data.sensor.reading.temperature").unwrap();
+        assert_eq!(result, serde_json::json!(22.3));
+    }
+
+    #[test]
+    fn test_extract_json_value_nested_10_levels() {
+        let json = serde_json::json!({
+            "l1": {
+                "l2": {
+                    "l3": {
+                        "l4": {
+                            "l5": {
+                                "l6": {
+                                    "l7": {
+                                        "l8": {
+                                            "l9": {
+                                                "l10": 999
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let result = extract_json_value(&json, "l1.l2.l3.l4.l5.l6.l7.l8.l9.l10").unwrap();
+        assert_eq!(result, serde_json::json!(999));
+    }
+
+    #[test]
+    fn test_extract_json_value_with_array_index() {
+        let json = serde_json::json!({
+            "values": [
+                {"temp": 20},
+                {"temp": 25},
+                {"temp": 30}
+            ]
+        });
+
+        let result = extract_json_value(&json, "values.1.temp").unwrap();
+        assert_eq!(result, serde_json::json!(25));
+    }
+
+    #[test]
+    fn test_extract_json_value_mixed_array_and_object() {
+        let json = serde_json::json!({
+            "data": {
+                "readings": [
+                    {"value": 10},
+                    {"value": 20}
+                ]
+            }
+        });
+
+        let result = extract_json_value(&json, "data.readings.0.value").unwrap();
+        assert_eq!(result, serde_json::json!(10));
+    }
+
+    #[test]
+    fn test_parse_metric_with_nested_path() {
+        let registry = MdlRegistry::new();
+
+        let metric = MetricDefinition {
+            name: "data.sensor.temperature".to_string(),
+            display_name: "Temperature".to_string(),
+            data_type: MetricDataType::Float,
+            unit: "°C".to_string(),
+            min: None,
+            max: None,
+            required: false,
+        };
+
+        let payload = br#"{"data": {"sensor": {"temperature": 23.5}}}"#;
+        let result = registry.parse_metric_value(&metric, payload).unwrap();
+
+        assert!(matches!(result, MetricValue::Float(23.5)));
     }
 }

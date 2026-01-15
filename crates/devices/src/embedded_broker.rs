@@ -190,8 +190,12 @@ impl EmbeddedBroker {
 
         // Check if port is already in use (possibly by a previous instance)
         if is_broker_running(self.config.port) {
-            tracing::info!("Embedded broker port {} already in use, assuming already running", self.config.port);
-            self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+            tracing::info!(
+                "Embedded broker port {} already in use, assuming already running",
+                self.config.port
+            );
+            self.running
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             return Ok(());
         }
 
@@ -282,7 +286,10 @@ impl EmbeddedBroker {
             ));
         }
 
-        tracing::info!("Embedded broker started successfully on port {}", self.config.port);
+        tracing::info!(
+            "Embedded broker started successfully on port {}",
+            self.config.port
+        );
 
         // Detach the thread so it runs independently
         // The thread will stop when the program exits or broker fails
@@ -297,7 +304,7 @@ impl EmbeddedBroker {
 
 /// Helper function to check if a port is available
 pub fn is_port_available(port: u16) -> bool {
-    use std::net::{TcpListener, IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
     match TcpListener::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port)) {
         Ok(_) => true,

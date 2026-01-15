@@ -1,6 +1,6 @@
 // Test image storage and retrieval
-use edge_ai_devices::telemetry::{TimeSeriesStorage, DataPoint};
 use edge_ai_devices::mdl::MetricValue;
+use edge_ai_devices::telemetry::{DataPoint, TimeSeriesStorage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,16 +14,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let png_bytes = base64::decode(png_base64)?;
 
     // Store as binary metric
-    storage.write(
-        "camera_device",
-        "image",
-        DataPoint::new(now, MetricValue::Binary(png_bytes))
-    ).await?;
+    storage
+        .write(
+            "camera_device",
+            "image",
+            DataPoint::new(now, MetricValue::Binary(png_bytes)),
+        )
+        .await?;
 
     println!("Image data stored successfully!");
 
     // Query it back
-    let results = storage.query("camera_device", "image", now - 10, now + 10).await?;
+    let results = storage
+        .query("camera_device", "image", now - 10, now + 10)
+        .await?;
     println!("Retrieved {} data points", results.len());
 
     for point in results {

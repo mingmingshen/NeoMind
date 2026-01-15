@@ -4,7 +4,7 @@ import { useStore } from "@/store"
 import { useToast } from "@/hooks/use-toast"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent } from "@/components/shared"
-import type { Device, DiscoveredDevice, DeviceType, MetricDefinition, CommandDefinition } from "@/types"
+import type { Device, DiscoveredDevice, DeviceType } from "@/types"
 import {
   DeviceList,
   DeviceDetail,
@@ -152,8 +152,8 @@ export function DevicesPage() {
   }, [deviceDetailView])
 
   // Handlers
-  const handleAddDevice = async (deviceType: string, deviceId?: string, deviceName?: string) => {
-    return await addDevice(deviceType, deviceId, deviceName)
+  const handleAddDevice = async (request: import('@/types').AddDeviceRequest) => {
+    return await addDevice(request)
   }
 
   const handleDeleteDevice = async (id: string) => {
@@ -227,7 +227,16 @@ export function DevicesPage() {
       toast({ title: t('common:failed'), description: t('devices:unknownType'), variant: "destructive" })
       return
     }
-    const success = await addDevice(device.device_type, device.id)
+    // For discovered devices, use MQTT adapter with default topics
+    const success = await addDevice({
+      device_id: device.id,
+      name: device.id,
+      device_type: device.device_type,
+      adapter_type: 'mqtt',
+      connection_config: {
+        telemetry_topic: `device/${device.device_type}/${device.id}/uplink`,
+      }
+    })
     if (success) {
       setDiscoveryOpen(false)
       toast({ title: t('common:success'), description: t('devices:add.successGeneric') })
@@ -241,13 +250,7 @@ export function DevicesPage() {
   const [viewDeviceTypeOpen, setViewDeviceTypeOpen] = useState(false)
   const [editDeviceTypeOpen, setEditDeviceTypeOpen] = useState(false)
   const [selectedDeviceType, setSelectedDeviceType] = useState<DeviceType | null>(null)
-  const [editingDeviceType, setEditingDeviceType] = useState<{
-    typeId: string
-    typeName: string
-    typeDesc: string
-    metrics: MetricDefinition[]
-    commands: CommandDefinition[]
-  } | null>(null)
+  const [editingDeviceType, setEditingDeviceType] = useState<DeviceType | null>(null)
   const [addingType, setAddingType] = useState(false)
   const [validatingType, setValidatingType] = useState(false)
   const [generatingMDL, setGeneratingMDL] = useState(false)
@@ -276,13 +279,7 @@ export function DevicesPage() {
     // Fetch full device type details with metrics and commands
     const details = await fetchDeviceTypeDetails(type.device_type)
     if (details) {
-      setEditingDeviceType({
-        typeId: details.device_type,
-        typeName: details.name,
-        typeDesc: details.description || "",
-        metrics: details.uplink?.metrics || [],
-        commands: details.downlink?.commands || [],
-      })
+      setEditingDeviceType(details)
       setEditDeviceTypeOpen(true)
     } else {
       toast({
@@ -322,15 +319,21 @@ export function DevicesPage() {
     }
   }
 
-  const handleGenerateMDL = async (deviceName: string, description: string, uplink: string, downlink: string) => {
+  const handleGenerateMDL = async (deviceName: string, description: string, metricsExample: string, commandsExample: string) => {
     setGeneratingMDL(true)
     try {
-      const result = await generateMDL({ device_name: deviceName, description, uplink_example: uplink, downlink_example: downlink })
+      // Backend API still expects uplink_example/downlink_example for backward compatibility
+      const result = await generateMDL({ 
+        device_name: deviceName, 
+        description, 
+        uplink_example: metricsExample, 
+        downlink_example: commandsExample 
+      })
       // Add metric_count and command_count to the result
       const fullResult = {
         ...result,
-        metric_count: result.uplink?.metrics?.length || 0,
-        command_count: result.downlink?.commands?.length || 0,
+        metric_count: result.metrics?.length || 0,
+        command_count: result.commands?.length || 0,
       }
       return JSON.stringify(fullResult, null, 2)
     } finally {
@@ -338,25 +341,8 @@ export function DevicesPage() {
     }
   }
 
-  const handleEditDeviceTypeSubmit = async (data: {
-    typeId: string
-    typeName: string
-    typeDesc: string
-    metrics: MetricDefinition[]
-    commands: CommandDefinition[]
-  }) => {
-    // Reconstruct the full DeviceType definition
-    const definition: DeviceType = {
-      device_type: data.typeId,
-      name: data.typeName,
-      description: data.typeDesc,
-      categories: [],
-      metric_count: data.metrics.length,
-      command_count: data.commands.length,
-      uplink: { metrics: data.metrics },
-      downlink: { commands: data.commands },
-    }
-    return await handleAddDeviceType(definition)
+  const handleEditDeviceTypeSubmit = async (data: DeviceType) => {
+    return await handleAddDeviceType(data)
   }
 
   return (

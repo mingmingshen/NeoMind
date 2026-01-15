@@ -72,7 +72,8 @@ fn format_as_table(items: &[Value]) -> String {
         if let Some(obj) = item.as_object() {
             table.push_str("| ");
             for key in &all_keys {
-                let value = obj.get(key)
+                let value = obj
+                    .get(key)
                     .map(|v| format_value(v))
                     .unwrap_or_else(|| "-".to_string());
                 table.push_str(&format!("{} | ", truncate(&value, 30)));
@@ -109,7 +110,11 @@ fn format_as_key_value(obj: &serde_json::Map<String, Value>) -> String {
         if value.is_object() || value.is_array() {
             result.push_str(&format!("**{}**: [复杂数据]\n", translate_key(key)));
         } else {
-            result.push_str(&format!("**{}**: {}\n", translate_key(key), format_value(value)));
+            result.push_str(&format!(
+                "**{}**: {}\n",
+                translate_key(key),
+                format_value(value)
+            ));
         }
     }
     result
@@ -191,7 +196,11 @@ fn timestamp_to_datetime(ts: i64) -> Option<String> {
     use chrono::{DateTime, Local, Utc};
 
     let dt = DateTime::<Utc>::from_timestamp(ts, 0)?;
-    Some(dt.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S").to_string())
+    Some(
+        dt.with_timezone(&Local)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
+    )
 }
 
 /// Truncate string to max length.
@@ -207,27 +216,23 @@ fn truncate(s: &str, max_len: usize) -> String {
 pub fn format_summary(tool_name: &str, result: &serde_json::Map<String, Value>) -> String {
     match tool_name {
         "list_devices" => {
-            let count = result.get("count")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📱 找到 {} 个设备", count)
         }
         "query_data" => {
-            let count = result.get("count")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-            let device_id = result.get("device_id")
+            let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
+            let device_id = result
+                .get("device_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("未知设备");
-            let metric = result.get("metric")
+            let metric = result
+                .get("metric")
                 .and_then(|v| v.as_str())
                 .unwrap_or("指标");
             format!("📊 查询到 {} 的 {} 条{}数据", device_id, count, metric)
         }
         "list_rules" => {
-            let count = result.get("count")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📜 找到 {} 条规则", count)
         }
         "control_device" => {
@@ -240,15 +245,11 @@ pub fn format_summary(tool_name: &str, result: &serde_json::Map<String, Value>) 
             format!("⚡ 工作流已触发")
         }
         "query_rule_history" => {
-            let count = result.get("count")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("📜 找到 {} 条执行历史", count)
         }
         "query_workflow_status" => {
-            let count = result.get("count")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
+            let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
             format!("🔄 找到 {} 条执行记录", count)
         }
         _ => format!("✅ {} 执行完成", tool_name),
@@ -268,7 +269,7 @@ mod tests {
 
         let result = format_tool_result(&data);
         assert!(result.contains("|"));
-        assert!(result.contains("类型"));  // "type" translates to "类型"
+        assert!(result.contains("类型")); // "type" translates to "类型"
     }
 
     #[test]

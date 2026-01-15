@@ -16,16 +16,17 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use edge_ai_core::llm::backend::{
-    BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput,
-    LlmRuntime, StreamChunk, TokenUsage,
+    BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput, LlmRuntime,
+    StreamChunk, TokenUsage,
 };
 use edge_ai_core::message::{Content, ContentPart, Message, MessageRole};
 
 /// Stream timeout in seconds - prevents infinite loops
 const STREAM_TIMEOUT_SECS: u64 = 300;
 
-/// Maximum thinking characters before we consider the model stuck in a loop
-const MAX_THINKING_CHARS: usize = 10000;
+/// Maximum thinking characters - set to unlimited to allow full model thinking
+/// The model should decide when to stop thinking, not an arbitrary limit
+const MAX_THINKING_CHARS: usize = usize::MAX;
 
 /// Ollama configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -57,13 +58,12 @@ impl OllamaConfig {
         let mut endpoint = endpoint.into();
         // Strip /v1 suffix if present (Ollama native API doesn't use it)
         if endpoint.ends_with("/v1") {
-            endpoint = endpoint.strip_suffix("/v1")
+            endpoint = endpoint
+                .strip_suffix("/v1")
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| endpoint.clone());
             // Also remove trailing slash if present
-            endpoint = endpoint.strip_suffix("/")
-                .unwrap_or(&endpoint)
-                .to_string();
+            endpoint = endpoint.strip_suffix("/").unwrap_or(&endpoint).to_string();
         }
         self.endpoint = endpoint;
         self
@@ -110,7 +110,9 @@ impl OllamaRuntime {
     }
 
     /// Format tools for text-based tool calling (for models without native tool support).
-    fn format_tools_for_text_calling(tools: &[edge_ai_core::llm::backend::ToolDefinition]) -> String {
+    fn format_tools_for_text_calling(
+        tools: &[edge_ai_core::llm::backend::ToolDefinition],
+    ) -> String {
         let mut result = String::from("## 工具调用要求\n");
         result.push_str("你必须使用以下XML格式调用工具，不要只描述要做什么：\n\n");
         result.push_str("<tool_calls>\n");
@@ -121,7 +123,8 @@ impl OllamaRuntime {
 
         result.push_str("## 使用示例\n");
         result.push_str("用户: 有哪些设备？\n");
-        result.push_str("助手: <tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>\n\n");
+        result
+            .push_str("助手: <tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>\n\n");
 
         result.push_str("## 可用工具\n\n");
 
@@ -134,8 +137,14 @@ impl OllamaRuntime {
                     if !obj.is_empty() {
                         result.push_str("参数:\n");
                         for (name, prop) in obj {
-                            let desc = prop.get("description").and_then(|d| d.as_str()).unwrap_or("无描述");
-                            let type_name = prop.get("type").and_then(|t| t.as_str()).unwrap_or("unknown");
+                            let desc = prop
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("无描述");
+                            let type_name = prop
+                                .get("type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("unknown");
                             result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
                         }
                     }
@@ -145,7 +154,8 @@ impl OllamaRuntime {
             if let Some(required) = tool.parameters.get("required") {
                 if let Some(arr) = required.as_array() {
                     if !arr.is_empty() {
-                        let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                        let required_names: Vec<&str> =
+                            arr.iter().filter_map(|v| v.as_str()).collect();
                         result.push_str(&format!("必填参数: {}\n", required_names.join(", ")));
                     }
                 }
@@ -170,7 +180,8 @@ impl OllamaRuntime {
         tools: Option<&[edge_ai_core::llm::backend::ToolDefinition]>,
         supports_native_tools: bool,
     ) -> Vec<OllamaMessage> {
-        let tool_instructions = if !supports_native_tools && tools.map_or(false, |t| !t.is_empty()) {
+        let tool_instructions = if !supports_native_tools && tools.map_or(false, |t| !t.is_empty())
+        {
             Some(Self::format_tools_for_text_calling(tools.unwrap()))
         } else {
             None
@@ -201,7 +212,7 @@ impl OllamaRuntime {
                     .to_string(),
                     content: text,
                     images,
-                    tool_calls: None,  // Will be populated from AgentMessage.tool_calls if needed
+                    tool_calls: None, // Will be populated from AgentMessage.tool_calls if needed
                     tool_call_id: None,
                 }
             })
@@ -238,7 +249,9 @@ fn extract_images_from_content(content: &Content) -> Vec<String> {
                     images.push(img);
                 }
             }
-            ContentPart::ImageBase64 { data, mime_type, .. } => {
+            ContentPart::ImageBase64 {
+                data, mime_type, ..
+            } => {
                 // Already base64 encoded, just remove the mime type prefix if present
                 let base64_data = if data.contains(',') {
                     data.split(',').last().unwrap_or(data).to_string()
@@ -276,13 +289,19 @@ fn extract_image_from_url(url: &str) -> Option<String> {
     if url.starts_with("http://") || url.starts_with("https://") {
         // For async fetching, we'd need to do this in an async context
         // For now, return None and log a warning
-        tracing::warn!("Fetching images from HTTP URLs is not yet supported: {}", url);
+        tracing::warn!(
+            "Fetching images from HTTP URLs is not yet supported: {}",
+            url
+        );
         return None;
     }
 
     // For local file paths, we'd need async file I/O
     // Log that this is not supported and return None
-    tracing::warn!("Local file image loading is not yet supported: {}. Use base64 data URLs instead.", url);
+    tracing::warn!(
+        "Local file image loading is not yet supported: {}. Use base64 data URLs instead.",
+        url
+    );
     None
 }
 
@@ -310,7 +329,10 @@ impl LlmRuntime for OllamaRuntime {
         }
     }
 
-    async fn generate(&self, input: edge_ai_core::llm::backend::LlmInput) -> Result<LlmOutput, LlmError> {
+    async fn generate(
+        &self,
+        input: edge_ai_core::llm::backend::LlmInput,
+    ) -> Result<LlmOutput, LlmError> {
         let start_time = Instant::now();
         let model = input.model.unwrap_or_else(|| self.model.clone());
 
@@ -320,11 +342,13 @@ impl LlmRuntime for OllamaRuntime {
         // Detect model capabilities
         let caps = detect_model_capabilities(&model);
 
-        // Handle max_tokens: let model generate naturally without artificial limits
+        // Handle max_tokens: increased cap for thinking models
+        // Thinking models need significant budget for both thinking AND response generation
+        const MAX_TOKENS_CAP: usize = 32768; // 32k tokens - sufficient for extended thinking + response
         let num_predict = match input.params.max_tokens {
-            Some(v) if v >= usize::MAX - 1000 => None,
-            Some(v) => Some(v),
-            None => None,
+            Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
+            Some(v) => Some(v.min(MAX_TOKENS_CAP)),
+            None => Some(MAX_TOKENS_CAP),
         };
 
         // Determine tool support and prepare accordingly
@@ -336,17 +360,21 @@ impl LlmRuntime for OllamaRuntime {
         let native_tools = if supports_native_tools {
             if let Some(input_tools) = &input.tools {
                 if !input_tools.is_empty() {
-                    let ollama_tools: Vec<OllamaTool> = input_tools.iter().map(|tool| {
-                        OllamaTool {
+                    let ollama_tools: Vec<OllamaTool> = input_tools
+                        .iter()
+                        .map(|tool| OllamaTool {
                             tool_type: "function".to_string(),
                             function: OllamaToolFunction {
                                 name: tool.name.clone(),
                                 description: tool.description.clone(),
                                 parameters: tool.parameters.clone(),
                             },
-                        }
-                    }).collect();
-                    tracing::debug!("Ollama: using native tools API for {} tools", ollama_tools.len());
+                        })
+                        .collect();
+                    tracing::debug!(
+                        "Ollama: using native tools API for {} tools",
+                        ollama_tools.len()
+                    );
                     Some(ollama_tools)
                 } else {
                     None
@@ -357,7 +385,10 @@ impl LlmRuntime for OllamaRuntime {
         } else {
             // Model doesn't support native tools - will use text-based calling
             if has_tools {
-                tracing::info!("Ollama: model {} doesn't support native tools, using text-based tool calling", model);
+                tracing::info!(
+                    "Ollama: model {} doesn't support native tools, using text-based tool calling",
+                    model
+                );
             }
             None
         };
@@ -409,7 +440,8 @@ impl LlmRuntime for OllamaRuntime {
             format,
         };
 
-        let request_json = serde_json::to_string(&request).map_err(|e| LlmError::Serialization(e))?;
+        let request_json =
+            serde_json::to_string(&request).map_err(|e| LlmError::Serialization(e))?;
         tracing::debug!("Ollama: sending request to model: {}", model);
 
         let response = self
@@ -422,7 +454,10 @@ impl LlmRuntime for OllamaRuntime {
             .map_err(|e| LlmError::Network(e.to_string()))?;
 
         let status = response.status();
-        let body = response.text().await.map_err(|e| LlmError::Network(e.to_string()))?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
 
         if !status.is_success() {
             if let Ok(mut metrics) = self.metrics.write() {
@@ -435,25 +470,50 @@ impl LlmRuntime for OllamaRuntime {
             )));
         }
 
-        let ollama_response: OllamaChatResponse = serde_json::from_str(&body)
-            .map_err(|e| LlmError::Serialization(e))?;
+        let ollama_response: OllamaChatResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::Serialization(e))?;
 
-        // Handle response - combine content and thinking
-        let mut response_text = if ollama_response.message.content.is_empty() {
-            ollama_response.message.thinking.clone()
-        } else {
-            ollama_response.message.content.clone()
-        };
+        // Handle response - detect if content is actually thinking
+        // Some models (qwen3-vl) put thinking in the content field instead of the thinking field
+        // We need to detect and filter this out
+        let (mut response_text, detected_thinking_in_content) =
+            if ollama_response.message.content.is_empty() {
+                // Content is empty - don't use thinking as response
+                (String::new(), false)
+            } else {
+                // Content is not empty - check if it's actually thinking
+                let content = &ollama_response.message.content;
+                let thinking = &ollama_response.message.thinking;
+
+                // If thinking is much longer than content, model likely put thinking in content
+                // Also check for common thinking patterns
+                let is_likely_thinking = thinking.len() > content.len() * 2
+                    || content.starts_with("好的，用户")
+                    || content.starts_with("首先，")
+                    || content.starts_with("让我")
+                    || content.starts_with("我需要")
+                    || (content.len() > 200
+                        && content.contains("我需要确定")
+                        && content.contains("根据"));
+
+                if is_likely_thinking {
+                    // Content appears to be thinking - return empty and use thinking field instead
+                    (String::new(), true)
+                } else {
+                    // Content is actual response
+                    (content.clone(), false)
+                }
+            };
 
         // Handle native tool calls from Ollama
         if !ollama_response.message.tool_calls.is_empty() {
-            tracing::debug!("Ollama: received {} native tool calls", ollama_response.message.tool_calls.len());
+            tracing::debug!(
+                "Ollama: received {} native tool calls",
+                ollama_response.message.tool_calls.len()
+            );
             let mut xml_buffer = String::from("<tool_calls>");
             for tool_call in &ollama_response.message.tool_calls {
-                xml_buffer.push_str(&format!(
-                    "<invoke name=\"{}\">",
-                    tool_call.function.name
-                ));
+                xml_buffer.push_str(&format!("<invoke name=\"{}\">", tool_call.function.name));
                 if let Some(obj) = tool_call.function.arguments.as_object() {
                     for (key, value) in obj {
                         xml_buffer.push_str(&format!(
@@ -482,7 +542,19 @@ impl LlmRuntime for OllamaRuntime {
                 total_tokens: (ollama_response.prompt_eval_count.unwrap_or(0) + count) as u32,
             }),
             // Include thinking content if present
-            thinking: if ollama_response.message.thinking.is_empty() {
+            // If content was detected as thinking, include it in the thinking field
+            thinking: if detected_thinking_in_content {
+                // Content was thinking - combine content and thinking fields
+                let combined = if ollama_response.message.thinking.is_empty() {
+                    ollama_response.message.content.clone()
+                } else {
+                    format!(
+                        "{}\n{}",
+                        ollama_response.message.content, ollama_response.message.thinking
+                    )
+                };
+                Some(combined)
+            } else if ollama_response.message.thinking.is_empty() {
                 None
             } else {
                 Some(ollama_response.message.thinking.clone())
@@ -523,11 +595,13 @@ impl LlmRuntime for OllamaRuntime {
         // Detect model capabilities
         let caps = detect_model_capabilities(&model);
 
-        // Handle max_tokens
+        // Handle max_tokens: increased cap for thinking models
+        // Thinking models need significant budget for both thinking AND response generation
+        const MAX_TOKENS_CAP: usize = 32768; // 32k tokens - sufficient for extended thinking + response
         let num_predict = match input.params.max_tokens {
-            Some(v) if v >= usize::MAX - 1000 => None,
-            Some(v) => Some(v),
-            None => None,
+            Some(v) if v >= usize::MAX - 1000 => Some(MAX_TOKENS_CAP),
+            Some(v) => Some(v.min(MAX_TOKENS_CAP)),
+            None => Some(MAX_TOKENS_CAP),
         };
 
         // Determine tool support and prepare accordingly
@@ -538,17 +612,21 @@ impl LlmRuntime for OllamaRuntime {
         let native_tools = if supports_native_tools {
             if let Some(input_tools) = &input.tools {
                 if !input_tools.is_empty() {
-                    let ollama_tools: Vec<OllamaTool> = input_tools.iter().map(|tool| {
-                        OllamaTool {
+                    let ollama_tools: Vec<OllamaTool> = input_tools
+                        .iter()
+                        .map(|tool| OllamaTool {
                             tool_type: "function".to_string(),
                             function: OllamaToolFunction {
                                 name: tool.name.clone(),
                                 description: tool.description.clone(),
                                 parameters: tool.parameters.clone(),
                             },
-                        }
-                    }).collect();
-                    tracing::debug!("Ollama: using native tools API for {} tools (stream)", ollama_tools.len());
+                        })
+                        .collect();
+                    tracing::debug!(
+                        "Ollama: using native tools API for {} tools (stream)",
+                        ollama_tools.len()
+                    );
                     Some(ollama_tools)
                 } else {
                     None
@@ -558,7 +636,10 @@ impl LlmRuntime for OllamaRuntime {
             }
         } else {
             if has_tools {
-                tracing::info!("Ollama: model {} doesn't support native tools, using text-based tool calling (stream)", model);
+                tracing::info!(
+                    "Ollama: model {} doesn't support native tools, using text-based tool calling (stream)",
+                    model
+                );
             }
             None
         };
@@ -594,7 +675,7 @@ impl LlmRuntime for OllamaRuntime {
         // Determine if we should send thinking to the client (for display purposes)
         // Default to true for models that support thinking - user can disable if desired
         let model_supports_thinking = caps.supports_thinking;
-        let user_requested_thinking = input.params.thinking_enabled.unwrap_or(true);  // Default to true - send thinking
+        let user_requested_thinking = input.params.thinking_enabled.unwrap_or(true); // Default to true - send thinking
         let should_send_thinking = user_requested_thinking;
 
         // Convert messages with tool injection for non-native models
@@ -604,8 +685,13 @@ impl LlmRuntime for OllamaRuntime {
             supports_native_tools,
         );
 
-        tracing::debug!("Ollama: generate_stream - URL: {}, messages: {}, native_tools: {}, text_tools: {}",
-            url, messages.len(), native_tools.is_some(), !supports_native_tools && has_tools);
+        tracing::debug!(
+            "Ollama: generate_stream - URL: {}, messages: {}, native_tools: {}, text_tools: {}",
+            url,
+            messages.len(),
+            native_tools.is_some(),
+            !supports_native_tools && has_tools
+        );
 
         // No format parameter needed - let Ollama handle thinking naturally
         let format: Option<String> = None;
@@ -624,24 +710,8 @@ impl LlmRuntime for OllamaRuntime {
             let request_json = match serde_json::to_string(&request) {
                 Ok(json) => {
                     tracing::debug!("Ollama: stream request prepared for model: {}", model);
-                    // Print request details for debugging
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
-                        // Print options (num_predict, temperature, etc.)
-                        if let Some(opts) = value.get("options") {
-                            println!("[ollama.rs] Request options: {}", serde_json::to_string_pretty(opts).unwrap_or_default());
-                        }
-                        // Print think setting - always show
-                        match value.get("think") {
-                            Some(think_val) => tracing::warn!("[ollama.rs] Request think: {}", think_val),
-                            None => tracing::info!("[ollama.rs] Request think: null (not set, model default)"),
-                        }
-                        // Print tools section
-                        if let Some(tools) = value.get("tools") {
-                            println!("[ollama.rs] Tools being sent: {}", serde_json::to_string_pretty(tools).unwrap_or_default());
-                        }
-                    }
                     json
-                },
+                }
                 Err(e) => {
                     let _ = tx.send(Err(LlmError::Serialization(e))).await;
                     return;
@@ -657,7 +727,8 @@ impl LlmRuntime for OllamaRuntime {
 
             match result {
                 Ok(response) => {
-                    println!("[ollama.rs] Got response, status: {}", response.status());
+                    // BUSINESS LOG: LLM request started
+                    tracing::info!("🚀 LLM request started: model={}", model);
                     let status = response.status();
                     if !status.is_success() {
                         let body = response.text().await.unwrap_or_default();
@@ -677,15 +748,19 @@ impl LlmRuntime for OllamaRuntime {
                     let mut byte_stream = response.bytes_stream();
                     let mut buffer = Vec::new();
                     let mut sent_done = false;
+                    let mut tool_calls_sent = false; // Track if tool_calls have been sent
                     let mut total_bytes = 0usize;
-                    let mut total_chars = 0usize;    // Track total output characters
-                    let mut thinking_chars = 0usize;  // Track thinking characters separately
+                    let mut total_chars = 0usize; // Track total output characters
+                    let mut thinking_chars = 0usize; // Track thinking characters separately
                     let stream_start = Instant::now(); // Track stream duration
+                    let mut content_buffer = String::new(); // Buffer for detecting thinking in content
+                    let mut detected_thinking_in_content = false; // Flag for thinking detection
 
                     while let Some(chunk_result) = byte_stream.next().await {
                         // Check for timeout
                         if stream_start.elapsed() > Duration::from_secs(STREAM_TIMEOUT_SECS) {
-                            let error_msg = format!("Stream timeout after {} seconds", STREAM_TIMEOUT_SECS);
+                            let error_msg =
+                                format!("Stream timeout after {} seconds", STREAM_TIMEOUT_SECS);
                             println!("[ollama.rs] {}", error_msg);
                             tracing::warn!("{}", error_msg);
                             let _ = tx.send(Err(LlmError::Generation(error_msg))).await;
@@ -696,19 +771,23 @@ impl LlmRuntime for OllamaRuntime {
                                 // Empty chunks are normal in HTTP streaming - don't break on them
                                 // Just skip empty chunks but continue processing
                                 if chunk.is_empty() {
-                                    tracing::debug!("[ollama.rs] Skipping empty chunk, continuing stream");
+                                    tracing::debug!(
+                                        "[ollama.rs] Skipping empty chunk, continuing stream"
+                                    );
                                     continue;
                                 }
                                 total_bytes += chunk.len();
-                                println!("[ollama.rs] Received chunk: {} bytes, total: {}", chunk.len(), total_bytes);
                                 buffer.extend_from_slice(&chunk);
 
                                 let mut search_start = 0;
                                 loop {
-                                    if let Some(nl_pos) = buffer[search_start..].iter().position(|&b| b == b'\n') {
+                                    if let Some(nl_pos) =
+                                        buffer[search_start..].iter().position(|&b| b == b'\n')
+                                    {
                                         let line_end = search_start + nl_pos;
                                         let line_bytes = &buffer[..line_end];
-                                        let line = String::from_utf8_lossy(line_bytes).trim().to_string();
+                                        let line =
+                                            String::from_utf8_lossy(line_bytes).trim().to_string();
 
                                         buffer = buffer[line_end + 1..].to_vec();
                                         search_start = 0;
@@ -717,7 +796,9 @@ impl LlmRuntime for OllamaRuntime {
                                             continue;
                                         }
 
-                                        let json_str = if let Some(prefix) = line.strip_prefix("data: ") {
+                                        let json_str = if let Some(prefix) =
+                                            line.strip_prefix("data: ")
+                                        {
                                             prefix
                                         } else if let Some(prefix) = line.strip_prefix("data:") {
                                             prefix
@@ -727,31 +808,22 @@ impl LlmRuntime for OllamaRuntime {
 
                                         // Debug: log the raw response
                                         tracing::debug!("Ollama raw response: {}", json_str);
-                                        println!("[ollama.rs] Parsing JSON: {}", if json_str.len() > 150 { &json_str[..150] } else { &json_str });
-
-                                        // Log the full JSON for chunks with done=true to debug missing content
-                                        if json_str.contains("\"done\":true") {
-                                            println!("[ollama.rs] FULL JSON for done=true: {}", json_str);
-                                        }
 
                                         if let Ok(ollama_chunk) =
                                             serde_json::from_str::<OllamaStreamResponse>(json_str)
                                         {
-                                            println!("[ollama.rs] Parsed ollama_chunk: thinking={}, content={}, tool_calls={}, done={}",
-                                                !ollama_chunk.message.thinking.is_empty(),
-                                                !ollama_chunk.message.content.is_empty(),
-                                                !ollama_chunk.message.tool_calls.is_empty(),
-                                                ollama_chunk.done);
-                                            // Log actual content lengths
-                                            if !ollama_chunk.message.thinking.is_empty() {
-                                                println!("[ollama.rs] -> thinking content: '{}' (len={})", ollama_chunk.message.thinking, ollama_chunk.message.thinking.chars().count());
-                                            }
-                                            if !ollama_chunk.message.content.is_empty() {
-                                                println!("[ollama.rs] -> response content: '{}' (len={})", ollama_chunk.message.content, ollama_chunk.message.content.chars().count());
-                                            }
                                             // Handle native tool calls - convert to XML format for compatibility
                                             if !ollama_chunk.message.tool_calls.is_empty() {
-                                                tracing::debug!("Ollama: received {} tool calls", ollama_chunk.message.tool_calls.len());
+                                                // BUSINESS LOG: Tool calls detected
+                                                let tool_names: Vec<&str> = ollama_chunk.message.tool_calls
+                                                    .iter()
+                                                    .map(|t| t.function.name.as_str())
+                                                    .collect();
+                                                tracing::info!(
+                                                    "🔧 LLM requested {} tool calls: {}",
+                                                    tool_names.len(),
+                                                    tool_names.join(", ")
+                                                );
                                                 // Convert tool_calls to XML format for streaming.rs compatibility
                                                 let mut xml_buffer = String::from("<tool_calls>");
                                                 for tool_call in &ollama_chunk.message.tool_calls {
@@ -760,7 +832,9 @@ impl LlmRuntime for OllamaRuntime {
                                                         tool_call.function.name
                                                     ));
                                                     // Convert arguments JSON to XML parameter format
-                                                    if let Some(obj) = tool_call.function.arguments.as_object() {
+                                                    if let Some(obj) =
+                                                        tool_call.function.arguments.as_object()
+                                                    {
                                                         for (key, value) in obj {
                                                             xml_buffer.push_str(&format!(
                                                                 "<parameter name=\"{}\">{}</parameter>",
@@ -772,43 +846,73 @@ impl LlmRuntime for OllamaRuntime {
                                                     xml_buffer.push_str("</invoke>");
                                                 }
                                                 xml_buffer.push_str("</tool_calls>");
-                                                tracing::debug!("Ollama: converted tool_calls to XML: {}", xml_buffer);
+                                                tracing::debug!(
+                                                    "Ollama: converted tool_calls to XML: {}",
+                                                    xml_buffer
+                                                );
                                                 let _ = tx.send(Ok((xml_buffer, false))).await;
 
-                                                // CRITICAL: Once tool_calls are sent, the stream should end
-                                                // The agent will execute tools and then make a new request with results
-                                                // Any thinking/content after tool_calls should be ignored
-                                                println!("[ollama.rs] Tool calls sent, closing stream (thinking after tools will be ignored)");
-                                                sent_done = true;
-                                                return;
+                                                // CRITICAL FIX: Don't return immediately!
+                                                // Continue consuming the stream until done=true to avoid:
+                                                // 1. Leaving unconsumed data in the HTTP connection
+                                                // 2. Causing issues with subsequent requests
+                                                // 3. Leaving the stream in an inconsistent state
+                                                //
+                                                // Set a flag to ignore any further thinking/content after tool_calls
+                                                // But still process the stream until Ollama sends done=true
+                                                println!(
+                                                    "[ollama.rs] Tool calls sent, will continue consuming stream until done=true (ignoring further content)"
+                                                );
+                                                tool_calls_sent = true;
+                                                // Don't return here - let the stream continue until done=true
+                                                // Continue to the next iteration to process remaining chunks
+                                                continue;
                                             }
 
-                                            // IMPORTANT: Process content BEFORE checking done flag
-                                            // The final chunk with done=true may still contain content that must be sent
-                                            // CRITICAL FIX: Only send thinking if user requested it AND model supports it
-                                            // qwen3 models generate thinking but we filter it out for performance
-                                            if !ollama_chunk.message.thinking.is_empty() {
-                                                // Track thinking characters for loop detection
-                                                thinking_chars += ollama_chunk.message.thinking.chars().count();
-                                                total_chars += ollama_chunk.message.thinking.chars().count();
+                                            // IMPORTANT: Skip processing thinking/content if tool_calls were already sent
+                                            if tool_calls_sent {
+                                                // Skip - don't send any more chunks to the client
+                                            } else if !ollama_chunk.message.thinking.is_empty() {
+                                                // IMPORTANT: Process content BEFORE checking done flag
+                                                // The final chunk with done=true may still contain content that must be sent
+                                                // CRITICAL FIX: Only send thinking if user requested it AND model supports it
+                                                // qwen3 models generate thinking but we filter it out for performance
 
-                                                // SAFETY CHECK: Detect if model is stuck in thinking loop
+                                                // Track thinking characters for loop detection
+                                                thinking_chars +=
+                                                    ollama_chunk.message.thinking.chars().count();
+                                                total_chars +=
+                                                    ollama_chunk.message.thinking.chars().count();
+
+                                                // SAFETY CHECK: Detect if model is stuck in thinking loop (with MAX_THINKING_CHARS = usize::MAX, this won't trigger)
                                                 if thinking_chars > MAX_THINKING_CHARS {
-                                                    let error_msg = format!("Model appears stuck in thinking loop ({} chars thinking, {} chars total content). Terminating stream.", thinking_chars, total_chars);
+                                                    let error_msg = format!(
+                                                        "Model appears stuck in thinking loop ({} chars thinking). Terminating stream.",
+                                                        thinking_chars
+                                                    );
                                                     tracing::error!("[ollama.rs] {}", error_msg);
-                                                    println!("[ollama.rs] {}", error_msg);
-                                                    let _ = tx.send(Err(LlmError::Generation(error_msg))).await;
+                                                    let _ = tx
+                                                        .send(Err(LlmError::Generation(error_msg)))
+                                                        .await;
                                                     return;
                                                 }
 
                                                 if should_send_thinking {
-                                                    tracing::debug!("Ollama thinking chunk: {}", ollama_chunk.message.thinking);
-                                                    println!("[ollama.rs] Sending thinking chunk (len={}, total_thinking={})", ollama_chunk.message.thinking.chars().count(), thinking_chars);
-                                                    let _ = tx.send(Ok((ollama_chunk.message.thinking.clone(), true))).await;
+                                                    let _ = tx
+                                                        .send(Ok((
+                                                            ollama_chunk.message.thinking.clone(),
+                                                            true,
+                                                        )))
+                                                        .await;
                                                 } else {
                                                     // Skip thinking content - model generated it but we don't want it
-                                                    tracing::debug!("Ollama generated thinking (len={}, total_thinking={}) but filtering it out (user_requested={}, model_supports={})",
-                                                        ollama_chunk.message.thinking.chars().count(),
+                                                    tracing::debug!(
+                                                        "Ollama generated thinking (len={}, total_thinking={}) but filtering it out (user_requested={}, model_supports={})",
+                                                        ollama_chunk
+                                                            .message
+                                                            .thinking
+                                                            .chars()
+                                                            .count(),
                                                         thinking_chars,
                                                         user_requested_thinking,
                                                         model_supports_thinking
@@ -818,27 +922,76 @@ impl LlmRuntime for OllamaRuntime {
                                             }
 
                                             // Then send response content (final answer)
-                                            if !ollama_chunk.message.content.is_empty() {
-                                                // Track content characters
-                                                total_chars += ollama_chunk.message.content.chars().count();
-                                                tracing::debug!("Ollama content chunk: {}", ollama_chunk.message.content);
-                                                println!("[ollama.rs] Sending content chunk (len={}, total_chars={})", ollama_chunk.message.content.chars().count(), total_chars);
-                                                let _ = tx.send(Ok((ollama_chunk.message.content.clone(), false))).await;
+                                            // Only process content if tool_calls haven't been sent yet
+                                            if !tool_calls_sent && !ollama_chunk.message.content.is_empty() {
+                                                let content = &ollama_chunk.message.content;
+                                                content_buffer.push_str(content);
+
+                                                // Detect if content is actually thinking (qwen3-vl puts thinking in content field)
+                                                // Check for common thinking patterns at the start
+                                                if !detected_thinking_in_content {
+                                                    // Check initial buffer for thinking patterns
+                                                    let is_likely_thinking = content_buffer
+                                                        .starts_with("好的，用户")
+                                                        || content_buffer.starts_with("首先，")
+                                                        || content_buffer.starts_with("让我")
+                                                        || content_buffer.starts_with("我需要")
+                                                        || (content_buffer.len() > 200
+                                                            && content_buffer
+                                                                .contains("我需要确定")
+                                                            && content_buffer.contains("根据"));
+
+                                                    if is_likely_thinking {
+                                                        detected_thinking_in_content = true;
+                                                    }
+                                                }
+
+                                                if detected_thinking_in_content {
+                                                    // Content is actually thinking - send as thinking
+                                                    thinking_chars += content.chars().count();
+                                                    total_chars += content.chars().count();
+                                                    tracing::debug!(
+                                                        "Ollama content detected as thinking: {}",
+                                                        content
+                                                    );
+
+                                                    // Check thinking limit
+                                                    if thinking_chars <= MAX_THINKING_CHARS {
+                                                        let _ = tx
+                                                            .send(Ok((content.clone(), true)))
+                                                            .await;
+                                                    }
+                                                } else {
+                                                    // Track content characters and send content
+                                                    total_chars += content.chars().count();
+                                                    let _ =
+                                                        tx.send(Ok((content.clone(), false))).await;
+                                                }
                                             }
 
                                             if ollama_chunk.done {
-                                                // Ollama has finished generation - all content has been sent above
-                                                let final_content = ollama_chunk.message.content.clone();
-                                                let final_thinking = ollama_chunk.message.thinking.clone();
-                                                println!("[ollama.rs] Ollama sent done=true, total_bytes: {}, final_content_len: {}, final_thinking_len: {}, closing stream",
-                                                    total_bytes, final_content.chars().count(), final_thinking.chars().count());
-                                                if !final_content.is_empty() {
-                                                    println!("[ollama.rs] Final content was sent: '{}'", final_content);
+                                                // BUSINESS LOG: Stream completion summary
+                                                // Use accumulated counters, not final chunk (which is often empty)
+                                                let actual_content_len = total_chars.saturating_sub(thinking_chars);
+
+                                                tracing::info!(
+                                                    "✅ LLM stream complete: thinking={} chars, content={} chars, total_chunks={}",
+                                                    thinking_chars,
+                                                    actual_content_len,
+                                                    total_bytes / 300  // Rough chunk count estimate
+                                                );
+
+                                                // Warn if no content was generated (possible token budget issue)
+                                                if actual_content_len == 0 && tool_calls_sent {
+                                                    tracing::warn!(
+                                                        "⚠️  Stream ended with tool calls but no content. Tool execution will follow."
+                                                    );
+                                                } else if actual_content_len == 0 {
+                                                    tracing::warn!(
+                                                        "⚠️  Stream ended with no content! Token budget may have been exhausted during thinking."
+                                                    );
                                                 }
-                                                if !final_thinking.is_empty() {
-                                                    println!("[ollama.rs] Final thinking was sent: '{}'", final_thinking);
-                                                }
-                                                tracing::info!("Ollama stream complete: {} bytes transferred", total_bytes);
+
                                                 sent_done = true;
                                                 return;
                                             }
@@ -857,8 +1010,14 @@ impl LlmRuntime for OllamaRuntime {
 
                     if !sent_done {
                         // Channel closed without done signal - log this as it might indicate a problem
-                        println!("[ollama.rs] Stream closed without done=true signal, total_bytes: {}", total_bytes);
-                        tracing::warn!("Ollama stream closed prematurely without done signal, {} bytes transferred", total_bytes);
+                        println!(
+                            "[ollama.rs] Stream closed without done=true signal, total_bytes: {}",
+                            total_bytes
+                        );
+                        tracing::warn!(
+                            "Ollama stream closed prematurely without done signal, {} bytes transferred",
+                            total_bytes
+                        );
                         // Receiver will handle EOF
                     }
                 }
@@ -883,9 +1042,7 @@ impl LlmRuntime for OllamaRuntime {
 
     fn capabilities(&self) -> BackendCapabilities {
         let caps = detect_model_capabilities(&self.model);
-        let mut builder = BackendCapabilities::builder()
-            .streaming()
-            .max_context(4096);
+        let mut builder = BackendCapabilities::builder().streaming().max_context(4096);
 
         // Conditionally add capabilities based on model detection
         if caps.supports_multimodal {
@@ -902,7 +1059,8 @@ impl LlmRuntime for OllamaRuntime {
     }
 
     fn metrics(&self) -> BackendMetrics {
-        self.metrics.read()
+        self.metrics
+            .read()
             .map(|m| m.clone())
             .unwrap_or_else(|_| BackendMetrics::default())
     }
@@ -1007,7 +1165,7 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         || name_lower.contains("deepseek-r")
         || name_lower.contains("deepseek v3.1")
         || name_lower.contains("deepseek-v3.1")
-        || name_lower.contains("thinking");  // Future-proofing
+        || name_lower.contains("thinking"); // Future-proofing
 
     // Models that support function calling
     // Note: Smaller models like gemma3:270m do NOT support tools
@@ -1018,9 +1176,8 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         && !name_lower.contains("nano");
 
     // Models that support multimodal (vision)
-    let supports_multimodal = name_lower.contains("vl")
-        || name_lower.contains("vision")
-        || name_lower.contains("mm");
+    let supports_multimodal =
+        name_lower.contains("vl") || name_lower.contains("vision") || name_lower.contains("mm");
 
     ModelCapability {
         supports_tools,
@@ -1156,8 +1313,7 @@ mod tests {
 
     #[test]
     fn test_ollama_config_with_endpoint() {
-        let config = OllamaConfig::new("qwen3-vl:2b")
-            .with_endpoint("http://192.168.1.100:11434");
+        let config = OllamaConfig::new("qwen3-vl:2b").with_endpoint("http://192.168.1.100:11434");
         assert_eq!(config.endpoint, "http://192.168.1.100:11434");
     }
 }

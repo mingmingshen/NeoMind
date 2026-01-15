@@ -4,36 +4,33 @@
 //! the NeoTalk event bus for tracking tool calls, recording history,
 //! and handling errors.
 
-pub mod event_integration;
 pub mod analysis;
-pub mod mdl;
 pub mod dsl;
+pub mod event_integration;
+pub mod mdl;
 pub mod rule_gen;
-pub mod tool_search;
 pub mod think;
+pub mod tool_search;
 
 pub use event_integration::{
-    EventIntegratedToolRegistry,
-    ToolExecutionHistory,
-    ToolExecutionRecord,
-    ToolExecutionStats,
+    EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
 };
 
 pub use mdl::{
-    ListDeviceTypesTool, GetDeviceTypeTool, ExplainDeviceTypeTool,
-    DeviceTypeSummary, DeviceExplanation,
+    DeviceExplanation, DeviceTypeSummary, ExplainDeviceTypeTool, GetDeviceTypeTool,
+    ListDeviceTypesTool,
 };
 
 pub use dsl::{
-    ListRulesTool, GetRuleTool, ExplainRuleTool, GetRuleHistoryTool,
-    RuleSummary, RuleExplanation, HistoryEntry, RuleStatistics,
+    ExplainRuleTool, GetRuleHistoryTool, GetRuleTool, HistoryEntry, ListRulesTool, RuleExplanation,
+    RuleStatistics, RuleSummary,
 };
 
 pub use rule_gen::{
-    GenerateRuleDslTool, ValidateRuleDslTool, CreateRuleTool,
-    DeviceInfo, ValidationResult, RuleSummary as RuleGenSummary, CreateResult,
+    CreateResult, CreateRuleTool, DeviceInfo, GenerateRuleDslTool, RuleSummary as RuleGenSummary,
+    ValidateRuleDslTool, ValidationResult,
 };
 
-pub use tool_search::{ToolSearchTool, ToolSearchResult};
+pub use tool_search::{ToolSearchResult, ToolSearchTool};
 
-pub use think::{ThinkTool, ThinkStorage, ThoughtRecord};
+pub use think::{ThinkStorage, ThinkTool, ThoughtRecord};

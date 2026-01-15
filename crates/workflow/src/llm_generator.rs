@@ -110,7 +110,11 @@ impl WasmCodeGenerator {
             wasm_bytes: compilation_result.wasm_bytes,
             wasm_base64: compilation_result.wasm_base64,
             language,
-            explanation: format!("Generated {} code based on: {}", format!("{:?}", language).to_lowercase(), description),
+            explanation: format!(
+                "Generated {} code based on: {}",
+                format!("{:?}", language).to_lowercase(),
+                description
+            ),
             warnings,
             compilation_success: compilation_result.success,
             compilation_error: compilation_result.error,
@@ -133,7 +137,8 @@ impl WasmCodeGenerator {
             wasm_bytes: compilation_result.wasm_bytes,
             wasm_base64: compilation_result.wasm_base64,
             language,
-            explanation: description.unwrap_or_else(|| "Compiled from provided source code".to_string()),
+            explanation: description
+                .unwrap_or_else(|| "Compiled from provided source code".to_string()),
             warnings: compilation_result.warnings,
             compilation_success: compilation_result.success,
             compilation_error: compilation_result.error,
@@ -396,12 +401,19 @@ mod tests {
 )"#;
 
         let result = generator
-            .generate_from_source(wat_code, SourceLanguage::Wat, Some("Simple add function".to_string()))
+            .generate_from_source(
+                wat_code,
+                SourceLanguage::Wat,
+                Some("Simple add function".to_string()),
+            )
             .await
             .unwrap();
 
         assert_eq!(result.language, SourceLanguage::Wat);
-        assert!(result.compilation_success, "Wat code should compile successfully");
+        assert!(
+            result.compilation_success,
+            "Wat code should compile successfully"
+        );
         assert!(result.wasm_bytes.is_some(), "Should have WASM bytes");
     }
 
@@ -421,7 +433,9 @@ mod tests {
 
 That should work."#;
 
-        let code = generator.extract_code(response, &SourceLanguage::Wat).unwrap();
+        let code = generator
+            .extract_code(response, &SourceLanguage::Wat)
+            .unwrap();
         assert!(code.contains("(module"));
         assert!(code.contains("(export \"main\""));
     }
@@ -431,7 +445,9 @@ That should work."#;
         let generator = WasmCodeGenerator::new().unwrap();
 
         let response = "(module (func (export \"main\") nop))";
-        let code = generator.extract_code(response, &SourceLanguage::Wat).unwrap();
+        let code = generator
+            .extract_code(response, &SourceLanguage::Wat)
+            .unwrap();
         assert_eq!(code, response);
     }
 

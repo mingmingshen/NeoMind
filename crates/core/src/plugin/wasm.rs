@@ -57,12 +57,12 @@
 //! }
 //! ```
 
+use anyhow::{Result as AnyhowResult, anyhow};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use serde_json::{json, Value};
-use anyhow::{Result as AnyhowResult, anyhow};
 
-use super::{PluginError, Result, PluginMetadata, ExtendedPluginMetadata, PluginType, PluginState};
+use super::{ExtendedPluginMetadata, PluginError, PluginMetadata, PluginState, PluginType, Result};
 
 /// WebAssembly plugin instance.
 ///
@@ -124,9 +124,9 @@ impl WasmPluginLoader {
                 PathBuf::from("./plugins/wasm"),
                 PathBuf::from("/var/lib/neotalk/plugins/wasm"),
             ],
-            max_memory_mb: 16,      // 16MB default per plugin
-            enable_fuel: true,      // Enable by default for safety
-            max_fuel: 1_000_000,    // 1M execution steps
+            max_memory_mb: 16,   // 16MB default per plugin
+            enable_fuel: true,   // Enable by default for safety
+            max_fuel: 1_000_000, // 1M execution steps
         }
     }
 
@@ -190,12 +190,15 @@ impl WasmPluginLoader {
         }
 
         // Read WASM file for validation
-        let wasm_bytes = std::fs::read(path)
-            .map_err(|e| anyhow!("Failed to read WASM file: {}", e))?;
+        let wasm_bytes =
+            std::fs::read(path).map_err(|e| anyhow!("Failed to read WASM file: {}", e))?;
 
         // Validate WASM header (magic number: 0x00 0x61 0x73 0x6D = "\0asm")
         if wasm_bytes.len() < 4 {
-            return Err(anyhow!("Invalid WASM file: too small ({} bytes)", wasm_bytes.len()));
+            return Err(anyhow!(
+                "Invalid WASM file: too small ({} bytes)",
+                wasm_bytes.len()
+            ));
         }
 
         if &wasm_bytes[0..4] != b"\x00\x61\x73\x6d" {
@@ -210,7 +213,8 @@ impl WasmPluginLoader {
             let version = &wasm_bytes[4..8];
             if version != [1, 0, 0, 0] {
                 return Err(anyhow!(
-                    "Unsupported WASM version: {:02X?} (expected 1.0)", version
+                    "Unsupported WASM version: {:02X?} (expected 1.0)",
+                    version
                 ));
             }
         }
@@ -226,16 +230,30 @@ impl WasmPluginLoader {
     }
 
     /// Load plugin metadata from sidecar JSON file.
-    fn load_plugin_metadata(&self, wasm_path: &Path, _wasm_bytes: &[u8]) -> AnyhowResult<ExtendedPluginMetadata> {
+    fn load_plugin_metadata(
+        &self,
+        wasm_path: &Path,
+        _wasm_bytes: &[u8],
+    ) -> AnyhowResult<ExtendedPluginMetadata> {
         // Try sidecar JSON first
         let json_path = wasm_path.with_extension("json");
 
         if json_path.exists() {
-            let json_str = std::fs::read_to_string(&json_path)
-                .map_err(|e| anyhow!("Failed to read metadata file {}: {}", json_path.display(), e))?;
+            let json_str = std::fs::read_to_string(&json_path).map_err(|e| {
+                anyhow!(
+                    "Failed to read metadata file {}: {}",
+                    json_path.display(),
+                    e
+                )
+            })?;
 
-            let json: Value = serde_json::from_str(&json_str)
-                .map_err(|e| anyhow!("Invalid JSON in metadata file {}: {}", json_path.display(), e))?;
+            let json: Value = serde_json::from_str(&json_str).map_err(|e| {
+                anyhow!(
+                    "Invalid JSON in metadata file {}: {}",
+                    json_path.display(),
+                    e
+                )
+            })?;
 
             return self.parse_json_metadata(&json);
         }
@@ -265,28 +283,34 @@ impl WasmPluginLoader {
 
     /// Parse JSON metadata into ExtendedPluginMetadata.
     fn parse_json_metadata(&self, json: &Value) -> AnyhowResult<ExtendedPluginMetadata> {
-        let id = json.get("id")
+        let id = json
+            .get("id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing required field: id"))?;
 
-        let name = json.get("name")
+        let name = json
+            .get("name")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing required field: name"))?;
 
-        let version = json.get("version")
+        let version = json
+            .get("version")
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Missing required field: version"))?;
 
-        let description = json.get("description")
+        let description = json
+            .get("description")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
-        let author = json.get("author")
+        let author = json
+            .get("author")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let plugin_type = json.get("type")
+        let plugin_type = json
+            .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("tool")
             .to_string();
@@ -306,9 +330,18 @@ impl WasmPluginLoader {
             config_schema: json.get("config_schema").cloned(),
             resource_limits: None,
             permissions: vec![],
-            homepage: json.get("homepage").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            repository: json.get("repository").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            license: json.get("license").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            homepage: json
+                .get("homepage")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            repository: json
+                .get("repository")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            license: json
+                .get("license")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         })
     }
 
@@ -376,7 +409,8 @@ impl WasmPluginLoader {
             } else {
                 for sp in &self.search_paths {
                     let exists = sp.exists();
-                    msg.push_str(&format!("   {} {}\n",
+                    msg.push_str(&format!(
+                        "   {} {}\n",
                         if exists { "✓" } else { "✗" },
                         sp.display()
                     ));
@@ -404,7 +438,8 @@ impl WasmPluginLoader {
         match std::fs::metadata(path) {
             Ok(meta) => {
                 let size = meta.len();
-                msg.push_str(&format!("   ✓ Size: {} bytes ({} MB)\n",
+                msg.push_str(&format!(
+                    "   ✓ Size: {} bytes ({} MB)\n",
                     size,
                     size as f64 / (1024.0 * 1024.0)
                 ));
@@ -470,7 +505,9 @@ impl WasmPluginLoader {
         msg.push_str("════════════════════════════════════════════════════════════════\n\n");
         msg.push_str("1. Ensure the WASM file was compiled with the correct ABI:\n");
         msg.push_str("   - Required exports: neotalk_plugin_metadata, memory\n");
-        msg.push_str("   - Optional exports: neotalk_plugin_init, neotalk_plugin_handle_command\n\n");
+        msg.push_str(
+            "   - Optional exports: neotalk_plugin_init, neotalk_plugin_handle_command\n\n",
+        );
 
         msg.push_str("2. Create a sidecar .json file with plugin metadata:\n");
         msg.push_str(&format!("   {{\n"));
@@ -481,7 +518,10 @@ impl WasmPluginLoader {
         msg.push_str(&format!("   }}\n\n"));
 
         msg.push_str("3. Use the validation tool:\n");
-        msg.push_str(&format!("   neotalk-plugin validate {}\n\n", path.display()));
+        msg.push_str(&format!(
+            "   neotalk-plugin validate {}\n\n",
+            path.display()
+        ));
 
         msg.push_str("4. Check the plugin documentation for examples:\n");
         msg.push_str("   https://github.com/neotalk/plugin-examples\n");
@@ -538,27 +578,31 @@ impl WasmPluginLoader {
                         if version == [1, 0, 0, 0] {
                             result.checks.push("✓ WASM version 1.0".to_string());
                         } else {
-                            result.warnings.push(format!(
-                                "Unusual WASM version: {:02X?}", version
-                            ));
+                            result
+                                .warnings
+                                .push(format!("Unusual WASM version: {:02X?}", version));
                         }
                     }
                 } else {
-                    result.errors.push(format!(
-                        "Invalid WASM magic number: {:02X?}", magic
-                    ));
+                    result
+                        .errors
+                        .push(format!("Invalid WASM magic number: {:02X?}", magic));
                     result.is_valid = false;
                 }
             }
 
             // Look for custom sections
-            result.checks.push(format!("✓ Total bytes: {}", bytes.len()));
+            result
+                .checks
+                .push(format!("✓ Total bytes: {}", bytes.len()));
         }
 
         // Check for sidecar metadata
         let json_path = path.with_extension("json");
         if json_path.exists() {
-            result.checks.push(format!("✓ Sidecar metadata: {}", json_path.display()));
+            result
+                .checks
+                .push(format!("✓ Sidecar metadata: {}", json_path.display()));
 
             if let Ok(content) = std::fs::read_to_string(&json_path) {
                 match serde_json::from_str::<Value>(&content) {
@@ -569,26 +613,34 @@ impl WasmPluginLoader {
                         if json.get("id").is_some() {
                             result.checks.push("✓ Has 'id' field".to_string());
                         } else {
-                            result.errors.push("Missing 'id' field in metadata".to_string());
+                            result
+                                .errors
+                                .push("Missing 'id' field in metadata".to_string());
                             result.is_valid = false;
                         }
 
                         if json.get("name").is_some() {
                             result.checks.push("✓ Has 'name' field".to_string());
                         } else {
-                            result.errors.push("Missing 'name' field in metadata".to_string());
+                            result
+                                .errors
+                                .push("Missing 'name' field in metadata".to_string());
                             result.is_valid = false;
                         }
 
                         if json.get("version").is_some() {
                             result.checks.push("✓ Has 'version' field".to_string());
                         } else {
-                            result.errors.push("Missing 'version' field in metadata".to_string());
+                            result
+                                .errors
+                                .push("Missing 'version' field in metadata".to_string());
                             result.is_valid = false;
                         }
 
                         if let Some(plugin_type) = json.get("type").and_then(|v| v.as_str()) {
-                            result.checks.push(format!("✓ Plugin type: {}", plugin_type));
+                            result
+                                .checks
+                                .push(format!("✓ Plugin type: {}", plugin_type));
                         }
                     }
                     Err(e) => {
@@ -762,11 +814,19 @@ impl ValidationResult {
     /// Format as a human-readable report.
     pub fn format_report(&self) -> String {
         let mut msg = format!("╔══════════════════════════════════════════════════════════╗\n");
-        msg.push_str(&format!("║         WASM Plugin Validation Report                    ║\n"));
-        msg.push_str(&format!("╠══════════════════════════════════════════════════════════╣\n"));
-        msg.push_str(&format!("║ File: {:50} ║\n",
-            self.path.file_name().and_then(|s| s.to_str()).unwrap_or("")));
-        msg.push_str(&format!("╚══════════════════════════════════════════════════════════╝\n\n"));
+        msg.push_str(&format!(
+            "║         WASM Plugin Validation Report                    ║\n"
+        ));
+        msg.push_str(&format!(
+            "╠══════════════════════════════════════════════════════════╣\n"
+        ));
+        msg.push_str(&format!(
+            "║ File: {:50} ║\n",
+            self.path.file_name().and_then(|s| s.to_str()).unwrap_or("")
+        ));
+        msg.push_str(&format!(
+            "╚══════════════════════════════════════════════════════════╝\n\n"
+        ));
 
         if !self.checks.is_empty() {
             msg.push_str("✓ Checks Passed:\n");
@@ -792,8 +852,11 @@ impl ValidationResult {
             msg.push('\n');
         }
 
-        msg.push_str(&format!("═══════════════════════════════════════════════════════════\n"));
-        msg.push_str(&format!("Status: {}\n",
+        msg.push_str(&format!(
+            "═══════════════════════════════════════════════════════════\n"
+        ));
+        msg.push_str(&format!(
+            "Status: {}\n",
             if self.is_valid {
                 "✓ VALID - Plugin can be loaded"
             } else {

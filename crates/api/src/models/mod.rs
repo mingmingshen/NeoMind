@@ -6,10 +6,12 @@ pub mod common;
 pub mod error;
 pub mod pagination;
 
-pub use common::{ApiResponse, ApiError, ErrorCode, ResponseMeta, ToApiResponse};
-pub use error::{ErrorResponse, ApiResult};
-pub use pagination::{Pagination, PaginationParams, PaginatedResponse, PaginationMeta, paginated, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE};
-
+pub use common::{ApiError, ApiResponse, ErrorCode, ResponseMeta, ToApiResponse};
+pub use error::{ApiResult, ErrorResponse};
+pub use pagination::{
+    DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, PaginatedResponse, Pagination, PaginationMeta,
+    PaginationParams, paginated,
+};
 
 // ============================================================================
 // Chat & Session Models
@@ -216,7 +218,11 @@ pub use edge_ai_agent::AgentConfig;
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum WsClientMessage {
     /// Chat message.
-    Chat { message: String, #[serde(rename = "sessionId")] session_id: Option<String> },
+    Chat {
+        message: String,
+        #[serde(rename = "sessionId")]
+        session_id: Option<String>,
+    },
     /// Ping message.
     Ping,
 }
@@ -226,7 +232,11 @@ pub enum WsClientMessage {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum WsServerMessage {
     /// Chat response.
-    Chat { response: String, #[serde(rename = "sessionId")] session_id: String },
+    Chat {
+        response: String,
+        #[serde(rename = "sessionId")]
+        session_id: String,
+    },
     /// Error message.
     Error { error: String },
     /// Pong message.

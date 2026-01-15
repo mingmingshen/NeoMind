@@ -37,10 +37,10 @@
 //! # }
 //! ```
 
-use crate::adapter::{DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo, AdapterResult};
+use crate::adapter::{AdapterResult, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo};
 use crate::mqtt::MqttConfig;
-use edge_ai_core::EventBus;
 use async_trait::async_trait;
+use edge_ai_core::EventBus;
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
 use std::pin::Pin;
@@ -219,8 +219,13 @@ impl HassAdapter {
         // Extract device information
         let device_id = discovery_msg.unique_id.clone();
         let device_type = self.component_to_device_type(&discovery_msg.component);
-        let name = discovery_msg.name.as_deref()
-            .or(discovery_msg.device.as_ref().and_then(|d| d.name.as_deref()))
+        let name = discovery_msg
+            .name
+            .as_deref()
+            .or(discovery_msg
+                .device
+                .as_ref()
+                .and_then(|d| d.name.as_deref()))
             .unwrap_or(&device_id);
 
         let device_info = DiscoveredDeviceInfo::new(&device_id, &device_type)
@@ -228,7 +233,9 @@ impl HassAdapter {
             .with_endpoint(&topic);
 
         // Publish discovery event
-        let _ = self.event_tx.send(DeviceEvent::Discovery { device: device_info });
+        let _ = self.event_tx.send(DeviceEvent::Discovery {
+            device: device_info,
+        });
 
         // Store discovered device
         if let Ok(mut devices) = self.devices.try_write() {
@@ -273,7 +280,8 @@ impl DeviceAdapter for HassAdapter {
         // 2. Subscribe to the discovery topic
         // 3. Process incoming discovery messages
         // For now, we simulate the adapter running
-        self.running.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Spawn a task to simulate message processing
         let running = self.running.clone();
@@ -287,14 +295,17 @@ impl DeviceAdapter for HassAdapter {
             debug!("HASS adapter '{}' stopped", name);
         });
 
-        info!("HASS adapter '{}' started, discovery topic: {}",
-              self.config.name, self.config.discovery_topic);
+        info!(
+            "HASS adapter '{}' started, discovery topic: {}",
+            self.config.name, self.config.discovery_topic
+        );
         Ok(())
     }
 
     async fn stop(&self) -> AdapterResult<()> {
         info!("Stopping HASS adapter: {}", self.config.name);
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
@@ -313,15 +324,68 @@ impl DeviceAdapter for HassAdapter {
     }
 
     fn list_devices(&self) -> Vec<String> {
-        self.devices.try_read().map(|v| v.clone()).unwrap_or_default()
+        self.devices
+            .try_read()
+            .map(|v| v.clone())
+            .unwrap_or_default()
+    }
+
+    async fn send_command(
+        &self,
+        device_id: &str,
+        _command_name: &str,
+        payload: String,
+        topic: Option<String>,
+    ) -> AdapterResult<()> {
+        // HASS adapters typically use command topics from discovery
+        let cmd_topic = topic.unwrap_or_else(|| {
+            format!(
+                "homeassistant/{}/{}/set",
+                self.get_device_component(device_id).unwrap_or("switch"),
+                device_id
+            )
+        });
+
+        info!(
+            "HASS adapter: Would send command to {} on topic {}",
+            device_id, cmd_topic
+        );
+        debug!("Payload: {}", payload);
+
+        Ok(())
+    }
+
+    fn connection_status(&self) -> super::super::adapter::ConnectionStatus {
+        if self.is_running() {
+            super::super::adapter::ConnectionStatus::Connected
+        } else {
+            super::super::adapter::ConnectionStatus::Disconnected
+        }
+    }
+
+    async fn subscribe_device(&self, device_id: &str) -> AdapterResult<()> {
+        // HASS devices are auto-discovered, subscription handled automatically
+        info!(
+            "HASS adapter: Device {} already tracked via discovery",
+            device_id
+        );
+        Ok(())
+    }
+
+    async fn unsubscribe_device(&self, _device_id: &str) -> AdapterResult<()> {
+        // HASS devices don't require explicit unsubscription
+        Ok(())
+    }
+
+    /// Get component type for a device (helper method)
+    fn get_device_component(&self, device_id: &str) -> Option<String> {
+        // This would need to be implemented based on discovery data
+        None
     }
 }
 
 /// Create a HASS adapter connected to an event bus.
-pub fn create_hass_adapter(
-    config: HassAdapterConfig,
-    event_bus: &EventBus,
-) -> Arc<HassAdapter> {
+pub fn create_hass_adapter(config: HassAdapterConfig, event_bus: &EventBus) -> Arc<HassAdapter> {
     let adapter = Arc::new(HassAdapter::new(config));
     let adapter_clone = adapter.clone();
     let event_bus = event_bus.clone();
@@ -381,7 +445,10 @@ mod tests {
         assert_eq!(adapter.component_to_device_type("sensor"), "sensor");
         assert_eq!(adapter.component_to_device_type("switch"), "switch");
         assert_eq!(adapter.component_to_device_type("climate"), "thermostat");
-        assert_eq!(adapter.component_to_device_type("unknown"), "unknown_device");
+        assert_eq!(
+            adapter.component_to_device_type("unknown"),
+            "unknown_device"
+        );
     }
 
     #[test]

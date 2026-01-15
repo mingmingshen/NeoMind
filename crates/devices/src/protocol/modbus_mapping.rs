@@ -2,13 +2,12 @@
 //!
 //! Maps device capabilities to Modbus registers and handles data type conversions.
 
+use crate::mdl::{MetricDataType, MetricValue};
+use crate::protocol::mapping::{
+    Address, MappingConfig, MappingError, MappingResult, ModbusRegisterType, ProtocolMapping,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::mdl::{MetricValue, MetricDataType};
-use crate::protocol::mapping::{
-    ProtocolMapping, Address, MappingConfig, MappingResult,
-    MappingError, ModbusRegisterType,
-};
 
 /// Modbus register mapping configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,35 +43,45 @@ impl ModbusDataType {
         match self {
             Self::Int16 => {
                 if data.len() < 2 {
-                    return Err(MappingError::ParseError("Insufficient data for i16".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for i16".to_string(),
+                    ));
                 }
                 let value = i16::from_be_bytes([data[0], data[1]]);
                 Ok(MetricValue::Integer(value as i64))
             }
             Self::Int32 => {
                 if data.len() < 4 {
-                    return Err(MappingError::ParseError("Insufficient data for i32".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for i32".to_string(),
+                    ));
                 }
                 let value = i32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 Ok(MetricValue::Integer(value as i64))
             }
             Self::Uint16 => {
                 if data.len() < 2 {
-                    return Err(MappingError::ParseError("Insufficient data for u16".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for u16".to_string(),
+                    ));
                 }
                 let value = u16::from_be_bytes([data[0], data[1]]);
                 Ok(MetricValue::Integer(value as i64))
             }
             Self::Uint32 => {
                 if data.len() < 4 {
-                    return Err(MappingError::ParseError("Insufficient data for u32".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for u32".to_string(),
+                    ));
                 }
                 let value = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 Ok(MetricValue::Integer(value as i64))
             }
             Self::Float32 => {
                 if data.len() < 4 {
-                    return Err(MappingError::ParseError("Insufficient data for f32".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for f32".to_string(),
+                    ));
                 }
                 let bytes: [u8; 4] = [data[0], data[1], data[2], data[3]];
                 let value = f32::from_be_bytes(bytes);
@@ -80,11 +89,12 @@ impl ModbusDataType {
             }
             Self::Float64 => {
                 if data.len() < 8 {
-                    return Err(MappingError::ParseError("Insufficient data for f64".to_string()));
+                    return Err(MappingError::ParseError(
+                        "Insufficient data for f64".to_string(),
+                    ));
                 }
                 let bytes: [u8; 8] = [
-                    data[0], data[1], data[2], data[3],
-                    data[4], data[5], data[6], data[7],
+                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
                 ];
                 let value = f64::from_be_bytes(bytes);
                 Ok(MetricValue::Float(value))
@@ -101,10 +111,14 @@ impl ModbusDataType {
     /// Serialize to bytes (big-endian Modbus standard).
     pub fn to_be_bytes(&self, value: &MetricValue) -> MappingResult<Vec<u8>> {
         match (self, value) {
-            (Self::Int16, MetricValue::Integer(v)) if *v >= i16::MIN as i64 && *v <= i16::MAX as i64 => {
+            (Self::Int16, MetricValue::Integer(v))
+                if *v >= i16::MIN as i64 && *v <= i16::MAX as i64 =>
+            {
                 Ok((*v as i16).to_be_bytes().to_vec())
             }
-            (Self::Int32, MetricValue::Integer(v)) if *v >= i32::MIN as i64 && *v <= i32::MAX as i64 => {
+            (Self::Int32, MetricValue::Integer(v))
+                if *v >= i32::MIN as i64 && *v <= i32::MAX as i64 =>
+            {
                 Ok((*v as i32).to_be_bytes().to_vec())
             }
             (Self::Uint16, MetricValue::Integer(v)) if *v >= 0 && *v <= u16::MAX as i64 => {
@@ -113,17 +127,12 @@ impl ModbusDataType {
             (Self::Uint32, MetricValue::Integer(v)) if *v >= 0 && *v <= u32::MAX as i64 => {
                 Ok((*v as u32).to_be_bytes().to_vec())
             }
-            (Self::Float32, MetricValue::Float(v)) => {
-                Ok((*v as f32).to_be_bytes().to_vec())
-            }
-            (Self::Float64, MetricValue::Float(v)) => {
-                Ok(v.to_be_bytes().to_vec())
-            }
-            (Self::Bool, MetricValue::Boolean(v)) => {
-                Ok(vec![if *v { 1 } else { 0 }])
-            }
+            (Self::Float32, MetricValue::Float(v)) => Ok((*v as f32).to_be_bytes().to_vec()),
+            (Self::Float64, MetricValue::Float(v)) => Ok(v.to_be_bytes().to_vec()),
+            (Self::Bool, MetricValue::Boolean(v)) => Ok(vec![if *v { 1 } else { 0 }]),
             (_, v) => Err(MappingError::SerializationError(format!(
-                "Cannot convert {:?} to {:?}", v, self
+                "Cannot convert {:?} to {:?}",
+                v, self
             ))),
         }
     }
@@ -205,11 +214,7 @@ impl ModbusMapping {
     }
 
     /// Apply scale and offset to a value.
-    fn apply_transform(
-        value: f64,
-        scale: Option<f64>,
-        offset: Option<f64>,
-    ) -> MetricValue {
+    fn apply_transform(value: f64, scale: Option<f64>, offset: Option<f64>) -> MetricValue {
         let mut result = value;
         if let Some(s) = scale {
             result *= s;
@@ -259,7 +264,9 @@ impl ProtocolMapping for ModbusMapping {
     }
 
     fn metric_address(&self, capability_name: &str) -> Option<Address> {
-        self.config.metric_mappings.get(capability_name)
+        self.config
+            .metric_mappings
+            .get(capability_name)
             .map(|mapping| Address::Modbus {
                 slave: mapping.slave,
                 register: mapping.register,
@@ -269,7 +276,9 @@ impl ProtocolMapping for ModbusMapping {
     }
 
     fn command_address(&self, command_name: &str) -> Option<Address> {
-        self.config.command_mappings.get(command_name)
+        self.config
+            .command_mappings
+            .get(command_name)
             .map(|mapping| Address::Modbus {
                 slave: mapping.slave,
                 register: mapping.register,
@@ -279,7 +288,10 @@ impl ProtocolMapping for ModbusMapping {
     }
 
     fn parse_metric(&self, capability_name: &str, raw_data: &[u8]) -> MappingResult<MetricValue> {
-        let mapping = self.config.metric_mappings.get(capability_name)
+        let mapping = self
+            .config
+            .metric_mappings
+            .get(capability_name)
             .ok_or_else(|| MappingError::CapabilityNotFound(capability_name.to_string()))?;
 
         let value = mapping.data_type.from_be_bytes(raw_data)?;
@@ -288,7 +300,9 @@ impl ProtocolMapping for ModbusMapping {
         if let (Some(scale), Some(offset)) = (mapping.scale, mapping.offset) {
             match value {
                 MetricValue::Float(f) => Ok(Self::apply_transform(f, Some(scale), Some(offset))),
-                MetricValue::Integer(i) => Ok(Self::apply_transform(i as f64, Some(scale), Some(offset))),
+                MetricValue::Integer(i) => {
+                    Ok(Self::apply_transform(i as f64, Some(scale), Some(offset)))
+                }
                 _ => Ok(value),
             }
         } else if let Some(scale) = mapping.scale {
@@ -313,20 +327,27 @@ impl ProtocolMapping for ModbusMapping {
         command_name: &str,
         params: &HashMap<String, MetricValue>,
     ) -> MappingResult<Vec<u8>> {
-        let mapping = self.config.command_mappings.get(command_name)
+        let mapping = self
+            .config
+            .command_mappings
+            .get(command_name)
             .ok_or_else(|| MappingError::CommandNotFound(command_name.to_string()))?;
 
         // For commands with parameter mapping, serialize the primary parameter
         if let Some((param_name, register_mapping)) = mapping.param_mapping.iter().next() {
-            let value = params.get(param_name)
+            let value = params
+                .get(param_name)
                 .or_else(|| params.values().next())
-                .ok_or_else(|| MappingError::SerializationError("No parameter provided".to_string()))?;
+                .ok_or_else(|| {
+                    MappingError::SerializationError("No parameter provided".to_string())
+                })?;
 
             register_mapping.data_type.to_be_bytes(value)
         } else {
             // Use the command's data type with the first parameter
-            let value = params.values().next()
-                .ok_or_else(|| MappingError::SerializationError("No parameter provided".to_string()))?;
+            let value = params.values().next().ok_or_else(|| {
+                MappingError::SerializationError("No parameter provided".to_string())
+            })?;
 
             mapping.data_type.to_be_bytes(value)
         }
@@ -527,8 +548,8 @@ mod tests {
                 0x0000,
                 ModbusRegisterType::InputRegister,
                 ModbusDataType::Int16,
-                0.1,  // scale
-                0.0,  // offset
+                0.1, // scale
+                0.0, // offset
             )
             .build();
 
@@ -540,13 +561,17 @@ mod tests {
 
     #[test]
     fn test_serialize_int16() {
-        let bytes = ModbusDataType::Int16.to_be_bytes(&MetricValue::Integer(1000)).unwrap();
+        let bytes = ModbusDataType::Int16
+            .to_be_bytes(&MetricValue::Integer(1000))
+            .unwrap();
         assert_eq!(bytes, vec![0x03, 0xE8]); // 1000 in big-endian
     }
 
     #[test]
     fn test_serialize_float32() {
-        let bytes = ModbusDataType::Float32.to_be_bytes(&MetricValue::Float(25.5)).unwrap();
+        let bytes = ModbusDataType::Float32
+            .to_be_bytes(&MetricValue::Float(25.5))
+            .unwrap();
         assert_eq!(bytes.len(), 4);
     }
 }

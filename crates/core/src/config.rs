@@ -92,21 +92,42 @@ mod tests {
     #[test]
     fn test_normalize_ollama_endpoint() {
         // 移除 /v1 后缀
-        assert_eq!(normalize_ollama_endpoint("http://localhost:11434/v1".to_string()), "http://localhost:11434");
-        assert_eq!(normalize_ollama_endpoint("http://localhost:11434/v1/".to_string()), "http://localhost:11434");
+        assert_eq!(
+            normalize_ollama_endpoint("http://localhost:11434/v1".to_string()),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_ollama_endpoint("http://localhost:11434/v1/".to_string()),
+            "http://localhost:11434"
+        );
         // 无需修改
-        assert_eq!(normalize_ollama_endpoint("http://localhost:11434".to_string()), "http://localhost:11434");
+        assert_eq!(
+            normalize_ollama_endpoint("http://localhost:11434".to_string()),
+            "http://localhost:11434"
+        );
         // 移除尾部斜杠
-        assert_eq!(normalize_ollama_endpoint("http://localhost:11434/".to_string()), "http://localhost:11434");
+        assert_eq!(
+            normalize_ollama_endpoint("http://localhost:11434/".to_string()),
+            "http://localhost:11434"
+        );
     }
 
     #[test]
     fn test_normalize_openai_endpoint() {
         // 添加 /v1 后缀
-        assert_eq!(normalize_openai_endpoint("https://api.openai.com".to_string()), "https://api.openai.com/v1");
-        assert_eq!(normalize_openai_endpoint("https://api.openai.com/".to_string()), "https://api.openai.com/v1");
+        assert_eq!(
+            normalize_openai_endpoint("https://api.openai.com".to_string()),
+            "https://api.openai.com/v1"
+        );
+        assert_eq!(
+            normalize_openai_endpoint("https://api.openai.com/".to_string()),
+            "https://api.openai.com/v1"
+        );
         // 已有 /v1 无需修改
-        assert_eq!(normalize_openai_endpoint("https://api.openai.com/v1".to_string()), "https://api.openai.com/v1");
+        assert_eq!(
+            normalize_openai_endpoint("https://api.openai.com/v1".to_string()),
+            "https://api.openai.com/v1"
+        );
     }
 
     #[test]

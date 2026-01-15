@@ -55,7 +55,10 @@ impl AlertManager {
         self.alerts.write().await.insert(id.clone(), alert.clone());
 
         if is_active {
-            self.active_alerts.write().await.insert(id.clone(), alert.clone());
+            self.active_alerts
+                .write()
+                .await
+                .insert(id.clone(), alert.clone());
         }
 
         // Add to history
@@ -238,12 +241,8 @@ impl AlertManager {
             *by_severity
                 .entry(format!("{}", alert.severity))
                 .or_insert(0) += 1;
-            *by_status
-                .entry(format!("{}", alert.status))
-                .or_insert(0) += 1;
-            *by_source
-                .entry(alert.source.clone())
-                .or_insert(0) += 1;
+            *by_status.entry(format!("{}", alert.status)).or_insert(0) += 1;
+            *by_source.entry(alert.source.clone()).or_insert(0) += 1;
         }
 
         AlertStats {
@@ -339,11 +338,7 @@ pub struct AlwaysTrueRule {
 }
 
 impl AlwaysTrueRule {
-    pub fn new(
-        severity: AlertSeverity,
-        title_template: String,
-        message_template: String,
-    ) -> Self {
+    pub fn new(severity: AlertSeverity, title_template: String, message_template: String) -> Self {
         Self {
             severity,
             title_template,
@@ -413,8 +408,8 @@ impl CustomRule {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::channels::MemoryChannel;
+    use super::*;
 
     #[tokio::test]
     async fn test_alert_manager_creation() {

@@ -8,14 +8,13 @@
 //! - Image storage performance
 //! - Concurrent operations
 
-use std::time::Instant;
-use edge_ai_devices::{TimeSeriesStorage, DataPoint, MetricValue};
+use edge_ai_devices::{DataPoint, MetricValue, TimeSeriesStorage};
 use std::collections::HashMap;
+use std::time::Instant;
 
 #[tokio::test]
 async fn test_telemetry_write_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_device_perf";
     let metric = "temperature";
@@ -30,7 +29,7 @@ async fn test_telemetry_write_performance() {
             value: MetricValue::Float(20.0 + (i as f64 % 10.0)),
             quality: None,
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
     let elapsed = start.elapsed();
@@ -38,16 +37,22 @@ async fn test_telemetry_write_performance() {
 
     println!("Writing {} data points took: {:?}", count, elapsed);
     println!("Average time per write: {:.2} μs", per_operation);
-    println!("Writes per second: {:.0}", count as f64 / elapsed.as_secs_f64());
+    println!(
+        "Writes per second: {:.0}",
+        count as f64 / elapsed.as_secs_f64()
+    );
 
     // Performance requirement: 10000 data points < 5 seconds
-    assert!(elapsed.as_secs() < 5, "Write performance requirement not met: {:?}", elapsed);
+    assert!(
+        elapsed.as_secs() < 5,
+        "Write performance requirement not met: {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
 async fn test_telemetry_batch_write_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_device_batch";
     let metric = "humidity";
@@ -65,20 +70,29 @@ async fn test_telemetry_batch_write_performance() {
         });
     }
 
-    storage.write_batch(device_id, metric, points).unwrap();
+    storage
+        .write_batch(device_id, metric, points)
+        .await
+        .unwrap();
 
     let elapsed = start.elapsed();
     println!("Batch writing {} data points took: {:?}", count, elapsed);
-    println!("Batch writes per second: {:.0}", count as f64 / elapsed.as_secs_f64());
+    println!(
+        "Batch writes per second: {:.0}",
+        count as f64 / elapsed.as_secs_f64()
+    );
 
     // Batch write should be faster than individual writes
-    assert!(elapsed.as_secs() < 2, "Batch write performance requirement not met: {:?}", elapsed);
+    assert!(
+        elapsed.as_secs() < 2,
+        "Batch write performance requirement not met: {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
 async fn test_telemetry_query_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_device_query";
     let metric = "pressure";
@@ -92,25 +106,31 @@ async fn test_telemetry_query_performance() {
             value: MetricValue::Float(1000.0 + (i as f64)),
             quality: Some(0.95),
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
     // Query performance test
     let start = Instant::now();
-    let result = storage.query(device_id, metric, now, now + count as i64 - 1).unwrap();
+    let result = storage
+        .query(device_id, metric, now, now + count as i64 - 1)
+        .await
+        .unwrap();
 
     let elapsed = start.elapsed();
     println!("Querying {} data points took: {:?}", result.len(), elapsed);
 
     // Performance requirement: query 1000 data points < 100ms
-    assert!(elapsed.as_millis() < 100, "Query performance requirement not met: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 100,
+        "Query performance requirement not met: {:?}",
+        elapsed
+    );
     assert_eq!(result.len(), count, "Should retrieve all data points");
 }
 
 #[tokio::test]
 async fn test_telemetry_aggregation_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_device_agg";
     let metric = "energy";
@@ -124,12 +144,15 @@ async fn test_telemetry_aggregation_performance() {
             value: MetricValue::Float(100.0 + (i as f64 % 50.0)),
             quality: None,
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
     // Aggregation performance test
     let start = Instant::now();
-    let agg = storage.aggregate(device_id, metric, now, now + count as i64 - 1).unwrap();
+    let agg = storage
+        .aggregate(device_id, metric, now, now + count as i64 - 1)
+        .await
+        .unwrap();
 
     let elapsed = start.elapsed();
     println!("Aggregating {} data points took: {:?}", count, elapsed);
@@ -141,17 +164,25 @@ async fn test_telemetry_aggregation_performance() {
     assert!(agg.max.is_some());
     assert!(agg.sum.is_some());
 
-    println!("Aggregation results: count={}, avg={:.2}, min={:.2}, max={:.2}",
-        agg.count, agg.avg.unwrap(), agg.min.unwrap(), agg.max.unwrap());
+    println!(
+        "Aggregation results: count={}, avg={:.2}, min={:.2}, max={:.2}",
+        agg.count,
+        agg.avg.unwrap(),
+        agg.min.unwrap(),
+        agg.max.unwrap()
+    );
 
     // Performance requirement: aggregation should be fast
-    assert!(elapsed.as_millis() < 500, "Aggregation performance requirement not met: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 500,
+        "Aggregation performance requirement not met: {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
 async fn test_telemetry_latest_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_device_latest";
     let metric = "voltage";
@@ -164,18 +195,22 @@ async fn test_telemetry_latest_performance() {
             value: MetricValue::Float(220.0 + (i as f64 % 10.0)),
             quality: None,
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
     // Latest query performance test
     let start = Instant::now();
-    let latest = storage.latest(device_id, metric).unwrap();
+    let latest = storage.latest(device_id, metric).await.unwrap();
 
     let elapsed = start.elapsed();
     println!("Getting latest data point took: {:?}", elapsed);
 
     // Should be very fast
-    assert!(elapsed.as_millis() < 50, "Latest query performance requirement not met: {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 50,
+        "Latest query performance requirement not met: {:?}",
+        elapsed
+    );
     assert!(latest.is_some());
     assert_eq!(latest.unwrap().timestamp, now + 99);
 }
@@ -184,8 +219,8 @@ async fn test_telemetry_latest_performance() {
 async fn test_telemetry_concurrent_write_performance() {
     use tokio::task::JoinSet;
 
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = std::sync::Arc::new(TimeSeriesStorage::new(db));
+    let storage =
+        std::sync::Arc::new(TimeSeriesStorage::memory().expect("Failed to create memory storage"));
 
     let num_writers = 10;
     let writes_per_writer = 1000;
@@ -207,7 +242,10 @@ async fn test_telemetry_concurrent_write_performance() {
                     value: MetricValue::Float((writer_id * 1000 + i) as f64),
                     quality: None,
                 };
-                storage_clone.write(&device_id, metric, point).unwrap();
+                storage_clone
+                    .write(&device_id, metric, point)
+                    .await
+                    .unwrap();
             }
         });
     }
@@ -218,25 +256,35 @@ async fn test_telemetry_concurrent_write_performance() {
     let elapsed = start.elapsed();
     let total_writes = num_writers * writes_per_writer;
 
-    println!("Concurrent writes: {} writers × {} = {} writes in {:?}",
-        num_writers, writes_per_writer, total_writes, elapsed);
-    println!("Writes per second: {:.0}", total_writes as f64 / elapsed.as_secs_f64());
+    println!(
+        "Concurrent writes: {} writers × {} = {} writes in {:?}",
+        num_writers, writes_per_writer, total_writes, elapsed
+    );
+    println!(
+        "Writes per second: {:.0}",
+        total_writes as f64 / elapsed.as_secs_f64()
+    );
 
     // Verify all data was written
     let mut total_count = 0;
     for writer_id in 0..num_writers {
         let device_id = format!("concurrent_device_{}", writer_id);
-        let result = storage.query(&device_id, "value", 0, i64::MAX).unwrap();
+        let result = storage
+            .query(&device_id, "value", 0, i64::MAX)
+            .await
+            .unwrap();
         total_count += result.len();
     }
 
-    assert_eq!(total_count, total_writes, "All concurrent writes should succeed");
+    assert_eq!(
+        total_count, total_writes,
+        "All concurrent writes should succeed"
+    );
 }
 
 #[tokio::test]
 async fn test_telemetry_multi_metric_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_multi_metric";
     let metrics = vec!["temp", "humidity", "pressure", "voltage", "current"];
@@ -253,27 +301,33 @@ async fn test_telemetry_multi_metric_performance() {
                 value: MetricValue::Float(i as f64),
                 quality: None,
             };
-            storage.write(device_id, metric, point).unwrap();
+            storage.write(device_id, metric, point).await.unwrap();
         }
     }
 
     let elapsed = start.elapsed();
     let total_points = metrics.len() * points_per_metric;
 
-    println!("Writing {} data points across {} metrics took: {:?}",
-        total_points, metrics.len(), elapsed);
+    println!(
+        "Writing {} data points across {} metrics took: {:?}",
+        total_points,
+        metrics.len(),
+        elapsed
+    );
 
     // Verify all metrics
     for metric in &metrics {
-        let result = storage.query(device_id, metric, now, now + points_per_metric as i64 - 1).unwrap();
+        let result = storage
+            .query(device_id, metric, now, now + points_per_metric as i64 - 1)
+            .await
+            .unwrap();
         assert_eq!(result.len(), points_per_metric);
     }
 }
 
 #[tokio::test]
 async fn test_telemetry_delete_old_data_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "test_device_delete";
     let metric = "old_data";
@@ -287,31 +341,49 @@ async fn test_telemetry_delete_old_data_performance() {
             value: MetricValue::Float(i as f64),
             quality: None,
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
-    let before_count = storage.query(device_id, metric, 0, i64::MAX).unwrap().len();
+    let before_count = storage
+        .query(device_id, metric, 0, i64::MAX)
+        .await
+        .unwrap()
+        .len();
     assert_eq!(before_count, count);
 
     // Delete old data
     let start = Instant::now();
     let cutoff = chrono::Utc::now().timestamp() - 86400 * 7; // 7 days ago
-    storage.delete_before(cutoff).unwrap();
+    storage.delete_before(cutoff).await.unwrap();
     let elapsed = start.elapsed();
 
-    println!("Deleting {} old data points took: {:?}", before_count, elapsed);
+    println!(
+        "Deleting {} old data points took: {:?}",
+        before_count, elapsed
+    );
 
-    let after_count = storage.query(device_id, metric, 0, i64::MAX).unwrap().len();
-    println!("Deleted {} points, remaining {}", before_count - after_count, after_count);
+    let after_count = storage
+        .query(device_id, metric, 0, i64::MAX)
+        .await
+        .unwrap()
+        .len();
+    println!(
+        "Deleted {} points, remaining {}",
+        before_count - after_count,
+        after_count
+    );
 
     // Performance requirement: deletion should be reasonably fast
-    assert!(elapsed.as_secs() < 5, "Delete performance requirement not met: {:?}", elapsed);
+    assert!(
+        elapsed.as_secs() < 5,
+        "Delete performance requirement not met: {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
 async fn test_image_storage_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "camera_test";
     let metric = "image";
@@ -329,25 +401,40 @@ async fn test_image_storage_performance() {
             value: MetricValue::Binary(image_data),
             quality: None,
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
     let elapsed = start.elapsed();
     let total_mb = (count * image_size) / (1024 * 1024);
 
-    println!("Storing {} images ({}MB total) took: {:?}", count, total_mb, elapsed);
-    println!("Image storage rate: {:.2} MB/s", total_mb as f64 / elapsed.as_secs_f64());
-    println!("Images per second: {:.2}", count as f64 / elapsed.as_secs_f64());
+    println!(
+        "Storing {} images ({}MB total) took: {:?}",
+        count, total_mb, elapsed
+    );
+    println!(
+        "Image storage rate: {:.2} MB/s",
+        total_mb as f64 / elapsed.as_secs_f64()
+    );
+    println!(
+        "Images per second: {:.2}",
+        count as f64 / elapsed.as_secs_f64()
+    );
 
     // Performance requirement: 100 images (1MB each) < 30 seconds
-    assert!(elapsed.as_secs() < 30, "Image storage performance requirement not met: {:?}", elapsed);
-    assert!(count as f64 / elapsed.as_secs_f64() > 3.0, "Should store at least 3 images/second");
+    assert!(
+        elapsed.as_secs() < 30,
+        "Image storage performance requirement not met: {:?}",
+        elapsed
+    );
+    assert!(
+        count as f64 / elapsed.as_secs_f64() > 3.0,
+        "Should store at least 3 images/second"
+    );
 }
 
 #[tokio::test]
 async fn test_image_retrieval_performance() {
-    let db = sled::Config::new().temporary(true).open().unwrap();
-    let storage = TimeSeriesStorage::new(db);
+    let storage = TimeSeriesStorage::memory().expect("Failed to create memory storage");
 
     let device_id = "camera_retrieve";
     let metric = "image";
@@ -362,7 +449,7 @@ async fn test_image_retrieval_performance() {
             value: MetricValue::Binary(image_data),
             quality: None,
         };
-        storage.write(device_id, metric, point).unwrap();
+        storage.write(device_id, metric, point).await.unwrap();
     }
 
     // Test retrieval performance
@@ -370,7 +457,10 @@ async fn test_image_retrieval_performance() {
 
     for i in 0..10 {
         let start = Instant::now();
-        let result = storage.query(device_id, metric, now + i, now + i).unwrap();
+        let result = storage
+            .query(device_id, metric, now + i, now + i)
+            .await
+            .unwrap();
         let elapsed = start.elapsed();
         total_retrieval_time += elapsed;
 
@@ -384,8 +474,15 @@ async fn test_image_retrieval_performance() {
     }
 
     let avg_time = total_retrieval_time / 10;
-    println!("Average image retrieval time: {:?} (for 1MB image)", avg_time);
+    println!(
+        "Average image retrieval time: {:?} (for 1MB image)",
+        avg_time
+    );
 
     // Performance requirement: single image retrieval < 50ms
-    assert!(avg_time.as_millis() < 50, "Image retrieval performance requirement not met: {:?}", avg_time);
+    assert!(
+        avg_time.as_millis() < 50,
+        "Image retrieval performance requirement not met: {:?}",
+        avg_time
+    );
 }

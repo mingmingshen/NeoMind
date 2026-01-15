@@ -5,8 +5,11 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::command::{CommandRequest, CommandId, CommandStatus, CommandResult, RetryPolicy, CommandSource, CommandPriority};
-use crate::queue::{QueueError, CommandQueue};
+use crate::command::{
+    CommandId, CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus,
+    RetryPolicy,
+};
+use crate::queue::{CommandQueue, QueueError};
 
 /// Command state store error types.
 #[derive(Debug, thiserror::Error)]
@@ -57,15 +60,21 @@ impl CommandStateStore {
     /// Retrieve a command by ID.
     pub async fn get(&self, id: &CommandId) -> Result<CommandRequest, StateError> {
         let cache = self.cache.read().await;
-        cache.get(id)
+        cache
+            .get(id)
             .map(|c| c.clone())
             .ok_or_else(|| StateError::NotFound(id.clone()))
     }
 
     /// Update command status.
-    pub async fn update_status(&self, id: &CommandId, status: CommandStatus) -> Result<(), StateError> {
+    pub async fn update_status(
+        &self,
+        id: &CommandId,
+        status: CommandStatus,
+    ) -> Result<(), StateError> {
         let mut cache = self.cache.write().await;
-        let mut cmd = cache.get_mut(id)
+        let mut cmd = cache
+            .get_mut(id)
             .ok_or_else(|| StateError::NotFound(id.clone()))?;
 
         cmd.update_status(status);
@@ -73,9 +82,14 @@ impl CommandStateStore {
     }
 
     /// Update command result.
-    pub async fn set_result(&self, id: &CommandId, result: CommandResult) -> Result<(), StateError> {
+    pub async fn set_result(
+        &self,
+        id: &CommandId,
+        result: CommandResult,
+    ) -> Result<(), StateError> {
         let mut cache = self.cache.write().await;
-        let mut cmd = cache.get_mut(id)
+        let mut cmd = cache
+            .get_mut(id)
             .ok_or_else(|| StateError::NotFound(id.clone()))?;
 
         cmd.set_result(result);
@@ -85,7 +99,8 @@ impl CommandStateStore {
     /// Increment command attempt counter.
     pub async fn increment_attempt(&self, id: &CommandId) -> Result<u32, StateError> {
         let mut cache = self.cache.write().await;
-        let mut cmd = cache.get_mut(id)
+        let mut cmd = cache
+            .get_mut(id)
             .ok_or_else(|| StateError::NotFound(id.clone()))?;
 
         cmd.increment_attempt();
@@ -101,7 +116,8 @@ impl CommandStateStore {
     /// List commands by status.
     pub async fn list_by_status(&self, status: CommandStatus) -> Vec<CommandRequest> {
         let cache = self.cache.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|c| c.status == status)
             .map(|c| c.clone())
             .collect()
@@ -110,7 +126,8 @@ impl CommandStateStore {
     /// List commands by device.
     pub async fn list_by_device(&self, device_id: &str) -> Vec<CommandRequest> {
         let cache = self.cache.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|c| c.device_id == device_id)
             .map(|c| c.clone())
             .collect()
@@ -119,7 +136,8 @@ impl CommandStateStore {
     /// List commands by source.
     pub async fn list_by_source(&self, source_type: &str) -> Vec<CommandRequest> {
         let cache = self.cache.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|c| c.source.type_name() == source_type)
             .map(|c| c.clone())
             .collect()
@@ -128,7 +146,8 @@ impl CommandStateStore {
     /// Get pending commands for retry.
     pub async fn get_retryable_commands(&self) -> Vec<CommandRequest> {
         let cache = self.cache.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|c| c.can_retry() && !c.is_expired())
             .map(|c| c.clone())
             .collect()
@@ -137,7 +156,8 @@ impl CommandStateStore {
     /// Get expired commands.
     pub async fn get_expired_commands(&self) -> Vec<CommandRequest> {
         let cache = self.cache.read().await;
-        cache.iter()
+        cache
+            .iter()
             .filter(|c| c.is_expired() && !c.status.is_terminal())
             .map(|c| c.clone())
             .collect()
@@ -290,7 +310,9 @@ impl CommandManager {
         command.update_status(crate::command::CommandStatus::Queued);
 
         // Store the command
-        self.state.store(&command).await
+        self.state
+            .store(&command)
+            .await
             .map_err(|e| QueueError::Failed(e.to_string()))?;
 
         // Enqueue the command
@@ -314,12 +336,17 @@ impl CommandManager {
 
     /// Cancel a command.
     pub async fn cancel(&self, id: &CommandId) -> Result<(), StateError> {
-        self.state.update_status(id, crate::command::CommandStatus::Cancelled).await
+        self.state
+            .update_status(id, crate::command::CommandStatus::Cancelled)
+            .await
     }
 
     /// Retry a failed command.
     pub async fn retry(&self, id: &CommandId) -> Result<(), QueueError> {
-        let mut cmd = self.state.get(id).await
+        let mut cmd = self
+            .state
+            .get(id)
+            .await
             .map_err(|e| QueueError::Failed(e.to_string()))?;
 
         if !cmd.can_retry() {
@@ -331,7 +358,9 @@ impl CommandManager {
         cmd.update_status(crate::command::CommandStatus::Queued);
 
         // Store updated command
-        self.state.store(&cmd).await
+        self.state
+            .store(&cmd)
+            .await
             .map_err(|e| QueueError::Failed(e.to_string()))?;
 
         // Re-enqueue
@@ -397,7 +426,10 @@ mod tests {
         let id = cmd.id.clone();
 
         store.store(&cmd).await.unwrap();
-        store.update_status(&id, CommandStatus::Completed).await.unwrap();
+        store
+            .update_status(&id, CommandStatus::Completed)
+            .await
+            .unwrap();
 
         let retrieved = store.get(&id).await.unwrap();
         assert_eq!(retrieved.status, CommandStatus::Completed);
@@ -417,7 +449,10 @@ mod tests {
         store.store(&cmd1).await.unwrap();
         store.store(&cmd2).await.unwrap();
 
-        store.update_status(&cmd1.id, CommandStatus::Completed).await.unwrap();
+        store
+            .update_status(&cmd1.id, CommandStatus::Completed)
+            .await
+            .unwrap();
 
         let pending = store.list_by_status(CommandStatus::Pending).await;
         assert_eq!(pending.len(), 1);

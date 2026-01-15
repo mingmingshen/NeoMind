@@ -199,7 +199,10 @@ mod tests {
         enum_from_str!(TestStatus, [Active => "active", Inactive => "inactive"]);
 
         assert_eq!(TestStatus::Active.to_string(), "active");
-        assert_eq!("inactive".parse::<TestStatus>().unwrap(), TestStatus::Inactive);
+        assert_eq!(
+            "inactive".parse::<TestStatus>().unwrap(),
+            TestStatus::Inactive
+        );
 
         assert!("unknown".parse::<TestStatus>().is_err());
     }

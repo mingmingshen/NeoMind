@@ -12,16 +12,13 @@ use serde::{Deserialize, Serialize};
 use crate::Error;
 
 // Session table: key = session_id, value = timestamp
-const SESSIONS_TABLE: TableDefinition<&str, i64> =
-    TableDefinition::new("sessions");
+const SESSIONS_TABLE: TableDefinition<&str, i64> = TableDefinition::new("sessions");
 
 // Session metadata table: key = session_id, value = JSON metadata (title, etc.)
-const SESSIONS_META_TABLE: TableDefinition<&str, Vec<u8>> =
-    TableDefinition::new("sessions_meta");
+const SESSIONS_META_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("sessions_meta");
 
 // History table: key = (session_id, message_index), value = Message (serialized)
-const HISTORY_TABLE: TableDefinition<(&str, u64), Vec<u8>> =
-    TableDefinition::new("history");
+const HISTORY_TABLE: TableDefinition<(&str, u64), Vec<u8>> = TableDefinition::new("history");
 
 /// Session metadata (title, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,14 +138,20 @@ impl SessionStore {
     /// Uses a singleton pattern to prevent multiple opens of the same database.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Arc<Self>, Error> {
         let path_str = path.as_ref().to_string_lossy().to_string();
-        eprintln!("[DEBUG SessionStore::open] Opening session store at: {}", path_str);
+        eprintln!(
+            "[DEBUG SessionStore::open] Opening session store at: {}",
+            path_str
+        );
 
         // Check if we already have a store for this path
         {
             let singleton = SESSION_STORE_SINGLETON.lock().unwrap();
             if let Some(store) = singleton.as_ref() {
                 if store.path == path_str {
-                    eprintln!("[DEBUG SessionStore::open] Returning cached store for: {}", path_str);
+                    eprintln!(
+                        "[DEBUG SessionStore::open] Returning cached store for: {}",
+                        path_str
+                    );
                     return Ok(store.clone());
                 }
             }
@@ -156,7 +159,11 @@ impl SessionStore {
 
         // Create new store and save to singleton
         let path_ref = path.as_ref();
-        eprintln!("[DEBUG SessionStore::open] Path exists: {}, is_file: {}", path_ref.exists(), path_ref.is_file());
+        eprintln!(
+            "[DEBUG SessionStore::open] Path exists: {}, is_file: {}",
+            path_ref.exists(),
+            path_ref.is_file()
+        );
         let db = if path_ref.exists() {
             eprintln!("[DEBUG SessionStore::open] Opening existing database");
             Database::open(path_ref)?
@@ -190,11 +197,7 @@ impl SessionStore {
     /// Save message history for a session.
     /// NOTE: If messages is empty and history exists, this will NOT clear the history.
     /// This prevents accidental data loss when called with stale/incomplete data.
-    pub fn save_history(
-        &self,
-        session_id: &str,
-        messages: &[SessionMessage],
-    ) -> Result<(), Error> {
+    pub fn save_history(&self, session_id: &str, messages: &[SessionMessage]) -> Result<(), Error> {
         // If messages is empty, don't overwrite existing history
         // This prevents accidental data loss
         if messages.is_empty() {
@@ -208,7 +211,10 @@ impl SessionStore {
                 if let Ok(mut r) = range {
                     if r.next().is_some() {
                         // Existing history found, don't clear it
-                        eprintln!("[DEBUG save_history] Refusing to clear existing history for session {}", session_id);
+                        eprintln!(
+                            "[DEBUG save_history] Refusing to clear existing history for session {}",
+                            session_id
+                        );
                         return Ok(());
                     }
                 }
@@ -297,9 +303,97 @@ impl SessionStore {
         Ok(messages)
     }
 
+    /// Append a single message to session history (incremental save).
+    /// This is more efficient than save_history for adding new messages.
+    pub fn append_message(&self, session_id: &str, message: &SessionMessage) -> Result<u64, Error> {
+        let write_txn = self.db.begin_write()?;
+        let index = {
+            let mut table = write_txn.open_table(HISTORY_TABLE)?;
+
+            // Find the next available index
+            let start_key = (session_id, 0u64);
+            let end_key = (session_id, u64::MAX);
+
+            let mut max_index: u64 = 0;
+            for result in table.range(start_key..=end_key)? {
+                let (key, _) = result?;
+                let idx = key.value().1;
+                if idx >= max_index {
+                    max_index = idx + 1;
+                }
+            }
+
+            // Insert the new message
+            let key = (session_id, max_index);
+            let value = bincode::serialize(message)?;
+            table.insert(key, value)?;
+
+            max_index
+        };
+        write_txn.commit()?;
+        Ok(index)
+    }
+
+    /// Append multiple messages to session history (batch incremental save).
+    /// More efficient than save_history when adding new messages.
+    pub fn append_messages(
+        &self,
+        session_id: &str,
+        messages: &[SessionMessage],
+    ) -> Result<usize, Error> {
+        if messages.is_empty() {
+            return Ok(0);
+        }
+
+        let write_txn = self.db.begin_write()?;
+        let count = {
+            let mut table = write_txn.open_table(HISTORY_TABLE)?;
+
+            // Find the next available index
+            let start_key = (session_id, 0u64);
+            let end_key = (session_id, u64::MAX);
+
+            let mut next_index: u64 = 0;
+            for result in table.range(start_key..=end_key)? {
+                let (key, _) = result?;
+                let idx = key.value().1;
+                if idx >= next_index {
+                    next_index = idx + 1;
+                }
+            }
+
+            // Insert all messages
+            for message in messages {
+                let key = (session_id, next_index);
+                let value = bincode::serialize(message)?;
+                table.insert(key, value)?;
+                next_index += 1;
+            }
+
+            messages.len()
+        };
+        write_txn.commit()?;
+        Ok(count)
+    }
+
+    /// Get the message count for a session without loading all messages.
+    pub fn message_count(&self, session_id: &str) -> Result<usize, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(HISTORY_TABLE)?;
+
+        let start_key = (session_id, 0u64);
+        let end_key = (session_id, u64::MAX);
+
+        let count = table.range(start_key..=end_key)?.count();
+        Ok(count)
+    }
+
     /// Delete a session.
     pub fn delete_session(&self, session_id: &str) -> Result<(), Error> {
-        eprintln!("[DEBUG SessionStore] delete_session called for: {}", session_id);
+        eprintln!(
+            "[DEBUG SessionStore] delete_session called for: {}",
+            session_id
+        );
         let write_txn = self.db.begin_write()?;
         eprintln!("[DEBUG SessionStore] write transaction started");
 
@@ -335,7 +429,10 @@ impl SessionStore {
                 keys_to_delete.push((sid.to_string(), idx));
             }
             drop(range);
-            eprintln!("[DEBUG SessionStore] found {} history keys to delete", keys_to_delete.len());
+            eprintln!(
+                "[DEBUG SessionStore] found {} history keys to delete",
+                keys_to_delete.len()
+            );
 
             for key in &keys_to_delete {
                 history_table.remove((key.0.as_str(), key.1))?;
@@ -378,7 +475,11 @@ impl SessionStore {
     }
 
     /// Save session metadata (title, etc.).
-    pub fn save_session_metadata(&self, session_id: &str, metadata: &SessionMetadata) -> Result<(), Error> {
+    pub fn save_session_metadata(
+        &self,
+        session_id: &str,
+        metadata: &SessionMetadata,
+    ) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SESSIONS_META_TABLE)?;
@@ -494,29 +595,41 @@ mod tests {
         store.save_session_id("test-session").unwrap();
 
         // Initially no metadata - table might not exist, which is fine
-        let meta = store.get_session_metadata("test-session").unwrap_or_else(|_| SessionMetadata::default());
+        let meta = store
+            .get_session_metadata("test-session")
+            .unwrap_or_else(|_| SessionMetadata::default());
         assert!(meta.title.is_none());
 
         // Set title
-        store.save_session_metadata("test-session", &SessionMetadata {
-            title: Some("My Chat Session".to_string()),
-        }).unwrap();
+        store
+            .save_session_metadata(
+                "test-session",
+                &SessionMetadata {
+                    title: Some("My Chat Session".to_string()),
+                },
+            )
+            .unwrap();
 
         // Get title
         let meta = store.get_session_metadata("test-session").unwrap();
         assert_eq!(meta.title, Some("My Chat Session".to_string()));
 
         // Update with different title
-        store.save_session_metadata("test-session", &SessionMetadata {
-            title: Some("New Title".to_string()),
-        }).unwrap();
+        store
+            .save_session_metadata(
+                "test-session",
+                &SessionMetadata {
+                    title: Some("New Title".to_string()),
+                },
+            )
+            .unwrap();
         let meta = store.get_session_metadata("test-session").unwrap();
         assert_eq!(meta.title, Some("New Title".to_string()));
 
         // Clear title
-        store.save_session_metadata("test-session", &SessionMetadata {
-            title: None,
-        }).unwrap();
+        store
+            .save_session_metadata("test-session", &SessionMetadata { title: None })
+            .unwrap();
         let meta = store.get_session_metadata("test-session").unwrap();
         assert!(meta.title.is_none());
     }
@@ -542,18 +655,15 @@ mod tests {
 
     #[test]
     fn test_session_message_builder() {
-        let msg = SessionMessage::user("test")
-            .with_timestamp(12345);
+        let msg = SessionMessage::user("test").with_timestamp(12345);
         assert_eq!(msg.content, "test");
         assert_eq!(msg.timestamp, 12345);
 
-        let msg = SessionMessage::assistant("response")
-            .with_thinking("Let me think...");
+        let msg = SessionMessage::assistant("response").with_thinking("Let me think...");
         assert_eq!(msg.thinking, Some("Let me think...".to_string()));
 
         let tool_calls = vec![serde_json::json!({"name": "test"})];
-        let msg = SessionMessage::assistant("I'll use a tool")
-            .with_tool_calls(tool_calls);
+        let msg = SessionMessage::assistant("I'll use a tool").with_tool_calls(tool_calls);
         assert!(msg.tool_calls.is_some());
     }
 }

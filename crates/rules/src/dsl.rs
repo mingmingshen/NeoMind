@@ -86,9 +86,17 @@ pub enum RuleAction {
     /// Send a notification.
     Notify { message: String },
     /// Execute a device command.
-    Execute { device_id: String, command: String, params: HashMap<String, serde_json::Value> },
+    Execute {
+        device_id: String,
+        command: String,
+        params: HashMap<String, serde_json::Value>,
+    },
     /// Log a message.
-    Log { level: LogLevel, message: String, severity: Option<String> },
+    Log {
+        level: LogLevel,
+        message: String,
+        severity: Option<String>,
+    },
 }
 
 /// Log level.
@@ -150,13 +158,14 @@ impl RuleDslParser {
 
         // Remove JSON string escaping if present (quotes around entire DSL)
         let trimmed = processed.trim();
-        if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
-           (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
             if let Ok(unescaped) = serde_json::from_str::<String>(trimmed) {
                 processed = unescaped;
             } else {
                 // Simple quote removal - unescape JSON escapes
-                let inner = &trimmed[1..trimmed.len()-1];
+                let inner = &trimmed[1..trimmed.len() - 1];
                 processed = inner.replace("\\\"", "\"");
             }
         } else {
@@ -186,7 +195,9 @@ impl RuleDslParser {
             let upper = rest.to_uppercase();
 
             // Check if starts with any keyword (case-insensitive)
-            for keyword in &["RULE", "WHEN", "FOR", "DO", "END", "NOTIFY", "EXECUTE", "LOG"] {
+            for keyword in &[
+                "RULE", "WHEN", "FOR", "DO", "END", "NOTIFY", "EXECUTE", "LOG",
+            ] {
                 let keyword_with_space = format!("{} ", keyword);
                 if upper.starts_with(&keyword_with_space) || upper == *keyword {
                     // Found keyword - convert to uppercase
@@ -344,9 +355,10 @@ impl RuleDslParser {
                     (String::new(), parts[0].to_string())
                 };
 
-                let threshold = right.trim().parse().map_err(|_| {
-                    RuleError::Parse(format!("Invalid threshold value: {}", right))
-                })?;
+                let threshold = right
+                    .trim()
+                    .parse()
+                    .map_err(|_| RuleError::Parse(format!("Invalid threshold value: {}", right)))?;
 
                 return Ok((device_id, metric, *op, threshold));
             }
@@ -468,7 +480,8 @@ impl RuleDslParser {
                 } else if let Ok(num) = value.parse::<f64>() {
                     // Float value
                     serde_json::Value::Number(
-                        serde_json::Number::from_f64(num).unwrap_or_else(|| serde_json::Number::from(0)),
+                        serde_json::Number::from_f64(num)
+                            .unwrap_or_else(|| serde_json::Number::from(0)),
                     )
                 } else if value == "true" {
                     serde_json::Value::Bool(true)

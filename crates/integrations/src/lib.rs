@@ -46,32 +46,39 @@
 //! # }
 //! ```
 
-pub mod registry;
 pub mod connectors;
 pub mod protocols;
+pub mod registry;
 
 // Re-exports from core
 pub use edge_ai_core::integration::{
-    Integration, DynIntegration, IntegrationType, IntegrationState,
-    IntegrationMetadata, IntegrationEvent, IntegrationCommand,
-    IntegrationResponse, IntegrationConfig, IntegrationError,
-    DiscoveredInfo, Result as IntegrationResult,
+    DiscoveredInfo,
+    DynIntegration,
+    Integration,
+    IntegrationCommand,
+    IntegrationConfig,
+    IntegrationError,
+    IntegrationEvent,
+    IntegrationMetadata,
+    IntegrationResponse,
+    IntegrationState,
+    IntegrationType,
+    Result as IntegrationResult,
     // Connector exports
     connector::{
-        Connector, DynConnector, ConnectorError, ConnectorConfig,
-        ConnectionMetrics, Result as ConnectorResult, BaseConnector,
+        BaseConnector, ConnectionMetrics, Connector, ConnectorConfig, ConnectorError, DynConnector,
+        Result as ConnectorResult,
     },
     // Transformer exports
     transformer::{
-        Transformer, DynTransformer, TransformationError,
-        TransformationContext, EntityMapping, MappingConfig,
-        ValueTransform, TransformType, UnitConversion,
-        ConversionFunction, Result as TransformerResult, BaseTransformer,
+        BaseTransformer, ConversionFunction, DynTransformer, EntityMapping, MappingConfig,
+        Result as TransformerResult, TransformType, TransformationContext, TransformationError,
+        Transformer, UnitConversion, ValueTransform,
     },
 };
 
 // Re-exports from registry
-pub use registry::{IntegrationRegistry, RegistryEvent, RegistryError, Result as RegistryResult};
+pub use registry::{IntegrationRegistry, RegistryError, RegistryEvent, Result as RegistryResult};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

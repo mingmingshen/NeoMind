@@ -1,12 +1,18 @@
 //! Rules engine handlers.
 
-use axum::{extract::{Path, State}, Json};
-use serde_json::{json, Value};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
-use edge_ai_rules::{RuleId, RuleStatus, CompiledRule};
+use edge_ai_rules::{CompiledRule, RuleId, RuleStatus};
 
-use super::{ServerState, common::{HandlerResult, ok}};
+use super::{
+    ServerState,
+    common::{HandlerResult, ok},
+};
 use crate::models::ErrorResponse;
 
 /// Detailed rule info for API responses.
@@ -37,9 +43,18 @@ struct RuleConditionDto {
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "type")]
 enum RuleActionDto {
-    Notify { message: String },
-    Execute { device_id: String, command: String, params: HashMap<String, Value> },
-    Log { level: String, message: String },
+    Notify {
+        message: String,
+    },
+    Execute {
+        device_id: String,
+        command: String,
+        params: HashMap<String, Value>,
+    },
+    Log {
+        level: String,
+        message: String,
+    },
 }
 
 /// Simple rule info for list responses.
@@ -81,24 +96,28 @@ impl From<&CompiledRule> for RuleDetailDto {
                 operator: format!("{:?}", rule.condition.operator),
                 threshold: rule.condition.threshold,
             },
-            actions: rule.actions.iter().map(|a| match a {
-                edge_ai_rules::RuleAction::Notify { message } => {
-                    RuleActionDto::Notify { message: message.clone() }
-                }
-                edge_ai_rules::RuleAction::Execute { device_id, command, params } => {
-                    RuleActionDto::Execute {
+            actions: rule
+                .actions
+                .iter()
+                .map(|a| match a {
+                    edge_ai_rules::RuleAction::Notify { message } => RuleActionDto::Notify {
+                        message: message.clone(),
+                    },
+                    edge_ai_rules::RuleAction::Execute {
+                        device_id,
+                        command,
+                        params,
+                    } => RuleActionDto::Execute {
                         device_id: device_id.clone(),
                         command: command.clone(),
                         params: params.clone(),
-                    }
-                }
-                edge_ai_rules::RuleAction::Log { level, message, .. } => {
-                    RuleActionDto::Log {
+                    },
+                    edge_ai_rules::RuleAction::Log { level, message, .. } => RuleActionDto::Log {
                         level: level.to_string(),
                         message: message.clone(),
-                    }
-                }
-            }).collect(),
+                    },
+                })
+                .collect(),
         }
     }
 }
@@ -110,12 +129,15 @@ pub async fn list_rules_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
     let rules = state.rule_engine.list_rules().await;
-    let dtos: Vec<RuleDto> = rules.into_iter().map(|r| RuleDto {
-        id: r.id.to_string(),
-        name: r.name,
-        enabled: matches!(r.status, RuleStatus::Active),
-        trigger_count: r.state.trigger_count,
-    }).collect();
+    let dtos: Vec<RuleDto> = rules
+        .into_iter()
+        .map(|r| RuleDto {
+            id: r.id.to_string(),
+            name: r.name,
+            enabled: matches!(r.status, RuleStatus::Active),
+            trigger_count: r.state.trigger_count,
+        })
+        .collect();
 
     ok(json!({
         "rules": dtos,
@@ -133,7 +155,10 @@ pub async fn get_rule_handler(
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
-    let rule = state.rule_engine.get_rule(&rule_id).await
+    let rule = state
+        .rule_engine
+        .get_rule(&rule_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
     let dto = RuleDetailDto::from(&rule);
@@ -157,7 +182,10 @@ pub async fn update_rule_handler(
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     // Get the current rule
-    let mut rule = state.rule_engine.get_rule(&rule_id).await
+    let mut rule = state
+        .rule_engine
+        .get_rule(&rule_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
     // Update fields
@@ -179,7 +207,10 @@ pub async fn update_rule_handler(
     };
 
     // Re-add the rule (this updates it)
-    state.rule_engine.add_rule(rule).await
+    state
+        .rule_engine
+        .add_rule(rule)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
 
     ok(json!({
@@ -198,7 +229,10 @@ pub async fn delete_rule_handler(
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
-    let removed = state.rule_engine.remove_rule(&rule_id).await
+    let removed = state
+        .rule_engine
+        .remove_rule(&rule_id)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to delete rule: {}", e)))?;
 
     if !removed {
@@ -223,10 +257,16 @@ pub async fn set_rule_status_handler(
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     if req.enabled {
-        state.rule_engine.resume_rule(&rule_id).await
+        state
+            .rule_engine
+            .resume_rule(&rule_id)
+            .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to enable rule: {}", e)))?;
     } else {
-        state.rule_engine.pause_rule(&rule_id).await
+        state
+            .rule_engine
+            .pause_rule(&rule_id)
+            .await
             .map_err(|e| ErrorResponse::internal(format!("Failed to disable rule: {}", e)))?;
     }
 
@@ -247,15 +287,21 @@ pub async fn test_rule_handler(
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     // Get the rule
-    let rule = state.rule_engine.get_rule(&rule_id).await
+    let rule = state
+        .rule_engine
+        .get_rule(&rule_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
     // Get current value for the condition
-    let current_value = state.rule_engine
+    let current_value = state
+        .rule_engine
         .get_value(&rule.condition.device_id, &rule.condition.metric);
 
     let condition_met = if let Some(val) = current_value {
-        rule.condition.operator.evaluate(val, rule.condition.threshold)
+        rule.condition
+            .operator
+            .evaluate(val, rule.condition.threshold)
     } else {
         return Err(ErrorResponse::internal(format!(
             "Cannot get value for {}:{}",
@@ -280,12 +326,16 @@ pub async fn create_rule_handler(
     State(state): State<ServerState>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
-    let dsl = req.get("dsl")
+    let dsl = req
+        .get("dsl")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorResponse::bad_request("Missing 'dsl' field"))?;
 
     // Add rule from DSL
-    let rule_id = state.rule_engine.add_rule_from_dsl(dsl).await
+    let rule_id = state
+        .rule_engine
+        .add_rule_from_dsl(dsl)
+        .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to create rule: {}", e)))?;
 
     ok(json!({
@@ -304,7 +354,10 @@ pub async fn get_rule_history_handler(
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
     // Check if rule exists
-    let _rule = state.rule_engine.get_rule(&rule_id).await
+    let _rule = state
+        .rule_engine
+        .get_rule(&rule_id)
+        .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
     let history = state.rule_engine.get_rule_history(&rule_id).await;

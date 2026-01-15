@@ -8,21 +8,18 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use wasmtime::{
-    Config, Engine, Module,
-};
+use wasmtime::{Config, Engine, Module};
 
 pub mod host_api;
-pub mod module;
 pub mod llm_plugin;
+pub mod module;
 
 pub use host_api::{HostApi, HostApiResponse};
-pub use module::{SandboxModule, SandboxModuleConfig};
 pub use llm_plugin::{
-    WasmLlmPlugin, WasmLlmPluginConfig, WasmLlmPluginRegistry,
-    LlmPluginInput, LlmPluginOutput, LlmPluginMessage, LlmPluginParams,
-    load_plugins_from_dir,
+    LlmPluginInput, LlmPluginMessage, LlmPluginOutput, LlmPluginParams, WasmLlmPlugin,
+    WasmLlmPluginConfig, WasmLlmPluginRegistry, load_plugins_from_dir,
 };
+pub use module::{SandboxModule, SandboxModuleConfig};
 
 /// Errors that can occur in the sandbox.
 #[derive(Debug, thiserror::Error)]
@@ -128,7 +125,8 @@ impl Sandbox {
         let name = name.into();
         let module = Module::from_binary(&self.engine, wasm_bytes.as_ref())?;
 
-        let sandbox_module = SandboxModule::new(name.clone(), module, self.host_api.clone()).await?;
+        let sandbox_module =
+            SandboxModule::new(name.clone(), module, self.host_api.clone()).await?;
 
         let mut modules = self.modules.write().await;
         modules.insert(name, sandbox_module);

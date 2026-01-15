@@ -84,8 +84,9 @@ impl MultiLanguageCompiler {
             .join("neotalk_compile")
             .join(uuid::Uuid::new_v4().to_string());
 
-        std::fs::create_dir_all(&temp_dir)
-            .map_err(|e| WorkflowError::CompilationError(format!("Failed to create temp dir: {}", e)))?;
+        std::fs::create_dir_all(&temp_dir).map_err(|e| {
+            WorkflowError::CompilationError(format!("Failed to create temp dir: {}", e))
+        })?;
 
         Ok(Self {
             temp_dir,
@@ -101,8 +102,9 @@ impl MultiLanguageCompiler {
             .join("neotalk_compile")
             .join(uuid::Uuid::new_v4().to_string());
 
-        std::fs::create_dir_all(&temp_dir)
-            .map_err(|e| WorkflowError::CompilationError(format!("Failed to create temp dir: {}", e)))?;
+        std::fs::create_dir_all(&temp_dir).map_err(|e| {
+            WorkflowError::CompilationError(format!("Failed to create temp dir: {}", e))
+        })?;
 
         Ok(Self {
             temp_dir,
@@ -129,7 +131,9 @@ impl MultiLanguageCompiler {
             SourceLanguage::Rust if self.use_external_compilers => {
                 self.compile_rust(source_code).await
             }
-            SourceLanguage::JavaScript | SourceLanguage::TypeScript if self.use_external_compilers => {
+            SourceLanguage::JavaScript | SourceLanguage::TypeScript
+                if self.use_external_compilers =>
+            {
                 self.compile_assemblyscript(source_code, language).await
             }
             SourceLanguage::Python if self.use_external_compilers => {
@@ -177,8 +181,9 @@ impl MultiLanguageCompiler {
             let mut warnings = vec![];
 
             // Parse and compile Wat using wat::parse_str
-            let result = wat::parse_str(source)
-                .map_err(|e| WorkflowError::CompilationError(format!("Wat compilation error: {}", e)));
+            let result = wat::parse_str(source).map_err(|e| {
+                WorkflowError::CompilationError(format!("Wat compilation error: {}", e))
+            });
 
             match result {
                 Ok(wasm_bytes) => {
@@ -244,7 +249,11 @@ impl MultiLanguageCompiler {
     }
 
     /// Compile AssemblyScript (JavaScript/TypeScript) to WASM.
-    async fn compile_assemblyscript(&self, _source: &str, language: SourceLanguage) -> Result<CompilationResult> {
+    async fn compile_assemblyscript(
+        &self,
+        _source: &str,
+        language: SourceLanguage,
+    ) -> Result<CompilationResult> {
         // For now, return a placeholder - full AssemblyScript compilation requires:
         // 1. Installing asc (AssemblyScript compiler)
         // 2. Writing source to .ts file
@@ -281,8 +290,9 @@ impl MultiLanguageCompiler {
     /// Clean up temporary files.
     pub fn cleanup(&self) -> Result<()> {
         if self.temp_dir.exists() {
-            std::fs::remove_dir_all(&self.temp_dir)
-                .map_err(|e| WorkflowError::CompilationError(format!("Failed to cleanup: {}", e)))?;
+            std::fs::remove_dir_all(&self.temp_dir).map_err(|e| {
+                WorkflowError::CompilationError(format!("Failed to cleanup: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -323,7 +333,10 @@ mod tests {
     #[test]
     fn test_source_language_from_str() {
         assert_eq!(SourceLanguage::from_str("rust"), Some(SourceLanguage::Rust));
-        assert_eq!(SourceLanguage::from_str("js"), Some(SourceLanguage::JavaScript));
+        assert_eq!(
+            SourceLanguage::from_str("js"),
+            Some(SourceLanguage::JavaScript)
+        );
         assert_eq!(SourceLanguage::from_str("wat"), Some(SourceLanguage::Wat));
         assert_eq!(SourceLanguage::from_str("unknown"), None);
     }
@@ -347,18 +360,27 @@ mod tests {
   (export "add" (func $add))
 )"#;
 
-        let result = compiler.compile(wat_code, SourceLanguage::Wat).await.unwrap();
+        let result = compiler
+            .compile(wat_code, SourceLanguage::Wat)
+            .await
+            .unwrap();
 
         #[cfg(feature = "wat")]
         {
             assert!(result.success, "Wat compilation should succeed");
             assert!(result.wasm_bytes.is_some(), "Should have wasm bytes");
-            assert!(result.wasm_base64.is_some(), "Should have base64 encoded wasm");
+            assert!(
+                result.wasm_base64.is_some(),
+                "Should have base64 encoded wasm"
+            );
         }
 
         #[cfg(not(feature = "wat"))]
         {
-            assert!(!result.success, "Wat compilation should fail without feature");
+            assert!(
+                !result.success,
+                "Wat compilation should fail without feature"
+            );
         }
     }
 
@@ -368,7 +390,10 @@ mod tests {
 
         let invalid_wat = "(module invalid syntax here";
 
-        let result = compiler.compile(invalid_wat, SourceLanguage::Wat).await.unwrap();
+        let result = compiler
+            .compile(invalid_wat, SourceLanguage::Wat)
+            .await
+            .unwrap();
 
         assert!(!result.success, "Invalid Wat should fail to compile");
         assert!(result.error.is_some(), "Should have error message");
@@ -380,7 +405,10 @@ mod tests {
 
         let rust_code = r#"fn main() { println!("Hello"); }"#;
 
-        let result = compiler.compile(rust_code, SourceLanguage::Rust).await.unwrap();
+        let result = compiler
+            .compile(rust_code, SourceLanguage::Rust)
+            .await
+            .unwrap();
 
         assert!(!result.success, "Should fail without external compilers");
         assert!(result.error.is_some(), "Should have error message");

@@ -1,11 +1,11 @@
 //! Bulk session operations.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde_json::json;
 
-use crate::handlers::{ServerState, common::ok};
 use super::models::BulkOperationResult;
 use crate::handlers::common::HandlerResult;
+use crate::handlers::{ServerState, common::ok};
 
 /// Bulk delete sessions.
 ///

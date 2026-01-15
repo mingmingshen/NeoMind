@@ -1,6 +1,6 @@
 //! Basic handlers - health check and system status.
 
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use serde::Serialize;
 use serde_json::json;
 
@@ -86,5 +86,8 @@ pub async fn readiness_handler(State(state): State<ServerState>) -> Json<Readine
 
     let ready = true; // If server is responding, we're ready
 
-    Json(ReadinessStatus { ready, dependencies })
+    Json(ReadinessStatus {
+        ready,
+        dependencies,
+    })
 }

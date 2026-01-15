@@ -19,11 +19,12 @@
 //! └─────────────────────────────────────────────────────┘
 //! ```
 
-pub mod types;
 pub mod fallback;
-pub mod tool_parser;
-pub mod streaming;
 pub mod formatter;
+pub mod staged;
+pub mod streaming;
+pub mod tool_parser;
+pub mod types;
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -35,21 +36,24 @@ pub use crate::error::NeoTalkError;
 use serde_json::Value;
 
 use super::error::Result;
-use super::llm::{LlmInterface, ChatConfig};
+use super::llm::{ChatConfig, LlmInterface};
 use edge_ai_core::{
-    llm::backend::{LlmRuntime, StreamChunk},
     Message,
+    llm::backend::{LlmRuntime, StreamChunk},
 };
 use edge_ai_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
 use edge_ai_tools::registry::format_for_llm;
 
+pub use fallback::{FallbackRule, default_fallback_rules, process_fallback};
+pub use formatter::{format_summary, format_tool_result};
+pub use streaming::{
+    StreamSafeguards, events_to_string_stream, process_stream_events,
+    process_stream_events_with_safeguards,
+};
 pub use types::{
-    AgentConfig, AgentEvent, AgentMessage, AgentResponse, LlmBackend,
+    AgentConfig, AgentEvent, AgentInternalState, AgentMessage, AgentResponse, LlmBackend,
     SessionState, ToolCall,
 };
-pub use fallback::{default_fallback_rules, process_fallback, FallbackRule};
-pub use streaming::{events_to_string_stream, process_stream_events, process_stream_events_with_safeguards, StreamSafeguards};
-pub use formatter::{format_tool_result, format_summary};
 
 /// Maximum number of tool calls allowed per request to prevent infinite loops
 const MAX_TOOL_CALLS_PER_REQUEST: usize = 5;
@@ -96,7 +100,8 @@ fn compact_tool_results(messages: &[AgentMessage]) -> Vec<AgentMessage> {
                 result.push(msg.clone());
             } else {
                 // Compress old tool results to a brief summary
-                let tool_names: Vec<&str> = msg.tool_calls
+                let tool_names: Vec<&str> = msg
+                    .tool_calls
                     .as_ref()
                     .iter()
                     .flat_map(|calls| calls.iter().map(|t| t.name.as_str()))
@@ -178,43 +183,49 @@ pub struct Agent {
     tools: Arc<edge_ai_tools::ToolRegistry>,
     /// LLM interface
     llm_interface: Arc<LlmInterface>,
-    /// Short-term memory (in-memory conversation)
-    short_term_memory: Arc<tokio::sync::RwLock<Vec<AgentMessage>>>,
-    /// Session state
-    state: Arc<tokio::sync::RwLock<SessionState>>,
-    /// Whether LLM is configured
-    llm_configured: Arc<std::sync::atomic::AtomicBool>,
+    /// Unified internal state (memory + session + llm_ready)
+    /// Single lock reduces contention compared to multiple Arc<RwLock<...>>
+    internal_state: Arc<tokio::sync::RwLock<AgentInternalState>>,
     /// Fallback rules for when LLM is unavailable
     fallback_rules: Vec<FallbackRule>,
 }
 
 impl Agent {
     /// Create a new agent with custom tool registry.
-    pub fn with_tools(config: AgentConfig, session_id: String, tools: Arc<edge_ai_tools::ToolRegistry>) -> Self {
+    pub fn with_tools(
+        config: AgentConfig,
+        session_id: String,
+        tools: Arc<edge_ai_tools::ToolRegistry>,
+    ) -> Self {
         let session_id_clone = session_id.clone();
 
         // Create LLM interface
         let llm_config = ChatConfig {
             model: config.model.clone(),
             temperature: config.temperature,
-            top_p: 0.95,
-            max_tokens: usize::MAX,  // No artificial limit - let model decide
-            concurrent_limit: 3, // Default to 3 concurrent LLM requests
+            top_p: 0.75,
+            max_tokens: usize::MAX, // No artificial limit - let model decide
+            concurrent_limit: 3,    // Default to 3 concurrent LLM requests
         };
 
-        let llm_interface = Arc::new(LlmInterface::new(llm_config)
-            .with_system_prompt(&config.system_prompt));
+        let llm_interface =
+            Arc::new(LlmInterface::new(llm_config).with_system_prompt(&config.system_prompt));
 
         Self {
             config,
             session_id,
             tools,
             llm_interface,
-            short_term_memory: Arc::new(tokio::sync::RwLock::new(Vec::new())),
-            state: Arc::new(tokio::sync::RwLock::new(SessionState::new(session_id_clone))),
-            llm_configured: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            internal_state: Arc::new(tokio::sync::RwLock::new(AgentInternalState::new(
+                session_id_clone,
+            ))),
             fallback_rules: default_fallback_rules(),
         }
+    }
+
+    /// Get internal state for streaming (used by streaming module).
+    pub fn internal_state(&self) -> Arc<tokio::sync::RwLock<AgentInternalState>> {
+        self.internal_state.clone()
     }
 
     /// Create a new agent with default (mock) tools.
@@ -225,8 +236,8 @@ impl Agent {
             .build();
 
         // Add agent-specific tools
-        use crate::tools::ToolSearchTool;
         use crate::tools::ThinkTool;
+        use crate::tools::ToolSearchTool;
 
         // Collect tool definitions from standard tools
         let standard_tool_defs = registry.definitions();
@@ -259,14 +270,24 @@ impl Agent {
 
         let (llm, model_name) = match backend {
             LlmBackend::Ollama { endpoint, model } => {
-                eprintln!("Creating OllamaRuntime: endpoint={}, model={}", endpoint, model);
+                eprintln!(
+                    "Creating OllamaRuntime: endpoint={}, model={}",
+                    endpoint, model
+                );
                 let config = OllamaConfig::new(&model).with_endpoint(&endpoint);
-                let runtime = OllamaRuntime::new(config)
-                    .map_err(|e| NeoTalkError::llm(e.to_string()))?;
+                let runtime =
+                    OllamaRuntime::new(config).map_err(|e| NeoTalkError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
-            LlmBackend::OpenAi { api_key, endpoint, model } => {
-                eprintln!("Creating CloudRuntime for OpenAI: endpoint={}, model={}", endpoint, model);
+            LlmBackend::OpenAi {
+                api_key,
+                endpoint,
+                model,
+            } => {
+                eprintln!(
+                    "Creating CloudRuntime for OpenAI: endpoint={}, model={}",
+                    endpoint, model
+                );
                 let config = CloudConfig::openai(&api_key);
                 let config = if endpoint.is_empty() {
                     config.with_model(&model)
@@ -274,8 +295,8 @@ impl Agent {
                     // Custom endpoint
                     CloudConfig::custom(&api_key, &endpoint).with_model(&model)
                 };
-                let runtime = CloudRuntime::new(config)
-                    .map_err(|e| NeoTalkError::llm(e.to_string()))?;
+                let runtime =
+                    CloudRuntime::new(config).map_err(|e| NeoTalkError::llm(e.to_string()))?;
                 (Arc::new(runtime) as Arc<dyn LlmRuntime>, model)
             }
         };
@@ -284,7 +305,7 @@ impl Agent {
         self.llm_interface.update_model(model_name).await;
 
         self.llm_interface.set_llm(llm).await;
-        self.llm_configured.store(true, std::sync::atomic::Ordering::Release);
+        self.internal_state.write().await.set_llm_ready(true);
 
         // Set tool definitions for function calling
         self.update_tool_definitions().await;
@@ -295,7 +316,7 @@ impl Agent {
     /// Set a custom LLM runtime directly (for testing purposes).
     pub async fn set_custom_llm(&self, llm: Arc<dyn LlmRuntime>) {
         self.llm_interface.set_llm(llm).await;
-        self.llm_configured.store(true, std::sync::atomic::Ordering::Release);
+        self.internal_state.write().await.set_llm_ready(true);
         self.update_tool_definitions().await;
     }
 
@@ -334,26 +355,22 @@ impl Agent {
 
     /// Get the session state.
     pub async fn state(&self) -> SessionState {
-        self.state.read().await.clone()
+        self.internal_state.read().await.session.clone()
     }
 
     /// Get the conversation history.
     pub async fn history(&self) -> Vec<AgentMessage> {
-        self.short_term_memory.read().await.clone()
+        self.internal_state.read().await.memory.clone()
     }
 
     /// Restore conversation history from persisted data.
     pub async fn restore_history(&self, messages: Vec<AgentMessage>) {
-        let mut memory = self.short_term_memory.write().await;
-        memory.clear();
-        for msg in messages {
-            memory.push(msg);
-        }
+        self.internal_state.write().await.restore_memory(messages);
     }
 
     /// Clear conversation history.
     pub async fn clear_history(&self) {
-        self.short_term_memory.write().await.clear();
+        self.internal_state.write().await.clear_memory();
     }
 
     /// Get available tools.
@@ -372,20 +389,22 @@ impl Agent {
 
         // Add user message to history
         let user_msg = AgentMessage::user(user_message);
-        self.short_term_memory.write().await.push(user_msg.clone());
+        self.internal_state
+            .write()
+            .await
+            .push_message(user_msg.clone());
 
         // Check if LLM is configured
         if !self.llm_interface.is_ready().await {
             // Fall back to simple keyword-based responses
-            let (message, tool_calls, tools_used) = process_fallback(
-                &self.tools,
-                &self.fallback_rules,
-                user_message,
-            ).await;
+            let (message, tool_calls, tools_used) =
+                process_fallback(&self.tools, &self.fallback_rules, user_message).await;
             let processing_time = start.elapsed().as_millis() as u64;
 
-            self.short_term_memory.write().await.push(message.clone());
-            self.state.write().await.increment_messages();
+            self.internal_state
+                .write()
+                .await
+                .push_message(message.clone());
 
             return Ok(AgentResponse {
                 message,
@@ -429,7 +448,11 @@ impl Agent {
         match self.process_with_llm(user_message).await {
             Ok(response) => {
                 let processing_time = start.elapsed().as_millis() as u64;
-                self.state.write().await.increment_messages();
+                self.internal_state
+                    .write()
+                    .await
+                    .session
+                    .increment_messages();
                 Ok(AgentResponse {
                     processing_time_ms: processing_time,
                     ..response
@@ -438,15 +461,14 @@ impl Agent {
             Err(e) => {
                 // On error, fall back to simple response
                 eprintln!("LLM error: {}, using fallback", e);
-                let (message, tool_calls, tools_used) = process_fallback(
-                    &self.tools,
-                    &self.fallback_rules,
-                    user_message,
-                ).await;
+                let (message, tool_calls, tools_used) =
+                    process_fallback(&self.tools, &self.fallback_rules, user_message).await;
                 let processing_time = start.elapsed().as_millis() as u64;
 
-                self.short_term_memory.write().await.push(message.clone());
-                self.state.write().await.increment_messages();
+                self.internal_state
+                    .write()
+                    .await
+                    .push_message(message.clone());
 
                 Ok(AgentResponse {
                     message,
@@ -469,7 +491,7 @@ impl Agent {
         use tool_parser::parse_tool_calls;
 
         // Get existing history (user message already added by caller in `process`)
-        let history: Vec<AgentMessage> = self.short_term_memory.read().await.clone();
+        let history: Vec<AgentMessage> = self.internal_state.read().await.memory.clone();
 
         // Exclude the last message (which is the user message we just added) from history
         // The LLM interface will add the user message separately
@@ -490,12 +512,14 @@ impl Agent {
         );
 
         // Build history for LLM (convert AgentMessage to Message)
-        let core_history: Vec<Message> = compacted_history.iter()
-            .map(|msg| msg.to_core())
-            .collect();
+        let core_history: Vec<Message> =
+            compacted_history.iter().map(|msg| msg.to_core()).collect();
 
         // Call LLM with conversation history (user message will be added by LLM interface)
-        let chat_response = self.llm_interface.chat_with_history(user_message, &core_history).await
+        let chat_response = self
+            .llm_interface
+            .chat_with_history(user_message, &core_history)
+            .await
             .map_err(|e| super::error::AgentError::Llm(e.to_string()))?;
 
         // Parse response for tool calls
@@ -518,7 +542,10 @@ impl Agent {
             } else {
                 AgentMessage::assistant(&content)
             };
-            self.short_term_memory.write().await.push(assistant_msg.clone());
+            self.internal_state
+                .write()
+                .await
+                .push_message(assistant_msg.clone());
             return Ok(AgentResponse {
                 message: assistant_msg,
                 tool_calls: vec![],
@@ -547,7 +574,10 @@ impl Agent {
         let mut tool_calls_with_results = Vec::new();
 
         for tool_call in &tool_calls {
-            match self.execute_tool(&tool_call.name, &tool_call.arguments).await {
+            match self
+                .execute_tool(&tool_call.name, &tool_call.arguments)
+                .await
+            {
                 Ok(result) => {
                     tools_used.push(tool_call.name.clone());
                     tool_results.push((tool_call.name.clone(), result.clone()));
@@ -585,11 +615,18 @@ impl Agent {
             } else {
                 thinking_content
             };
-            AgentMessage::assistant_with_tools_and_thinking(&final_text, tool_calls_with_results, &cleaned_thinking)
+            AgentMessage::assistant_with_tools_and_thinking(
+                &final_text,
+                tool_calls_with_results,
+                &cleaned_thinking,
+            )
         } else {
             AgentMessage::assistant_with_tools(&final_text, tool_calls_with_results)
         };
-        self.short_term_memory.write().await.push(final_message.clone());
+        self.internal_state
+            .write()
+            .await
+            .push_message(final_message.clone());
 
         Ok(AgentResponse {
             message: final_message,
@@ -646,16 +683,23 @@ impl Agent {
     }
 
     /// Process a tool call result.
-    pub async fn process_tool_result(&self, tool_call_id: &str, result: &str) -> Result<AgentResponse> {
+    pub async fn process_tool_result(
+        &self,
+        tool_call_id: &str,
+        result: &str,
+    ) -> Result<AgentResponse> {
         // Add tool result to history
         let tool_msg = AgentMessage::tool_result(tool_call_id, result);
-        self.short_term_memory.write().await.push(tool_msg);
+        self.internal_state.write().await.push_message(tool_msg);
 
         // Get LLM response based on tool result
         let response_content = format!("工具执行完成。结果: {}", result);
 
         let response = AgentMessage::assistant(response_content);
-        self.short_term_memory.write().await.push(response.clone());
+        self.internal_state
+            .write()
+            .await
+            .push_message(response.clone());
 
         Ok(AgentResponse {
             message: response,
@@ -673,18 +717,17 @@ impl Agent {
     ) -> Result<Pin<Box<dyn Stream<Item = AgentEvent> + Send>>> {
         // Add user message to history
         let user_msg = AgentMessage::user(user_message);
-        self.short_term_memory.write().await.push(user_msg);
+        self.internal_state.write().await.push_message(user_msg);
 
         // Check if LLM is configured
         if !self.llm_interface.is_ready().await {
             // Fall back to simple response
-            let (message, _, _) = process_fallback(
-                &self.tools,
-                &self.fallback_rules,
-                user_message,
-            ).await;
-            self.short_term_memory.write().await.push(message.clone());
-            self.state.write().await.increment_messages();
+            let (message, _, _) =
+                process_fallback(&self.tools, &self.fallback_rules, user_message).await;
+            self.internal_state
+                .write()
+                .await
+                .push_message(message.clone());
 
             // Return a single-item stream with the fallback response
             let content = message.content;
@@ -696,22 +739,22 @@ impl Agent {
 
         match process_stream_events(
             self.llm_interface.clone(),
-            self.short_term_memory.clone(),
-            self.state.clone(),
+            self.internal_state.clone(),
             self.tools.clone(),
             user_message,
-        ).await {
+        )
+        .await
+        {
             Ok(stream) => Ok(stream),
             Err(e) => {
                 // On error, fall back to simple response
                 eprintln!("LLM stream error: {}, using fallback", e);
-                let (message, _, _) = process_fallback(
-                    &self.tools,
-                    &self.fallback_rules,
-                    user_message,
-                ).await;
-                self.short_term_memory.write().await.push(message.clone());
-                self.state.write().await.increment_messages();
+                let (message, _, _) =
+                    process_fallback(&self.tools, &self.fallback_rules, user_message).await;
+                self.internal_state
+                    .write()
+                    .await
+                    .push_message(message.clone());
 
                 Ok(Box::pin(async_stream::stream! {
                     yield AgentEvent::content(message.content);
@@ -821,8 +864,8 @@ mod tests {
             FallbackRule::new(vec!["hello", "hi", "greeting"], "greet")
                 .with_response_template("Hello there!"),
         ];
-        let agent = Agent::with_session("test_session".to_string())
-            .with_fallback_rules(custom_rules);
+        let agent =
+            Agent::with_session("test_session".to_string()).with_fallback_rules(custom_rules);
 
         let response = agent.process("hello there").await.unwrap();
         // Since greet tool doesn't exist, we expect error handling

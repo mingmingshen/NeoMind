@@ -164,15 +164,22 @@ export function DashboardPage() {
   }, [addMessage, loadSessions, setSessionId])
 
   const handleMessage = useCallback((msg: ServerMessage) => {
+    // Debug: Log all incoming message types
+    console.log('[dashboard WS] Received message type:', msg.type, {
+      hasSessionId: 'sessionId' in msg,
+      sessionId: (msg as any).sessionId,
+      currentSessionId: sessionId,
+    })
+
     // Only process messages that belong to the current session
     // Messages without sessionId (device_update) are always processed
     // Control messages (session_created, session_switched) are always processed
-    const hasSessionId = 'sessionId' in msg && msg.sessionId !== undefined
+    const hasSessionId = 'sessionId' in msg && (msg as any).sessionId !== undefined
     if (hasSessionId && msg.type !== 'session_created' && msg.type !== 'session_switched') {
       // If there's no active session, or sessionId doesn't match, ignore
-      if (!sessionId || msg.sessionId !== sessionId) {
+      if (!sessionId || (msg as any).sessionId !== sessionId) {
         console.log('[dashboard] Ignoring message for different session', {
-          msgSessionId: msg.sessionId,
+          msgSessionId: (msg as any).sessionId,
           currentSessionId: sessionId,
           msgType: msg.type,
         })
@@ -186,6 +193,7 @@ export function DashboardPage() {
 
       case 'session_created':
       case 'session_switched':
+        console.log('[dashboard] Processing session event:', msg.type, msg.sessionId)
         if (msg.sessionId) {
           // Update BOTH React state and WebSocket instance
           setSessionIdRef.current(msg.sessionId)
@@ -196,6 +204,7 @@ export function DashboardPage() {
         break
 
       case 'Thinking':
+        console.log('[dashboard] Thinking event, content length:', (msg.content || '').length)
         setIsStreaming(true)
         // Update ref synchronously to avoid stale data in end event
         streamingThinkingRef.current += (msg.content || "")
@@ -203,6 +212,7 @@ export function DashboardPage() {
         break
 
       case 'Content':
+        console.log('[dashboard] Content event, content length:', (msg.content || '').length)
         setIsStreaming(true)
         // Update ref synchronously to avoid stale data in end event
         streamingContentRef.current += (msg.content || "")
@@ -210,6 +220,7 @@ export function DashboardPage() {
         break
 
       case 'ToolCallStart':
+        console.log('[dashboard] ToolCallStart event:', msg.tool)
         setIsStreaming(true)
         const newToolCall: ToolCall = {
           id: crypto.randomUUID(),
@@ -235,6 +246,11 @@ export function DashboardPage() {
         break
 
       case 'end':
+        console.log('*** [dashboard] END EVENT RECEIVED ***', {
+          contentLength: streamingContentRef.current.length,
+          thinkingLength: streamingThinkingRef.current.length,
+          toolCallsCount: streamingToolCallsRef.current.length,
+        })
         // Use refs directly since they're updated synchronously now
         const finalContent = streamingContentRef.current
         const finalThinking = streamingThinkingRef.current
@@ -255,6 +271,7 @@ export function DashboardPage() {
             thinking: finalThinking || undefined,
             tool_calls: finalCalls.length > 0 ? finalCalls : undefined,
           }
+          console.log('[dashboard] Adding assistant message with content')
           addMessageRef.current(assistantMsg)
         } else {
           console.warn('[dashboard] end event received but no content to save')
@@ -269,6 +286,7 @@ export function DashboardPage() {
         setStreamingThinking("")
         setStreamingToolCalls([])
         setIsStreaming(false)
+        console.log('[dashboard] Streaming state cleared, isStreaming=false')
         break
 
       case 'response':

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use edge_ai_tools::{Tool, ToolOutput, ToolDefinition};
-use edge_ai_tools::tool::{object_schema, string_property, ResponseFormat};
+use edge_ai_tools::tool::{ResponseFormat, object_schema, string_property};
+use edge_ai_tools::{Tool, ToolDefinition, ToolOutput};
 
 /// Tool for searching available tools.
 ///
@@ -146,11 +146,9 @@ impl Tool for ToolSearchTool {
     async fn execute(&self, args: Value) -> Result<ToolOutput, edge_ai_tools::ToolError> {
         self.validate_args(&args)?;
 
-        let keyword = args["keyword"]
-            .as_str()
-            .ok_or_else(|| edge_ai_tools::ToolError::InvalidArguments(
-                "keyword must be a string".to_string()
-            ))?;
+        let keyword = args["keyword"].as_str().ok_or_else(|| {
+            edge_ai_tools::ToolError::InvalidArguments("keyword must be a string".to_string())
+        })?;
 
         let category = args["category"].as_str();
 
@@ -206,19 +204,17 @@ impl Tool for ToolSearchTool {
                 }),
                 description: "Search for tools related to devices".to_string(),
             }),
-            examples: vec![
-                edge_ai_tools::tool::ToolExample {
-                    arguments: serde_json::json!({"keyword": "device"}),
-                    result: serde_json::json!({
-                        "keyword": "device",
-                        "found": 3,
-                        "tools": [
-                            {"name": "list_devices", "description": "List all available devices", "matched_field": "name"}
-                        ]
-                    }),
-                    description: "搜索设备相关工具".to_string(),
-                },
-            ],
+            examples: vec![edge_ai_tools::tool::ToolExample {
+                arguments: serde_json::json!({"keyword": "device"}),
+                result: serde_json::json!({
+                    "keyword": "device",
+                    "found": 3,
+                    "tools": [
+                        {"name": "list_devices", "description": "List all available devices", "matched_field": "name"}
+                    ]
+                }),
+                description: "搜索设备相关工具".to_string(),
+            }],
             response_format: ResponseFormat::Concise,
             namespace: Some("system".to_string()),
         }
@@ -235,12 +231,30 @@ mod tests {
 
     fn create_test_tool() -> ToolSearchTool {
         let tool_descriptions = vec![
-            ("list_devices".to_string(), "List all available devices".to_string()),
-            ("list_rules".to_string(), "List all automation rules".to_string()),
-            ("create_rule".to_string(), "Create a new automation rule".to_string()),
-            ("get_device".to_string(), "Get details of a specific device".to_string()),
-            ("control_device".to_string(), "Control a device by sending commands".to_string()),
-            ("query_data".to_string(), "Query time series data from devices".to_string()),
+            (
+                "list_devices".to_string(),
+                "List all available devices".to_string(),
+            ),
+            (
+                "list_rules".to_string(),
+                "List all automation rules".to_string(),
+            ),
+            (
+                "create_rule".to_string(),
+                "Create a new automation rule".to_string(),
+            ),
+            (
+                "get_device".to_string(),
+                "Get details of a specific device".to_string(),
+            ),
+            (
+                "control_device".to_string(),
+                "Control a device by sending commands".to_string(),
+            ),
+            (
+                "query_data".to_string(),
+                "Query time series data from devices".to_string(),
+            ),
         ];
         ToolSearchTool::new(
             tool_descriptions.iter().map(|(n, _)| n.clone()).collect(),
