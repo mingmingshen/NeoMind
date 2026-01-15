@@ -57,6 +57,7 @@ impl LlmRuntime for MockLlmBackend {
     async fn generate(&self, _input: LlmInput) -> Result<LlmOutput, LlmError> {
         Ok(LlmOutput {
             text: "Response".to_string(),
+            thinking: None,
             finish_reason: FinishReason::Stop,
             usage: Some(TokenUsage {
                 prompt_tokens: 10,
@@ -361,6 +362,7 @@ async fn test_comprehensive_multi_turn_conversation() {
                             println!("  ERROR: {}", message);
                         }
                         AgentEvent::End => {}
+                        _ => {} // Handle other event variants
                     }
                 }
 

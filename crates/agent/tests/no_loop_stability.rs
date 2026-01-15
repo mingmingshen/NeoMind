@@ -63,6 +63,7 @@ impl LlmRuntime for MockLlmBackend {
         *self.call_count.write().await += 1;
         Ok(LlmOutput {
             text: "Response".to_string(),
+            thinking: None,
             finish_reason: FinishReason::Stop,
             usage: Some(TokenUsage {
                 prompt_tokens: 10,
@@ -319,6 +320,7 @@ impl EventAnalyzer {
             AgentEvent::End => {
                 self.has_end = true;
             }
+            _ => {} // Handle other event variants
         }
     }
 
