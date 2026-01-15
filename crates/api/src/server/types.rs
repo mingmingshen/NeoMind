@@ -9,7 +9,7 @@ use edge_ai_devices::{MqttDeviceManager, MultiBrokerManager, TimeSeriesStorage};
 use edge_ai_rules::{InMemoryValueProvider, RuleEngine};
 use edge_ai_alerts::AlertManager;
 use edge_ai_workflow::WorkflowEngine;
-use edge_ai_core::EventBus;
+use edge_ai_core::{EventBus, plugin::UnifiedPluginRegistry};
 use edge_ai_storage::business::EventLogStore;
 use edge_ai_commands::{CommandManager, CommandQueue, CommandStateStore};
 use edge_ai_storage::decisions::DecisionStore;
@@ -76,6 +76,8 @@ pub struct ServerState {
     pub response_cache: Arc<crate::cache::ResponseCache>,
     /// Rate limiter for API request throttling.
     pub rate_limiter: Arc<RateLimiter>,
+    /// Plugin registry for managing all plugins.
+    pub plugin_registry: Arc<UnifiedPluginRegistry>,
     /// Server start timestamp.
     pub started_at: i64,
 }
@@ -181,6 +183,9 @@ impl ServerState {
         let rate_limit_config = RateLimitConfig::default();
         let rate_limiter = Arc::new(RateLimiter::with_config(rate_limit_config));
 
+        // Create plugin registry with NeoTalk version
+        let plugin_registry = Arc::new(UnifiedPluginRegistry::new(env!("CARGO_PKG_VERSION")));
+
         Self {
             session_manager: Arc::new(session_manager),
             mqtt_device_manager,
@@ -200,6 +205,7 @@ impl ServerState {
             auth_user_state: Arc::new(AuthUserState::new()),
             response_cache: Arc::new(crate::cache::ResponseCache::with_default_ttl()),
             rate_limiter,
+            plugin_registry,
             started_at,
         }
     }

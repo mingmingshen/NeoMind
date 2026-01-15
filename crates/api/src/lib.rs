@@ -16,6 +16,7 @@ pub mod audit;
 pub mod cache;
 pub mod startup;
 pub mod auth_users;
+pub mod builtin_plugins;
 
 pub use config::{load_llm_config, LlmSettingsRequest};
 pub use server::{run, create_router, ServerState};
