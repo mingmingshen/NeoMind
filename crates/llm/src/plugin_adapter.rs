@@ -338,9 +338,9 @@ mod tests {
     fn test_plugin_factory() {
         // This test verifies the factory compiles
         // Full integration tests require an actual instance manager
-        let manager = Arc::new(LlmBackendInstanceManager::new(Arc::new(
+        let manager = Arc::new(LlmBackendInstanceManager::new(
             edge_ai_storage::LlmBackendStore::open(":memory:").unwrap(),
-        )));
+        ));
         let factory = LlmBackendPluginFactory::new(manager);
 
         let types = factory.available_types();
@@ -349,9 +349,9 @@ mod tests {
 
     #[test]
     fn test_get_backend_type() {
-        let manager = Arc::new(LlmBackendInstanceManager::new(Arc::new(
+        let manager = Arc::new(LlmBackendInstanceManager::new(
             edge_ai_storage::LlmBackendStore::open(":memory:").unwrap(),
-        )));
+        ));
         let factory = LlmBackendPluginFactory::new(manager);
 
         let ollama_type = factory.get_type("ollama");

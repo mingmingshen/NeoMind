@@ -155,11 +155,10 @@ impl LlmConfig {
     }
 }
 
-#[cfg(feature = "cloud")]
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
-            backend: LlmBackendConfig::Ollama(OllamaConfig::default()),
+            backend: LlmBackendConfig::Ollama(OllamaConfig::new(models::OLLAMA_DEFAULT)),
             generation: GenerationParams::default(),
         }
     }

@@ -650,7 +650,7 @@ mod tests {
     #[test]
     fn test_config_schema_generation() {
         let manager =
-            LlmBackendInstanceManager::new(Arc::new(LlmBackendStore::open(":memory:").unwrap()));
+            LlmBackendInstanceManager::new(LlmBackendStore::open(":memory:").unwrap());
 
         let schema = manager.get_config_schema("ollama");
         assert_eq!(schema["type"], "object");

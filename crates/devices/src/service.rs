@@ -1061,6 +1061,8 @@ mod tests {
                 unit: "°C".to_string(),
                 allowed_values: vec![],
             }],
+            samples: vec![],
+            llm_hints: String::new(),
         };
 
         // Valid parameter
@@ -1094,6 +1096,8 @@ mod tests {
             display_name: "Set Temperature".to_string(),
             payload_template: r#"{"action": "set_temperature", "value": ${{value}}}"#.to_string(),
             parameters: vec![],
+            samples: vec![],
+            llm_hints: String::new(),
         };
 
         let mut params = HashMap::new();

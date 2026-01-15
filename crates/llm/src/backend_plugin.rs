@@ -187,6 +187,7 @@ mod tests {
 
     #[test]
     fn test_register_builtin_backends() {
+        #[cfg(feature = "cloud")]
         register_builtin_backends();
 
         #[cfg(feature = "cloud")]
