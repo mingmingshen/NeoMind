@@ -1808,9 +1808,7 @@ mod tests {
     /// Test tool parser
     #[test]
     fn test_tool_parser() {
-        let input = r#"<tool_calls><invoke name="test_tool">
-<parameter name="param1">value1</parameter>
-</invoke></tool_calls>"#;
+        let input = r#"{"name": "test_tool", "arguments": {"param1": "value1"}}"#;
 
         let result = parse_tool_calls(input);
         assert!(result.is_ok(), "Should parse tool calls successfully");

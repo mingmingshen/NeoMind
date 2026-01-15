@@ -486,6 +486,9 @@ mod tests {
                 "required": ["arg1"]
             }),
             example: None,
+            examples: vec![],
+            response_format: crate::tool::ResponseFormat::Concise,
+            namespace: Some("test".to_string()),
         }];
 
         let formatted = format_for_llm(&definitions);
