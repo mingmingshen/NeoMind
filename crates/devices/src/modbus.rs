@@ -355,6 +355,29 @@ impl ModbusDevice {
     pub fn register(&self, name: &str) -> Option<&RegisterDefinition> {
         self.registers.get(name)
     }
+
+    /// Get device name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get device type.
+    pub fn device_type(&self) -> DeviceType {
+        self.device_type
+    }
+
+    /// Get number of registers (metrics).
+    pub fn metrics(&self) -> usize {
+        self.registers.len()
+    }
+
+    /// Read a metric by name.
+    pub async fn read_metric(&self, name: &str) -> Result<MetricValue, DeviceError> {
+        let reg_def = self
+            .register(name)
+            .ok_or_else(|| DeviceError::NotFoundStr(name.to_string()))?;
+        self.read_register(reg_def).await
+    }
 }
 
 #[cfg(test)]
@@ -403,7 +426,7 @@ mod tests {
 
         assert_eq!(device.name(), "WeatherStation");
         assert_eq!(device.device_type(), DeviceType::Sensor);
-        assert_eq!(device.metrics().len(), 2);
+        assert_eq!(device.metrics(), 2);
     }
 
     #[tokio::test]

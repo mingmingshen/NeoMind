@@ -1436,9 +1436,10 @@ mod tests {
             MqttAdapter::default_parse_value(b"true"),
             Ok(MetricValue::Boolean(true))
         ));
-        assert!(matches!(
-            MqttAdapter::default_parse_value(b"\"hello\""),
-            Ok(MetricValue::String(s) if s == "hello")
-        ));
+        // Test string value parsing
+        match MqttAdapter::default_parse_value(b"\"hello\"") {
+            Ok(MetricValue::String(s)) => assert_eq!(s, "hello"),
+            _ => panic!("Expected String value"),
+        }
     }
 }

@@ -263,6 +263,39 @@ impl MqttDevice {
         }
     }
 
+    /// Get device name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get device ID.
+    pub fn id(&self) -> &DeviceId {
+        &self.id
+    }
+
+    /// Get device type (sensor for read-only, controller for read/write).
+    pub fn device_type(&self) -> DeviceType {
+        if self.available_commands.is_empty() {
+            DeviceType::Sensor
+        } else {
+            DeviceType::Controller
+        }
+    }
+
+    /// Get number of metrics.
+    pub fn metrics(&self) -> usize {
+        self.metrics.len()
+    }
+
+    /// Read a metric by name (from cached values).
+    pub async fn read_metric(&self, name: &str) -> Result<MetricValue, DeviceError> {
+        let values = self.cached_values.read().await;
+        values
+            .get(name)
+            .cloned()
+            .ok_or_else(|| DeviceError::NotFoundStr(name.to_string()))
+    }
+
     /// Publish a command to the device.
     pub async fn publish_command(&self, command: &Command) -> Result<Vec<u8>, DeviceError> {
         // This would publish to MQTT broker

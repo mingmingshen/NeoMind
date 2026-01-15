@@ -913,6 +913,7 @@ mod tests {
             name: "Test Sensor".to_string(),
             description: "A test sensor".to_string(),
             categories: vec!["sensor".to_string()],
+            mode: edge_ai_devices::mdl_format::DeviceTypeMode::Full,
             uplink: edge_ai_devices::mdl_format::UplinkConfig {
                 metrics: vec![MetricDefinition {
                     name: "temperature".to_string(),
@@ -923,6 +924,7 @@ mod tests {
                     max: Some(120.0),
                     required: false,
                 }],
+                samples: vec![],
             },
             downlink: edge_ai_devices::mdl_format::DownlinkConfig { commands: vec![] },
         };
