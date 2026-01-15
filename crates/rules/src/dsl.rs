@@ -115,9 +115,113 @@ impl std::fmt::Display for LogLevel {
 pub struct RuleDslParser;
 
 impl RuleDslParser {
+    /// Preprocess DSL string to handle common LLM output formats.
+    /// Handles:
+    /// - Markdown code blocks (```...```)
+    /// - Extra whitespace
+    /// - Lowercase keywords (Rule, When, Do, End -> RULE, WHEN, DO, END)
+    /// - JSON escaping
+    fn preprocess(input: &str) -> String {
+        let mut processed = input.to_string();
+
+        // Remove markdown code blocks
+        if processed.contains("```") {
+            let mut result = String::new();
+            let mut in_code_block = false;
+
+            for line in processed.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("```") {
+                    in_code_block = !in_code_block;
+                } else if in_code_block {
+                    result.push_str(line);
+                    result.push('\n');
+                } else if !trimmed.starts_with("```") && !result.is_empty() {
+                    // Content before any code block
+                    result.push_str(line);
+                    result.push('\n');
+                }
+            }
+            // If we found code blocks, use the extracted content
+            if processed.contains("```") {
+                processed = result;
+            }
+        }
+
+        // Remove JSON string escaping if present (quotes around entire DSL)
+        let trimmed = processed.trim();
+        if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
+           (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+            if let Ok(unescaped) = serde_json::from_str::<String>(trimmed) {
+                processed = unescaped;
+            } else {
+                // Simple quote removal - unescape JSON escapes
+                let inner = &trimmed[1..trimmed.len()-1];
+                processed = inner.replace("\\\"", "\"");
+            }
+        } else {
+            // Not wrapped in quotes, but may still have escaped quotes
+            processed = processed.replace("\\\"", "\"");
+        }
+
+        // Handle JSON escape sequences like \n, \t
+        processed = processed.replace("\\n", "\n");
+        processed = processed.replace("\\t", "\t");
+        processed = processed.replace("\\r", "\r");
+
+        // Convert keywords to uppercase (preserving rest of line)
+        // This works for both "Rule" at line start and indented actions like "  notify"
+        fn normalize_keywords(line: &str) -> String {
+            let mut result = String::new();
+            let mut chars = line.chars().peekable();
+            let mut start = 0;
+
+            // Find first non-whitespace position
+            while chars.peek().map_or(false, |c| c.is_whitespace()) {
+                result.push(chars.next().unwrap());
+                start += 1;
+            }
+
+            let rest = &line[start..];
+            let upper = rest.to_uppercase();
+
+            // Check if starts with any keyword (case-insensitive)
+            for keyword in &["RULE", "WHEN", "FOR", "DO", "END", "NOTIFY", "EXECUTE", "LOG"] {
+                let keyword_with_space = format!("{} ", keyword);
+                if upper.starts_with(&keyword_with_space) || upper == *keyword {
+                    // Found keyword - convert to uppercase
+                    result.push_str(keyword);
+                    if let Some(remaining) = rest.get(keyword.len()..) {
+                        // Handle space after keyword
+                        if remaining.starts_with(' ') {
+                            result.push(' ');
+                            result.push_str(&remaining[1..]);
+                        } else {
+                            result.push_str(remaining);
+                        }
+                    }
+                    return result;
+                }
+            }
+
+            // No keyword found, keep original
+            result.push_str(rest);
+            result
+        }
+
+        let lines: Vec<String> = processed
+            .lines()
+            .map(normalize_keywords)
+            .map(|l| l.trim().to_string())
+            .collect();
+
+        lines.join("\n")
+    }
+
     /// Parse a rule from DSL string.
     pub fn parse(input: &str) -> Result<ParsedRule, RuleError> {
-        let mut lines: Vec<&str> = input.lines().map(|l| l.trim()).collect();
+        let preprocessed = Self::preprocess(input);
+        let mut lines: Vec<&str> = preprocessed.lines().collect();
 
         // Find and extract the rule name
         let name = Self::extract_rule_name(&mut lines)?;
@@ -515,5 +619,72 @@ mod tests {
             let rule = RuleDslParser::parse(&dsl).unwrap();
             assert_eq!(rule.condition.operator, expected_op);
         }
+    }
+
+    #[test]
+    fn test_preprocess_lowercase_keywords() {
+        // Test that lowercase keywords are converted to uppercase
+        let dsl = r#"
+            rule "Test Rule"
+            when sensor.temperature > 50
+            do
+                notify "High temperature"
+            end
+        "#;
+
+        let rule = RuleDslParser::parse(dsl).unwrap();
+        assert_eq!(rule.name, "Test Rule");
+        assert_eq!(rule.condition.device_id, "sensor");
+    }
+
+    #[test]
+    fn test_preprocess_markdown_code_blocks() {
+        // Test that markdown code blocks are removed
+        let dsl = r#"```dsl
+            RULE "Test Rule"
+            WHEN sensor.temperature > 50
+            DO
+                NOTIFY "High temperature"
+            END
+            ```"#;
+
+        let rule = RuleDslParser::parse(dsl).unwrap();
+        assert_eq!(rule.name, "Test Rule");
+    }
+
+    #[test]
+    fn test_preprocess_json_string_wrapping() {
+        // Test JSON unescaping - using \\n in JSON to represent newline
+        let dsl_with_escapes = r#"RULE \"Test Rule\"\nWHEN sensor.temperature > 50\nDO NOTIFY \"High temperature\" END"#;
+
+        let rule = RuleDslParser::parse(dsl_with_escapes).unwrap();
+        assert_eq!(rule.name, "Test Rule");
+    }
+
+    #[test]
+    fn test_preprocess_escaped_quotes() {
+        // Test handling of escaped quotes (common in LLM tool responses)
+        let dsl = r#"RULE \"Test Rule\"
+WHEN sensor.temperature > 50
+DO NOTIFY \"High temperature\" END"#;
+
+        let rule = RuleDslParser::parse(dsl).unwrap();
+        assert_eq!(rule.name, "Test Rule");
+    }
+
+    #[test]
+    fn test_preprocess_mixed_case_keywords() {
+        // Test mixed case keywords (Rule, When, Do, End)
+        let dsl = r#"
+            Rule "Test Rule"
+            When sensor.temperature > 50
+            Do
+                Notify "High temperature"
+            End
+        "#;
+
+        let rule = RuleDslParser::parse(dsl).unwrap();
+        assert_eq!(rule.name, "Test Rule");
+        assert_eq!(rule.actions.len(), 1);
     }
 }

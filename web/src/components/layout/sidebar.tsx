@@ -58,7 +58,10 @@ export function DesktopSidebar() {
           </div>
         )}
         <button
-          onClick={toggleSidebar}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleSidebar()
+          }}
           className="ml-auto rounded p-1 hover:bg-muted"
         >
           {sidebarOpen ? (
@@ -77,7 +80,10 @@ export function DesktopSidebar() {
           return (
             <button
               key={item.id}
-              onClick={() => setCurrentPage(item.id)}
+              onClick={(e) => {
+                e.stopPropagation()
+                setCurrentPage(item.id)
+              }}
               className={cn(
                 "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 isActive
