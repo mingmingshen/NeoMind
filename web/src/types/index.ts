@@ -727,6 +727,7 @@ export interface PluginStatsDto {
   avg_response_time_ms: number
   last_start_time?: string
   last_stop_time?: string
+  device_count?: number
 }
 
 // ========== Device Adapter Plugin Types ==========

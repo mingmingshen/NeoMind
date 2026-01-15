@@ -87,7 +87,7 @@ export interface FieldSchema {
 // Plugin Category & Type
 // ============================================================================
 
-export type PluginCategory = 'ai' | 'devices' | 'storage' | 'notify' | 'integration' | 'tools'
+export type PluginCategory = 'ai' | 'devices' | 'storage' | 'notify' | 'integration' | 'tools' | 'all'
 
 export type PluginType =
   | 'llm_backend'
@@ -96,6 +96,69 @@ export type PluginType =
   | 'alert_channel'
   | 'integration'
   | 'tool'
+  | 'dynamic'           // Dynamically loaded plugin
+  | 'native'            // Native (built-in) plugin
+
+// ============================================================================
+// Dynamic Plugin Metadata (from backend descriptor)
+// ============================================================================
+
+export interface DynamicPluginMetadata {
+  // Identification
+  id: string
+  pluginType: string
+  name: string
+  version: string
+  description: string
+  author?: string
+  homepage?: string
+  repository?: string
+  license?: string
+
+  // Compatibility
+  requiredNeoTalk: string
+
+  // Capabilities (from descriptor)
+  capabilities: PluginCapabilities
+
+  // File info
+  filePath?: string
+  fileSize?: number
+  loadedAt?: number
+}
+
+export interface PluginCapabilities {
+  async: boolean           // Supports async operations
+  threadSafe: boolean      // Thread-safe implementation
+  streaming: boolean       // Supports streaming responses
+  stateless: boolean       // Stateless operation
+  hasConfig: boolean       // Uses configuration schema
+  hotReload: boolean       // Supports hot reloading
+  singleton: boolean       // Only one instance allowed
+}
+
+// ============================================================================
+// Plugin State & Status
+// ============================================================================
+
+export type PluginState = 'loaded' | 'running' | 'stopped' | 'error' | 'unloading'
+
+export interface PluginStatus {
+  state: PluginState
+  enabled: boolean
+  health: 'healthy' | 'degraded' | 'unhealthy'
+  uptime?: number
+  lastError?: string
+  stats?: PluginStats
+}
+
+export interface PluginStats {
+  totalRequests?: number
+  successfulRequests?: number
+  failedRequests?: number
+  averageLatency?: number
+  lastUsed?: number
+}
 
 // ============================================================================
 // Plugin UI Schema
@@ -154,6 +217,26 @@ export interface PluginUISchema {
     showConfig?: boolean
     configDisplay?: (config: Record<string, unknown>) => string
   }
+}
+
+// ============================================================================
+// Unified Plugin Data (combines schema, status, and runtime data)
+// ============================================================================
+
+/**
+ * Unified plugin data structure used by the unified plugin UI
+ * Combines schema, status, metadata, and runtime configuration
+ */
+export interface UnifiedPluginData {
+  id: string
+  schema: PluginUISchema
+  metadata?: DynamicPluginMetadata
+  status: PluginStatus
+  config: Record<string, unknown>
+  deviceCount?: number
+  connected?: boolean
+  version?: string
+  author?: string
 }
 
 // ============================================================================
@@ -316,4 +399,157 @@ export const COMMON_FIELDS = {
     description: '认证密码',
     secret: true,
   } satisfies FieldSchema,
+
+  // JSON field
+  jsonConfig: {
+    name: 'json_config',
+    type: 'json' as const,
+    label: 'JSON 配置',
+    description: '高级 JSON 配置',
+    placeholder: '{"key": "value"}',
+  } satisfies FieldSchema,
+
+  // Tags field (multiselect)
+  tags: {
+    name: 'tags',
+    type: 'multiselect' as const,
+    label: '标签',
+    description: '选择相关标签',
+    options: [
+      { value: 'production', label: '生产环境' },
+      { value: 'staging', label: '测试环境' },
+      { value: 'development', label: '开发环境' },
+    ],
+  } satisfies FieldSchema,
+
+  // Topics field (array)
+  topics: {
+    name: 'topics',
+    type: 'array' as const,
+    label: 'MQTT 主题',
+    description: '订阅的 MQTT 主题列表',
+    itemSchema: {
+      name: 'topic',
+      type: 'string',
+      label: '主题',
+      placeholder: 'sensors/#',
+    } satisfies FieldSchema,
+  } satisfies FieldSchema,
+
+  // Headers field (keyvalue)
+  headers: {
+    name: 'headers',
+    type: 'keyvalue' as const,
+    label: 'HTTP 请求头',
+    description: '自定义 HTTP 请求头',
+    keySchema: {
+      name: 'key',
+      type: 'string',
+      label: '键名',
+    } satisfies FieldSchema,
+    valueSchema: {
+      name: 'value',
+      type: 'string',
+      label: '值',
+    } satisfies FieldSchema,
+  } satisfies FieldSchema,
+
+  // Retry config (object)
+  retryConfig: {
+    name: 'retry_config',
+    type: 'object' as const,
+    label: '重试配置',
+    description: '连接重试相关配置',
+    properties: {
+      max_retries: {
+        name: 'max_retries',
+        type: 'number',
+        label: '最大重试次数',
+        default: 3,
+        minimum: 0,
+        maximum: 10,
+      } satisfies FieldSchema,
+      delay_ms: {
+        name: 'delay_ms',
+        type: 'number',
+        label: '重试延迟（毫秒）',
+        default: 1000,
+        minimum: 100,
+      } satisfies FieldSchema,
+    },
+  } satisfies FieldSchema,
+}
+
+// ============================================================================
+// Helper functions for schema validation
+// ============================================================================
+
+/**
+ * Check if a field type is supported by the SchemaConfigForm
+ */
+export function isFieldTypeSupported(type: FieldType): boolean {
+  const supportedTypes: FieldType[] = [
+    'string', 'text', 'number', 'boolean', 'select',
+    'password', 'url', 'email', 'json', 'array', 'object', 'keyvalue', 'multiselect'
+  ]
+  return supportedTypes.includes(type)
+}
+
+/**
+ * Get default value for a field type
+ */
+export function getDefaultValueForType(type: FieldType): unknown {
+  switch (type) {
+    case 'boolean':
+      return false
+    case 'number':
+      return 0
+    case 'array':
+    case 'multiselect':
+      return []
+    case 'object':
+    case 'keyvalue':
+      return {}
+    case 'json':
+      return '{}'
+    default:
+      return ''
+  }
+}
+
+/**
+ * Convert plugin type to category
+ */
+export function pluginTypeToCategory(type: PluginType): PluginCategory {
+  switch (type) {
+    case 'llm_backend':
+    case 'dynamic':
+    case 'native':
+      return 'ai'
+    case 'device_adapter':
+      return 'devices'
+    case 'storage_backend':
+      return 'storage'
+    case 'alert_channel':
+      return 'notify'
+    default:
+      return 'integration'
+  }
+}
+
+/**
+ * Get plugin type display name
+ */
+export function getPluginTypeName(type: PluginType): string {
+  const names: Record<PluginType, string> = {
+    llm_backend: 'LLM 后端',
+    device_adapter: '设备适配器',
+    storage_backend: '存储后端',
+    alert_channel: '告警通道',
+    integration: '集成',
+    tool: '工具',
+    dynamic: '动态插件',
+    native: '内置插件',
+  }
+  return names[type] || type
 }
