@@ -1240,7 +1240,7 @@ pub async fn process_stream_events_with_safeguards(
                 }
 
                 // === SIMPLE INTENT OR MAX ITERATIONS REACHED: Final response ===
-                // Save the initial message with thinking
+                // Save the initial message with thinking and tool calls
                 let response_to_save = if content_before_tools.is_empty() {
                     // No content before tools - use empty string, don't show meaningless fallback
                     String::new()
@@ -1250,9 +1250,13 @@ pub async fn process_stream_events_with_safeguards(
 
                 let initial_msg = if !thinking_content.is_empty() {
                     let cleaned_thinking = cleanup_thinking_content(&thinking_content);
-                    AgentMessage::assistant_with_thinking(&response_to_save, &cleaned_thinking)
+                    AgentMessage::assistant_with_tools_and_thinking(
+                        &response_to_save,
+                        tool_calls_with_results.clone(),
+                        &cleaned_thinking,
+                    )
                 } else {
-                    AgentMessage::assistant(&response_to_save)
+                    AgentMessage::assistant_with_tools(&response_to_save, tool_calls_with_results.clone())
                 };
                 internal_state.write().await.push_message(initial_msg);
 
