@@ -6,3 +6,6 @@ export type {
   RuleTriggerEvent,
   RuleStats,
 } from "./RuleMonitor"
+export { WorkflowsTab } from "./WorkflowsTab"
+export { WorkflowTemplateDialog } from "./WorkflowTemplateDialog"
+export type { WorkflowTemplateDialogProps } from "./WorkflowTemplateDialog"

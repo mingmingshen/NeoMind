@@ -374,3 +374,222 @@ pub async fn set_workflow_status_handler(
         "enabled": req.enabled,
     }))
 }
+
+/// Get workflow templates.
+///
+/// GET /api/workflows/templates
+pub async fn get_workflow_templates_handler(
+) -> HandlerResult<serde_json::Value> {
+    use edge_ai_workflow::WorkflowTemplates;
+
+    let templates = WorkflowTemplates::all();
+
+    let template_dtos: Vec<serde_json::Value> = templates
+        .iter()
+        .map(|t| {
+            json!({
+                "id": t.id,
+                "name": t.name,
+                "category": t.category,
+                "description": t.description,
+                "parameters": t.parameters.iter().map(|p| {
+                    json!({
+                        "name": p.name,
+                        "label": p.label,
+                        "default": p.default,
+                        "required": p.required,
+                        "type": match p.param_type {
+                            edge_ai_workflow::TemplateParameterType::String => "string",
+                            edge_ai_workflow::TemplateParameterType::Number => "number",
+                            edge_ai_workflow::TemplateParameterType::Boolean => "boolean",
+                            edge_ai_workflow::TemplateParameterType::Device => "device",
+                            edge_ai_workflow::TemplateParameterType::Metric => "metric",
+                            edge_ai_workflow::TemplateParameterType::Enum => "enum",
+                        },
+                        "options": p.options,
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+
+    ok(json!({
+        "templates": template_dtos,
+        "categories": WorkflowTemplates::categories(),
+        "count": template_dtos.len(),
+    }))
+}
+
+/// Fill a workflow template with parameters.
+///
+/// POST /api/workflows/templates/fill
+pub async fn fill_workflow_template_handler(
+    Json(req): Json<serde_json::Value>,
+) -> HandlerResult<serde_json::Value> {
+    use edge_ai_workflow::WorkflowTemplates;
+
+    let template_id = req
+        .get("template_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorResponse::bad_request("Missing 'template_id'"))?;
+
+    let template = WorkflowTemplates::get(template_id)
+        .ok_or_else(|| ErrorResponse::not_found(format!("Template {}", template_id)))?;
+
+    let params_map: std::collections::HashMap<String, String> = req
+        .get("parameters")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    let filled = template
+        .fill(&params_map)
+        .map_err(|e| ErrorResponse::bad_request(format!("Failed to fill template: {}", e)))?;
+
+    ok(json!({
+        "template_id": filled.template_id,
+        "workflow_json": filled.dsl,
+        "parameters": filled.parameters,
+    }))
+}
+
+/// Generate a workflow from natural language.
+///
+/// POST /api/workflows/generate
+pub async fn generate_workflow_handler(
+    Json(req): Json<serde_json::Value>,
+) -> HandlerResult<serde_json::Value> {
+    use edge_ai_workflow::WorkflowGenerator;
+
+    let description = req
+        .get("description")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorResponse::bad_request("Missing 'description'"))?;
+
+    let context = edge_ai_workflow::ValidationContext::default();
+
+    let generated = WorkflowGenerator::generate(description, &context)
+        .map_err(|e| ErrorResponse::bad_request(format!("Failed to generate workflow: {}", e)))?;
+
+    ok(json!({
+        "workflow_json": generated.workflow_json,
+        "explanation": generated.explanation,
+        "confidence": generated.confidence,
+        "suggested_edits": generated.suggested_edits,
+        "warnings": generated.warnings,
+    }))
+}
+
+/// Export workflows.
+///
+/// GET /api/workflows/export
+pub async fn export_workflows_handler(
+    State(state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
+    let workflows = engine
+        .list_workflows()
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to list workflows: {}", e)))?;
+
+    ok(json!({
+        "workflows": workflows,
+        "export_date": chrono::Utc::now().to_rfc3339(),
+        "total_count": workflows.len(),
+    }))
+}
+
+/// Import workflows.
+///
+/// POST /api/workflows/import
+pub async fn import_workflows_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<serde_json::Value>,
+) -> HandlerResult<serde_json::Value> {
+    let engine: Arc<WorkflowEngine> = get_workflow_engine(&state).await?;
+
+    let workflows_to_import: Vec<Workflow> = serde_json::from_value(
+        req.get("workflows")
+            .or_else(|| req.get("rules"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Array(vec![])),
+    )
+    .map_err(|e| ErrorResponse::bad_request(format!("Invalid workflows data: {}", e)))?;
+
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut errors = Vec::new();
+
+    for mut workflow in workflows_to_import {
+        // Generate new ID to avoid conflicts
+        let workflow_name = workflow.name.clone();
+        workflow.id = uuid::Uuid::new_v4().to_string();
+
+        match workflow.validate() {
+            Ok(_) => {
+                if let Err(e) = engine.register_workflow(workflow).await {
+                    errors.push(json!({
+                        "workflow": {"name": workflow_name},
+                        "error": format!("{}", e)
+                    }));
+                } else {
+                    imported += 1;
+                }
+            }
+            Err(e) => {
+                errors.push(json!({
+                    "workflow": {"name": workflow_name},
+                    "error": format!("Invalid workflow: {}", e)
+                }));
+            }
+        }
+    }
+
+    ok(json!({
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+    }))
+}
+
+/// Get available resources for workflow building.
+///
+/// GET /api/workflows/resources
+pub async fn get_workflow_resources_handler(
+    State(state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    // Get devices from device registry
+    let devices: Vec<serde_json::Value> = {
+        let device_configs = state.device_registry.list_devices().await;
+        device_configs.into_iter().map(|d| {
+            json!({
+                "id": d.device_id,
+                "name": d.name,
+                "type": d.device_type,
+            })
+        }).collect()
+    };
+
+    // Common metrics
+    let metrics = vec![
+        "temperature".to_string(),
+        "humidity".to_string(),
+        "pressure".to_string(),
+        "value".to_string(),
+        "state".to_string(),
+        "status".to_string(),
+        "battery".to_string(),
+        "signal".to_string(),
+    ];
+
+    // Alert channels
+    let channels = state
+        .alert_manager
+        .list_channels()
+        .await;
+
+    ok(json!({
+        "devices": devices,
+        "metrics": metrics,
+        "alert_channels": channels,
+    }))
+}

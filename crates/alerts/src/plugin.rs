@@ -16,6 +16,71 @@ use crate::error::{Error, Result};
 /// This is the trait object type used for storing any channel implementation.
 pub type DynAlertChannel = Arc<dyn edge_ai_core::alerts::AlertChannel + Send + Sync>;
 
+/// Trait for channels that can provide their configuration.
+/// This allows retrieving channel configuration for editing/display purposes.
+pub trait AlertChannelConfig: edge_ai_core::alerts::AlertChannel {
+    /// Get the channel configuration as a JSON value.
+    fn get_config(&self) -> serde_json::Value;
+}
+
+/// Wrapper to add config support to any AlertChannel.
+pub struct ChannelWithConfig<T> {
+    inner: T,
+    config: serde_json::Value,
+}
+
+impl<T> ChannelWithConfig<T>
+where
+    T: edge_ai_core::alerts::AlertChannel + Send + Sync + 'static,
+{
+    pub fn new(channel: T, config: serde_json::Value) -> Self {
+        Self {
+            inner: channel,
+            config,
+        }
+    }
+
+    pub fn into_dyn(self) -> DynAlertChannel {
+        Arc::new(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl<T> edge_ai_core::alerts::AlertChannel for ChannelWithConfig<T>
+where
+    T: edge_ai_core::alerts::AlertChannel + Send + Sync,
+{
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn channel_type(&self) -> &str {
+        self.inner.channel_type()
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.inner.is_enabled()
+    }
+
+    async fn send(&self, alert: &edge_ai_core::alerts::Alert) -> edge_ai_core::alerts::Result<()> {
+        self.inner.send(alert).await
+    }
+}
+
+impl<T> AlertChannelConfig for ChannelWithConfig<T>
+where
+    T: edge_ai_core::alerts::AlertChannel + Send + Sync,
+{
+    fn get_config(&self) -> serde_json::Value {
+        self.config.clone()
+    }
+}
+
+/// Helper trait for channels that can serialize their own config.
+pub trait SelfDescribingChannel: edge_ai_core::alerts::AlertChannel {
+    fn describe_config(&self) -> serde_json::Value;
+}
+
 /// Channel plugin registry for managing notification channels.
 ///
 /// This registry supports:
@@ -25,6 +90,8 @@ pub type DynAlertChannel = Arc<dyn edge_ai_core::alerts::AlertChannel + Send + S
 pub struct ChannelPluginRegistry {
     /// Active channel instances by name
     channels: RwLock<HashMap<String, DynAlertChannel>>,
+    /// Channel configurations by name (stored separately for retrieval)
+    configs: RwLock<HashMap<String, serde_json::Value>>,
 }
 
 impl ChannelPluginRegistry {
@@ -32,17 +99,30 @@ impl ChannelPluginRegistry {
     pub fn new() -> Self {
         Self {
             channels: RwLock::new(HashMap::new()),
+            configs: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Register a channel instance directly.
+    /// Register a channel instance directly (without config).
     pub async fn register_channel(&self, name: String, channel: DynAlertChannel) {
         self.channels.write().await.insert(name, channel);
     }
 
+    /// Register a channel instance with its configuration.
+    pub async fn register_channel_with_config(&self, name: String, channel: DynAlertChannel, config: serde_json::Value) {
+        let mut channels = self.channels.write().await;
+        let mut configs = self.configs.write().await;
+        channels.insert(name.clone(), channel);
+        configs.insert(name, config);
+    }
+
     /// Unregister a channel by name.
     pub async fn unregister_channel(&self, name: &str) -> bool {
-        self.channels.write().await.remove(name).is_some()
+        let mut channels = self.channels.write().await;
+        let mut configs = self.configs.write().await;
+        let removed = channels.remove(name).is_some();
+        configs.remove(name);
+        removed
     }
 
     /// Get a channel by name.
@@ -126,12 +206,17 @@ impl ChannelPluginRegistry {
     /// Get detailed information about all registered channels.
     pub async fn list_channels_info(&self) -> Vec<ChannelInfo> {
         let channels = self.channels.read().await;
+        let configs = self.configs.read().await;
         channels
             .iter()
-            .map(|(name, channel)| ChannelInfo {
-                name: name.clone(),
-                channel_type: channel.channel_type().to_string(),
-                enabled: channel.is_enabled(),
+            .map(|(name, channel)| {
+                let config = configs.get(name).cloned();
+                ChannelInfo {
+                    name: name.clone(),
+                    channel_type: channel.channel_type().to_string(),
+                    enabled: channel.is_enabled(),
+                    config,
+                }
             })
             .collect()
     }
@@ -139,10 +224,15 @@ impl ChannelPluginRegistry {
     /// Get detailed information about a specific channel.
     pub async fn get_channel_info(&self, name: &str) -> Option<ChannelInfo> {
         let channels = self.channels.read().await;
-        channels.get(name).map(|channel| ChannelInfo {
-            name: name.to_string(),
-            channel_type: channel.channel_type().to_string(),
-            enabled: channel.is_enabled(),
+        let configs = self.configs.read().await;
+        channels.get(name).map(|channel| {
+            let config = configs.get(name).cloned();
+            ChannelInfo {
+                name: name.to_string(),
+                channel_type: channel.channel_type().to_string(),
+                enabled: channel.is_enabled(),
+                config,
+            }
         })
     }
 
@@ -230,6 +320,9 @@ pub struct ChannelInfo {
     pub channel_type: String,
     /// Whether the channel is enabled
     pub enabled: bool,
+    /// Channel configuration (optional - may not be available for all channels)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
 }
 
 /// Result of a channel test.

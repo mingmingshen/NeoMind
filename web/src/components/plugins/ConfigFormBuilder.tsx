@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -105,6 +105,23 @@ function getFieldHelpText(
 }
 
 /**
+ * Extract default values from schema properties
+ */
+function getDefaultValues(
+  schema: PluginConfigSchema
+): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {}
+
+  for (const [fieldName, prop] of Object.entries(schema.properties)) {
+    if (prop.default !== undefined) {
+      defaults[fieldName] = prop.default
+    }
+  }
+
+  return defaults
+}
+
+/**
  * Check if a field should be shown based on visibility rules
  */
 function isFieldVisible(
@@ -172,17 +189,35 @@ export function ConfigFormBuilder({
     [schema.ui_hints?.field_order, schema.properties]
   )
 
+  // Extract default values from schema
+  const schemaDefaults = useMemo(() => getDefaultValues(schema), [schema])
+
+  // Merge schema defaults with provided initialValues (initialValues take precedence)
+  const defaultValues = useMemo(() => ({
+    ...schemaDefaults,
+    ...initialValues,
+  }), [schemaDefaults, initialValues])
+
   const { register, handleSubmit, watch, formState: { errors }, setValue } = useForm({
     resolver: zodResolver(zodSchema as any),
-    defaultValues: initialValues || {},
+    defaultValues,
   })
 
   const watchedValues = watch()
   const [visibleFields, setVisibleFields] = useState<Set<string>>(new Set(fieldOrder))
   const [secretVisible, setSecretVisible] = useState<Record<string, boolean>>({})
 
-  // Update visible fields when watched values change
+  // Use ref to track previous values to prevent infinite loops
+  const prevValuesRef = useRef<string>('')
+  const watchedValuesStr = JSON.stringify(watchedValues)
+
+  // Update visible fields when watched values change (only if actually different)
   useEffect(() => {
+    if (prevValuesRef.current === watchedValuesStr) {
+      return
+    }
+    prevValuesRef.current = watchedValuesStr
+
     const newVisible = new Set<string>()
     for (const field of fieldOrder) {
       if (isFieldVisible(field, watchedValues, schema.ui_hints)) {
@@ -190,7 +225,7 @@ export function ConfigFormBuilder({
       }
     }
     setVisibleFields(newVisible)
-  }, [watchedValues, schema.ui_hints, fieldOrder])
+  }, [watchedValuesStr, schema.ui_hints, fieldOrder])
 
   const handleFormSubmit = async (values: Record<string, unknown>) => {
     await onSubmit(values)
@@ -259,7 +294,6 @@ export function ConfigFormBuilder({
                     id={fieldName}
                     type={isSecret && !showSecret ? 'password' : 'text'}
                     placeholder={schema.ui_hints?.placeholders?.[fieldName]}
-                    defaultValue={watchedValues[fieldName] as string | number | undefined}
                     {...register(fieldName as any)}
                   />
                   {isSecret && (

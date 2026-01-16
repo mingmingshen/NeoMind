@@ -8,15 +8,11 @@ import type {
   DeviceType,
   Alert,
   AddDeviceRequest,
-  LlmSettings,
-  MqttSettings,
-  ExternalBroker,
   MqttStatus,
+  ExternalBroker,
   HassDiscoveryStatus,
   HassDiscoveryRequest,
   HassDiscoveryResponse,
-  HassProcessRequest,
-  HassProcessResponse,
   HassDiscoveredDevice,
   TelemetryDataResponse,
   TelemetrySummaryResponse,
@@ -30,6 +26,12 @@ import type {
   Rule,
   Workflow,
   WorkflowExecution,
+  WorkflowTemplate,
+  TemplatedWorkflow,
+  GeneratedWorkflow,
+  WorkflowResources,
+  WorkflowExport,
+  WorkflowImportResult,
   Scenario,
   ScenarioTemplate,
   MemoryEntry,
@@ -343,20 +345,6 @@ export const api = {
     }),
   getChannelStats: () => fetchAPI<ChannelStats>('/alert-channels/stats'),
 
-  // Settings
-  getLlmSettings: () => fetchAPI<LlmSettings>('/settings/llm'),
-  updateLlmSettings: (settings: LlmSettings) =>
-    fetchAPI<{ error?: string }>('/settings/llm', {
-      method: 'POST',
-      body: JSON.stringify(settings),
-    }),
-  testLlm: (settings: LlmSettings) =>
-    fetchAPI<{ error?: string }>('/settings/llm/test', {
-      method: 'POST',
-      body: JSON.stringify(settings),
-    }),
-  listOllamaModels: () => fetchAPI<{ models: string[]; endpoint: string }>('/settings/llm/models'),
-
   // ========== LLM Backends API ==========
   listLlmBackends: (params?: { type?: string; active_only?: boolean }) =>
     fetchAPI<LlmBackendListResponse>(
@@ -398,16 +386,11 @@ export const api = {
   getLlmBackendStats: () =>
     fetchAPI<{ total_backends: number; active_backends: number; by_type: Record<string, number> }>('/llm-backends/stats'),
 
-  // MQTT Settings
-  getMqttSettings: () => fetchAPI<{ settings: MqttSettings }>('/settings/mqtt'),
-  updateMqttSettings: (settings: MqttSettings) =>
-    fetchAPI<{ message?: string; settings: MqttSettings }>('/settings/mqtt', {
-      method: 'POST',
-      body: JSON.stringify(settings),
-    }),
+  // ========== MQTT / Brokers / HASS Status API ==========
+  // Used by UnifiedDeviceConnectionsTab to display connection status
+
   getMqttStatus: () => fetchAPI<{ status: MqttStatus }>('/mqtt/status'),
 
-  // External Brokers API
   getBrokers: () => fetchAPI<{ brokers: ExternalBroker[]; count: number }>('/brokers'),
   getBroker: (id: string) => fetchAPI<{ broker: ExternalBroker }>(`/brokers/${id}`),
   createBroker: (broker: Omit<ExternalBroker, 'id' | 'updated_at' | 'connected' | 'last_error'> & { id?: string }) =>
@@ -429,6 +412,31 @@ export const api = {
       method: 'POST',
     }),
 
+  getHassDiscoveryStatus: () => fetchAPI<HassDiscoveryStatus>('/devices/hass/status'),
+  startHassDiscovery: (req: HassDiscoveryRequest) =>
+    fetchAPI<HassDiscoveryResponse>('/devices/hass/discover', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  stopHassDiscovery: () =>
+    fetchAPI<{ stopped: boolean }>('/devices/hass/stop', {
+      method: 'POST',
+    }),
+  getHassDiscoveredDevices: () => fetchAPI<{ devices: HassDiscoveredDevice[]; count: number }>('/devices/hass/discovered'),
+  clearHassDiscoveredDevices: () =>
+    fetchAPI<{ cleared: boolean }>('/devices/hass/discovered', {
+      method: 'DELETE',
+    }),
+  registerAggregatedHassDevice: (deviceId: string) =>
+    fetchAPI<{ device_id: string; name?: string; entity_count: number; total_metrics: number; total_commands: number; errors?: string[] }>('/devices/hass/register', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId }),
+    }),
+  unregisterHassDevice: (deviceId: string) =>
+    fetchAPI<{ device_id: string; unregistered: boolean }>(`/devices/hass/unregister/${encodeURIComponent(deviceId)}`, {
+      method: 'DELETE',
+    }),
+
   // Sessions
   // Note: Backend returns paginated response with data as array (auto-unwrapped by fetchAPI)
   listSessions: (page = 1, pageSize = 20) =>
@@ -446,37 +454,6 @@ export const api = {
   getSessionHistory: (id: string) => fetchAPI<SessionHistoryResponse>(`/sessions/${id}/history`),
   deleteSession: (id: string) =>
     fetchAPI<{ deleted: boolean; sessionId: string }>(`/sessions/${id}`, {
-      method: 'DELETE',
-    }),
-
-  // HASS Discovery
-  getHassDiscoveryStatus: () => fetchAPI<HassDiscoveryStatus>('/devices/hass/status'),
-  startHassDiscovery: (req: HassDiscoveryRequest) =>
-    fetchAPI<HassDiscoveryResponse>('/devices/hass/discover', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  stopHassDiscovery: () =>
-    fetchAPI<{ stopped: boolean }>('/devices/hass/stop', {
-      method: 'POST',
-    }),
-  getHassDiscoveredDevices: () => fetchAPI<{ devices: HassDiscoveredDevice[]; count: number }>('/devices/hass/discovered'),
-  clearHassDiscoveredDevices: () =>
-    fetchAPI<{ cleared: boolean }>('/devices/hass/discovered', {
-      method: 'DELETE',
-    }),
-  processHassDiscovery: (req: HassProcessRequest) =>
-    fetchAPI<HassProcessResponse>('/devices/hass/process', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  registerAggregatedHassDevice: (deviceId: string) =>
-    fetchAPI<{ device_id: string; name?: string; entity_count: number; total_metrics: number; total_commands: number; errors?: string[] }>('/devices/hass/register', {
-      method: 'POST',
-      body: JSON.stringify({ device_id: deviceId }),
-    }),
-  unregisterHassDevice: (deviceId: string) =>
-    fetchAPI<{ device_id: string; unregistered: boolean }>(`/devices/hass/unregister/${encodeURIComponent(deviceId)}`, {
       method: 'DELETE',
     }),
 
@@ -696,6 +673,31 @@ export const api = {
     fetchAPI<{ executions: Array<WorkflowExecution> }>(
       `/workflows/${id}/executions${limit ? `?limit=${limit}` : ''}`
     ),
+
+  // ========== Workflow Templates API ==========
+  getWorkflowTemplates: () =>
+    fetchAPI<{ templates: Array<WorkflowTemplate>; categories: string[]; count: number }>(
+      '/workflows/templates'
+    ),
+  fillWorkflowTemplate: (templateId: string, parameters: Record<string, string>) =>
+    fetchAPI<TemplatedWorkflow>('/workflows/templates/fill', {
+      method: 'POST',
+      body: JSON.stringify({ template_id: templateId, parameters }),
+    }),
+  generateWorkflow: (description: string) =>
+    fetchAPI<GeneratedWorkflow>('/workflows/generate', {
+      method: 'POST',
+      body: JSON.stringify({ description }),
+    }),
+  exportWorkflows: () =>
+    fetchAPI<WorkflowExport>('/workflows/export'),
+  importWorkflows: (workflows: Workflow[]) =>
+    fetchAPI<WorkflowImportResult>('/workflows/import', {
+      method: 'POST',
+      body: JSON.stringify({ workflows }),
+    }),
+  getWorkflowResources: () =>
+    fetchAPI<WorkflowResources>('/workflows/resources'),
 
   // ========== Scenarios API ==========
   listScenarios: () =>

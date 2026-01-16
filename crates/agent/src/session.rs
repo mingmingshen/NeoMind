@@ -148,6 +148,15 @@ impl SessionManager {
 
     /// Save message history for a session to persistent storage.
     fn save_history(&self, session_id: &str, messages: &[AgentMessage]) -> Result<()> {
+        // Debug: Log messages with tool_calls before saving
+        for (i, msg) in messages.iter().enumerate() {
+            if msg.role == "assistant" {
+                eprintln!("[save_history] Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
+                    i, msg.role, msg.content.len(), msg.thinking.is_some(),
+                    msg.tool_calls.as_ref().map_or(0, |c| c.len()));
+            }
+        }
+
         // Convert AgentMessage to SessionMessage
         let session_messages: Vec<edge_ai_storage::SessionMessage> = messages
             .iter()
@@ -196,6 +205,16 @@ impl SessionManager {
             .store
             .load_history(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to load history: {}", e)))?;
+
+        // Debug: Log loaded messages
+        eprintln!("[load_history] Loaded {} messages from DB for session {}", session_messages.len(), session_id);
+        for (i, sm) in session_messages.iter().enumerate() {
+            if sm.role == "assistant" {
+                eprintln!("[load_history] Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
+                    i, sm.role, sm.content.len(), sm.thinking.is_some(),
+                    sm.tool_calls.as_ref().map_or(0, |c| c.len()));
+            }
+        }
 
         // Convert SessionMessage back to AgentMessage
         let messages = session_messages

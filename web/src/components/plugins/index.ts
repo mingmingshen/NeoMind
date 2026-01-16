@@ -1,6 +1,8 @@
 export { ConfigFormBuilder } from './ConfigFormBuilder'
 export { PluginCard } from './PluginCard'
 export type { PluginCardProps } from './PluginCard'
+export { PluginGrid } from './PluginGrid'
+export type { PluginGridProps } from './PluginGrid'
 export { PluginUploadDialog } from './PluginUploadDialog'
 export type { PluginUploadDialogProps } from './PluginUploadDialog'
 export { AlertChannelPluginConfigDialog } from './AlertChannelPluginConfigDialog'

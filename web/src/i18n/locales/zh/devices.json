@@ -420,7 +420,7 @@
   "yes": "是",
   "no": "否",
   "image": "[图片]",
-  "builtinMqtt": "内置MQTT",
+  "builtinMqtt": "MQTT",
   "connections": {
     "description": "管理设备连接方式，接入各种协议的设备",
     "builtinMqtt": {

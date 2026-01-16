@@ -60,9 +60,7 @@ pub use sessions::{
     get_session_handler, get_session_history_handler, list_sessions_handler,
     update_session_handler, ws_chat_handler,
 };
-pub use settings::{
-    get_llm_settings_handler, list_ollama_models_handler, set_llm_handler, test_llm_handler,
-};
+pub use settings::llm_generate_handler;
 // Commands API
 pub use commands::{
     cancel_command_handler, cleanup_commands_handler, get_command_handler,

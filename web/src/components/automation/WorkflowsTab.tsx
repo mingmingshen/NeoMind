@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Plus, Trash2, Edit, Play, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react'
 import { ActionBar, EmptyStateInline } from '@/components/shared'
+import { WorkflowTemplateDialog } from './WorkflowTemplateDialog'
 import { api } from '@/lib/api'
 import type { Workflow, WorkflowStep } from '@/types'
 import { cn } from '@/lib/utils'
@@ -37,10 +38,8 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
   const { t } = useTranslation(['automation', 'common'])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false)
   const [editWorkflow, setEditWorkflow] = useState<Workflow | null>(null)
-  const [newWorkflowName, setNewWorkflowName] = useState('')
-  const [newWorkflowDescription, setNewWorkflowDescription] = useState('')
   const [executingId, setExecutingId] = useState<string | null>(null)
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set())
 
@@ -107,29 +106,6 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
     })
   }
 
-  const handleCreateWorkflow = async () => {
-    if (!newWorkflowName.trim()) return
-    try {
-      await api.createWorkflow({
-        name: newWorkflowName,
-        description: newWorkflowDescription,
-        triggers: [{ type: 'manual', config: {} }],
-        steps: [],
-        enabled: true,
-        trigger_count: 0,
-        step_count: 0,
-        status: 'active',
-      })
-      setCreateDialogOpen(false)
-      setNewWorkflowName('')
-      setNewWorkflowDescription('')
-      await fetchWorkflows()
-      onRefresh?.()
-    } catch (error) {
-      console.error('Failed to create workflow:', error)
-    }
-  }
-
   const handleEditWorkflow = async () => {
     if (!editWorkflow) return
     try {
@@ -185,7 +161,7 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
           {
             label: t('automation:workflowsAdd'),
             icon: <Plus className="h-4 w-4" />,
-            onClick: () => setCreateDialogOpen(true),
+            onClick: () => setTemplateDialogOpen(true),
           },
         ]}
         onRefresh={onRefresh}
@@ -335,46 +311,12 @@ export function WorkflowsTab({ onRefresh }: WorkflowsTabProps) {
         </Table>
       </Card>
 
-      {/* Create Workflow Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('automation:createWorkflow')}</DialogTitle>
-            <DialogDescription>
-              {t('automation:workflowsDesc')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="workflow-name">{t('automation:workflowName')}</Label>
-              <Input
-                id="workflow-name"
-                value={newWorkflowName}
-                onChange={(e) => setNewWorkflowName(e.target.value)}
-                placeholder={t('automation:workflowNamePlaceholder')}
-              />
-            </div>
-            <div>
-              <Label htmlFor="workflow-description">{t('automation:description')}</Label>
-              <Textarea
-                id="workflow-description"
-                value={newWorkflowDescription}
-                onChange={(e) => setNewWorkflowDescription(e.target.value)}
-                placeholder={t('automation:workflowDescriptionPlaceholder')}
-                className="min-h-[80px]"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              {t('automation:cancel')}
-            </Button>
-            <Button onClick={handleCreateWorkflow} disabled={!newWorkflowName.trim()}>
-              {t('automation:createWorkflow')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Workflow Template Dialog */}
+      <WorkflowTemplateDialog
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onWorkflowCreated={fetchWorkflows}
+      />
 
       {/* Edit Workflow Dialog */}
       <Dialog open={!!editWorkflow} onOpenChange={(open) => !open && setEditWorkflow(null)}>

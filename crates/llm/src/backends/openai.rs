@@ -92,11 +92,22 @@ pub struct CloudConfig {
     /// Base URL (for custom providers).
     pub base_url: Option<String>,
 
-    /// Request timeout.
-    pub timeout: Duration,
+    /// Request timeout in seconds (default: 60).
+    #[serde(default = "default_cloud_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+/// Default timeout in seconds for cloud backends.
+fn default_cloud_timeout_secs() -> u64 {
+    60
 }
 
 impl CloudConfig {
+    /// Get the timeout as a Duration.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+
     /// Create a new OpenAI config.
     pub fn openai(api_key: impl Into<String>) -> Self {
         Self {
@@ -104,7 +115,7 @@ impl CloudConfig {
             provider: CloudProvider::OpenAI,
             model: None,
             base_url: None,
-            timeout: Duration::from_secs(60),
+            timeout_secs: 60,
         }
     }
 
@@ -115,7 +126,7 @@ impl CloudConfig {
             provider: CloudProvider::Anthropic,
             model: None,
             base_url: None,
-            timeout: Duration::from_secs(60),
+            timeout_secs: 60,
         }
     }
 
@@ -126,7 +137,7 @@ impl CloudConfig {
             provider: CloudProvider::Google,
             model: None,
             base_url: None,
-            timeout: Duration::from_secs(60),
+            timeout_secs: 60,
         }
     }
 
@@ -137,7 +148,7 @@ impl CloudConfig {
             provider: CloudProvider::Grok,
             model: None,
             base_url: None,
-            timeout: Duration::from_secs(60),
+            timeout_secs: 60,
         }
     }
 
@@ -148,7 +159,7 @@ impl CloudConfig {
             provider: CloudProvider::Custom,
             model: None,
             base_url: Some(base_url.into()),
-            timeout: Duration::from_secs(60),
+            timeout_secs: 60,
         }
     }
 
@@ -158,9 +169,15 @@ impl CloudConfig {
         self
     }
 
+    /// Set the timeout in seconds.
+    pub fn with_timeout_secs(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
+        self
+    }
+
     /// Set the timeout.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
+        self.timeout_secs = timeout.as_secs();
         self
     }
 
@@ -193,7 +210,7 @@ impl CloudRuntime {
     /// Create a new cloud runtime.
     pub fn new(config: CloudConfig) -> Result<Self, LlmError> {
         let http_client = Client::builder()
-            .timeout(config.timeout)
+            .timeout(config.timeout())
             .build()
             .map_err(|e| LlmError::Network(e.to_string()))?;
 

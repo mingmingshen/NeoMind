@@ -4,7 +4,6 @@ import {
   Loader2,
   ArrowLeft,
   Server,
-  Network,
   Home,
   Wifi,
   Edit,
@@ -43,23 +42,14 @@ const ADAPTER_TYPE_INFO: Record<string, {
   builtin: boolean
   description: string
 }> = {
-  builtinMqtt: {
-    id: 'builtin-mqtt',
-    name: 'Built-in MQTT',
+  mqtt: {
+    id: 'mqtt',
+    name: 'MQTT',
     icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
-    canAddMultiple: false,
-    builtin: true,
-    description: 'Internal embedded MQTT broker for device communication',
-  },
-  externalMqtt: {
-    id: 'external-mqtt',
-    name: 'External MQTT',
-    icon: <Network className="h-6 w-6" />,
     iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
     canAddMultiple: true,
-    builtin: false,
-    description: 'Connect to external MQTT brokers',
+    builtin: true, // Has built-in broker as default
+    description: 'MQTT broker connections (built-in + external)',
   },
   modbus: {
     id: 'modbus',
@@ -84,7 +74,7 @@ const ADAPTER_TYPE_INFO: Record<string, {
 // Config schemas for each adapter type
 const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
   switch (adapterType) {
-    case 'external-mqtt':
+    case 'mqtt':
       return {
         type: 'object',
         properties: {
@@ -240,7 +230,7 @@ function brokerToInstance(broker: any): PluginInstance {
   return {
     id: broker.id,
     name: broker.name,
-    plugin_type: 'external-mqtt',
+    plugin_type: 'mqtt',
     enabled: broker.enabled ?? true,
     running: broker.connected ?? false,
     config: {
@@ -341,12 +331,12 @@ export function UnifiedDeviceConnectionsTab({
   }
 
   const getDeviceCount = (type: string, id?: string) => {
-    if (type === 'builtin-mqtt') {
+    if (type === 'mqtt') {
+      // Count all MQTT devices (builtin + all external brokers)
       return devices.filter((d: any) =>
-        !d.plugin_id || d.plugin_id === 'internal-mqtt' || d.plugin_id === 'builtin'
+        !d.plugin_id || d.plugin_id === 'internal-mqtt' || d.plugin_id === 'builtin' ||
+        externalBrokers.some((b: any) => b.id === d.plugin_id)
       ).length
-    } else if (type === 'external-mqtt' && id) {
-      return devices.filter((d: any) => d.plugin_id === id).length
     } else if (type === 'hass') {
       return devices.filter((d: any) => d.plugin_id === 'hass-discovery').length
     } else if (type === 'modbus' && id) {
@@ -356,10 +346,9 @@ export function UnifiedDeviceConnectionsTab({
   }
 
   const getConnectionStatus = (type: string) => {
-    if (type === 'builtin-mqtt') {
-      return mqttStatus?.connected || false
-    } else if (type === 'external-mqtt') {
-      return externalBrokers.some((b) => b.connected)
+    if (type === 'mqtt') {
+      // Connected if builtin OR any external broker is connected
+      return (mqttStatus?.connected || false) || externalBrokers.some((b) => b.connected)
     } else if (type === 'hass') {
       return hassStatus?.hass_integration?.connected || false
     } else if (type === 'modbus') {
@@ -382,7 +371,7 @@ export function UnifiedDeviceConnectionsTab({
   const handleCreate = async (name: string, config: Record<string, unknown>) => {
     const type = selectedType!
 
-    if (type.id === 'external-mqtt') {
+    if (type.id === 'mqtt') {
       const data: any = {
         name,
         broker: config.broker,
@@ -427,7 +416,7 @@ export function UnifiedDeviceConnectionsTab({
   const handleUpdate = async (id: string, config: Record<string, unknown>) => {
     const type = selectedType!
 
-    if (type.id === 'external-mqtt') {
+    if (type.id === 'mqtt') {
       const broker = externalBrokers.find((b) => b.id === id)
       if (!broker) throw new Error('Broker not found')
 
@@ -455,7 +444,7 @@ export function UnifiedDeviceConnectionsTab({
   const handleDelete = async (id: string) => {
     const instance = editingInstance
 
-    if (instance?.plugin_type === 'external-mqtt') {
+    if (instance?.plugin_type === 'mqtt') {
       await api.deleteBroker(id)
     } else if (instance?.plugin_type === 'modbus') {
       if (onDeleteAdapter) {
@@ -472,7 +461,7 @@ export function UnifiedDeviceConnectionsTab({
   const handleTest = async (id: string) => {
     const instance = editingInstance
 
-    if (instance?.plugin_type === 'external-mqtt') {
+    if (instance?.plugin_type === 'mqtt') {
       const result = await api.testBroker(id)
       return {
         success: result.success,
@@ -565,31 +554,36 @@ export function UnifiedDeviceConnectionsTab({
 
   // ========== DETAIL VIEW ==========
   if (view === 'detail' && selectedType) {
-    const info = ADAPTER_TYPE_INFO[selectedType.id as keyof typeof ADAPTER_TYPE_INFO] || ADAPTER_TYPE_INFO.builtinMqtt
+    const info = ADAPTER_TYPE_INFO[selectedType.id as keyof typeof ADAPTER_TYPE_INFO] || ADAPTER_TYPE_INFO.mqtt
 
     // Get instances for this type
     let pluginInstances: PluginInstance[] = []
 
-    if (selectedType.id === 'builtin-mqtt') {
-      // Single instance for built-in MQTT
+    if (selectedType.id === 'mqtt') {
+      // Unified MQTT: builtin + external brokers
+      pluginInstances = []
+
+      // Add builtin broker
       if (mqttStatus?.connected || mqttStatus !== null) {
-        pluginInstances = [{
-          id: 'internal-mqtt',
-          name: 'Internal MQTT Broker',
-          plugin_type: 'builtin-mqtt',
+        pluginInstances.push({
+          id: 'builtin',
+          name: 'Internal Broker',
+          plugin_type: 'mqtt',
           enabled: true,
           running: mqttStatus?.connected || false,
+          isBuiltin: true, // Mark as built-in, cannot be deleted
           config: {
             listen_address: mqttStatus?.listen_address,
             listen_port: mqttStatus?.listen_port,
-          },
+          } as Record<string, unknown>,
           status: {
             connected: mqttStatus?.connected || false,
           },
-        }]
+        })
       }
-    } else if (selectedType.id === 'external-mqtt') {
-      pluginInstances = externalBrokers.map(brokerToInstance)
+
+      // Add external brokers
+      pluginInstances.push(...externalBrokers.map(brokerToInstance))
     } else if (selectedType.id === 'modbus') {
       pluginInstances = modbusAdapters.map(modbusToInstance)
     } else if (selectedType.id === 'hass') {
@@ -602,7 +596,7 @@ export function UnifiedDeviceConnectionsTab({
           running: hassStatus?.hass_integration?.connected || false,
           config: {
             url: hassStatus?.hass_integration?.url,
-          },
+          } as Record<string, unknown>,
           status: {
             connected: hassStatus?.hass_integration?.connected || false,
           },
@@ -629,46 +623,8 @@ export function UnifiedDeviceConnectionsTab({
           </div>
         </div>
 
-        {/* Builtin MQTT Status Card (special case) */}
-        {selectedType.id === 'builtin-mqtt' && mqttStatus && (
-          <Card className={cn("transition-all duration-200", mqttStatus.connected && "border-green-500")}>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
-                    <Server className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-base">{t('devices:connections.builtinMqtt.title')}</CardTitle>
-                    <CardDescription className="text-xs">
-                      {mqttStatus.server_ip || 'localhost'}:{mqttStatus.listen_port || 1883}
-                    </CardDescription>
-                  </div>
-                </div>
-                <Badge variant={mqttStatus.connected ? "default" : "secondary"}>
-                  {mqttStatus.connected ? t('devices:connections.builtinMqtt.running') : t('devices:connections.builtinMqtt.stopped')}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="pb-3">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t('plugins:llm.status')}:</span>
-                  <span className={mqttStatus.connected ? "text-green-600 dark:text-green-400 font-medium" : "text-muted-foreground font-medium"}>
-                    {mqttStatus.connected ? t('devices:connections.builtinMqtt.connected') : t('devices:connections.builtinMqtt.disconnected')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">{t('devices:connections.builtinMqtt.deviceCount')}:</span>
-                  <span className="font-medium">{getDeviceCount('builtin-mqtt')}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Instance Cards */}
-        {selectedType.id !== 'builtin-mqtt' && pluginInstances.length === 0 ? (
+        {pluginInstances.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-12">
               <div className={cn("flex items-center justify-center w-16 h-16 rounded-lg mb-4", info.iconBg)}>
@@ -687,11 +643,11 @@ export function UnifiedDeviceConnectionsTab({
               </Button>
             </CardContent>
           </Card>
-        ) : selectedType.id !== 'builtin-mqtt' ? (
+        ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {pluginInstances.map((instance) => {
               const testResult = testResults[instance.id]
-              const isExternalMqtt = instance.plugin_type === 'external-mqtt'
+              const isMqtt = instance.plugin_type === 'mqtt'
               const isModbus = instance.plugin_type === 'modbus'
 
               return (
@@ -707,6 +663,9 @@ export function UnifiedDeviceConnectionsTab({
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <CardTitle className="text-base">{instance.name}</CardTitle>
+                          {(instance as any).isBuiltin && (
+                            <Badge variant="outline" className="text-xs">内置</Badge>
+                          )}
                           {instance.running && (
                             <Badge variant="default" className="text-xs">{t('plugins:llm.running')}</Badge>
                           )}
@@ -715,7 +674,9 @@ export function UnifiedDeviceConnectionsTab({
                           )}
                         </div>
                         <CardDescription className="font-mono text-xs">
-                          {isExternalMqtt && `${instance.config?.broker}:${instance.config?.port}`}
+                          {isMqtt && (instance as any).isBuiltin
+                            ? `${mqttStatus?.server_ip || 'localhost'}:${mqttStatus?.listen_port || 1883}`
+                            : `${instance.config?.broker}:${instance.config?.port}`}
                           {isModbus && `${instance.config?.host}:${instance.config?.port}`}
                         </CardDescription>
                       </div>
@@ -726,7 +687,7 @@ export function UnifiedDeviceConnectionsTab({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {isExternalMqtt && (
+                          {isMqtt && !(instance as any).isBuiltin && (
                             <>
                               <DropdownMenuItem onClick={() => {
                                 setEditingInstance(instance)
@@ -756,16 +717,19 @@ export function UnifiedDeviceConnectionsTab({
                               {t('plugins:edit')}
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => {
-                              setEditingInstance(instance)
-                              handleDelete(instance.id)
-                            }}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t('plugins:delete')}
-                          </DropdownMenuItem>
+                          {/* Hide delete for builtin MQTT instance */}
+                          {!(isMqtt && (instance as any).isBuiltin) && (
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => {
+                                setEditingInstance(instance)
+                                handleDelete(instance.id)
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {t('plugins:delete')}
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -794,7 +758,7 @@ export function UnifiedDeviceConnectionsTab({
               )
             })}
           </div>
-        ) : null}
+        )}
 
         {/* Add Instance Button */}
         {selectedType.can_add_multiple && (

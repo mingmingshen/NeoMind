@@ -26,7 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChevronLeft, RefreshCw, Activity, Send, Clock, Server, Info } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
-import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, CommandHistoryResponse, MqttSettings } from "@/types"
+import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, CommandHistoryResponse } from "@/types"
 import { formatMetricValue, isBase64Image } from "./utils"
 import { EmptyStateInline } from "@/components/shared"
 
@@ -36,7 +36,6 @@ interface DeviceDetailProps {
   telemetryData: TelemetryDataResponse | null
   commandHistory: CommandHistoryResponse | null
   telemetryLoading: boolean
-  mqttSettings: MqttSettings | null
   selectedMetric: string | null
   onBack: () => void
   onRefresh: () => void
@@ -92,7 +91,6 @@ export function DeviceDetail({
   telemetryData,
   commandHistory,
   telemetryLoading,
-  mqttSettings,
   selectedMetric,
   onBack,
   onRefresh,
@@ -263,7 +261,7 @@ export function DeviceDetail({
                         <p className="text-xs text-muted-foreground">{t('devices:detail.fields.adapter')}</p>
                         <div className="flex items-center gap-1">
                           <Badge variant="outline" className="text-xs">
-                            {device.plugin_name || (mqttSettings ? `${mqttSettings.listen}:${mqttSettings.port}` : t('devices:builtinMqtt'))}
+                            {device.plugin_name || t('devices:builtinMqtt')}
                           </Badge>
                           {device.plugin_id && device.plugin_id !== 'internal-mqtt' && (
                             <span className="text-xs text-muted-foreground">({device.plugin_id})</span>

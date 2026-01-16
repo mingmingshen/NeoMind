@@ -282,12 +282,8 @@ impl LlmBackendInstance {
             return Err("Temperature must be between 0.0 and 2.0".to_string());
         }
 
-        if self.top_p <= 0.0 || self.top_p > 1.0 {
+        if self.top_p < 0.0 || self.top_p > 1.0 {
             return Err("Top-p must be between 0.0 and 1.0".to_string());
-        }
-
-        if self.max_tokens == 0 {
-            return Err("Max tokens must be greater than 0".to_string());
         }
 
         Ok(())

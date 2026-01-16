@@ -62,6 +62,7 @@ pub mod llm_generator;
 pub mod scheduler;
 pub mod steps;
 pub mod store;
+pub mod templates;
 pub mod trigger;
 pub mod triggers;
 pub mod wasm_runtime;
@@ -79,6 +80,10 @@ pub use steps::{
     DeviceWorkflowIntegration,
 };
 pub use store::{ExecutionRecord, ExecutionStatus, ExecutionStore, WorkflowStore};
+pub use templates::{
+    GeneratedWorkflow, SuggestedEdit, TemplateParameter, TemplateParameterType, TemplatedWorkflow,
+    ValidationContext, WorkflowGenerator, WorkflowTemplate, WorkflowTemplates,
+};
 pub use trigger::TriggerManager;
 pub use triggers::event::{EventFilters, EventTrigger, EventTriggerConfig, EventTriggerManager};
 pub use wasm_runtime::{WasmConfig, WasmModule, WasmRuntime};

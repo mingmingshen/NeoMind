@@ -47,7 +47,6 @@ export function DevicesPage() {
     telemetryLoading,
     fetchTelemetryData,
     fetchCommandHistory,
-    fetchMqttSettings,
     discoverDevices,
     discovering,
     discoveredDevices,
@@ -63,15 +62,6 @@ export function DevicesPage() {
     unregisterHassDevice,
     clearHassDiscoveredDevices,
   } = useStore()
-
-  // Fetch MQTT settings on mount (once)
-  const hasFetchedMqttSettings = useRef(false)
-  useEffect(() => {
-    if (!hasFetchedMqttSettings.current) {
-      hasFetchedMqttSettings.current = true
-      fetchMqttSettings()
-    }
-  }, [])
 
   // Pagination state
   const [devicePage, setDevicePage] = useState(1)
@@ -371,7 +361,6 @@ export function DevicesPage() {
           telemetryData={telemetryData}
           commandHistory={commandHistory}
           telemetryLoading={telemetryLoading}
-          mqttSettings={useStore.getState().mqttSettings}
           selectedMetric={selectedMetric}
           onBack={handleCloseDeviceDetail}
           onRefresh={handleRefreshDeviceDetail}

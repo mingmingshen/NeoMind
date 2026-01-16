@@ -80,15 +80,7 @@ pub struct LlmBackendInstanceManager {
 impl LlmBackendInstanceManager {
     /// Create a new instance manager
     pub fn new(storage: Arc<LlmBackendStore>) -> Self {
-        // Load instances from storage
-        let instances = storage
-            .load_all_instances()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|inst| (inst.id.clone(), inst))
-            .collect();
-
-        // Get active backend ID
+        // Get active backend ID first (this may create a default instance)
         let active_id = storage
             .get_active_backend_id()
             .unwrap_or_default()
@@ -99,6 +91,14 @@ impl LlmBackendInstanceManager {
                     .ok()
                     .map(|inst| inst.id.clone())
             });
+
+        // Load instances from storage (after potentially creating default)
+        let instances = storage
+            .load_all_instances()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|inst| (inst.id.clone(), inst))
+            .collect();
 
         Self {
             storage,
@@ -440,8 +440,8 @@ impl LlmBackendInstanceManager {
     pub fn get_config_schema(&self, backend_type: &str) -> serde_json::Value {
         let requires_api_key = matches!(backend_type, "openai" | "anthropic" | "google" | "xai");
 
-        // Build required fields array
-        let required: Vec<&str> = vec!["id", "name", "model"]
+        // Build required fields array - only essential fields are required
+        let required: Vec<&str> = vec!["name"]
             .into_iter()
             .chain(if requires_api_key {
                 Some("api_key")
@@ -486,6 +486,14 @@ impl LlmBackendInstanceManager {
                     "type": "string",
                     "title": "模型名称",
                     "description": "要使用的模型",
+                    "default": match backend_type {
+                        "ollama" => "qwen3-vl:2b",
+                        "openai" => "gpt-4o-mini",
+                        "anthropic" => "claude-3-5-sonnet-20241022",
+                        "google" => "gemini-1.5-flash",
+                        "xai" => "grok-beta",
+                        _ => "",
+                    },
                 },
                 "api_key": {
                     "type": "string",
@@ -495,6 +503,7 @@ impl LlmBackendInstanceManager {
                 "temperature": {
                     "type": "number",
                     "title": "温度",
+                    "description": "控制生成随机性 (0.0-2.0)",
                     "minimum": 0.0,
                     "maximum": 2.0,
                     "default": 0.7,
@@ -502,20 +511,15 @@ impl LlmBackendInstanceManager {
                 "top_p": {
                     "type": "number",
                     "title": "Top-P",
+                    "description": "核采样参数 (0.0-1.0)",
                     "minimum": 0.0,
                     "maximum": 1.0,
                     "default": 0.9,
                 },
-                "max_tokens": {
-                    "type": "integer",
-                    "title": "最大 Token 数",
-                    "minimum": 1,
-                    "default": 2048,
-                },
             },
             "required": required,
             "ui_hints": {
-                "field_order": ["name", "endpoint", "model", "api_key", "temperature", "top_p", "max_tokens"],
+                "field_order": ["name", "endpoint", "model", "api_key", "temperature", "top_p"],
                 "display_names": {
                     "id": "实例ID",
                     "name": "显示名称",
@@ -523,9 +527,8 @@ impl LlmBackendInstanceManager {
                     "endpoint": "API 端点",
                     "model": "模型",
                     "api_key": "API 密钥",
-                    "temperature": "温度 (0-2)",
-                    "top_p": "Top-P (0-1)",
-                    "max_tokens": "最大 Token",
+                    "temperature": "温度",
+                    "top_p": "Top-P",
                 },
                 "placeholders": {
                     "model": match backend_type {

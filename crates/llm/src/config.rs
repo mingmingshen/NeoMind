@@ -10,7 +10,10 @@ use edge_ai_core::config::{
 use edge_ai_core::llm::backend::{BackendId, LlmError, LlmRuntime};
 
 #[cfg(feature = "cloud")]
-use crate::backends::{CloudConfig, CloudProvider, CloudRuntime, OllamaConfig, OllamaRuntime};
+use crate::backends::{CloudConfig, CloudProvider, CloudRuntime};
+
+#[cfg(feature = "ollama")]
+use crate::backends::{OllamaConfig, OllamaRuntime};
 
 /// LLM backend configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -18,13 +21,20 @@ use crate::backends::{CloudConfig, CloudProvider, CloudRuntime, OllamaConfig, Ol
 pub enum LlmBackendConfig {
     /// Ollama (local LLM runner).
     #[serde(rename = "ollama")]
-    #[cfg(feature = "cloud")]
+    #[cfg(feature = "ollama")]
     Ollama(OllamaConfig),
 
     /// Cloud API (OpenAI, Anthropic, Google, xAI, etc.).
     #[serde(rename = "cloud")]
     #[cfg(feature = "cloud")]
     Cloud(CloudConfig),
+}
+
+#[cfg(all(feature = "ollama", not(feature = "cloud")))]
+impl Default for LlmBackendConfig {
+    fn default() -> Self {
+        Self::Ollama(OllamaConfig::default())
+    }
 }
 
 #[cfg(feature = "cloud")]
@@ -38,11 +48,11 @@ impl LlmBackendConfig {
     /// Get the backend identifier.
     pub fn backend_id(&self) -> BackendId {
         match self {
-            #[cfg(feature = "cloud")]
+            #[cfg(feature = "ollama")]
             Self::Ollama(_) => BackendId::new(BackendId::OLLAMA),
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => BackendId::new(BackendId::OPENAI),
-            #[cfg(not(feature = "cloud"))]
+            #[cfg(not(any(feature = "ollama", feature = "cloud")))]
             _ => unreachable!("No backends available without features"),
         }
     }
@@ -56,7 +66,7 @@ impl LlmBackendConfig {
     /// Create a runtime from this configuration.
     pub async fn into_runtime(self) -> Result<Box<dyn LlmRuntime>, LlmError> {
         match self {
-            #[cfg(feature = "cloud")]
+            #[cfg(feature = "ollama")]
             Self::Ollama(config) => {
                 let runtime = OllamaRuntime::new(config)?;
                 Ok(Box::new(runtime))
@@ -66,7 +76,7 @@ impl LlmBackendConfig {
                 let runtime = CloudRuntime::new(config)?;
                 Ok(Box::new(runtime))
             }
-            #[cfg(not(feature = "cloud"))]
+            #[cfg(not(any(feature = "ollama", feature = "cloud")))]
             _ => Err(LlmError::BackendUnavailable("no backend".to_string())),
         }
     }
@@ -92,40 +102,54 @@ impl LlmConfig {
     /// - `LLM_PROVIDER`: Backend type ("ollama" or "cloud")
     /// - `LLM_MODEL`: model name
     pub fn from_env() -> Result<Self, LlmError> {
-        #[cfg(feature = "cloud")]
+        #[cfg(any(feature = "ollama", feature = "cloud"))]
         {
             let provider =
                 std::env::var(env_vars::LLM_PROVIDER).unwrap_or_else(|_| "ollama".to_string());
 
             match provider.to_lowercase().as_str() {
                 "ollama" => {
-                    let endpoint = std::env::var(env_vars::OLLAMA_ENDPOINT)
-                        .unwrap_or_else(|_| endpoints::OLLAMA.to_string());
-                    let endpoint = normalize_ollama_endpoint(endpoint);
-                    let model = std::env::var(env_vars::LLM_MODEL)
-                        .unwrap_or_else(|_| models::OLLAMA_DEFAULT.to_string());
+                    #[cfg(feature = "ollama")]
+                    {
+                        let endpoint = std::env::var(env_vars::OLLAMA_ENDPOINT)
+                            .unwrap_or_else(|_| endpoints::OLLAMA.to_string());
+                        let endpoint = normalize_ollama_endpoint(endpoint);
+                        let model = std::env::var(env_vars::LLM_MODEL)
+                            .unwrap_or_else(|_| models::OLLAMA_DEFAULT.to_string());
 
-                    let ollama_config = OllamaConfig::new(model).with_endpoint(endpoint);
-                    let backend_config = LlmBackendConfig::Ollama(ollama_config);
+                        let ollama_config = OllamaConfig::new(model).with_endpoint(endpoint);
+                        let backend_config = LlmBackendConfig::Ollama(ollama_config);
 
-                    return Ok(Self {
-                        backend: backend_config,
-                        generation: GenerationParams::default(),
-                    });
+                        return Ok(Self {
+                            backend: backend_config,
+                            generation: GenerationParams::default(),
+                        });
+                    }
+                    #[cfg(not(feature = "ollama"))]
+                    {
+                        return Err(LlmError::BackendUnavailable("ollama feature not enabled".to_string()));
+                    }
                 }
                 "cloud" | "openai" => {
-                    let api_key = std::env::var(env_vars::OPENAI_API_KEY)
-                        .map_err(|_| LlmError::InvalidInput("OPENAI_API_KEY not set".into()))?;
-                    let model = std::env::var(env_vars::LLM_MODEL)
-                        .unwrap_or_else(|_| models::OPENAI_DEFAULT.to_string());
+                    #[cfg(feature = "cloud")]
+                    {
+                        let api_key = std::env::var(env_vars::OPENAI_API_KEY)
+                            .map_err(|_| LlmError::InvalidInput("OPENAI_API_KEY not set".into()))?;
+                        let model = std::env::var(env_vars::LLM_MODEL)
+                            .unwrap_or_else(|_| models::OPENAI_DEFAULT.to_string());
 
-                    let cloud_config = CloudConfig::openai(api_key).with_model(model);
-                    let backend_config = LlmBackendConfig::Cloud(cloud_config);
+                        let cloud_config = CloudConfig::openai(api_key).with_model(model);
+                        let backend_config = LlmBackendConfig::Cloud(cloud_config);
 
-                    return Ok(Self {
-                        backend: backend_config,
-                        generation: GenerationParams::default(),
-                    });
+                        return Ok(Self {
+                            backend: backend_config,
+                            generation: GenerationParams::default(),
+                        });
+                    }
+                    #[cfg(not(feature = "cloud"))]
+                    {
+                        return Err(LlmError::BackendUnavailable("cloud feature not enabled".to_string()));
+                    }
                 }
                 _ => Err(LlmError::InvalidInput(format!(
                     "Unknown LLM provider: {}",
@@ -134,8 +158,8 @@ impl LlmConfig {
             }
         }
 
-        #[cfg(not(feature = "cloud"))]
-        Err(LlmError::BackendUnavailable("cloud".to_string()))
+        #[cfg(not(any(feature = "ollama", feature = "cloud")))]
+        Err(LlmError::BackendUnavailable("no backend".to_string()))
     }
 
     /// Create a runtime from this configuration.

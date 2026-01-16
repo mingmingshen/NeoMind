@@ -169,32 +169,31 @@ pub async fn create_channel_handler(
         }
     }
 
+    // Prepare config value for storing
+    let config_value = req.config.clone();
+
     // Create channel based on type
     let channel: DynAlertChannel = match req.channel_type.as_str() {
         "console" => {
             let factory = edge_ai_alerts::ConsoleChannelFactory;
-            factory
-                .create(&req.config)
+            factory.create(&req.config)
                 .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
         }
         "memory" => {
             let factory = edge_ai_alerts::MemoryChannelFactory;
-            factory
-                .create(&req.config)
+            factory.create(&req.config)
                 .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
         }
         #[cfg(feature = "webhook")]
         "webhook" => {
             let factory = WebhookChannelFactory;
-            factory
-                .create(&req.config)
+            factory.create(&req.config)
                 .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
         }
         #[cfg(feature = "email")]
         "email" => {
             let factory = EmailChannelFactory;
-            factory
-                .create(&req.config)
+            factory.create(&req.config)
                 .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
         }
         _ => {
@@ -205,9 +204,10 @@ pub async fn create_channel_handler(
         }
     };
 
+    // Register channel with its configuration
     {
         let mut registry_guard = registry.write().await;
-        registry_guard.register_channel(req.name.clone(), channel).await;
+        registry_guard.register_channel_with_config(req.name.clone(), channel, config_value).await;
     }
 
     let registry_guard = registry.read().await;

@@ -23,6 +23,14 @@ function mergeAssistantMessages(messages: Message[]): Message[] {
   const result: Message[] = []
   let pendingAssistantMessage: Message | null = null
 
+  console.log('[mergeAssistantMessages] Input messages:', messages.map(m => ({
+    role: m.role,
+    content: m.content?.substring(0, 50),
+    hasThinking: !!m.thinking,
+    hasToolCalls: !!m.tool_calls?.length,
+    toolCallsCount: m.tool_calls?.length || 0,
+  })))
+
   for (const msg of messages) {
     // Skip tool role messages - they're just for LLM context
     // Use type assertion since backend sends 'tool' role but frontend type doesn't include it
@@ -40,6 +48,14 @@ function mergeAssistantMessages(messages: Message[]): Message[] {
       // Check if this message has thinking/tool_calls but minimal content
       const hasStructureOnly = (msg.thinking || (msg.tool_calls && msg.tool_calls.length > 0)) &&
         (!msg.content || msg.content.trim().length === 0)
+
+      console.log('[mergeAssistantMessages] Processing assistant message:', {
+        hasOnlyContent,
+        hasStructureOnly,
+        contentLength: msg.content?.length || 0,
+        hasThinking: !!msg.thinking,
+        hasToolCalls: !!msg.tool_calls?.length,
+      })
 
       if (hasOnlyContent && pendingAssistantMessage) {
         // This is the content part - merge with pending message
@@ -72,6 +88,14 @@ function mergeAssistantMessages(messages: Message[]): Message[] {
   if (pendingAssistantMessage) {
     result.push(pendingAssistantMessage)
   }
+
+  console.log('[mergeAssistantMessages] Output messages:', result.map(m => ({
+    role: m.role,
+    content: m.content?.substring(0, 50),
+    hasThinking: !!m.thinking,
+    hasToolCalls: !!m.tool_calls?.length,
+    toolCallsCount: m.tool_calls?.length || 0,
+  })))
 
   return result
 }

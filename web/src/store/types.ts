@@ -9,12 +9,7 @@ import type {
   DeviceType,
   Alert,
   Message,
-  LlmSettings,
-  MqttSettings,
   DiscoveredDevice,
-  ExternalBroker,
-  HassDiscoveredDevice,
-  HassDiscoveryStatus,
   TelemetryDataResponse,
   TelemetrySummaryResponse,
   CommandHistoryResponse,
@@ -104,30 +99,11 @@ export interface DecisionState {
 // ============================================================================
 // Settings State
 // ============================================================================
+// LLM/MQTT/Device/HASS settings are now managed via the Plugin system.
+// Only general system settings remain here.
 
 export interface SettingsState {
-  llmSettings: LlmSettings | null
-  mqttSettings: MqttSettings | null
   settingsDialogOpen: boolean
-}
-
-// ============================================================================
-// Broker State
-// ============================================================================
-
-export interface BrokerState {
-  externalBrokers: ExternalBroker[]
-  brokersLoading: boolean
-}
-
-// ============================================================================
-// HASS Discovery State
-// ============================================================================
-
-export interface HassDiscoveryState {
-  hassDiscovering: boolean
-  hassDiscoveredDevices: HassDiscoveredDevice[]
-  hassDiscoveryStatus: HassDiscoveryStatus | null
 }
 
 // ============================================================================
@@ -170,8 +146,6 @@ export interface RootState
     AlertState,
     DecisionState,
     SettingsState,
-    BrokerState,
-    HassDiscoveryState,
     UIState {}
 
 // ============================================================================

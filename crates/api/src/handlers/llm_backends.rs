@@ -56,10 +56,6 @@ pub struct CreateBackendRequest {
     #[serde(default = "default_top_p")]
     pub top_p: f32,
 
-    /// Maximum tokens to generate
-    #[serde(default = "default_max_tokens")]
-    pub max_tokens: usize,
-
     /// Enable thinking/reasoning mode for models that support it
     #[serde(default = "default_thinking_enabled")]
     pub thinking_enabled: bool,
@@ -102,9 +98,6 @@ pub struct UpdateBackendRequest {
 
     /// Top-P sampling
     pub top_p: Option<f32>,
-
-    /// Maximum tokens
-    pub max_tokens: Option<usize>,
 
     /// Enable thinking/reasoning mode for models that support it
     pub thinking_enabled: Option<bool>,
@@ -339,7 +332,7 @@ pub async fn create_backend_handler(
         is_active: false,
         temperature: req.temperature,
         top_p: req.top_p,
-        max_tokens: req.max_tokens,
+        max_tokens: default_max_tokens(),
         thinking_enabled: req.thinking_enabled,
         capabilities,
         updated_at: chrono::Utc::now().timestamp(),
@@ -395,9 +388,6 @@ pub async fn update_backend_handler(
     }
     if let Some(top_p) = req.top_p {
         instance.top_p = top_p;
-    }
-    if let Some(max_tokens) = req.max_tokens {
-        instance.max_tokens = max_tokens;
     }
     if let Some(thinking_enabled) = req.thinking_enabled {
         instance.thinking_enabled = thinking_enabled;

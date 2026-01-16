@@ -1258,6 +1258,7 @@ pub async fn process_stream_events_with_safeguards(
                 } else {
                     AgentMessage::assistant_with_tools(&response_to_save, tool_calls_with_results.clone())
                 };
+                eprintln!("[streaming] Saving initial assistant message with {} tool_calls", initial_msg.tool_calls.as_ref().map_or(0, |c| c.len()));
                 internal_state.write().await.push_message(initial_msg);
 
                 // Add tool result messages to history

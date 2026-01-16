@@ -290,15 +290,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/alert-channels/:name/test",
             post(alert_channels::test_channel_handler),
         )
-        // Settings API
-        .route("/api/settings/llm", get(settings::get_llm_settings_handler))
-        .route("/api/settings/llm", post(settings::set_llm_handler))
-        .route("/api/settings/llm/test", post(settings::test_llm_handler))
-        .route(
-            "/api/settings/llm/models",
-            get(settings::list_ollama_models_handler),
-        )
-        // LLM Generation API
+        // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
         // Workflows API
         .route("/api/workflows", get(workflows::list_workflows_handler))
@@ -456,9 +448,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/tools/format-for-llm",
             get(tools::format_for_llm_handler),
         )
-        // MQTT Settings API
-        .route("/api/settings/mqtt", get(mqtt::get_mqtt_settings_handler))
-        .route("/api/settings/mqtt", post(mqtt::set_mqtt_settings_handler))
         // MQTT Management API
         .route("/api/mqtt/status", get(mqtt::get_mqtt_status_handler))
         .route(

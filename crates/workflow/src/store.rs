@@ -112,7 +112,12 @@ impl WorkflowStore {
         let mut ids = Vec::new();
 
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(WORKFLOW_TABLE)?;
+
+        // Try to open the table, return empty if it doesn't exist yet
+        let table = match read_txn.open_table(WORKFLOW_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(ids),
+        };
 
         let mut iter: redb::Range<&str, &[u8]> = table.iter()?;
         while let Some(result) = iter.next() {
@@ -131,7 +136,12 @@ impl WorkflowStore {
         let mut workflows = Vec::new();
 
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(WORKFLOW_TABLE)?;
+
+        // Try to open the table, return empty if it doesn't exist yet
+        let table = match read_txn.open_table(WORKFLOW_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(workflows),
+        };
 
         let mut iter: redb::Range<&str, &[u8]> = table.iter()?;
         while let Some(result) = iter.next() {

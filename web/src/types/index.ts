@@ -155,6 +155,7 @@ export interface AlertChannel {
   name: string
   channel_type: 'console' | 'memory' | 'webhook' | 'email'
   enabled: boolean
+  config?: Record<string, unknown>
 }
 
 export interface ChannelTypeInfo {
@@ -312,21 +313,7 @@ export interface ClientChatMessage {
   sessionId?: string
 }
 
-// Settings Types
-export interface LlmSettings {
-  backend: string
-  endpoint?: string
-  api_key?: string
-  model: string
-}
-
-export interface MqttSettings {
-  listen: string
-  port: number
-  discovery_prefix: string
-  auto_discovery: boolean
-}
-
+// MQTT Broker Types
 export interface ExternalBroker {
   id: string
   name: string
@@ -710,6 +697,65 @@ export interface WorkflowExecution {
   error?: string
 }
 
+// ========== Workflow Template Types ==========
+
+export type TemplateParameterType = 'string' | 'number' | 'boolean' | 'device' | 'metric' | 'enum'
+
+export interface TemplateParameter {
+  name: string
+  label: string
+  param_type: TemplateParameterType
+  default?: string | null
+  required: boolean
+  options: string[]
+}
+
+export interface WorkflowTemplate {
+  id: string
+  name: string
+  category: string
+  description: string
+  parameters: TemplateParameter[]
+}
+
+export interface TemplatedWorkflow {
+  template_id: string
+  workflow_json: string
+  parameters: Record<string, string>
+}
+
+export interface GeneratedWorkflow {
+  workflow_json: string
+  explanation: string
+  confidence: number
+  suggested_edits: SuggestedEdit[]
+  warnings: string[]
+}
+
+export interface SuggestedEdit {
+  description: string
+  reason: string
+  step_id?: string
+}
+
+export interface WorkflowResources {
+  devices: Array<{ id: string; name: string; type: string }>
+  metrics: string[]
+  alert_channels: AlertChannel[]
+}
+
+export interface WorkflowExport {
+  workflows: Workflow[]
+  export_date: string
+  total_count: number
+}
+
+export interface WorkflowImportResult {
+  imported: number
+  skipped: number
+  errors: Array<{ workflow: { name: string }; error: string }>
+}
+
 // ========== Scenarios Types ==========
 
 export interface Scenario {
@@ -997,7 +1043,6 @@ export interface CreateLlmBackendRequest {
   api_key?: string
   temperature?: number
   top_p?: number
-  max_tokens?: number
   thinking_enabled?: boolean  // Enable thinking/reasoning mode for models that support it
   capabilities?: BackendCapabilities  // Model capabilities (from Ollama model detection)
 }
@@ -1009,7 +1054,6 @@ export interface UpdateLlmBackendRequest {
   api_key?: string
   temperature?: number
   top_p?: number
-  max_tokens?: number
   thinking_enabled?: boolean  // Enable thinking/reasoning mode for models that support it
 }
 

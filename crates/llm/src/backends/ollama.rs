@@ -37,17 +37,29 @@ pub struct OllamaConfig {
     /// Model name (e.g., "qwen3-vl:2b", "llama3:8b")
     pub model: String,
 
-    /// Request timeout.
-    pub timeout: Duration,
+    /// Request timeout in seconds (default: 180).
+    /// This is deserialized as a number and converted to Duration internally.
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+/// Default timeout in seconds for deserialization.
+fn default_timeout_secs() -> u64 {
+    180
 }
 
 impl OllamaConfig {
+    /// Get the timeout as a Duration.
+    pub fn timeout(&self) -> Duration {
+        Duration::from_secs(self.timeout_secs)
+    }
+
     /// Create a new Ollama config.
     pub fn new(model: impl Into<String>) -> Self {
         Self {
             endpoint: "http://localhost:11434".to_string(),
             model: model.into(),
-            timeout: Duration::from_secs(180),
+            timeout_secs: 180,
         }
     }
 
@@ -69,9 +81,15 @@ impl OllamaConfig {
         self
     }
 
+    /// Set timeout in seconds.
+    pub fn with_timeout_secs(mut self, timeout_secs: u64) -> Self {
+        self.timeout_secs = timeout_secs;
+        self
+    }
+
     /// Set timeout.
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
+        self.timeout_secs = timeout.as_secs();
         self
     }
 }
@@ -95,7 +113,7 @@ impl OllamaRuntime {
     pub fn new(config: OllamaConfig) -> Result<Self, LlmError> {
         tracing::debug!("Creating Ollama runtime with endpoint: {}", config.endpoint);
         let client = Client::builder()
-            .timeout(config.timeout)
+            .timeout(config.timeout())
             .build()
             .map_err(|e| LlmError::Network(e.to_string()))?;
 

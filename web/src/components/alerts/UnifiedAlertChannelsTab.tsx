@@ -133,7 +133,7 @@ function toPluginInstance(channel: AlertChannel): PluginInstance {
     plugin_type: channel.channel_type,
     enabled: channel.enabled,
     running: channel.enabled,
-    config: {},
+    config: channel.config || {},
     status: {
       connected: channel.enabled,
     },

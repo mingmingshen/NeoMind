@@ -26,8 +26,6 @@ export function DashboardPage() {
     addMessage,
     setWsConnected,
     wsConnected,
-    llmSettings,
-    fetchLlmSettings,
     setCurrentPage,
     loadSessions,
     // LLM Backend
@@ -51,15 +49,6 @@ export function DashboardPage() {
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
   const streamingToolCallsRef = useRef<ToolCall[]>([])
-
-  // Fetch LLM settings on mount (once)
-  const hasFetchedLlm = useRef(false)
-  useEffect(() => {
-    if (!hasFetchedLlm.current) {
-      hasFetchedLlm.current = true
-      fetchLlmSettings()
-    }
-  }, [])
 
   // Load LLM backends
   const hasFetchedBackends = useRef(false)
@@ -375,8 +364,8 @@ export function DashboardPage() {
     }
   }
 
-  // Show LLM setup prompt if no LLM is configured
-  if (!llmSettings) {
+  // Show LLM setup prompt if no LLM backend is configured
+  if (!llmBackends || llmBackends.length === 0) {
     return (
       <div className="flex h-full flex-row relative">
         {/* Sidebar - always expanded on desktop/tablet */}

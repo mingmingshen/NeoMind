@@ -420,7 +420,7 @@
   "yes": "Yes",
   "no": "No",
   "image": "[Image]",
-  "builtinMqtt": "Built-in MQTT",
+  "builtinMqtt": "MQTT",
   "connections": {
     "description": "Manage device connection methods, connect devices with various protocols",
     "builtinMqtt": {
