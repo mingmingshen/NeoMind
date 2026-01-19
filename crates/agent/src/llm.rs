@@ -9,12 +9,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use futures::Stream;
-use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_core::{
-    Message, SessionId,
+    Message,
     llm::backend::{LlmInput, LlmRuntime},
+    config::agent_env_vars,
 };
 
 // Import intent classifier for staged processing
@@ -26,7 +26,15 @@ pub use edge_ai_llm::instance_manager::{
 };
 
 /// Default concurrent LLM request limit.
+/// Note: This constant is kept for backward compatibility but the actual default
+/// is loaded from environment variable AGENT_CONCURRENT_LIMIT with fallback to 3.
 pub const DEFAULT_CONCURRENT_LIMIT: usize = 3;
+
+/// Get the concurrent limit from environment or return default.
+#[inline]
+pub fn get_concurrent_limit() -> usize {
+    agent_env_vars::concurrent_limit()
+}
 
 /// Simple atomic-based concurrency limiter.
 ///
@@ -140,8 +148,8 @@ pub struct LlmInterface {
     top_p: f32,
     /// Max tokens.
     max_tokens: usize,
-    /// Default system prompt.
-    system_prompt: String,
+    /// Default system prompt (wrapped for dynamic updates).
+    system_prompt: Arc<RwLock<String>>,
     /// Tool definitions for function calling.
     tool_definitions: Arc<RwLock<Vec<edge_ai_core::llm::backend::ToolDefinition>>>,
     /// Concurrency limiter.
@@ -155,6 +163,8 @@ pub struct LlmInterface {
     intent_classifier: IntentClassifier,
     /// Tool filter for reducing tools sent to LLM.
     tool_filter: ToolFilter,
+    /// Business context manager for dynamic context injection.
+    context_manager: Option<crate::context::ContextManager>,
 }
 
 impl LlmInterface {
@@ -168,13 +178,14 @@ impl LlmInterface {
             temperature: config.temperature,
             top_p: config.top_p,
             max_tokens: config.max_tokens,
-            system_prompt: "You are a helpful AI assistant.".to_string(),
+            system_prompt: Arc::new(RwLock::new("You are a helpful AI assistant.".to_string())),
             tool_definitions: Arc::new(RwLock::new(Vec::new())),
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(0)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Use backend default (from storage)
             intent_classifier: IntentClassifier::default(),
             tool_filter: ToolFilter::default(),
+            context_manager: None,
         }
     }
 
@@ -191,13 +202,14 @@ impl LlmInterface {
             temperature: config.temperature,
             top_p: config.top_p,
             max_tokens: config.max_tokens,
-            system_prompt: "You are a helpful AI assistant.".to_string(),
+            system_prompt: Arc::new(RwLock::new("You are a helpful AI assistant.".to_string())),
             tool_definitions: Arc::new(RwLock::new(Vec::new())),
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(1)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Will use instance manager setting
             intent_classifier: IntentClassifier::default(),
             tool_filter: ToolFilter::default(),
+            context_manager: None,
         }
     }
 
@@ -218,8 +230,9 @@ impl LlmInterface {
     }
 
     /// Check if instance manager mode is enabled.
+    /// Returns true if the flag is set, regardless of whether the instance manager is currently available.
     pub fn uses_instance_manager(&self) -> bool {
-        self.use_instance_manager.load(Ordering::Relaxed) == 1 && self.instance_manager.is_some()
+        self.use_instance_manager.load(Ordering::Relaxed) == 1
     }
 
     /// Get the instance manager if available.
@@ -239,21 +252,20 @@ impl LlmInterface {
     /// Get the current LLM runtime, using instance manager if enabled.
     async fn get_runtime(&self) -> Result<Arc<dyn LlmRuntime>, AgentError> {
         // Try instance manager first if enabled
-        if self.uses_instance_manager() {
-            if let Some(manager) = &self.instance_manager {
+        if self.uses_instance_manager()
+            && let Some(manager) = &self.instance_manager {
                 return manager
                     .get_active_runtime()
                     .await
                     .map_err(|e| AgentError::Generation(e.to_string()));
             }
-        }
 
         // Fall back to direct runtime
         let llm_guard = self.llm.read().await;
         llm_guard
             .as_ref()
             .map(Arc::clone)
-            .ok_or_else(|| AgentError::LlmNotReady)
+            .ok_or(AgentError::LlmNotReady)
     }
 
     /// Set the LLM runtime (direct mode).
@@ -314,10 +326,21 @@ impl LlmInterface {
             .saturating_sub(self.limiter.current.load(Ordering::Relaxed))
     }
 
-    /// Set the system prompt.
+    /// Set the system prompt (builder pattern).
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
-        self.system_prompt = prompt.into();
+        // Store the prompt in Arc<RwLock<String>>
+        self.system_prompt = Arc::new(RwLock::new(prompt.into()));
         self
+    }
+
+    /// Set the system prompt (for dynamic updates).
+    pub async fn set_system_prompt(&self, prompt: &str) {
+        *self.system_prompt.write().await = prompt.to_string();
+    }
+
+    /// Get the current system prompt.
+    pub async fn get_system_prompt(&self) -> String {
+        self.system_prompt.read().await.clone()
     }
 
     /// Set tool definitions for function calling.
@@ -341,6 +364,20 @@ impl LlmInterface {
     /// Get intent-specific system prompt.
     pub fn get_intent_prompt(&self, intent: &IntentResult) -> String {
         self.tool_filter.intent_prompt(intent)
+    }
+
+    /// Set the business context manager.
+    pub fn set_context_manager(&mut self, manager: crate::context::ContextManager) {
+        self.context_manager = Some(manager);
+    }
+
+    /// Get context builder section for system prompt.
+    async fn build_business_context_section(&self, query: &str) -> String {
+        if let Some(ref cm) = self.context_manager {
+            cm.format_for_prompt(query).await
+        } else {
+            String::new()
+        }
     }
 
     /// Filter tools by user message (intent-based).
@@ -409,49 +446,172 @@ impl LlmInterface {
     }
 
     /// Build system prompt with tool descriptions.
-    /// If user_message is provided, uses intent-based filtering.
+    /// Uses enhanced prompts from prompts module for better conversation quality.
     async fn build_system_prompt_with_tools(&self, user_message: Option<&str>) -> String {
-        let tools = if let Some(msg) = user_message {
-            // Use intent-based filtering
-            self.filter_tools_by_intent(msg).await
-        } else {
-            // No filtering - return all tools
-            self.tool_definitions.read().await.clone()
-        };
+        use edge_ai_tools::simplified;
+        use crate::prompts::PromptBuilder;
 
-        if tools.is_empty() {
-            return self.system_prompt.clone();
-        }
+        let mut prompt = String::with_capacity(4096);
 
-        let mut prompt = String::with_capacity(2048);
+        // Use enhanced system prompt from prompts module
+        let builder = PromptBuilder::new()
+            .with_thinking(true)  // Include thinking guidelines
+            .with_examples(true); // Include usage examples
 
-        // Core identity - single sentence
-        prompt.push_str("你是NeoTalk物联网助手，帮助用户管理设备和查询数据。\n\n");
+        // Start with enhanced base prompt
+        prompt.push_str(&builder.build_system_prompt());
+        prompt.push_str("\n\n");
 
-        // Add intent-specific guidance if user message provided
+        // Add intent-specific addon if we can classify the user's message
         if let Some(msg) = user_message {
             let intent = self.intent_classifier.classify(msg);
-            prompt.push_str(&format!(
-                "## 当前任务\n{}\n\n",
-                self.tool_filter.intent_prompt(&intent)
-            ));
+            let intent_namespace = match intent.category {
+                crate::agent::staged::IntentCategory::Device => "device",
+                crate::agent::staged::IntentCategory::Data => "data",
+                crate::agent::staged::IntentCategory::Rule => "rule",
+                crate::agent::staged::IntentCategory::Workflow => "workflow",
+                crate::agent::staged::IntentCategory::Alert => "alert",
+                crate::agent::staged::IntentCategory::System => "system",
+                crate::agent::staged::IntentCategory::Help => "help",
+                crate::agent::staged::IntentCategory::General => "general",
+            };
+            let addon = builder.get_intent_prompt_addon(intent_namespace);
+            if !addon.is_empty() {
+                prompt.push_str(&addon);
+                prompt.push_str("\n\n");
+            }
         }
 
-        // Tool calling - brief and direct
-        prompt.push_str("## 工具调用\n");
-        prompt.push_str("根据用户问题，直接用XML格式调用工具：\n");
-        prompt.push_str("<tool_calls><invoke name=\"工具名称\"></invoke></tool_calls>\n\n");
-
-        // Available tools - concise list only
-        prompt.push_str("## 可用工具\n");
-        for tool in tools.iter() {
-            prompt.push_str(&format!("- {}: {}\n", tool.name, tool.description));
+        // Add business context section if available
+        if let Some(query) = user_message {
+            let context_section = self.build_business_context_section(query).await;
+            if !context_section.is_empty() {
+                prompt.push_str(&context_section);
+                prompt.push_str("\n\n");
+            }
         }
 
-        // Brief example
-        prompt.push_str("\n示例: 用户问「有哪些设备」→ 你调用 <tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>\n");
+        // Use simplified tool format
+        let simplified_tools = simplified::get_simplified_tools();
+
+        // Filter tools based on user message intent
+        let relevant_tools = if let Some(msg) = user_message {
+            let intent = self.intent_classifier.classify(msg);
+            self.filter_simplified_tools(&simplified_tools, &intent)
+        } else {
+            simplified_tools.clone()
+        };
+
+        if relevant_tools.is_empty() {
+            return prompt;
+        }
+
+        // Tool calling instruction - brief and direct
+        prompt.push_str("## 重要：你必须调用工具来回答问题\n");
+        prompt.push_str("不要只说你将要做什么，直接输出工具调用的JSON！\n\n");
+
+        prompt.push_str("## 工具调用格式\n");
+        prompt.push_str("在回复中输出: [{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n\n");
+
+        // Available tools with simplified descriptions
+        prompt.push_str("## 可用工具\n\n");
+        for tool in relevant_tools.iter() {
+            prompt.push_str(&format!("### {} ({})\n", tool.name, tool.description));
+
+            if !tool.aliases.is_empty() {
+                prompt.push_str(&format!("**别名**: {}\n", tool.aliases.join("、")));
+            }
+
+            prompt.push_str("**参数**:\n");
+            if tool.required.is_empty() && tool.optional.is_empty() {
+                prompt.push_str("  无需参数\n");
+            } else {
+                for param in &tool.required {
+                    prompt.push_str(&format!("  - `{}` (必需)\n", param));
+                }
+                for (param, info) in &tool.optional {
+                    prompt.push_str(&format!("  - `{}` (可选，默认: {}) - {}\n",
+                        param, info.default, info.description));
+                }
+            }
+
+            if !tool.examples.is_empty() {
+                prompt.push_str("\n**示例**:\n");
+                for ex in &tool.examples {
+                    prompt.push_str(&format!("  - 用户: \"{}\"\n", ex.user_query));
+                    prompt.push_str(&format!("    → `{}`\n", ex.tool_call));
+                }
+            }
+
+            prompt.push('\n');
+        }
+
+        // Quick reference for common queries
+        prompt.push_str("## 快速参考\n");
+        prompt.push_str("| 用户问什么 | 调用什么工具 |\n");
+        prompt.push_str("|-----------|-------------|\n");
+        prompt.push_str("| \"有哪些设备\" | `list_devices()` |\n");
+        prompt.push_str("| \"温度是多少\" | `query_data(device='设备ID', metric='temperature')` |\n");
+        prompt.push_str("| \"打开灯\" | `control_device(device='设备ID', action='on')` |\n");
+        prompt.push_str("| \"创建规则\" | `create_rule(name='规则名', condition='条件', action='动作')` |\n");
+        prompt.push_str("| \"显示所有规则\" | `list_rules()` |\n");
+        prompt.push('\n');
 
         prompt
+    }
+
+    /// Filter simplified tools based on intent.
+    fn filter_simplified_tools(
+        &self,
+        tools: &[edge_ai_tools::simplified::LlmToolDefinition],
+        intent: &crate::agent::staged::IntentResult,
+    ) -> Vec<edge_ai_tools::simplified::LlmToolDefinition> {
+        let mut filtered = Vec::new();
+
+        // Always include tools that match the intent category
+        for tool in tools {
+            // Check if any use_when matches the intent
+            let matches = tool.use_when.iter().any(|scenario| {
+                let scenario_lower = scenario.to_lowercase();
+                match intent.category {
+                    crate::agent::staged::IntentCategory::Device => {
+                        scenario_lower.contains("设备") || scenario_lower.contains("控制") || scenario_lower.contains("打开") || scenario_lower.contains("关闭")
+                    }
+                    crate::agent::staged::IntentCategory::Data => {
+                        scenario_lower.contains("询问") || scenario_lower.contains("查询") || scenario_lower.contains("数据") || scenario_lower.contains("温度")
+                    }
+                    crate::agent::staged::IntentCategory::Rule => {
+                        scenario_lower.contains("创建") || scenario_lower.contains("规则") || scenario_lower.contains("自动化")
+                    }
+                    crate::agent::staged::IntentCategory::Workflow => {
+                        scenario_lower.contains("工作流") || scenario_lower.contains("执行")
+                    }
+                    crate::agent::staged::IntentCategory::Alert => {
+                        scenario_lower.contains("告警") || scenario_lower.contains("异常") || scenario_lower.contains("通知")
+                    }
+                    crate::agent::staged::IntentCategory::System => {
+                        scenario_lower.contains("系统") || scenario_lower.contains("状态") || scenario_lower.contains("健康")
+                    }
+                    crate::agent::staged::IntentCategory::Help => {
+                        scenario_lower.contains("帮助") || scenario_lower.contains("教程") || scenario_lower.contains("说明")
+                    }
+                    crate::agent::staged::IntentCategory::General => true,
+                }
+            });
+
+            if matches || tool.use_when.is_empty() {
+                filtered.push(tool.clone());
+            }
+        }
+
+        // Always include basic tools
+        if !filtered.iter().any(|t| t.name == "list_devices")
+            && let Some(t) = tools.iter().find(|t| t.name == "list_devices") {
+                filtered.push(t.clone());
+            }
+
+        filtered.truncate(6); // Limit to 6 tools max
+        filtered
     }
 
     /// Update the model name.
@@ -462,11 +622,10 @@ impl LlmInterface {
 
     /// Check if the LLM backend is ready.
     pub async fn is_ready(&self) -> bool {
-        if self.uses_instance_manager() {
-            if let Some(manager) = &self.instance_manager {
+        if self.uses_instance_manager()
+            && let Some(manager) = &self.instance_manager {
                 return manager.get_active_instance().is_some();
             }
-        }
         let llm_guard = self.llm.read().await;
         llm_guard.as_ref().is_some()
     }
@@ -559,7 +718,7 @@ impl LlmInterface {
             self.build_system_prompt_with_tools(Some(&user_message))
                 .await
         } else {
-            self.system_prompt.clone()
+            self.system_prompt.read().await.clone()
         };
 
         // Build input outside the lock
@@ -776,7 +935,7 @@ impl LlmInterface {
         } else {
             // Phase 2 system prompt - still include tool calling instructions
             // because follow-up questions may need tools
-            "你是NeoTalk物联网助手。根据对话历史和用户问题，如果需要查询信息，用XML格式调用工具：<tool_calls><invoke name=\"工具名称\"></invoke></tool_calls>
+            "你是NeoTalk物联网助手。根据对话历史和用户问题，如果需要查询信息，用JSON格式调用工具：[{\"name\":\"工具名称\",\"arguments\":{}}]
 可用工具：list_devices, list_rules, query_data, control_device, create_rule, trigger_workflow。
 如果不需要查询工具，直接回答用户问题。".to_string()
         };
@@ -918,10 +1077,10 @@ impl Default for ChatConfig {
     fn default() -> Self {
         Self {
             model: "qwen3-vl:2b".to_string(),
-            temperature: 0.4,
-            top_p: 0.7,       // 0.95 -> 0.7, 减少随机性，降低thinking长度
-            max_tokens: 4096, // usize::MAX -> 4096, 限制总长度
-            concurrent_limit: DEFAULT_CONCURRENT_LIMIT,
+            temperature: agent_env_vars::temperature(),
+            top_p: agent_env_vars::top_p(),
+            max_tokens: agent_env_vars::max_tokens(),
+            concurrent_limit: agent_env_vars::concurrent_limit(),
         }
     }
 }
@@ -1095,15 +1254,15 @@ mod tests {
 
         // Test device control intent
         let result = interface.classify_intent("turn on the lights");
-        assert_eq!(result.category, IntentCategory::DeviceControl);
+        assert_eq!(result.category, IntentCategory::Device);
 
-        // Test information query
+        // Test data query
         let result = interface.classify_intent("what's the temperature?");
-        assert_eq!(result.category, IntentCategory::Information);
+        assert_eq!(result.category, IntentCategory::Data);
 
-        // Test system command
+        // Test rule intent
         let result = interface.classify_intent("create a new rule");
-        assert_eq!(result.category, IntentCategory::SystemCommand);
+        assert_eq!(result.category, IntentCategory::Rule);
     }
 
     #[test]
@@ -1112,14 +1271,13 @@ mod tests {
         let interface = LlmInterface::new(config);
 
         let result = IntentResult {
-            category: IntentCategory::DeviceControl,
+            category: IntentCategory::Device,
             confidence: 0.9,
-            entities: vec![("lights".to_string(), "device".to_string())],
+            keywords: vec!["device".to_string()],
         };
 
         let prompt = interface.get_intent_prompt(&result);
         assert!(prompt.contains("device"));
-        assert!(prompt.contains("control"));
     }
 
     #[tokio::test]
@@ -1127,27 +1285,39 @@ mod tests {
         let config = ChatConfig::default();
         let interface = LlmInterface::new(config);
 
-        let all_tools = vec![
+        // Set up sample tool definitions
+        let tools = vec![
             edge_ai_core::llm::backend::ToolDefinition {
-                name: "device_control".to_string(),
-                description: "Control a device".to_string(),
-                parameters: serde_json::json!({"type": "object"}),
+                name: "list_devices".to_string(),
+                description: "List all devices".to_string(),
+                parameters: serde_json::json!({}),
             },
             edge_ai_core::llm::backend::ToolDefinition {
-                name: "get_weather".to_string(),
-                description: "Get weather information".to_string(),
-                parameters: serde_json::json!({"type": "object"}),
+                name: "control_device".to_string(),
+                description: "Control a device".to_string(),
+                parameters: serde_json::json!({}),
+            },
+            edge_ai_core::llm::backend::ToolDefinition {
+                name: "list_rules".to_string(),
+                description: "List all rules".to_string(),
+                parameters: serde_json::json!({}),
+            },
+            edge_ai_core::llm::backend::ToolDefinition {
+                name: "query_data".to_string(),
+                description: "Query time series data".to_string(),
+                parameters: serde_json::json!({}),
             },
         ];
+        interface.set_tool_definitions(tools).await;
 
-        let intent = IntentResult {
-            category: IntentCategory::DeviceControl,
-            confidence: 0.9,
-            entities: vec![],
-        };
+        // Test filtering with device-related query
+        let filtered = interface.filter_tools_by_intent("turn on the lights").await;
+        // Device-related tools should be included
+        assert!(!filtered.is_empty());
 
-        let filtered = interface.filter_tools_by_intent(&all_tools, &intent).await;
-        // Device control tools should be prioritized
+        // Test filtering with data query
+        let filtered = interface.filter_tools_by_intent("what's the temperature?").await;
+        // Data-related tools should be included
         assert!(!filtered.is_empty());
     }
 

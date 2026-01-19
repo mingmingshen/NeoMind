@@ -130,7 +130,7 @@ pub async fn process_fallback(
                 // Execute the tool
                 let result = tools.execute(&rule.tool, rule.arguments.clone()).await;
 
-                let mut tools_used = vec![rule.tool.clone()];
+                let tools_used = vec![rule.tool.clone()];
                 let mut response_content = String::new();
 
                 if let Ok(ref output) = result {
@@ -236,16 +236,14 @@ fn build_response_from_template(template: &str, data: &Value) -> String {
 
 /// Default help message when no keywords match.
 fn default_help_message() -> String {
-    format!(
-        "我理解了您的问题。我可以帮助您:\n\n\
+    "我理解了您的问题。我可以帮助您:\n\n\
         - 查看设备列表 (说 \"列出设备\")\n\
         - 查看规则列表 (说 \"列出规则\")\n\
         - 查询设备数据 (说 \"查询数据\")\n\
         - 创建自动化规则 (说 \"创建规则\")\n\
         \n\
         注意: 完整的对话功能需要配置 LLM 后端。\n\
-        设置环境变量 OLLAMA_ENDPOINT 或 OPENAI_API_KEY 来启用。"
-    )
+        设置环境变量 OLLAMA_ENDPOINT 或 OPENAI_API_KEY 来启用。".to_string()
 }
 
 #[cfg(test)]

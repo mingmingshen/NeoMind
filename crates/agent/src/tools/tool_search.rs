@@ -3,12 +3,11 @@
 //! This tool allows the LLM to search for available tools by keyword,
 //! reducing the need to include all tool definitions in every prompt.
 
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value;
 
-use edge_ai_tools::tool::{ResponseFormat, object_schema, string_property};
+use edge_ai_tools::tool::{object_schema, string_property};
 use edge_ai_tools::{Tool, ToolDefinition, ToolOutput};
 
 /// Tool for searching available tools.

@@ -93,10 +93,12 @@ impl CommandSource {
 
 /// Command priority levels.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default)]
 pub enum CommandPriority {
     /// Low priority - background operations
     Low = 1,
     /// Normal priority - regular operations
+    #[default]
     Normal = 2,
     /// High priority - user-initiated operations
     High = 3,
@@ -136,11 +138,6 @@ impl CommandPriority {
     }
 }
 
-impl Default for CommandPriority {
-    fn default() -> Self {
-        CommandPriority::Normal
-    }
-}
 
 /// Command status tracking.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

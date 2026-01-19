@@ -4,7 +4,7 @@
 //! using LLM assistance.
 
 use crate::dsl::{ComparisonOperator, ParsedRule, RuleAction, RuleCondition};
-use crate::validator::{DeviceInfo, ValidationContext};
+use crate::validator::ValidationContext;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -143,7 +143,7 @@ impl RuleGenerator {
     pub fn generate(
         description: &str,
         context: &ValidationContext,
-        config: Option<&GeneratorConfig>,
+        _config: Option<&GeneratorConfig>,
     ) -> Result<GeneratedRule> {
         // Step 1: Extract information from description
         let extracted = Self::extract_info(description, context)?;
@@ -188,7 +188,7 @@ impl RuleGenerator {
         // Calculate confidence
         let mut confidence = 0.5;
         let mut missing_info = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         if device_id.is_some() {
             confidence += 0.15;
@@ -370,7 +370,7 @@ impl RuleGenerator {
     }
 
     /// Generate a meaningful rule name.
-    fn generate_rule_name(description: &str, action_message: &Option<String>, metric: &Option<String>) -> String {
+    fn generate_rule_name(_description: &str, action_message: &Option<String>, metric: &Option<String>) -> String {
         if let Some(msg) = action_message {
             return format!("{}告警", msg);
         }
@@ -453,8 +453,8 @@ impl RuleGenerator {
         let mut suggested_edits = Vec::new();
 
         // Check device validity
-        if let Some(ref device_id) = extracted.device_id {
-            if !context.has_device(device_id) {
+        if let Some(ref device_id) = extracted.device_id
+            && !context.has_device(device_id) {
                 warnings.push(format!("设备 '{}' 不存在", device_id));
                 suggested_edits.push(SuggestedEdit {
                     field: "condition.device_id".to_string(),
@@ -463,14 +463,12 @@ impl RuleGenerator {
                     reason: "设备不存在".to_string(),
                 });
             }
-        }
 
         // Check threshold reasonableness
-        if let Some(threshold) = extracted.threshold {
-            if threshold < 0.0 || threshold > 1000.0 {
+        if let Some(threshold) = extracted.threshold
+            && (!(0.0..=1000.0).contains(&threshold)) {
                 warnings.push(format!("阈值 {} 可能超出合理范围", threshold));
             }
-        }
 
         // Suggest adding FOR duration if not present
         if extracted.for_duration.is_none() {
@@ -486,7 +484,7 @@ impl RuleGenerator {
     }
 
     /// Generate a human-readable explanation.
-    fn generate_explanation(extracted: &ExtractedRuleInfo, rule: &ParsedRule) -> String {
+    fn generate_explanation(_extracted: &ExtractedRuleInfo, rule: &ParsedRule) -> String {
         format!(
             "规则 \"{}\": 当设备 {} 的 {} {} {} 时，{}",
             rule.name,

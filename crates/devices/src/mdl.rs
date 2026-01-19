@@ -3,9 +3,7 @@
 //! Provides a unified interface for interacting with various types of devices
 //! regardless of their underlying communication protocol.
 
-use async_trait::async_trait;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
@@ -210,9 +208,11 @@ pub struct MetricDefinition {
 /// Data type for metrics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MetricDataType {
     Integer,
     Float,
+    #[default]
     String,
     Boolean,
     Binary,
@@ -222,11 +222,6 @@ pub enum MetricDataType {
     },
 }
 
-impl Default for MetricDataType {
-    fn default() -> Self {
-        Self::String
-    }
-}
 
 /// Command that can be sent to a device.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 
@@ -264,7 +264,7 @@ impl LlmBackendInstance {
 
         match self.backend_type {
             LlmBackendType::Ollama => {
-                if self.endpoint.as_ref().map_or(false, |e| e.is_empty()) {
+                if self.endpoint.as_ref().is_some_and(|e| e.is_empty()) {
                     return Err("Ollama endpoint must be specified".to_string());
                 }
             }
@@ -272,7 +272,7 @@ impl LlmBackendInstance {
             | LlmBackendType::Anthropic
             | LlmBackendType::Google
             | LlmBackendType::XAi => {
-                if self.api_key.as_ref().map_or(true, |k| k.is_empty()) {
+                if self.api_key.as_ref().is_none_or(|k| k.is_empty()) {
                     return Err(format!("{:?} requires an API key", self.backend_type));
                 }
             }
@@ -306,11 +306,10 @@ impl LlmBackendStore {
         // Check if we already have a store for this path
         {
             let singleton = LLM_BACKEND_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Use the same database as settings store
@@ -383,7 +382,7 @@ impl LlmBackendStore {
 
         let mut instances = Vec::new();
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_, data) = result?;
             let instance: LlmBackendInstance = serde_json::from_slice(data.value())
                 .map_err(|e| Error::Serialization(e.to_string()))?;
@@ -396,13 +395,12 @@ impl LlmBackendStore {
     /// Delete an LLM backend instance
     pub fn delete_instance(&self, id: &str) -> Result<bool, Error> {
         // Check if it's the active backend
-        if let Ok(Some(active_id)) = self.get_active_backend_id() {
-            if active_id == id {
+        if let Ok(Some(active_id)) = self.get_active_backend_id()
+            && active_id == id {
                 return Err(Error::InvalidInput(
                     "Cannot delete the active backend".to_string(),
                 ));
             }
-        }
 
         let write_txn = self.db.begin_write()?;
         let existed = {
@@ -532,11 +530,10 @@ impl LlmBackendStore {
             }
         }
 
-        if let Some(active_id) = data.get("active_id").and_then(|v| v.as_str()) {
-            if self.load_instance(active_id)?.is_some() {
+        if let Some(active_id) = data.get("active_id").and_then(|v| v.as_str())
+            && self.load_instance(active_id)?.is_some() {
                 self.set_active_backend(active_id)?;
             }
-        }
 
         Ok(())
     }

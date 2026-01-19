@@ -437,8 +437,8 @@ impl UnifiedPlugin for AlertChannelUnifiedPlugin {
                     .ok_or_else(|| PluginError::InvalidConfiguration("Missing name".to_string()))?;
 
                 // Remove name from args for channel creation
-                let mut channel_config = args.clone();
-                let channel = self.create_channel(&channel_config)?;
+                let channel_config = args.clone();
+                let _channel = self.create_channel(&channel_config)?;
 
                 // Note: We can't mutate self in an async trait method easily
                 // In practice, channels should be managed externally via the ChannelPluginRegistry
@@ -497,14 +497,12 @@ impl AlertChannelPluginFactory {
     }
 
     /// Create all built-in alert channel plugins (including debug/internal ones).
-    pub fn create_builtin_plugins() -> Vec<(String, DynAlertChannelPlugin)> {
+    pub async fn create_builtin_plugins() -> Vec<(String, DynAlertChannelPlugin)> {
         let mut plugins = Vec::new();
         for channel_type in Self::available_types() {
             let plugin = alert_channel_to_unified_plugin(channel_type);
             let plugin_id = {
-                let plugin_guard = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(plugin.read())
-                });
+                let plugin_guard = plugin.read().await;
                 plugin_guard.metadata().base.id.clone()
             };
             plugins.push((plugin_id, plugin));
@@ -514,14 +512,12 @@ impl AlertChannelPluginFactory {
 
     /// Create user-facing alert channel plugins (excludes debug/internal channels).
     /// This should be used for plugin registration in the UI.
-    pub fn create_user_facing_plugins() -> Vec<(String, DynAlertChannelPlugin)> {
+    pub async fn create_user_facing_plugins() -> Vec<(String, DynAlertChannelPlugin)> {
         let mut plugins = Vec::new();
         for channel_type in get_user_facing_channel_types() {
             let plugin = alert_channel_to_unified_plugin(channel_type);
             let plugin_id = {
-                let plugin_guard = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(plugin.read())
-                });
+                let plugin_guard = plugin.read().await;
                 plugin_guard.metadata().base.id.clone()
             };
             plugins.push((plugin_id, plugin));
@@ -554,21 +550,20 @@ mod tests {
         assert!(invalid_type.is_none());
     }
 
-    #[test]
-    fn test_create_plugin_from_type() {
+    #[tokio::test]
+    async fn test_create_plugin_from_type() {
         let plugin = AlertChannelPluginFactory::create_from_type_id("console");
         assert!(plugin.is_some());
 
-        let plugin_guard = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(plugin.unwrap().read())
-        });
+        let plugin_arc = plugin.unwrap();
+        let plugin_guard = plugin_arc.read().await;
 
         assert_eq!(plugin_guard.channel_type_id(), "console");
     }
 
-    #[test]
-    fn test_create_builtin_plugins() {
-        let plugins = AlertChannelPluginFactory::create_builtin_plugins();
+    #[tokio::test]
+    async fn test_create_builtin_plugins() {
+        let plugins = AlertChannelPluginFactory::create_builtin_plugins().await;
         assert!(!plugins.is_empty());
 
         // Should at least have console and memory

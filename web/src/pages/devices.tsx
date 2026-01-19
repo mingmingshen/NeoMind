@@ -14,7 +14,6 @@ import {
   AddDeviceTypeDialog,
   ViewDeviceTypeDialog,
   EditDeviceTypeDialog,
-  HassDiscoveryDialog,
 } from "./devices/index"
 
 type DeviceTabValue = "devices" | "types"
@@ -50,17 +49,6 @@ export function DevicesPage() {
     discoverDevices,
     discovering,
     discoveredDevices,
-    // HASS Discovery
-    hassDiscoveryStatus,
-    hassDiscoveredDevices,
-    hassDiscovering,
-    fetchHassDiscoveryStatus,
-    fetchHassDiscoveredDevices,
-    startHassDiscovery,
-    stopHassDiscovery,
-    registerHassDevice,
-    unregisterHassDevice,
-    clearHassDiscoveredDevices,
   } = useStore()
 
   // Pagination state
@@ -98,15 +86,6 @@ export function DevicesPage() {
 
   // Dialog states
   const [discoveryOpen, setDiscoveryOpen] = useState(false)
-  const [hassDiscoveryOpen, setHassDiscoveryOpen] = useState(false)
-
-  // Fetch HASS discovery status when dialog opens
-  useEffect(() => {
-    if (hassDiscoveryOpen) {
-      fetchHassDiscoveryStatus()
-      fetchHassDiscoveredDevices()
-    }
-  }, [hassDiscoveryOpen])
 
   // Device detail view state
   const [deviceDetailView, setDeviceDetailView] = useState<string | null>(null)
@@ -411,36 +390,6 @@ export function DevicesPage() {
                   deviceTypes={deviceTypes}
                   onAdd={handleAddDevice}
                   adding={addingDevice}
-                />
-              }
-              hassDiscoveryDialogOpen={hassDiscoveryOpen}
-              onHassDiscoveryOpenChange={setHassDiscoveryOpen}
-              hassDiscoveryDialog={
-                <HassDiscoveryDialog
-                  open={hassDiscoveryOpen}
-                  onClose={() => setHassDiscoveryOpen(false)}
-                  hassDiscoveryStatus={hassDiscoveryStatus}
-                  hassDiscoveredDevices={hassDiscoveredDevices}
-                  hassDiscovering={hassDiscovering}
-                  onStartDiscovery={async () => {
-                    await startHassDiscovery({ auto_register: false })
-                  }}
-                  onStopDiscovery={async () => {
-                    await stopHassDiscovery()
-                  }}
-                  onRefresh={async () => {
-                    await fetchHassDiscoveryStatus()
-                    await fetchHassDiscoveredDevices()
-                  }}
-                  onRegisterDevice={async (device) => {
-                    return await registerHassDevice(device.device_id)
-                  }}
-                  onUnregisterDevice={async (deviceId) => {
-                    return await unregisterHassDevice(deviceId)
-                  }}
-                  onClearDevices={() => {
-                    clearHassDiscoveredDevices()
-                  }}
                 />
               }
             />

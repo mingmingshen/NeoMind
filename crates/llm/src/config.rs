@@ -5,12 +5,12 @@
 use serde::{Deserialize, Serialize};
 
 use edge_ai_core::config::{
-    self, endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
+    endpoints, env_vars, models, normalize_ollama_endpoint,
 };
 use edge_ai_core::llm::backend::{BackendId, LlmError, LlmRuntime};
 
 #[cfg(feature = "cloud")]
-use crate::backends::{CloudConfig, CloudProvider, CloudRuntime};
+use crate::backends::{CloudConfig, CloudRuntime};
 
 #[cfg(feature = "ollama")]
 use crate::backends::{OllamaConfig, OllamaRuntime};
@@ -120,10 +120,10 @@ impl LlmConfig {
                         let ollama_config = OllamaConfig::new(model).with_endpoint(endpoint);
                         let backend_config = LlmBackendConfig::Ollama(ollama_config);
 
-                        return Ok(Self {
+                        Ok(Self {
                             backend: backend_config,
                             generation: GenerationParams::default(),
-                        });
+                        })
                     }
                     #[cfg(not(feature = "ollama"))]
                     {
@@ -141,10 +141,10 @@ impl LlmConfig {
                         let cloud_config = CloudConfig::openai(api_key).with_model(model);
                         let backend_config = LlmBackendConfig::Cloud(cloud_config);
 
-                        return Ok(Self {
+                        Ok(Self {
                             backend: backend_config,
                             generation: GenerationParams::default(),
-                        });
+                        })
                     }
                     #[cfg(not(feature = "cloud"))]
                     {

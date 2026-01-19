@@ -4,7 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::{Workflow, Step, Trigger};
 
 /// Workflow template definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -724,7 +723,7 @@ impl WorkflowGenerator {
     /// Extract name from description
     fn extract_name(desc: &str) -> String {
         // Simple heuristic: use first few words or generate a default
-        let words: Vec<&str> = desc.split(|c| c == '，' || c == ',' || c == '\n').collect();
+        let words: Vec<&str> = desc.split(['，', ',', '\n']).collect();
         if let Some(first) = words.first() {
             let trimmed = first.trim();
             // Use character count instead of byte count for UTF-8 safety
@@ -759,7 +758,7 @@ impl WorkflowGenerator {
     /// Build workflow JSON from extracted info
     fn build_workflow_json(
         extracted: &ExtractedWorkflowInfo,
-        context: &ValidationContext,
+        _context: &ValidationContext,
     ) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -918,8 +917,8 @@ impl WorkflowGenerator {
     ) -> Vec<SuggestedEdit> {
         let mut suggestions = Vec::new();
 
-        if extracted.devices.is_empty() {
-            if let Some(first_device) = context.devices.keys().next() {
+        if extracted.devices.is_empty()
+            && let Some(first_device) = context.devices.keys().next() {
                 suggestions.push(SuggestedEdit {
                     field: "devices".to_string(),
                     current_value: "[]".to_string(),
@@ -927,7 +926,6 @@ impl WorkflowGenerator {
                     reason: "需要至少指定一个设备".to_string(),
                 });
             }
-        }
 
         if extracted.cron_expression.is_none() && extracted.trigger_type == WorkflowTriggerType::Cron {
             suggestions.push(SuggestedEdit {

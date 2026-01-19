@@ -4,7 +4,6 @@
 //! device adapter types, each with type-specific metadata, configuration
 //! schemas, and commands.
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -20,8 +19,9 @@ use edge_ai_core::plugin::{
     PluginStats, PluginType, StateMachine,
 };
 
-#[cfg(feature = "embedded-broker")]
-use crate::embedded_broker;
+
+#[cfg(feature = "http")]
+use crate::adapters::http::{HttpAdapterConfig, create_http_adapter};
 
 /// Configuration for an external MQTT broker connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,55 +121,6 @@ impl ExternalBrokerConfig {
     pub fn full_client_id(&self) -> String {
         format!("{}-{}", self.client_id, uuid::Uuid::new_v4())
     }
-}
-
-/// Configuration for Modbus adapter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModbusAdapterConfig {
-    /// Unique identifier
-    pub id: String,
-
-    /// Display name
-    pub name: String,
-
-    /// Modbus device host address
-    pub host: String,
-
-    /// Modbus TCP port
-    #[serde(default = "default_modbus_port")]
-    pub port: u16,
-
-    /// Slave/unit ID
-    #[serde(default = "default_slave_id")]
-    pub slave_id: u8,
-
-    /// Connection timeout in milliseconds
-    #[serde(default = "default_modbus_timeout")]
-    pub timeout_ms: u64,
-
-    /// Poll interval in milliseconds
-    #[serde(default = "default_modbus_poll")]
-    pub poll_interval_ms: u64,
-
-    /// Whether this adapter is enabled
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-}
-
-fn default_modbus_port() -> u16 {
-    502
-}
-
-fn default_slave_id() -> u8 {
-    1
-}
-
-fn default_modbus_timeout() -> u64 {
-    5000
-}
-
-fn default_modbus_poll() -> u64 {
-    1000
 }
 
 /// Internal MQTT Broker plugin.
@@ -610,158 +561,6 @@ impl edge_ai_core::plugin::UnifiedPlugin for ExternalMqttBrokerPlugin {
     }
 }
 
-/// Modbus Adapter plugin.
-///
-/// This plugin manages Modbus TCP device connections.
-pub struct ModbusAdapterPlugin {
-    metadata: ExtendedPluginMetadata,
-    state_machine: StateMachine,
-    stats: PluginStats,
-    event_bus: EventBus,
-    running: Arc<AtomicBool>,
-    config: Option<ModbusAdapterConfig>,
-    device_count: Arc<AtomicUsize>,
-}
-
-impl ModbusAdapterPlugin {
-    /// Create a new Modbus adapter plugin.
-    pub fn new(id: String, name: String, event_bus: EventBus) -> Self {
-        let base = PluginMetadata::new(&id, &name, "1.0.0", ">=1.0.0")
-            .with_description("Modbus TCP device adapter")
-            .with_type("modbus_adapter");
-
-        let metadata = ExtendedPluginMetadata {
-            base,
-            plugin_type: PluginType::ModbusAdapter,
-            version: semver::Version::new(1, 0, 0),
-            required_neotalk_version: semver::Version::new(1, 0, 0),
-            dependencies: vec![],
-            config_schema: Some(modbus_adapter_config_schema()),
-            resource_limits: None,
-            permissions: vec![
-                PluginPermission::NetworkAccess,
-                PluginPermission::EventPublish,
-                PluginPermission::DeviceRead,
-            ],
-            homepage: None,
-            repository: None,
-            license: None,
-        };
-
-        Self {
-            metadata,
-            state_machine: StateMachine::new(),
-            stats: PluginStats::default(),
-            event_bus,
-            running: Arc::new(AtomicBool::new(false)),
-            config: None,
-            device_count: Arc::new(AtomicUsize::new(0)),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl edge_ai_core::plugin::UnifiedPlugin for ModbusAdapterPlugin {
-    fn metadata(&self) -> &ExtendedPluginMetadata {
-        &self.metadata
-    }
-
-    async fn initialize(&mut self, config: &serde_json::Value) -> Result<(), PluginError> {
-        let modbus_config: ModbusAdapterConfig = serde_json::from_value(config.clone())
-            .map_err(|e| PluginError::InitializationFailed(format!("Invalid config: {}", e)))?;
-
-        self.config = Some(modbus_config);
-
-        self.state_machine
-            .transition(PluginState::Initialized, "Initialization".to_string())
-            .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
-        Ok(())
-    }
-
-    async fn start(&mut self) -> Result<(), PluginError> {
-        if self.running.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        self.running.store(true, Ordering::Relaxed);
-        self.stats.record_start();
-
-        self.state_machine
-            .transition(PluginState::Running, "Start".to_string())
-            .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
-
-        tracing::info!("Modbus Adapter plugin started");
-
-        Ok(())
-    }
-
-    async fn stop(&mut self) -> Result<(), PluginError> {
-        if !self.running.load(Ordering::Relaxed) {
-            return Ok(());
-        }
-
-        self.running.store(false, Ordering::Relaxed);
-        self.stats.record_stop(0);
-
-        self.state_machine
-            .transition(PluginState::Stopped, "Stop".to_string())
-            .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
-
-        tracing::info!("Modbus Adapter plugin stopped");
-
-        Ok(())
-    }
-
-    async fn shutdown(&mut self) -> Result<(), PluginError> {
-        if self.running.load(Ordering::Relaxed) {
-            self.stop().await?;
-        }
-
-        self.state_machine
-            .transition(PluginState::Loaded, "Shutdown".to_string())
-            .map_err(|e| PluginError::ExecutionFailed(e.to_string()))?;
-
-        Ok(())
-    }
-
-    fn get_state(&self) -> PluginState {
-        self.state_machine.current().clone()
-    }
-
-    async fn health_check(&self) -> Result<(), PluginError> {
-        if !self.running.load(Ordering::Relaxed) {
-            return Err(PluginError::Other(anyhow::anyhow!("Not running")));
-        }
-        Ok(())
-    }
-
-    fn get_stats(&self) -> PluginStats {
-        let mut stats = self.stats.clone();
-        stats.start_count = self.device_count.load(Ordering::Relaxed) as u64;
-        stats
-    }
-
-    async fn handle_command(
-        &self,
-        command: &str,
-        _args: &serde_json::Value,
-    ) -> Result<serde_json::Value, PluginError> {
-        match command {
-            "get_info" => Ok(json!({
-                "id": self.metadata.base.id,
-                "name": self.metadata.base.name,
-                "plugin_type": "modbus_adapter",
-                "running": self.running.load(Ordering::Relaxed),
-                "version": self.metadata.version.to_string(),
-            })),
-            _ => Err(PluginError::Other(anyhow::anyhow!(
-                "Unknown command: {}",
-                command
-            ))),
-        }
-    }
-}
-
 /// Unified device adapter plugin factory.
 ///
 /// This factory creates specialized plugins for different adapter types.
@@ -798,20 +597,34 @@ impl UnifiedAdapterPluginFactory {
         )))
     }
 
-    /// Create a Modbus adapter plugin.
-    pub fn create_modbus_adapter(
-        id: String,
-        name: String,
-        event_bus: EventBus,
-    ) -> Arc<RwLock<ModbusAdapterPlugin>> {
-        Arc::new(RwLock::new(ModbusAdapterPlugin::new(id, name, event_bus)))
-    }
-
     /// Wrap a generic DeviceAdapter as a plugin.
     pub fn wrap_adapter(
         adapter: Arc<dyn DeviceAdapter>,
         event_bus: EventBus,
     ) -> Arc<RwLock<DeviceAdapterPlugin>> {
+        DeviceAdapterPluginFactory::create_plugin(adapter, event_bus)
+    }
+
+    /// Create an HTTP polling adapter plugin.
+    #[cfg(feature = "http")]
+    pub fn create_http_adapter_plugin(
+        id: String,
+        _name: String,
+        event_bus: EventBus,
+    ) -> Arc<RwLock<DeviceAdapterPlugin>> {
+        // Create a default HTTP config that can be updated via initialize
+        let config = HttpAdapterConfig {
+            name: id.clone(),
+            devices: vec![],
+            headers: std::collections::HashMap::new(),
+            auth_token: None,
+            global_timeout: None,
+            storage_dir: None,
+        };
+
+        let device_registry = Arc::new(crate::registry::DeviceRegistry::new());
+        let adapter = create_http_adapter(config, &event_bus, device_registry);
+
         DeviceAdapterPluginFactory::create_plugin(adapter, event_bus)
     }
 }
@@ -995,81 +808,103 @@ fn external_broker_config_schema() -> serde_json::Value {
     })
 }
 
-/// Generate JSON Schema for Modbus adapter configuration.
-fn modbus_adapter_config_schema() -> serde_json::Value {
+/// Generate JSON Schema for HTTP adapter configuration.
+#[cfg(feature = "http")]
+pub fn http_adapter_config_schema() -> serde_json::Value {
     json!({
         "type": "object",
-        "title": "Modbus Adapter Configuration",
-        "description": "Configure Modbus TCP device adapter",
+        "title": "HTTP Adapter Configuration",
+        "description": "Configure HTTP polling adapter for REST API devices",
         "properties": {
-            "id": {
-                "type": "string",
-                "title": "Adapter ID",
-                "description": "Unique identifier for this adapter"
-            },
             "name": {
                 "type": "string",
-                "title": "Display Name",
-                "description": "Human-readable name"
+                "title": "Adapter Name",
+                "description": "Unique identifier for this HTTP adapter"
             },
-            "host": {
-                "type": "string",
-                "title": "Host Address",
-                "description": "Modbus device IP address",
-                "format": "ipv4"
-            },
-            "port": {
-                "type": "integer",
-                "title": "Port",
-                "description": "Modbus TCP port",
-                "default": 502,
-                "minimum": 1024,
-                "maximum": 65535
-            },
-            "slave_id": {
-                "type": "integer",
-                "title": "Slave ID",
-                "description": "Modbus slave/unit ID",
-                "default": 1,
-                "minimum": 1,
-                "maximum": 247
-            },
-            "timeout_ms": {
-                "type": "integer",
-                "title": "Timeout",
-                "description": "Connection timeout in milliseconds",
-                "default": 5000,
-                "minimum": 100
-            },
-            "poll_interval_ms": {
-                "type": "integer",
-                "title": "Poll Interval",
-                "description": "Device poll interval in milliseconds",
-                "default": 1000,
-                "minimum": 100
-            },
-            "enabled": {
-                "type": "boolean",
-                "title": "Enabled",
-                "description": "Whether this adapter is enabled",
-                "default": true
+            "devices": {
+                "type": "array",
+                "title": "Devices",
+                "description": "HTTP devices to poll",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "title": "Device ID",
+                            "description": "Unique device identifier"
+                        },
+                        "name": {
+                            "type": "string",
+                            "title": "Device Name",
+                            "description": "Human-readable device name"
+                        },
+                        "url": {
+                            "type": "string",
+                            "title": "URL",
+                            "description": "HTTP endpoint URL",
+                            "format": "uri"
+                        },
+                        "method": {
+                            "type": "string",
+                            "title": "HTTP Method",
+                            "description": "HTTP request method",
+                            "enum": ["GET", "POST"],
+                            "default": "GET"
+                        },
+                        "poll_interval": {
+                            "type": "integer",
+                            "title": "Poll Interval",
+                            "description": "Polling interval in seconds",
+                            "default": 30,
+                            "minimum": 1
+                        },
+                        "headers": {
+                            "type": "object",
+                            "title": "HTTP Headers",
+                            "description": "Custom HTTP headers"
+                        },
+                        "data_path": {
+                            "type": "string",
+                            "title": "Data Path",
+                            "description": "JSONPath to extract data from response (e.g., $.data.temperature)"
+                        },
+                        "content_type": {
+                            "type": "string",
+                            "title": "Content Type",
+                            "description": "Expected response content type",
+                            "default": "application/json"
+                        },
+                        "timeout": {
+                            "type": "integer",
+                            "title": "Timeout",
+                            "description": "Request timeout in seconds",
+                            "default": 30,
+                            "minimum": 1
+                        }
+                    },
+                    "required": ["id", "name", "url"]
+                }
             }
         },
-        "required": ["id", "name", "host"],
+        "required": ["name"],
         "ui_hints": {
-            "field_order": ["name", "host", "port", "slave_id", "timeout_ms", "poll_interval_ms", "enabled"],
+            "field_order": ["name", "devices"],
             "display_names": {
-                "id": "Adapter ID",
-                "name": "显示名称",
-                "host": "主机地址",
-                "port": "端口",
-                "slave_id": "从机 ID",
-                "timeout_ms": "超时 (毫秒)",
-                "poll_interval_ms": "轮询间隔 (毫秒)",
-                "enabled": "启用"
+                "name": "适配器名称",
+                "devices": "设备列表",
+                "id": "设备 ID",
+                "name": "设备名称",
+                "url": "URL",
+                "method": "HTTP 方法",
+                "poll_interval": "轮询间隔 (秒)",
+                "headers": "HTTP 头",
+                "data_path": "数据路径",
+                "content_type": "内容类型",
+                "timeout": "超时 (秒)"
             },
             "placeholders": {
-                "host": "192.168.1.100"
+                "url": "http://192.168.1.100/api/telemetry",
+                "data_path": "$.data.sensors[0]"
             }
         }
     })
@@ -1092,12 +927,5 @@ mod tests {
         let schema = internal_broker_config_schema();
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["port"].is_object());
-    }
-
-    #[test]
-    fn test_modbus_adapter_config_schema() {
-        let schema = modbus_adapter_config_schema();
-        assert_eq!(schema["type"], "object");
-        assert_eq!(schema["properties"]["port"]["default"], 502);
     }
 }

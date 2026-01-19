@@ -12,10 +12,10 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use edge_ai_core::message::{Message, MessageRole};
+use edge_ai_core::message::Message;
 
 use crate::agent::AgentMessage;
-use crate::agent::tokenizer::{estimate_message_tokens, estimate_tokens};
+use crate::agent::tokenizer::estimate_message_tokens;
 use crate::context_selector::{ContextBundle, ContextSelector, IntentAnalysis, IntentType};
 
 /// Maximum tokens for conversation history
@@ -292,7 +292,7 @@ impl UnifiedContextManager {
         for hist in &historical {
             // Skip if this is one of the recent messages (we'll add those separately)
             let is_recent = historical.iter().position(|h| std::ptr::eq(h, hist))
-                .map_or(false, |pos| pos >= recent_start);
+                .is_some_and(|pos| pos >= recent_start);
 
             if is_recent {
                 continue;
@@ -326,7 +326,7 @@ impl UnifiedContextManager {
     async fn generate_consolidation_hints(
         &self,
         history: &[HistoricalMessage],
-        intent: &IntentAnalysis,
+        _intent: &IntentAnalysis,
     ) -> Vec<ConsolidationHint> {
         let mut hints = Vec::new();
 
@@ -505,7 +505,7 @@ impl UnifiedContextManager {
     }
 
     /// Update configuration.
-    pub async fn update_config(&self, config: ContextManagerConfig) {
+    pub async fn update_config(&self, _config: ContextManagerConfig) {
         // This would need interior mutability or a different approach
         // For now, just note this would be called during reconfiguration
     }

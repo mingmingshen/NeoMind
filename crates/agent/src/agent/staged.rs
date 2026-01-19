@@ -22,6 +22,12 @@ pub enum IntentCategory {
     Workflow,
     /// Data queries (time series, metrics)
     Data,
+    /// Alert-related queries (list, acknowledge, status)
+    Alert,
+    /// System-related queries (status, health, configuration)
+    System,
+    /// Help and FAQ queries
+    Help,
     /// General chat, greetings, unclear intent
     General,
 }
@@ -34,6 +40,9 @@ impl IntentCategory {
             IntentCategory::Rule => "rule",
             IntentCategory::Workflow => "workflow",
             IntentCategory::Data => "data",
+            IntentCategory::Alert => "alert",
+            IntentCategory::System => "system",
+            IntentCategory::Help => "help",
             IntentCategory::General => "general",
         }
     }
@@ -45,6 +54,9 @@ impl IntentCategory {
             IntentCategory::Rule => "自动化规则",
             IntentCategory::Workflow => "工作流",
             IntentCategory::Data => "数据查询",
+            IntentCategory::Alert => "告警管理",
+            IntentCategory::System => "系统管理",
+            IntentCategory::Help => "帮助中心",
             IntentCategory::General => "通用对话",
         }
     }
@@ -59,8 +71,16 @@ impl IntentCategory {
                 "传感器",
                 "开关",
                 "switch",
+                "light",
+                "lights",
+                "lamp",
+                "fan",
                 "控制",
                 "control",
+                "turn on",
+                "turn off",
+                "open",
+                "close",
                 "list_devices",
                 "get_device",
                 "设备列表",
@@ -76,6 +96,10 @@ impl IntentCategory {
                 "create_rule",
                 "规则列表",
                 "创建规则",
+                "create",
+                "new",
+                "add",
+                "make",
             ],
             IntentCategory::Workflow => &[
                 "工作流",
@@ -100,19 +124,98 @@ impl IntentCategory {
                 "时间序列",
                 "telemetry",
                 "遥测",
+                "温度",
+                "temperature",
+                "temp",
+                "湿度",
+                "humidity",
+                "what's",
+                "what is",
+                "how much",
+                "多少",
+                "当前",
+                "current",
+            ],
+            IntentCategory::Alert => &[
+                "告警",
+                "alert",
+                "报警",
+                "通知",
+                "notification",
+                "警告",
+                "warning",
+                "异常",
+                "abnormal",
+                "故障",
+                "fault",
+                "问题",
+                "issue",
+                "活跃告警",
+                "active alerts",
+                "确认告警",
+                "acknowledge",
+            ],
+            IntentCategory::System => &[
+                "系统",
+                "system",
+                "状态",
+                "status",
+                "健康",
+                "health",
+                "运行",
+                "running",
+                "正常",
+                "ok",
+                "版本",
+                "version",
+                "配置",
+                "config",
+                "设置",
+                "settings",
+                "服务器",
+                "server",
+                "连接",
+                "connection",
+                "在线",
+                "online",
+                "离线",
+                "offline",
+            ],
+            IntentCategory::Help => &[
+                "帮助",
+                "help",
+                "怎么用",
+                "how to",
+                "如何使用",
+                "how to use",
+                "教程",
+                "tutorial",
+                "指南",
+                "guide",
+                "说明",
+                "instruction",
+                "文档",
+                "documentation",
+                "支持",
+                "support",
+                "faq",
             ],
             IntentCategory::General => &[
                 "你好",
                 "hello",
                 "hi",
-                "帮助",
-                "help",
-                "怎么样",
-                "如何",
-                "什么",
-                "为什么",
-                "怎么",
-                "可以吗",
+                "嗨",
+                "hey",
+                "早上好",
+                "good morning",
+                "下午好",
+                "good afternoon",
+                "晚上好",
+                "good evening",
+                "谢谢",
+                "thank",
+                "再见",
+                "bye",
             ],
         }
     }
@@ -222,6 +325,9 @@ impl IntentCategory {
             IntentCategory::Rule,
             IntentCategory::Workflow,
             IntentCategory::Data,
+            IntentCategory::Alert,
+            IntentCategory::System,
+            IntentCategory::Help,
             IntentCategory::General,
         ]
     }
@@ -343,6 +449,15 @@ impl ToolFilter {
             }
             IntentCategory::Data => {
                 "用户想查询数据。可用工具: query_data, get_device_metrics。直接调用合适的工具。".to_string()
+            }
+            IntentCategory::Alert => {
+                "用户想查询告警信息。可用工具: list_alerts, acknowledge_alert, get_alert_status。直接调用合适的工具。".to_string()
+            }
+            IntentCategory::System => {
+                "用户想了解系统状态。可用工具: get_system_status, get_health_status, get_version。直接调用合适的工具。".to_string()
+            }
+            IntentCategory::Help => {
+                "用户需要帮助说明。提供清晰的使用说明和示例，不调用工具。".to_string()
             }
             IntentCategory::General => {
                 "用户可能在闲聊或需要帮助。先尝试理解意图，必要时使用list_*工具查询信息。".to_string()

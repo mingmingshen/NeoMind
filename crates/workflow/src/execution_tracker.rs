@@ -8,7 +8,7 @@ use crate::store::{ExecutionLog, ExecutionRecord, ExecutionStatus, StepResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, Semaphore, SemaphorePermit};
+use tokio::sync::{RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
@@ -302,9 +302,9 @@ impl ExecutionTracker {
     ) -> Result<()> {
         let mut running = self.running.write().await;
 
-        if let Some(mut exec) = running.remove(execution_id) {
+        if let Some(exec) = running.remove(execution_id) {
             // Create new RunningExecution with the real handle
-            let snapshot = exec.snapshot().await;
+            let _snapshot = exec.snapshot().await;
             let state = exec.state.clone();
             let total_steps = exec.total_steps;
 

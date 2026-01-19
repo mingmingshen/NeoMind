@@ -1,7 +1,21 @@
 //! Device adapter plugin registry.
 //!
+//! **DEPRECATED**: This module is deprecated. Device adapters should be managed
+//! directly through `DeviceService` instead of this plugin registry.
+//!
+//! For new code, use:
+//! - `DeviceService::register_adapter()` to register adapters
+//! - `DeviceService::unregister_adapter()` to remove adapters
+//! - `DeviceService::list_adapters()` to list adapters
+//! - `DeviceService::get_adapter_stats()` for statistics
+//! - `DeviceService::start_adapter()` / `stop_adapter()` for lifecycle management
+//!
 //! This module provides a registry for managing device adapters as plugins,
 //! bridging between the adapter system and the unified plugin system.
+#![deprecated(
+    since = "1.0.0",
+    note = "Use DeviceService methods instead: register_adapter(), list_adapters(), get_adapter_stats()"
+)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,7 +30,7 @@ use crate::service::DeviceService;
 use anyhow::Result;
 use edge_ai_core::{
     EventBus,
-    plugin::{PluginLoadOptions, PluginType, UnifiedPlugin},
+    plugin::UnifiedPlugin,
 };
 
 /// Configuration for registering a device adapter plugin.
@@ -26,7 +40,7 @@ pub struct AdapterPluginConfig {
     pub id: String,
     /// Display name
     pub name: String,
-    /// Adapter type (mqtt, modbus, hass, etc.)
+    /// Adapter type (mqtt, hass, etc.)
     pub adapter_type: String,
     /// Adapter-specific configuration
     pub config: serde_json::Value,
@@ -80,30 +94,6 @@ impl AdapterPluginConfig {
                     "client_id": client_id,
                 },
                 "subscribe_topics": topics,
-            }),
-            auto_start: false,
-            enabled: true,
-        }
-    }
-
-    /// Create a configuration for a Modbus adapter.
-    pub fn modbus(
-        id: impl Into<String>,
-        name: impl Into<String>,
-        host: impl Into<String>,
-        port: u16,
-        slave_id: u8,
-    ) -> Self {
-        let id_str = id.into();
-        Self {
-            id: id_str.clone(),
-            name: name.into(),
-            adapter_type: "modbus".to_string(),
-            config: serde_json::json!({
-                "name": id_str,
-                "host": host.into(),
-                "port": port,
-                "slave_id": slave_id,
             }),
             auto_start: false,
             enabled: true,
@@ -236,17 +226,6 @@ impl DeviceAdapterPluginRegistry {
                 #[cfg(not(feature = "mqtt"))]
                 {
                     Err(anyhow::anyhow!("MQTT feature not enabled"))
-                }
-            }
-            "modbus" => {
-                #[cfg(feature = "modbus")]
-                {
-                    create_adapter("modbus", &config.config, &self.event_bus)
-                        .map_err(|e| anyhow::anyhow!("Failed to create Modbus adapter: {}", e))
-                }
-                #[cfg(not(feature = "modbus"))]
-                {
-                    Err(anyhow::anyhow!("Modbus feature not enabled"))
                 }
             }
             "hass" => {
@@ -472,16 +451,6 @@ mod tests {
 
         assert_eq!(config.id, "test-mqtt");
         assert_eq!(config.adapter_type, "mqtt");
-        assert!(config.enabled);
-    }
-
-    #[tokio::test]
-    async fn test_adapter_config_modbus() {
-        let config =
-            AdapterPluginConfig::modbus("test-modbus", "Test Modbus", "192.168.1.100", 502, 1);
-
-        assert_eq!(config.id, "test-modbus");
-        assert_eq!(config.adapter_type, "modbus");
         assert!(config.enabled);
     }
 

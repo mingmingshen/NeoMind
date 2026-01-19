@@ -1,14 +1,10 @@
 //! Device telemetry and command history handlers.
 
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-};
+use axum::extract::{Path, Query, State};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
 use std::collections::HashMap;
 
-use super::metrics::value_to_json;
 use crate::handlers::{
     ServerState,
     common::{HandlerResult, ok},
@@ -259,8 +255,8 @@ pub async fn get_device_telemetry_summary_handler(
             );
         } else {
             // Try to get current value from DeviceService
-            if let Ok(current_values) = state.device_service.get_current_metrics(&device_id).await {
-                if let Some(val) = current_values.get(metric_name) {
+            if let Ok(current_values) = state.device_service.get_current_metrics(&device_id).await
+                && let Some(val) = current_values.get(metric_name) {
                     summary_data.insert(
                         metric_name.to_string(),
                         json!({
@@ -276,7 +272,6 @@ pub async fn get_device_telemetry_summary_handler(
                         }),
                     );
                 }
-            }
         }
     }
 

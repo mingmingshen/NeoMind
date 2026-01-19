@@ -139,10 +139,7 @@ impl EventBusReceiver {
             Err(broadcast::error::RecvError::Lagged(_)) => {
                 // We missed some events, but can continue receiving
                 // Try again immediately
-                match self.rx.try_recv() {
-                    Ok(event) => Some(event),
-                    Err(_) => None,
-                }
+                self.rx.try_recv().ok()
             }
             Err(broadcast::error::RecvError::Closed) => None,
         }

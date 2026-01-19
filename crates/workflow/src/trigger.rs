@@ -110,8 +110,7 @@ impl TriggerManager {
                 event_type: et,
                 filters,
             } = &callback.get_trigger()
-            {
-                if et == event_type {
+                && et == event_type {
                     // Check filters
                     let matches = if let Some(filters) = filters {
                         Self::check_filters(filters, &data.clone().unwrap_or_default())
@@ -123,7 +122,6 @@ impl TriggerManager {
                         self.trigger(trigger_id).await?;
                     }
                 }
-            }
         }
 
         Ok(())

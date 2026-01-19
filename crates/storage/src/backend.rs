@@ -226,7 +226,7 @@ impl Default for MemoryBackend {
 impl StorageBackend for MemoryBackend {
     fn write(&self, table: &str, key: &str, value: &[u8]) -> Result<()> {
         let mut data = self.data.write().unwrap();
-        let table_data = data.entry(table.to_string()).or_insert_with(HashMap::new);
+        let table_data = data.entry(table.to_string()).or_default();
         table_data.insert(key.to_string(), value.to_vec());
         Ok(())
     }
@@ -258,7 +258,7 @@ impl StorageBackend for MemoryBackend {
 
     fn write_batch(&self, table: &str, items: Vec<(String, Vec<u8>)>) -> Result<()> {
         let mut data = self.data.write().unwrap();
-        let table_data = data.entry(table.to_string()).or_insert_with(HashMap::new);
+        let table_data = data.entry(table.to_string()).or_default();
 
         for (key, value) in items {
             table_data.insert(key, value);

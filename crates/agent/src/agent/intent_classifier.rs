@@ -547,11 +547,10 @@ impl IntentClassifier {
         }
 
         // 创建动词
-        if input.contains("创建") || input.contains("新建") || input.contains("添加") {
-            if input.contains("规则") || input.contains("自动化") || input.contains("工作流") {
+        if (input.contains("创建") || input.contains("新建") || input.contains("添加"))
+            && (input.contains("规则") || input.contains("自动化") || input.contains("工作流")) {
                 score += 0.3;
             }
-        }
 
         (score as f32).min(1.0).max(0.0)
     }
@@ -794,7 +793,7 @@ impl IntentClassifier {
                 classification.intent,
                 IntentCategory::QueryData | IntentCategory::ControlDevice | IntentCategory::CreateAutomation
             ),
-            suggested_tools: self.suggest_tools(&classification),
+            suggested_tools: self.suggest_tools(classification),
             estimated_complexity: match (classification.intent, classification.sub_type) {
                 (IntentCategory::ControlDevice, IntentSubType::SingleDevice) => "simple".to_string(),
                 (IntentCategory::QueryData, IntentSubType::CurrentStatus) => "simple".to_string(),

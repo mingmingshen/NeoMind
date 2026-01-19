@@ -28,8 +28,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Trash2, TestTube, Check, X, Terminal, Database, Webhook, Mail } from "lucide-react"
-import { EmptyStateInline, ActionBar } from "@/components/shared"
+import { Plus, Trash2, TestTube, Check, X, Terminal, Database, Webhook, Mail, Loader2, Bell } from "lucide-react"
+import { EmptyState, EmptyStateInline, ActionBar } from "@/components/shared"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { ConfigFormBuilder } from "@/components/plugins/ConfigFormBuilder"
@@ -82,7 +82,8 @@ export function AlertChannelsTab() {
   const [channels, setChannels] = useState<AlertChannel[]>([])
   const [stats, setStats] = useState<ChannelStats | null>(null)
   const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)  // Start with true for initial loading
+  const [initialLoading, setInitialLoading] = useState(true)  // Track initial load separately
 
   // Dialog state
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -114,6 +115,7 @@ export function AlertChannelsTab() {
       toast({ title: t('common:failed'), description: String(error), variant: "destructive" })
     } finally {
       setLoading(false)
+      setInitialLoading(false)  // Clear initial loading flag
     }
   }
 
@@ -216,12 +218,51 @@ export function AlertChannelsTab() {
 
   const selectedType = channelTypes.find((t) => t.id === selectedChannelType)
 
+  // Initial loading spinner - same as LLM Backends and Device Connections
+  if (initialLoading) {
+    return (
+      <>
+        <ActionBar
+          title={t('alerts:channels')}
+          titleIcon={<Bell className="h-5 w-5" />}
+          description={t('alerts:channelsDesc')}
+          onRefresh={fetchChannels}
+          refreshLoading={loading}
+        />
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </>
+    )
+  }
+
+  // Empty state when no channel types are available
+  if (channelTypes.length === 0 && !loading) {
+    return (
+      <>
+        <ActionBar
+          title={t('alerts:channels')}
+          titleIcon={<Bell className="h-5 w-5" />}
+          description={t('alerts:channelsDesc')}
+          onRefresh={fetchChannels}
+          refreshLoading={loading}
+        />
+        <EmptyState
+          icon="alert"
+          title={t('alerts:noChannelTypes')}
+          description={t('alerts:noChannelTypesDesc')}
+          action={{ label: t('common:retry'), onClick: () => { fetchChannels(); fetchChannelTypes(); }, icon: <Loader2 className="h-4 w-4" /> }}
+        />
+      </>
+    )
+  }
+
   return (
-    <div className="space-y-4">
+    <>
       {/* Header */}
       <ActionBar
         title={t('alerts:channels')}
-        titleIcon={<TestTube className="h-5 w-5" />}
+        titleIcon={<Bell className="h-5 w-5" />}
         description={t('alerts:channelsDesc')}
         actions={[
           {
@@ -231,6 +272,7 @@ export function AlertChannelsTab() {
           },
         ]}
         onRefresh={fetchChannels}
+        refreshLoading={loading}
       />
 
       {/* Stats Cards */}
@@ -256,23 +298,47 @@ export function AlertChannelsTab() {
       )}
 
       {/* Channels Table */}
-      <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t('alerts:channelName')}</TableHead>
-              <TableHead>{t('alerts:channelType')}</TableHead>
-              <TableHead>{t('common:status')}</TableHead>
-              <TableHead>{t('common:actions')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+      {loading ? (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('alerts:channelName')}</TableHead>
+                <TableHead>{t('alerts:channelType')}</TableHead>
+                <TableHead>{t('common:status')}</TableHead>
+                <TableHead>{t('common:actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               <EmptyStateInline title={t('common:loading')} colSpan={4} />
-            ) : channels.length === 0 ? (
-              <EmptyStateInline title={t('alerts:noChannels')} colSpan={4} />
-            ) : (
-              channels.map((channel) => {
+            </TableBody>
+          </Table>
+        </Card>
+      ) : channels.length === 0 ? (
+        // Full-page empty state when no channels - consistent with LLM Backends and Device Connections
+        <EmptyState
+          icon="alert"
+          title={t('alerts:noChannels')}
+          description={t('alerts:noChannelsDesc')}
+          action={{
+            label: t('alerts:addChannel'),
+            onClick: () => setCreateDialogOpen(true),
+            icon: <Plus className="h-4 w-4" />,
+          }}
+        />
+      ) : (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('alerts:channelName')}</TableHead>
+                <TableHead>{t('alerts:channelType')}</TableHead>
+                <TableHead>{t('common:status')}</TableHead>
+                <TableHead>{t('common:actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {channels.map((channel) => {
                 const testResult = testResults[channel.name]
                 return (
                   <TableRow key={channel.name}>
@@ -324,11 +390,11 @@ export function AlertChannelsTab() {
                     </TableCell>
                   </TableRow>
                 )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+              })}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
 
       {/* Create Channel Dialog */}
       <Dialog open={createDialogOpen} onOpenChange={(open) => !open && closeCreateDialog()}>
@@ -404,6 +470,6 @@ export function AlertChannelsTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

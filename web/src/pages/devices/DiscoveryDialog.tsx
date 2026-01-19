@@ -46,7 +46,6 @@ export function DiscoveryDialog({
 
   const getDeviceTypeLabel = (deviceType: string | null) => {
     if (deviceType === "mqtt_gateway") return t('devices:discoveryDialog.types.mqtt')
-    if (deviceType === "modbus_controller") return t('devices:discoveryDialog.types.modbus')
     if (deviceType === "http_device") return t('devices:discoveryDialog.types.http')
     if (deviceType === "coap_device") return t('devices:discoveryDialog.types.coap')
     return ""

@@ -13,12 +13,13 @@ import {
 } from "@/components/ui/table"
 import { LoadingState, EmptyStateInline, Pagination, BulkActionBar, ActionBar, StatusBadge } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
-import { Eye, Trash2, Home, Server, Plus, Radar } from "lucide-react"
+import { Eye, Trash2, Server, Plus, Radar } from "lucide-react"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { Device } from "@/types"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { TransformsBadge } from "@/components/automation"
 
 interface DeviceListProps {
   devices: Device[]
@@ -35,9 +36,6 @@ interface DeviceListProps {
   onDiscoveryOpenChange: (open: boolean) => void
   discoveryDialog: React.ReactNode
   addDeviceDialog: React.ReactNode
-  hassDiscoveryDialogOpen?: boolean
-  onHassDiscoveryOpenChange?: (open: boolean) => void
-  hassDiscoveryDialog?: React.ReactNode
 }
 
 export function DeviceList({
@@ -55,9 +53,6 @@ export function DeviceList({
   onDiscoveryOpenChange,
   discoveryDialog,
   addDeviceDialog,
-  hassDiscoveryDialogOpen,
-  onHassDiscoveryOpenChange,
-  hassDiscoveryDialog,
 }: DeviceListProps) {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
@@ -137,17 +132,6 @@ export function DeviceList({
               </DialogTrigger>
               {discoveryDialog}
             </Dialog>
-            {onHassDiscoveryOpenChange && hassDiscoveryDialog && (
-              <Dialog open={hassDiscoveryDialogOpen} onOpenChange={onHassDiscoveryOpenChange}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Home className="mr-2 h-4 w-4" />
-                    {t('devices:hassDiscovery')}
-                  </Button>
-                </DialogTrigger>
-                {hassDiscoveryDialog}
-              </Dialog>
-            )}
           </>
         }
       />
@@ -182,6 +166,7 @@ export function DeviceList({
                 <TableHead>{t('devices:headers.type')}</TableHead>
                 <TableHead>{t('devices:headers.adapter')}</TableHead>
                 <TableHead>{t('devices:headers.plugin')}</TableHead>
+                <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms' })}</TableHead>
                 <TableHead align="center">{t('devices:headers.status')}</TableHead>
                 <TableHead>{t('devices:headers.lastOnline')}</TableHead>
                 <TableHead align="right">{t('devices:headers.actions')}</TableHead>
@@ -189,7 +174,7 @@ export function DeviceList({
             </TableHeader>
             <TableBody>
               {devices.length === 0 ? (
-                <EmptyStateInline title={t('devices:noDevices')} colSpan={9} />
+                <EmptyStateInline title={t('devices:noDevices')} colSpan={10} />
               ) : (
                 paginatedDevices.map((device) => (
                   <TableRow key={device.id} className={cn(selectedIds.has(device.id) && "bg-muted/50")}>
@@ -217,6 +202,9 @@ export function DeviceList({
                     ) : (
                       <span className="text-xs text-muted-foreground">{t('devices:builtinMqtt')}</span>
                     )}
+                  </TableCell>
+                  <TableCell align="center">
+                    <TransformsBadge deviceId={device.id} onRefresh={onRefresh} />
                   </TableCell>
                   <TableCell align="center">
                     <StatusBadge status={device.status} />

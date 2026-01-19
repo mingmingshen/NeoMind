@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use edge_ai_core::{Message, GenerationParams, llm::backend::{LlmRuntime, LlmInput}};
-use edge_ai_core::tools::{ToolOutput, Result};
+use edge_ai_core::tools::Result;
 
 use crate::agent::intent_classifier::{IntentClassifier, IntentCategory, IntentClassification};
 
@@ -42,7 +42,7 @@ impl TaskOrchestrator {
         match strategy {
             ProcessingStrategy::MultiTurn => {
                 // Create a new task session
-                let task_id = format!("task_{}", uuid::Uuid::new_v4().to_string());
+                let task_id = format!("task_{}", uuid::Uuid::new_v4());
                 let classification_clone = classification.clone();
                 let steps = self.decompose_task(user_input, &classification).await?;
                 let session = TaskSession {
@@ -79,7 +79,7 @@ impl TaskOrchestrator {
             ProcessingStrategy::FastPath | ProcessingStrategy::Standard | ProcessingStrategy::Quality => {
                 // Simple task - can be handled directly
                 Ok(TaskResponse {
-                    task_id: format!("direct_{}", uuid::Uuid::new_v4().to_string()),
+                    task_id: format!("direct_{}", uuid::Uuid::new_v4()),
                     response_type: ResponseType::Direct,
                     message: "这是一个简单任务，可以直接处理。".to_string(),
                     current_step: None,
@@ -90,7 +90,7 @@ impl TaskOrchestrator {
             }
             ProcessingStrategy::Fallback => {
                 Ok(TaskResponse {
-                    task_id: format!("fallback_{}", uuid::Uuid::new_v4().to_string()),
+                    task_id: format!("fallback_{}", uuid::Uuid::new_v4()),
                     response_type: ResponseType::Clarification,
                     message: "我需要更多信息来帮助你。请详细描述你想做什么？".to_string(),
                     current_step: None,
@@ -247,11 +247,11 @@ impl TaskOrchestrator {
         match self.llm.generate(llm_input).await {
             Ok(output) => {
                 // Parse JSON from LLM response
-                if let Some(json_start) = output.text.find('{') {
-                    if let Some(json_end) = output.text.rfind('}') {
+                if let Some(json_start) = output.text.find('{')
+                    && let Some(json_end) = output.text.rfind('}') {
                         let json_str = &output.text[json_start..=json_end];
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if let Some(steps) = parsed.get("steps").and_then(|s| s.as_array()) {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str)
+                            && let Some(steps) = parsed.get("steps").and_then(|s| s.as_array()) {
                                 let task_steps: Vec<TaskStep> = steps.iter()
                                     .filter_map(|s| self.parse_step(s))
                                     .collect();
@@ -260,9 +260,7 @@ impl TaskOrchestrator {
                                     return Ok(task_steps);
                                 }
                             }
-                        }
                     }
-                }
 
                 // Fallback to default steps
                 Ok(self.default_steps_for_intent(classification))
@@ -349,11 +347,7 @@ impl TaskOrchestrator {
                 }
             }
             StepType::Confirm => {
-                if input.contains("确认") || input.contains("好的") || input.contains("对") || input.contains("是") {
-                    context.confirmed = true;
-                } else {
-                    context.confirmed = false;
-                }
+                context.confirmed = input.contains("确认") || input.contains("好的") || input.contains("对") || input.contains("是");
             }
             StepType::Execute => {
                 // No context update needed for execute step

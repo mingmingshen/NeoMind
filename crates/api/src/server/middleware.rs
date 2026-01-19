@@ -7,7 +7,7 @@ use axum::{
 use std::net::SocketAddr;
 
 use super::types::ServerState;
-use crate::rate_limit::{RateLimitExceeded, extract_client_id};
+use crate::rate_limit::extract_client_id;
 
 /// Rate limiting middleware.
 ///

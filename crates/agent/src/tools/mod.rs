@@ -5,8 +5,10 @@
 //! and handling errors.
 
 pub mod analysis;
+pub mod automation;
 pub mod dsl;
 pub mod event_integration;
+pub mod interaction;
 pub mod mdl;
 pub mod rule_gen;
 pub mod think;
@@ -14,6 +16,11 @@ pub mod tool_search;
 
 pub use event_integration::{
     EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
+    ToolRetryConfig,
+};
+
+pub use interaction::{
+    AskUserTool, ClarifyIntentTool, ConfirmActionTool,
 };
 
 pub use mdl::{
@@ -34,3 +41,7 @@ pub use rule_gen::{
 pub use tool_search::{ToolSearchResult, ToolSearchTool};
 
 pub use think::{ThinkStorage, ThinkTool, ThoughtRecord};
+
+pub use automation::{
+    CreateAutomationTool, ListAutomationsTool, TriggerAutomationTool, DeleteAutomationTool,
+};

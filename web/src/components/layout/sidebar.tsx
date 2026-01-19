@@ -9,10 +9,10 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  ListTodo,
   Brain,
   Puzzle,
   Bot,
+  Activity,
 } from "lucide-react"
 import { useStore } from "@/store"
 
@@ -21,7 +21,7 @@ const navItemIcons = {
   devices: Cpu,
   alerts: AlertTriangle,
   automation: Workflow,
-  commands: ListTodo,
+  events: Activity,
   decisions: Brain,
   plugins: Puzzle,
   settings: Settings,
@@ -35,6 +35,7 @@ export function DesktopSidebar() {
     { id: "dashboard" as const, icon: navItemIcons.dashboard },
     { id: "devices" as const, icon: navItemIcons.devices },
     { id: "automation" as const, icon: navItemIcons.automation },
+    { id: "events" as const, icon: navItemIcons.events },
     { id: "decisions" as const, icon: navItemIcons.decisions },
     { id: "plugins" as const, icon: navItemIcons.plugins },
     { id: "settings" as const, icon: navItemIcons.settings },

@@ -660,26 +660,23 @@ impl MdlStorage {
         // Check if we already have a storage for this path
         {
             let singleton = MDL_STORAGE_SINGLETON.lock().unwrap();
-            if let Some(storage) = singleton.as_ref() {
-                if storage.path == path_str {
+            if let Some(storage) = singleton.as_ref()
+                && storage.path == path_str {
                     return Ok(storage.clone());
                 }
-            }
         }
 
         // Create new storage and save to singleton
         let path_ref = path.as_ref();
         let db = if path_ref.exists() {
             redb::Database::open(path_ref).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?
         } else {
             redb::Database::create(path_ref).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?
@@ -697,8 +694,7 @@ impl MdlStorage {
     /// Ensure all required tables exist
     fn ensure_tables(&self) -> Result<(), DeviceError> {
         let write_txn = self.db.begin_write().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -706,24 +702,21 @@ impl MdlStorage {
         // Create tables if they don't exist (redb creates them on first open_table)
         {
             let _ = write_txn.open_table(MDL_TABLE).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
         }
         {
             let _ = write_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
         }
 
         write_txn.commit().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -737,8 +730,7 @@ impl MdlStorage {
             std::env::temp_dir().join(format!("mdl_test_{}.redb", uuid::Uuid::new_v4()));
         // Use create for in-memory temp file
         let db = redb::Database::create(&temp_path).map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -762,30 +754,26 @@ impl MdlStorage {
             serde_json::to_vec(def).map_err(|e| DeviceError::Serialization(e.to_string()))?;
 
         let write_txn = self.db.begin_write().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         {
             let mut table = write_txn.open_table(MDL_TABLE).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
             table.insert(key.as_str(), value.as_slice()).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
         }
 
         write_txn.commit().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -801,15 +789,13 @@ impl MdlStorage {
         let key = self.key(device_type);
 
         let read_txn = self.db.begin_read().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let table = read_txn.open_table(MDL_TABLE).map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -821,8 +807,7 @@ impl MdlStorage {
                 Ok(Some(def))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(e) => Err(DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))),
         }
@@ -833,30 +818,26 @@ impl MdlStorage {
         let key = self.key(device_type);
 
         let write_txn = self.db.begin_write().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         {
             let mut table = write_txn.open_table(MDL_TABLE).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
             table.remove(key.as_str()).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
         }
 
         write_txn.commit().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -869,30 +850,26 @@ impl MdlStorage {
         let mut definitions = Vec::new();
 
         let read_txn = self.db.begin_read().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let table = read_txn.open_table(MDL_TABLE).map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let mut iter = table.iter().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_key, value) = result.map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
@@ -911,30 +888,26 @@ impl MdlStorage {
         let mut ids = Vec::new();
 
         let read_txn = self.db.begin_read().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let table = read_txn.open_table(MDL_TABLE).map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let mut iter = table.iter().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (key, _value) = result.map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
@@ -956,30 +929,26 @@ impl MdlStorage {
             serde_json::to_vec(instance).map_err(|e| DeviceError::Serialization(e.to_string()))?;
 
         let write_txn = self.db.begin_write().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         {
             let mut table = write_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
             table.insert(key.as_str(), value.as_slice()).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
         }
 
         write_txn.commit().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -995,15 +964,13 @@ impl MdlStorage {
         let key = format!("device:{}", device_id);
 
         let read_txn = self.db.begin_read().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let table = read_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -1015,8 +982,7 @@ impl MdlStorage {
                 Ok(Some(instance))
             }
             Ok(None) => Ok(None),
-            Err(e) => Err(DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(e) => Err(DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))),
         }
@@ -1027,30 +993,26 @@ impl MdlStorage {
         let key = format!("device:{}", device_id);
 
         let write_txn = self.db.begin_write().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         {
             let mut table = write_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
             table.remove(key.as_str()).map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
         }
 
         write_txn.commit().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
@@ -1063,30 +1025,26 @@ impl MdlStorage {
         let mut instances = Vec::new();
 
         let read_txn = self.db.begin_read().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let table = read_txn.open_table(DEVICE_INSTANCES_TABLE).map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
         let mut iter = table.iter().map_err(|e| {
-            DeviceError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
         })?;
 
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_key, value) = result.map_err(|e| {
-                DeviceError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                DeviceError::Io(std::io::Error::other(
                     e.to_string(),
                 ))
             })?;
@@ -1125,7 +1083,7 @@ pub struct DeviceInstance {
     /// Current metric values
     pub current_values: HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>,
 
-    /// Adapter/Plugin ID that manages this device (e.g., "hass-discovery", "modbus-1", "external-mqtt-2")
+    /// Adapter/Plugin ID that manages this device (e.g., "hass-discovery", "external-mqtt-1")
     /// None means manually added via internal MQTT
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,

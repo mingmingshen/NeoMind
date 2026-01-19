@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
 use crate::command::{CommandId, CommandResult, CommandStatus};
-use crate::state::{CommandStateStore, StateError};
+use crate::state::CommandStateStore;
 
 /// Acknowledgment status.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -214,7 +214,9 @@ impl AckHandler {
         let check_interval = tokio::time::Duration::from_millis(self.config.check_interval_ms);
         let auto_retry = self.config.auto_retry;
 
-        let handle = tokio::spawn(async move {
+        
+
+        tokio::spawn(async move {
             let mut interval = tokio::time::interval(check_interval);
 
             loop {
@@ -266,9 +268,7 @@ impl AckHandler {
                     }
                 }
             }
-        });
-
-        handle
+        })
     }
 
     /// Stop the acknowledgment handler.
@@ -410,7 +410,7 @@ impl AckHandler {
             // Keep if still waiting or if acknowledged recently
             ack.status == AckStatus::Waiting
                 || (ack.status == AckStatus::Acknowledged
-                    && ack.acknowledged_at.map_or(true, |t| t > cutoff))
+                    && ack.acknowledged_at.is_none_or(|t| t > cutoff))
         });
 
         initial_len - pending.len()

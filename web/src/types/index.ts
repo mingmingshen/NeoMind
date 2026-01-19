@@ -36,7 +36,7 @@ export interface Device {
   device_id: string  // Same as id, included for backend compatibility
   name: string
   device_type: string  // Reference to template
-  adapter_type: string  // "mqtt" | "modbus" | "hass"
+  adapter_type: string  // "mqtt"
   connection_config?: ConnectionConfig  // Optional - only in detail view
   status: string
   last_seen: string
@@ -58,13 +58,14 @@ export interface ConnectionConfig {
   telemetry_topic?: string
   command_topic?: string
   json_path?: string
-  // Modbus-specific
-  host?: string
-  port?: number
-  slave_id?: number
-  register_map?: Record<string, number>
-  // HASS-specific
-  entity_id?: string
+  // HTTP-specific
+  url?: string
+  method?: string
+  poll_interval?: number
+  headers?: Record<string, string>
+  data_path?: string
+  content_type?: string
+  timeout?: number
   // Additional protocol-specific parameters
   [key: string]: unknown
 }
@@ -245,6 +246,8 @@ export interface Message {
   timestamp: number
   thinking?: string
   tool_calls?: ToolCall[]
+  // Indicates if this message is still being streamed (partial)
+  isPartial?: boolean
 }
 
 export interface ToolCall {
@@ -311,6 +314,7 @@ export type ServerMessage =
 export interface ClientChatMessage {
   message: string
   sessionId?: string
+  backendId?: string  // Optional LLM backend ID to use for this message
 }
 
 // MQTT Broker Types
@@ -367,7 +371,7 @@ export interface AddDeviceRequest {
   device_id?: string
   name: string
   device_type: string  // Must reference an existing template
-  adapter_type: string  // "mqtt" | "modbus" | "hass"
+  adapter_type: string  // "mqtt"
   connection_config: ConnectionConfig
 }
 
@@ -383,78 +387,6 @@ export interface DiscoveredDevice {
   port: number
   confidence: number
   info: Record<string, string>
-}
-
-// HASS Discovery Types
-export interface HassDiscoveryStatus {
-  hass_discovery: {
-    enabled: boolean
-    subscription_topic: string
-    description: string
-  }
-  supported_components: Array<{
-    component: string
-    device_type: string | null
-  }>
-  component_count: number
-}
-
-export interface HassDiscoveryRequest {
-  broker?: string
-  port?: number
-  components?: string[]
-  auto_register?: boolean
-}
-
-export interface HassDiscoveryResponse {
-  message: string
-  subscription_topic: string
-  components: string[]
-  auto_register: boolean
-  instructions: {
-    subscribe: string
-    wait_for_messages: string
-    auto_register: string
-  }
-}
-
-// HASS entity information (part of an aggregated device)
-export interface HassEntity {
-  entity_id: string
-  name?: string
-  component: string
-  metric_count: number
-  command_count: number
-}
-
-// Aggregated HASS device (physical device with multiple entities)
-export interface HassDiscoveredDevice {
-  device_id: string
-  name?: string
-  description: string
-  entity_count: number
-  total_metrics: number
-  total_commands: number
-  entities: HassEntity[]
-  already_registered: boolean
-  device_info: Record<string, string>
-}
-
-export interface HassProcessRequest {
-  topic: string
-  payload: Record<string, unknown>
-}
-
-export interface HassProcessResponse {
-  message: string
-  device: HassDiscoveredDevice
-}
-
-export interface HassRegisterResponse {
-  message: string
-  device_id: string
-  device_type: string
-  name: string
 }
 
 // Device Telemetry Types
@@ -636,9 +568,17 @@ export interface Rule {
   // Condition and actions (only present in detailed view)
   condition?: RuleCondition
   actions?: RuleAction[]
+  // Trigger (for unified automation system)
+  trigger?: RuleTrigger
   // DSL text (used in creation/update)
   dsl?: string
 }
+
+export type RuleTrigger =
+  | { type: 'device_state'; device_id: string; state: string }
+  | { type: 'schedule'; cron: string }
+  | { type: 'manual' }
+  | { type: 'event'; event_type: string; filters?: Record<string, unknown> }
 
 export interface RuleCondition {
   device_id: string
@@ -669,16 +609,196 @@ export interface Workflow {
   // For detailed view (not from basic DTO)
   triggers?: WorkflowTrigger[]
   steps?: WorkflowStep[]
+  variables?: Record<string, unknown>
+  timeout_seconds?: number
   // UI may expect this field
   execution_count?: number
 }
 
-export interface WorkflowTrigger {
+// ========== Workflow Types ==========
+
+// Workflow step types matching backend Rust enum
+export type WorkflowStepType =
+  | 'device_query'
+  | 'condition'
+  | 'send_alert'
+  | 'send_command'
+  | 'wait_for_device_state'
+  | 'execute_wasm'
+  | 'parallel'
+  | 'delay'
+  | 'http_request'
+  | 'image_process'
+  | 'data_query'
+  | 'log'
+
+// Workflow trigger types matching backend Rust enum
+export type WorkflowTriggerType = 'cron' | 'event' | 'manual' | 'device'
+
+// Base workflow step interface
+export interface WorkflowStepBase {
+  id: string
+  type: WorkflowStepType
+}
+
+// Device Query Step
+export interface DeviceQueryStep extends WorkflowStepBase {
+  type: 'device_query'
+  device_id: string
+  metric: string
+  aggregation?: string
+}
+
+// Condition Step with branching
+export interface ConditionStep extends WorkflowStepBase {
+  type: 'condition'
+  condition: string
+  then_steps: WorkflowStep[]
+  else_steps?: WorkflowStep[]
+}
+
+// Send Alert Step
+export interface SendAlertStep extends WorkflowStepBase {
+  type: 'send_alert'
+  severity: 'info' | 'warning' | 'error' | 'critical'
+  title: string
+  message: string
+  channels?: string[]
+}
+
+// Send Command Step
+export interface SendCommandStep extends WorkflowStepBase {
+  type: 'send_command'
+  device_id: string
+  command: string
+  parameters?: Record<string, unknown>
+}
+
+// Wait For Device State Step
+export interface WaitForDeviceStateStep extends WorkflowStepBase {
+  type: 'wait_for_device_state'
+  device_id: string
+  metric: string
+  expected_value: number
+  tolerance?: number
+  timeout_seconds?: number
+  poll_interval_seconds?: number
+}
+
+// Execute WASM Step
+export interface ExecuteWasmStep extends WorkflowStepBase {
+  type: 'execute_wasm'
+  module_id: string
+  function: string
+  arguments?: Record<string, unknown>
+}
+
+// Parallel Execution Step
+export interface ParallelStep extends WorkflowStepBase {
+  type: 'parallel'
+  steps: WorkflowStep[]
+  max_parallel?: number
+}
+
+// Delay Step
+export interface DelayStep extends WorkflowStepBase {
+  type: 'delay'
+  duration_seconds: number
+}
+
+// HTTP Request Step
+export interface HttpRequestStep extends WorkflowStepBase {
+  type: 'http_request'
+  url: string
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+  headers?: Record<string, string>
+  body?: string
+}
+
+// Image Process Step
+export interface ImageProcessStep extends WorkflowStepBase {
+  type: 'image_process'
+  image_source: string
+  operations: ImageOperation[]
+  output_format: string
+}
+
+// Data Query Step
+export interface DataQueryStep extends WorkflowStepBase {
+  type: 'data_query'
+  query_type: 'telemetry' | 'history' | 'aggregate'
+  parameters?: Record<string, unknown>
+}
+
+// Log Step
+export interface LogStep extends WorkflowStepBase {
+  type: 'log'
+  message: string
+  level?: 'debug' | 'info' | 'warn' | 'error'
+}
+
+// Union type for all workflow steps
+export type WorkflowStep =
+  | DeviceQueryStep
+  | ConditionStep
+  | SendAlertStep
+  | SendCommandStep
+  | WaitForDeviceStateStep
+  | ExecuteWasmStep
+  | ParallelStep
+  | DelayStep
+  | HttpRequestStep
+  | ImageProcessStep
+  | DataQueryStep
+  | LogStep
+
+// Image operation types
+export interface ImageOperation {
+  operation: 'resize' | 'crop' | 'rotate' | 'filter' | 'annotate'
+  parameters: Record<string, unknown>
+}
+
+// Workflow Triggers
+export interface WorkflowTriggerBase {
+  id: string
+}
+
+export interface CronTrigger extends WorkflowTriggerBase {
+  type: 'cron'
+  expression: string
+  timezone?: string
+}
+
+export interface EventTrigger extends WorkflowTriggerBase {
+  type: 'event'
+  event_type: string
+  filters?: Record<string, unknown>
+}
+
+export interface ManualTrigger extends WorkflowTriggerBase {
+  type: 'manual'
+}
+
+export interface DeviceTrigger extends WorkflowTriggerBase {
+  type: 'device'
+  device_id: string
+  metric: string
+  condition: string
+}
+
+export type WorkflowTrigger =
+  | CronTrigger
+  | EventTrigger
+  | ManualTrigger
+  | DeviceTrigger
+
+// Legacy types for backward compatibility
+export interface WorkflowTriggerLegacy {
   type: 'event' | 'schedule' | 'manual' | 'device_state'
   config: Record<string, unknown>
 }
 
-export interface WorkflowStep {
+export interface WorkflowStepLegacy {
   id: string
   name: string
   type: 'command' | 'condition' | 'delay' | 'notification' | 'llm'
@@ -756,37 +876,6 @@ export interface WorkflowImportResult {
   errors: Array<{ workflow: { name: string }; error: string }>
 }
 
-// ========== Scenarios Types ==========
-
-export interface Scenario {
-  id: string
-  name: string
-  description?: string
-  icon?: string
-  actions: ScenarioAction[]
-  enabled: boolean
-  active: boolean
-  created_at: number
-  updated_at: number
-}
-
-export interface ScenarioAction {
-  type: 'device_command' | 'scene' | 'delay' | 'notification'
-  device_id?: string
-  command?: string
-  params?: Record<string, unknown>
-  delay_ms?: number
-}
-
-export interface ScenarioTemplate {
-  id: string
-  name: string
-  description: string
-  icon: string
-  category: string
-  actions: Omit<ScenarioAction, 'device_id'>[]
-}
-
 // ========== Memory Types ==========
 
 export interface MemoryEntry {
@@ -831,8 +920,6 @@ export enum PluginTypeEnum {
   DeviceAdapter = 'device_adapter',
   InternalMqttBroker = 'internal_mqtt_broker',
   ExternalMqttBroker = 'external_mqtt_broker',
-  HassDiscovery = 'hass_discovery',
-  ModbusAdapter = 'modbus_adapter',
   Tool = 'tool',
   Integration = 'integration',
   AlertChannel = 'alert_channel',
@@ -873,7 +960,7 @@ export interface Plugin {
   loaded_at: string  // ISO 8601 DateTime<Utc>
   path?: string
   // Device adapter specific fields (when plugin_type === 'device_adapter')
-  adapter_type?: 'mqtt' | 'modbus' | 'hass' | 'http' | 'custom'
+  adapter_type?: 'mqtt' | 'http' | 'custom'
   device_count?: number
   // Computed/Helper fields (not from backend, derived for UI)
   running?: boolean  // Derived from state === "Running"
@@ -900,7 +987,7 @@ export interface PluginStatsDto {
 export interface AdapterPluginDto {
   id: string
   name: string
-  adapter_type: 'mqtt' | 'modbus' | 'hass' | 'http' | 'custom'
+  adapter_type: 'mqtt' | 'http' | 'custom'
   enabled: boolean
   running: boolean
   device_count: number
@@ -976,7 +1063,7 @@ export interface ToolExecutionResult {
 // ========== Search Types ==========
 
 export interface SearchResult {
-  type: 'device' | 'rule' | 'scenario' | 'workflow' | 'alert'
+  type: 'device' | 'rule' | 'workflow' | 'alert'
   id: string
   title: string
   description?: string
@@ -1092,6 +1179,20 @@ export interface LlmBackendStats {
   average_latency_ms: number
 }
 
+// ========== Device Adapter Types ==========
+// Similar to LLM backend types, device adapters are now dynamically loaded
+
+export interface AdapterType {
+  id: string  // e.g., "mqtt", "http", "webhook"
+  name: string  // e.g., "MQTT", "HTTP (Polling)", "Webhook"
+  description: string
+  icon: string  // Icon name for lucide-react
+  icon_bg: string  // Tailwind CSS classes for icon background
+  mode: 'push' | 'pull' | 'hybrid'  // Connection mode
+  can_add_multiple: boolean  // Whether multiple instances can be created
+  builtin: boolean  // Whether this is a built-in adapter
+}
+
 // ========== Plugin Config Schema Types ==========
 
 export interface PluginConfigSchema {
@@ -1131,7 +1232,7 @@ export interface VisibilityRule {
 //
 // Must match backend AdapterPluginDto (crates/api/src/handlers/plugins.rs:563-585)
 
-export type DeviceAdapterType = 'mqtt' | 'modbus' | 'hass' | 'http' | 'custom'
+export type DeviceAdapterType = 'mqtt' | 'http' | 'custom'
 
 /**
  * Adapter plugin DTO - matches backend AdapterPluginDto exactly
@@ -1141,7 +1242,7 @@ export type DeviceAdapterType = 'mqtt' | 'modbus' | 'hass' | 'http' | 'custom'
 export interface AdapterPluginDto {
   id: string
   name: string
-  adapter_type: DeviceAdapterType  // 'mqtt', 'modbus', 'hass', 'http', 'custom'
+  adapter_type: DeviceAdapterType  // 'mqtt', 'http', 'custom'
   enabled: boolean
   running: boolean
   device_count: number
@@ -1157,4 +1258,258 @@ export interface AdapterPluginDto {
 export interface DeviceAdapterPlugin extends AdapterPluginDto {
   config?: Record<string, unknown>
   config_schema?: PluginConfigSchema
+}
+
+// ========== Unified Automation Types ==========
+// Must match backend AutomationDto and related types (crates/api/src/handlers/automations.rs)
+
+/**
+ * Automation type enumeration
+ */
+export type AutomationType = 'transform' | 'rule' | 'workflow'
+
+/**
+ * Transform scope - determines what data the transform applies to
+ */
+export type TransformScope =
+  | { type: 'global' }
+  | { type: 'device_type'; device_type: string }
+  | { type: 'device'; device_id: string }
+  | { type: 'user'; user_id: string }
+
+/**
+ * Aggregation function for transforms
+ */
+export type AggregationFunc =
+  | 'mean'
+  | 'max'
+  | 'min'
+  | 'sum'
+  | 'count'
+  | 'first'
+  | 'last'
+  | 'median'
+  | 'stddev'
+  | 'trend'
+  | 'delta'
+  | 'rate'
+
+/**
+ * Time window for time-series aggregation
+ */
+export interface TimeWindow {
+  duration_secs: number
+  aggregation: AggregationFunc
+}
+
+/**
+ * Data type for value conversion
+ */
+export type DataType = 'string' | 'number' | 'boolean' | 'int' | 'float'
+
+/**
+ * Data decode/encode format
+ */
+export type DecodeFormat = 'hex' | 'base64' | 'bytes' | 'csv' | 'url'
+
+/**
+ * Transform operation types
+ *
+ * Expression-based operations that AI can understand and generate:
+ * - Extract: Get data using JSONPath
+ * - Map: Transform array elements using template (e.g., convert nested arrays to "cls:fish num:12")
+ * - Reduce: Aggregate array to single value
+ * - Format: Template string formatting
+ * - Compute: Mathematical expressions
+ * - Pipeline: Chain operations
+ * - Fork: Parallel branches
+ * - If: Conditional execution
+ * - GroupBy: Group array by key and aggregate (e.g., [{box, cls}] → count by cls)
+ * - Decode: Convert encoded data (hex/base64) to JSON
+ * - Encode: Convert JSON to encoded format
+ */
+export type TransformOperation =
+  // Legacy operations (for backward compatibility)
+  | { op_type: 'single'; json_path: string; output_metric: string }
+  | { op_type: 'array_aggregation'; json_path: string; aggregation: AggregationFunc; value_path?: string; output_metric: string }
+  | { op_type: 'time_series_aggregation'; source_metric: string; window: TimeWindow; output_metric: string }
+  | { op_type: 'reference'; source_device: string; source_metric: string; output_metric: string }
+  | { op_type: 'custom'; wasm_module_id: string; function_name: string; parameters: Record<string, unknown>; output_metrics: string[] }
+  | { op_type: 'multi_output'; operations: TransformOperation[] }
+  // Expression-based operations
+  | { op_type: 'extract'; from: string; output: string; as_type?: DataType }
+  | { op_type: 'map'; over: string; template: string; output: string; where?: string }
+  | { op_type: 'reduce'; over: string; using: AggregationFunc; value?: string; output: string }
+  | { op_type: 'format'; template: string; output: string; from?: string }
+  | { op_type: 'compute'; expression: string; output: string }
+  | { op_type: 'pipeline'; steps: TransformOperation[]; output: string }
+  | { op_type: 'fork'; branches: TransformOperation[] }
+  | { op_type: 'if'; condition: string; then: TransformOperation; else_?: TransformOperation; output: string }
+  // Advanced data processing operations
+  | { op_type: 'group_by'; over: string; key: string; using: AggregationFunc; value?: string; output: string }
+  | { op_type: 'decode'; from: string; format: DecodeFormat; output: string }
+  | { op_type: 'encode'; from: string; format: DecodeFormat; output: string }
+
+/**
+ * Transform automation - data processing layer
+ *
+ * New AI-Native Design:
+ * - intent: User's natural language description
+ * - js_code: AI-generated JavaScript transformation code
+ * - output_prefix: Prefix for generated metric names
+ */
+export interface TransformAutomation extends BaseAutomation {
+  type: 'transform'
+  scope: TransformScope
+  device_type_filter?: string
+
+  // New AI-Native fields
+  intent?: string // User's natural language intent
+  js_code?: string // AI-generated JavaScript code
+  output_prefix: string // Prefix for output metrics (default: "transform")
+  complexity: number // 1-5, for execution ordering
+
+  // Legacy field (deprecated, use js_code instead)
+  operations?: TransformOperation[]
+}
+
+/**
+ * Unified Automation type - can be Transform, Rule, or Workflow
+ */
+export type Automation = TransformAutomation | RuleAutomation | WorkflowAutomation
+
+/**
+ * Base automation interface with common fields
+ */
+export interface BaseAutomation {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  type: AutomationType
+  created_at: number
+  updated_at: number
+  execution_count: number
+  last_executed: number | null
+}
+
+/**
+ * Rule automation - simple if-then conditions
+ */
+export interface RuleAutomation extends BaseAutomation {
+  type: 'rule'
+  trigger: RuleTrigger
+  condition: RuleCondition
+  actions: RuleAction[]
+  complexity: number // 1-5
+}
+
+/**
+ * Workflow automation - complex multi-step sequences
+ */
+export interface WorkflowAutomation extends BaseAutomation {
+  type: 'workflow'
+  triggers: WorkflowTrigger[]
+  steps: WorkflowStep[]
+  variables: Record<string, unknown>
+  complexity: number // 1-5
+}
+
+/**
+ * Automation list response
+ */
+export interface AutomationListResponse {
+  automations: Automation[]
+  count: number
+}
+
+/**
+ * Intent analysis result from AI
+ */
+export interface IntentResult {
+  recommended_type: AutomationType
+  confidence: number // 0-100
+  reasoning: string
+  suggested_automation: Partial<Automation> | null
+  warnings: string[]
+}
+
+/**
+ * Conversion recommendation
+ */
+export interface ConversionRecommendation {
+  can_convert: boolean
+  target_type: AutomationType
+  reason: string
+  estimated_complexity: number
+}
+
+/**
+ * Create automation request
+ */
+export interface CreateAutomationRequest {
+  name: string
+  description?: string
+  type?: AutomationType
+  enabled?: boolean
+  definition: Record<string, unknown>
+}
+
+/**
+ * Update automation request
+ */
+export interface UpdateAutomationRequest {
+  name?: string
+  description?: string
+  definition?: Record<string, unknown>
+  enabled?: boolean
+}
+
+/**
+ * Set automation status request
+ */
+export interface SetAutomationStatusRequest {
+  enabled: boolean
+}
+
+/**
+ * Convert automation request
+ */
+export interface ConvertAutomationRequest {
+  type: AutomationType
+}
+
+/**
+ * Automation execution record
+ */
+export interface ExecutionRecord {
+  id: string
+  automation_id: string
+  started_at: number
+  completed_at: number | null
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  result?: Record<string, unknown>
+  error?: string
+}
+
+/**
+ * Automation template
+ */
+export interface AutomationTemplate {
+  id: string
+  name: string
+  description: string
+  automation_type: AutomationType
+  category: string
+  parameters: TemplateParameter[]
+  definition_template: Record<string, unknown>
+}
+
+/**
+ * Automation filter parameters
+ */
+export interface AutomationFilter {
+  type?: 'transform' | 'rule' | 'workflow' | 'all'
+  enabled?: boolean
+  search?: string
 }

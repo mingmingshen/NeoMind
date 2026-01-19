@@ -6,7 +6,6 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
-use std::collections::HashMap;
 
 use edge_ai_devices::MetricValue;
 
@@ -31,7 +30,7 @@ pub async fn read_metric_handler(
         .map_err(|e| ErrorResponse::bad_request(format!("Failed to read metric: {:?}", e)))?;
 
     let value = current_values.get(&metric).ok_or_else(|| {
-        ErrorResponse::not_found(&format!("Metric '{}' not found for device", metric))
+        ErrorResponse::not_found(format!("Metric '{}' not found for device", metric))
     })?;
 
     ok(json!({

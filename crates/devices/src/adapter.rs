@@ -1,7 +1,7 @@
 //! Device adapter interface for NeoTalk event-driven architecture.
 //!
 //! This module defines the adapter pattern for integrating various data sources
-//! (MQTT, Modbus, HTTP, etc.) into the NeoTalk platform through a unified interface.
+//! (MQTT, HASS, HTTP, etc.) into the NeoTalk platform through a unified interface.
 
 use crate::mdl::MetricValue;
 use async_trait::async_trait;
@@ -221,7 +221,7 @@ pub struct DiscoveredDeviceInfo {
     pub device_type: String,
     /// Device name (human-readable)
     pub name: Option<String>,
-    /// Connection endpoint (e.g., MQTT topic, Modbus address)
+    /// Connection endpoint (e.g., MQTT topic, HASS entity ID)
     pub endpoint: Option<String>,
     /// Device capabilities
     pub capabilities: Vec<String>,
@@ -260,7 +260,7 @@ impl DiscoveredDeviceInfo {
 
 /// Device adapter trait.
 ///
-/// All device adapters (MQTT, Modbus, HTTP, etc.) implement this trait
+/// All device adapters (MQTT, HASS, HTTP, etc.) implement this trait
 /// to provide a unified interface for the adapter manager.
 ///
 /// Simplified architecture: Adapters should automatically use templates from DeviceRegistry
@@ -271,7 +271,7 @@ pub trait DeviceAdapter: Send + Sync {
     /// Get the adapter name.
     fn name(&self) -> &str;
 
-    /// Get the adapter type identifier (e.g., "mqtt", "modbus", "hass").
+    /// Get the adapter type identifier (e.g., "mqtt", "hass").
     fn adapter_type(&self) -> &'static str {
         "base"
     }

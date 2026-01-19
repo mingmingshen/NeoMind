@@ -5,13 +5,14 @@
 
 use crate::dsl::{RuleAction, RuleError};
 use crate::engine::{CompiledRule, RuleExecutionResult, RuleId, ValueProvider};
-use edge_ai_core::{EventBus, NeoTalkEvent};
+use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent};
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
+use serde::{Deserialize, Serialize};
 
 /// Result type for device integration operations.
 pub type DeviceIntegrationResult<T> = Result<T, DeviceIntegrationError>;
@@ -38,6 +39,147 @@ pub enum DeviceIntegrationError {
     /// Other error
     #[error("Device integration error: {0}")]
     Other(#[from] anyhow::Error),
+}
+
+/// Detailed result of a command execution action.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandActionResult {
+    /// Target device ID
+    pub device_id: String,
+    /// Command name
+    pub command: String,
+    /// Parameters sent
+    pub params: HashMap<String, serde_json::Value>,
+    /// Whether execution succeeded
+    pub success: bool,
+    /// Result value if applicable
+    pub result: Option<CommandResultValue>,
+    /// Error message if failed
+    pub error: Option<String>,
+    /// Execution time in milliseconds
+    pub duration_ms: u64,
+    /// Timestamp when executed
+    pub timestamp: i64,
+}
+
+/// Result value from command execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum CommandResultValue {
+    /// Boolean result
+    Bool(bool),
+    /// Integer result
+    Integer(i64),
+    /// Float result
+    Float(f64),
+    /// String result
+    String(String),
+    /// JSON result
+    Json(serde_json::Value),
+    /// No result
+    Null,
+}
+
+impl From<MetricValue> for CommandResultValue {
+    fn from(value: MetricValue) -> Self {
+        match value {
+            MetricValue::Integer(i) => CommandResultValue::Integer(i),
+            MetricValue::Float(f) => CommandResultValue::Float(f),
+            MetricValue::String(s) => CommandResultValue::String(s),
+            MetricValue::Boolean(b) => CommandResultValue::Bool(b),
+            MetricValue::Json(j) => CommandResultValue::Json(j),
+        }
+    }
+}
+
+/// Storage for command execution history.
+pub struct CommandResultHistory {
+    /// Storage of results by rule execution ID
+    results: Arc<RwLock<HashMap<String, Vec<CommandActionResult>>>>,
+}
+
+impl CommandResultHistory {
+    /// Create a new history storage.
+    pub fn new() -> Self {
+        Self {
+            results: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Add a command result.
+    pub async fn add(&self, rule_id: &str, result: CommandActionResult) {
+        let mut results = self.results.write().await;
+        results
+            .entry(rule_id.to_string())
+            .or_insert_with(Vec::new)
+            .push(result);
+
+        // Keep only last 100 results per rule
+        if let Some(entries) = results.get_mut(&rule_id.to_string())
+            && entries.len() > 100 {
+                entries.drain(0..entries.len() - 100);
+            }
+    }
+
+    /// Get all results for a rule.
+    pub async fn get(&self, rule_id: &str) -> Vec<CommandActionResult> {
+        let results = self.results.read().await;
+        results.get(rule_id).cloned().unwrap_or_default()
+    }
+
+    /// Get all results.
+    pub async fn get_all(&self) -> HashMap<String, Vec<CommandActionResult>> {
+        let results = self.results.read().await;
+        results.clone()
+    }
+
+    /// Get statistics for a rule.
+    pub async fn get_stats(&self, rule_id: &str) -> CommandExecutionStats {
+        let results = self.results.read().await;
+        let entries = results.get(rule_id).cloned().unwrap_or_default();
+
+        let total = entries.len();
+        let successful = entries.iter().filter(|r| r.success).count();
+        let failed = total - successful;
+        let avg_duration = if total > 0 {
+            entries.iter().map(|r| r.duration_ms).sum::<u64>() / total as u64
+        } else {
+            0
+        };
+
+        CommandExecutionStats {
+            total_executions: total,
+            successful,
+            failed,
+            success_rate: if total > 0 {
+                (successful as f32 / total as f32) * 100.0
+            } else {
+                0.0
+            },
+            avg_duration_ms: avg_duration,
+        }
+    }
+}
+
+impl Default for CommandResultHistory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Statistics for command executions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandExecutionStats {
+    /// Total number of executions
+    pub total_executions: usize,
+    /// Number of successful executions
+    pub successful: usize,
+    /// Number of failed executions
+    pub failed: usize,
+    /// Success rate as percentage (0-100)
+    pub success_rate: f32,
+    /// Average execution duration in milliseconds
+    pub avg_duration_ms: u64,
 }
 
 /// Device value provider backed by the adapter manager.
@@ -112,12 +254,22 @@ impl ValueProvider for DeviceValueProvider {
 pub struct DeviceActionExecutor {
     /// Event bus for sending commands
     event_bus: EventBus,
+    /// Command result history
+    history: Arc<CommandResultHistory>,
 }
 
 impl DeviceActionExecutor {
     /// Create a new device action executor.
     pub fn new(event_bus: EventBus) -> Self {
-        Self { event_bus }
+        Self {
+            event_bus,
+            history: Arc::new(CommandResultHistory::new()),
+        }
+    }
+
+    /// Get the command result history.
+    pub fn history(&self) -> &Arc<CommandResultHistory> {
+        &self.history
     }
 
     /// Execute a rule action.
@@ -125,6 +277,7 @@ impl DeviceActionExecutor {
         &self,
         action: &RuleAction,
         device_id: Option<&str>,
+        rule_id: Option<&str>,
     ) -> DeviceIntegrationResult<RuleExecutionResult> {
         let start = Instant::now();
         let mut actions_executed = Vec::new();
@@ -133,10 +286,22 @@ impl DeviceActionExecutor {
             RuleAction::Execute {
                 device_id: target_device,
                 command,
-                params: _,
+                params,
             } => {
                 let target = device_id.unwrap_or(target_device);
                 actions_executed.push(format!("execute:{}", command));
+
+                // Build the command result with tracking
+                let cmd_result = CommandActionResult {
+                    device_id: target.to_string(),
+                    command: command.clone(),
+                    params: params.clone(),
+                    success: true,
+                    result: Some(CommandResultValue::String("Command sent".to_string())),
+                    error: None,
+                    duration_ms: 0,
+                    timestamp: chrono::Utc::now().timestamp(),
+                };
 
                 // Publish command event
                 let _ = self
@@ -145,12 +310,21 @@ impl DeviceActionExecutor {
                         device_id: target.to_string(),
                         command: command.clone(),
                         success: true,
-                        result: Some(serde_json::json!("Command sent")),
+                        result: Some(serde_json::json!({"status": "sent", "rule_id": rule_id})),
                         timestamp: chrono::Utc::now().timestamp(),
                     })
                     .await;
 
-                info!("Executed command '{}' on device '{}'", command, target);
+                // Store in history if rule_id is provided (clone for logging)
+                if let Some(rid) = rule_id {
+                    self.history.add(rid, cmd_result.clone()).await;
+                    info!(
+                        "Executed command '{}' on device '{}' (rule: {})",
+                        command, target, rid
+                    );
+                } else {
+                    info!("Executed command '{}' on device '{}'", command, target);
+                }
             }
             RuleAction::Notify { message } => {
                 actions_executed.push(format!("notify:{}", message));
@@ -206,9 +380,10 @@ impl DeviceActionExecutor {
         let start = Instant::now();
         let mut all_executed = Vec::new();
         let mut errors = Vec::new();
+        let rule_id_str = rule.id.to_string();
 
         for action in &rule.actions {
-            match self.execute_action(action, device_id).await {
+            match self.execute_action(action, device_id, Some(&rule_id_str)).await {
                 Ok(result) => {
                     all_executed.extend(result.actions_executed);
                 }

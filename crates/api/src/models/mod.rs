@@ -25,6 +25,9 @@ pub struct ChatRequest {
     /// Optional session ID.
     #[serde(rename = "sessionId")]
     pub session_id: Option<String>,
+    /// Optional LLM backend ID to use for this request.
+    #[serde(rename = "backendId")]
+    pub backend_id: Option<String>,
 }
 
 /// Chat response to the web client.

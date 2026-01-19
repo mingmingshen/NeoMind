@@ -54,6 +54,7 @@
 //! ```
 
 pub mod compiler;
+pub mod compensation;
 pub mod engine;
 pub mod error;
 pub mod execution_tracker;
@@ -65,10 +66,15 @@ pub mod store;
 pub mod templates;
 pub mod trigger;
 pub mod triggers;
+pub mod versioning;
 pub mod wasm_runtime;
 pub mod workflow;
 
 pub use compiler::{CompilationResult, MultiLanguageCompiler, SourceLanguage};
+pub use compensation::{
+    CompensationAction, CompensationRegistry, CompensationResult, CompensationTiming, FailureStrategy,
+    create_compensation, create_delay_compensation, create_log_compensation,
+};
 pub use engine::{ExecutionResult, WorkflowEngine};
 pub use error::{NeoTalkError, Result, WorkflowError};
 pub use execution_tracker::{ExecutionPermit, ExecutionState, ExecutionTracker, RunningExecution};
@@ -85,8 +91,12 @@ pub use templates::{
     ValidationContext, WorkflowGenerator, WorkflowTemplate, WorkflowTemplates,
 };
 pub use trigger::TriggerManager;
+pub use versioning::{
+    ChangeType, VersionChange, VersionChangeType, VersionError, VersionManager, WorkflowDiff,
+    WorkflowSnapshot, WorkflowVersion,
+};
 pub use triggers::event::{EventFilters, EventTrigger, EventTriggerConfig, EventTriggerManager};
-pub use wasm_runtime::{WasmConfig, WasmModule, WasmRuntime};
+pub use wasm_runtime::{ModuleMetadata, WasmConfig, WasmExecutionResult, WasmModule, WasmRuntime};
 pub use workflow::{
     ImageOperation, QueryType, Step, Trigger, TriggerType, Workflow, WorkflowStatus,
 };

@@ -12,12 +12,12 @@
 //! - Results become virtual metrics
 
 use crate::types::{
-    TransformAutomation, TransformOperation, TransformScope, AggregationFunc,
+    TransformAutomation, TransformOperation, AggregationFunc,
     TimeWindow,
 };
 use crate::error::{AutomationError, Result};
 use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -372,8 +372,8 @@ impl TransformEngine {
         let timestamp = Utc::now().timestamp();
 
         // Try JS-based execution first (new AI-native approach)
-        if let Some(ref js_code) = transform.js_code {
-            if !js_code.is_empty() {
+        if let Some(ref js_code) = transform.js_code
+            && !js_code.is_empty() {
                 match self.js_executor.execute(
                     js_code,
                     raw_data,
@@ -390,7 +390,6 @@ impl TransformEngine {
                 }
                 return Ok(TransformResult { metrics, warnings });
             }
-        }
 
         // Fall back to legacy operations
         if let Some(ref operations) = transform.operations {
@@ -812,8 +811,8 @@ impl TransformEngine {
     async fn execute_fork(
         &self,
         _branches: &[TransformOperation],
-        device_id: &str,
-        timestamp: i64,
+        _device_id: &str,
+        _timestamp: i64,
         _raw_data: &Value,
     ) -> Result<Vec<TransformedMetric>> {
         // Simplified: Fork is not fully implemented yet
@@ -856,7 +855,7 @@ impl TransformEngine {
 
             // Special variables
             let replacement = if var_name == &"item" {
-                item.and_then(|i| value_as_f64(i))
+                item.and_then(value_as_f64)
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| item.map(|i| i.to_string()).unwrap_or_default())
             } else if var_name == &"index" {
@@ -1482,7 +1481,7 @@ impl TimeSeriesCache {
     /// Add a data point to the cache
     fn add_point(&mut self, device_id: &str, metric: &str, value: f64, timestamp: i64) {
         let key = (device_id.to_string(), metric.to_string());
-        let points = self.data.entry(key).or_insert_with(Vec::new);
+        let points = self.data.entry(key).or_default();
         points.push((timestamp, value));
 
         // Sort by timestamp and keep only recent points

@@ -178,7 +178,7 @@ impl DataPathExtractor {
 
         // Extract values from all samples at this path
         for sample in samples {
-            if let Some(value) = self.extract_by_path(*sample, path) {
+            if let Some(value) = self.extract_by_path(sample, path) {
                 let data_type = DataType::from_json(&value);
 
                 match data_type {
@@ -187,11 +187,10 @@ impl DataPathExtractor {
                     _ => {}
                 }
 
-                if data_type.is_numeric() {
-                    if let Some(n) = value.as_f64() {
+                if data_type.is_numeric()
+                    && let Some(n) = value.as_f64() {
                         numeric_values.push(n);
                     }
-                }
 
                 sample_values.push(value);
             }
@@ -421,8 +420,7 @@ If the data appears to be:
                         is_consistent: true,
                         coverage: 1.0, // LLM-provided paths assumed consistent
                         sample_values: field["sample_values"]
-                            .as_array()
-                            .map(|arr| arr.clone())
+                            .as_array().cloned()
                             .unwrap_or_default(),
                         value_range: None,
                         is_array: false,
@@ -468,11 +466,10 @@ If the data appears to be:
         }
 
         // Find first JSON object
-        if let Some(start) = response.find('{') {
-            if let Some(end) = response.rfind('}') {
+        if let Some(start) = response.find('{')
+            && let Some(end) = response.rfind('}') {
                 return Ok(response[start..=end].to_string());
             }
-        }
 
         Err(DiscoveryError::Parse("No JSON found in LLM response".into()))
     }
@@ -531,7 +528,7 @@ If the data appears to be:
         }
 
         // Base64 typically has length multiple of 4 and uses specific characters
-        if s.len() % 4 != 0 {
+        if !s.len().is_multiple_of(4) {
             return false;
         }
 

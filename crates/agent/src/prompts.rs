@@ -1,539 +1,389 @@
-//! LLM System Prompt management.
+//! Prompt generation utilities for the NeoTalk AI Agent.
 //!
-//! Provides dynamic prompt generation with context-aware content injection.
+//! ## Architecture
+//!
+//! This module provides enhanced system prompts that improve:
+//! - Conversation quality through clear role definition
+//! - Task completion via explicit tool usage instructions
+//! - Error handling with recovery strategies
+//! - Multi-turn conversation consistency
+//!
+//! ## System Prompt Structure
+//!
+//! The system prompt is organized into sections:
+//! 1. Core identity and capabilities
+//! 2. Interaction principles
+//! 3. Tool usage strategy
+//! 4. Response format guidelines
+//! 5. Error handling
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::translation::Language;
 
-use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
-
-use crate::context_selector::{ContextBundle, DeviceTypeReference, RuleReference};
-use crate::translation::{DslTranslator, Language, MdlTranslator};
-
-/// System prompt template.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SystemPromptTemplate {
-    /// Agent role description
-    pub role: String,
-    /// Capabilities description
-    pub capabilities: Vec<String>,
-    /// Tool descriptions
-    pub tools: Vec<ToolDescription>,
-    /// DSL syntax examples
-    pub dsl_examples: Vec<DslExample>,
-    /// Usage guidelines
-    pub guidelines: Vec<String>,
+/// Enhanced prompt builder with multi-language support.
+#[derive(Debug, Clone)]
+pub struct PromptBuilder {
+    language: Language,
+    /// Whether to include thinking mode instructions
+    include_thinking: bool,
+    /// Whether to include tool usage examples
+    include_examples: bool,
 }
 
-/// Tool description for prompts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolDescription {
-    /// Tool name
-    pub name: String,
-    /// Tool description
-    pub description: String,
-    /// Example usage
-    pub example: String,
-}
-
-/// DSL syntax example.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DslExample {
-    /// Example title
-    pub title: String,
-    /// DSL code
-    pub dsl: String,
-    /// Natural language explanation
-    pub explanation: String,
-}
-
-/// Few-shot example for LLM.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FewShotExample {
-    /// Example category
-    pub category: ExampleCategory,
-    /// User input
-    pub user_input: String,
-    /// Expected LLM response
-    pub assistant_response: String,
-    /// Tool calls made (if any)
-    pub tool_calls: Vec<String>,
-}
-
-/// Example category for few-shot learning.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ExampleCategory {
-    /// Rule creation
-    RuleCreation,
-    /// Device control
-    DeviceControl,
-    /// Data query
-    DataQuery,
-    /// Status inquiry
-    StatusInquiry,
-    /// Alert management
-    AlertManagement,
-    /// Multi-tool calling (parallel execution)
-    MultiToolCalling,
-}
-
-/// Generated system prompt.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GeneratedPrompt {
-    /// Full system prompt
-    pub system_prompt: String,
-    /// Number of tokens (estimated)
-    pub estimated_tokens: usize,
-    /// Included context IDs
-    pub context_ids: Vec<String>,
-}
-
-/// Dynamic prompt generator.
-pub struct PromptGenerator {
-    /// System prompt template
-    template: Arc<RwLock<SystemPromptTemplate>>,
-    /// Few-shot examples
-    examples: Arc<RwLock<Vec<FewShotExample>>>,
-    /// Maximum tokens in generated prompt
-    max_tokens: usize,
-    /// Current language
-    language: Arc<RwLock<Language>>,
-}
-
-impl PromptGenerator {
-    /// Create a new prompt generator.
+impl PromptBuilder {
+    /// Create a new prompt builder.
     pub fn new() -> Self {
         Self {
-            template: Arc::new(RwLock::new(Self::default_template())),
-            examples: Arc::new(RwLock::new(Self::default_examples())),
-            max_tokens: 3000,
-            language: Arc::new(RwLock::new(Language::Chinese)),
+            language: Language::Chinese,
+            include_thinking: true,
+            include_examples: true,
         }
     }
 
-    /// Set maximum token budget.
-    pub fn with_max_tokens(mut self, tokens: usize) -> Self {
-        self.max_tokens = tokens;
+    /// Set the language for prompts.
+    pub fn with_language(mut self, language: Language) -> Self {
+        self.language = language;
         self
     }
 
-    /// Set language.
-    pub async fn set_language(&self, language: Language) {
-        let mut lang = self.language.write().await;
-        *lang = language;
+    /// Enable or disable thinking mode instructions.
+    pub fn with_thinking(mut self, include: bool) -> Self {
+        self.include_thinking = include;
+        self
     }
 
-    /// Generate system prompt without context.
-    pub async fn generate_base_prompt(&self) -> GeneratedPrompt {
-        let template = self.template.read().await;
-        let language = self.language.read().await;
+    /// Enable or disable tool usage examples.
+    pub fn with_examples(mut self, include: bool) -> Self {
+        self.include_examples = include;
+        self
+    }
 
-        let prompt = match *language {
-            Language::Chinese => Self::format_prompt_zh(&template),
-            Language::English => Self::format_prompt_en(&template),
-        };
-
-        let estimated_tokens = prompt.len() / 2; // Rough estimate: 2 chars per token
-
-        GeneratedPrompt {
-            system_prompt: prompt,
-            estimated_tokens,
-            context_ids: Vec::new(),
+    /// Build the enhanced system prompt.
+    pub fn build_system_prompt(&self) -> String {
+        match self.language {
+            Language::Chinese => Self::enhanced_prompt_zh(self.include_thinking, self.include_examples),
+            Language::English => Self::enhanced_prompt_en(self.include_thinking, self.include_examples),
         }
     }
 
-    /// Generate system prompt with context bundle.
-    pub async fn generate_with_context(&self, context: &ContextBundle) -> GeneratedPrompt {
-        let template = self.template.read().await;
-        let language = self.language.read().await;
-        let mut context_ids = Vec::new();
-
-        let mut prompt = match *language {
-            Language::Chinese => Self::format_prompt_zh(&template),
-            Language::English => Self::format_prompt_en(&template),
-        };
-
-        let mut current_tokens = prompt.len() / 2;
-        let budget = self.max_tokens.saturating_sub(current_tokens);
-
-        // Add device type context
-        if !context.device_types.is_empty() && budget > 0 {
-            let section = match *language {
-                Language::Chinese => Self::format_devices_zh(&context.device_types),
-                Language::English => Self::format_devices_en(&context.device_types),
-            };
-            let section_tokens = section.len() / 2;
-            if section_tokens <= budget {
-                prompt.push_str(&section);
-                current_tokens += section_tokens;
-                context_ids.extend(context.device_types.iter().map(|d| d.device_type.clone()));
-            }
-        }
-
-        // Add rule context
-        if !context.rules.is_empty() && budget > current_tokens {
-            let section = match *language {
-                Language::Chinese => Self::format_rules_zh(&context.rules),
-                Language::English => Self::format_rules_en(&context.rules),
-            };
-            let section_tokens = section.len() / 2;
-            if section_tokens <= budget - current_tokens {
-                prompt.push_str(&section);
-                context_ids.extend(context.rules.iter().map(|r| r.rule_id.clone()));
-            }
-        }
-
-        GeneratedPrompt {
-            system_prompt: prompt,
-            estimated_tokens: current_tokens,
-            context_ids,
+    /// Get the core identity section.
+    pub fn core_identity(&self) -> String {
+        match self.language {
+            Language::Chinese => Self::IDENTITY_ZH.to_string(),
+            Language::English => Self::IDENTITY_EN.to_string(),
         }
     }
 
-    /// Generate system prompt with few-shot examples.
-    pub async fn generate_with_examples(&self, categories: &[ExampleCategory]) -> GeneratedPrompt {
-        let mut base = self.generate_base_prompt().await;
-        let examples = self.examples.read().await;
-        let language = self.language.read().await;
-
-        let separator = match *language {
-            Language::Chinese => "\n\n## 示例对话\n\n",
-            Language::English => "\n\n## Example Conversations\n\n",
-        };
-
-        base.system_prompt.push_str(separator);
-
-        for example in examples.iter() {
-            if categories.contains(&example.category) {
-                let example_text = match *language {
-                    Language::Chinese => Self::format_example_zh(example),
-                    Language::English => Self::format_example_en(example),
-                };
-                base.system_prompt.push_str(&example_text);
-                base.system_prompt.push_str("\n\n");
-            }
-        }
-
-        base.estimated_tokens = base.system_prompt.len() / 2;
-        base
-    }
-
-    /// Add a few-shot example.
-    pub async fn add_example(&self, example: FewShotExample) {
-        let mut examples = self.examples.write().await;
-        examples.push(example);
-    }
-
-    /// Set tool descriptions.
-    pub async fn set_tools(&self, tools: Vec<ToolDescription>) {
-        let mut template = self.template.write().await;
-        template.tools = tools;
-    }
-
-    fn default_template() -> SystemPromptTemplate {
-        SystemPromptTemplate {
-            role: "NeoTalk 智能物联网系统助手".to_string(),
-            capabilities: vec![
-                "设备状态查询与监控".to_string(),
-                "规则创建与管理 (DSL)".to_string(),
-                "设备控制与命令下发".to_string(),
-                "数据分析与异常检测".to_string(),
-                "工作流自动化".to_string(),
-            ],
-            tools: vec![
-                ToolDescription {
-                    name: "list_device_types".to_string(),
-                    description: "列出所有支持的设备类型".to_string(),
-                    example: "{\"name\": \"list_device_types\", \"arguments\": {\"category\": \"sensor\"}}".to_string(),
-                },
-                ToolDescription {
-                    name: "get_device_type".to_string(),
-                    description: "获取设备类型的详细信息".to_string(),
-                    example: "{\"name\": \"get_device_type\", \"arguments\": {\"device_type\": \"dht22_sensor\"}}".to_string(),
-                },
-                ToolDescription {
-                    name: "list_rules".to_string(),
-                    description: "列出所有规则".to_string(),
-                    example: "{\"name\": \"list_rules\", \"arguments\": {}}".to_string(),
-                },
-                ToolDescription {
-                    name: "create_rule".to_string(),
-                    description: "创建新规则".to_string(),
-                    example: "{\"name\": \"create_rule\", \"arguments\": {\"dsl\": \"RULE \\\"High Temp\\\" WHEN sensor.temp > 50 DO NOTIFY \\\"Hot\\\" END\"}}".to_string(),
-                },
-            ],
-            dsl_examples: vec![
-                DslExample {
-                    title: "高温告警规则".to_string(),
-                    dsl: r#"RULE "高温告警"
-WHEN sensor.temperature > 50
-DO
-    NOTIFY "温度过高: ${temperature}°C"
-END"#.to_string(),
-                    explanation: "当传感器温度超过50度时发送通知，使用 ${temperature} 引用当前值".to_string(),
-                },
-                DslExample {
-                    title: "带持续时间的规则".to_string(),
-                    dsl: r#"RULE "高温持续告警"
-WHEN sensor.temperature > 50
-FOR 5 minutes
-DO
-    NOTIFY "温度持续5分钟超过50度"
-END"#.to_string(),
-                    explanation: "只有当温度连续5分钟超过阈值时才触发，避免瞬时波动".to_string(),
-                },
-                DslExample {
-                    title: "多动作规则".to_string(),
-                    dsl: r#"RULE "高温综合处理"
-WHEN sensor.temperature > 60
-DO
-    NOTIFY "高温警告！正在开启降温设备"
-    EXECUTE fan.device(speed=100)
-    LOG alert, severity="high"
-END"#.to_string(),
-                    explanation: "高温时同时执行多个动作：发送通知、开启风扇、记录日志".to_string(),
-                },
-                DslExample {
-                    title: "不同比较运算符".to_string(),
-                    dsl: r#"RULE "低温告警"
-WHEN sensor.temperature <= 10
-DO
-    NOTIFY "温度过低: ${temperature}°C"
-    EXECUTE heater.device(power=80)
-END"#.to_string(),
-                    explanation: "支持的比较运算符: >, <, >=, <=, ==, !=".to_string(),
-                },
-                DslExample {
-                    title: "设备控制规则".to_string(),
-                    dsl: r#"RULE "自动灌溉"
-WHEN soil_sensor.moisture < 30
-DO
-    EXECUTE pump.device(duration=300)
-    LOG info, severity="low"
-    NOTIFY "土壤干燥，已启动灌溉系统"
-END"#.to_string(),
-                    explanation: "根据土壤湿度自动控制灌溉设备，EXECUTE 可传多个参数".to_string(),
-                },
-                DslExample {
-                    title: "复杂条件组合".to_string(),
-                    dsl: r#"RULE "设备故障检测"
-WHEN device.status == 1
-FOR 10 minutes
-DO
-    NOTIFY "设备异常运行已超过10分钟"
-    EXECUTE alert.device(type="fault", code=101)
-    LOG error, severity="critical"
-END"#.to_string(),
-                    explanation: "使用 == 检测状态值，配合持续时间判断设备故障".to_string(),
-                },
-            ],
-            guidelines: vec![
-                "使用简洁准确的自然语言描述".to_string(),
-                "创建规则前先查询相关设备能力".to_string(),
-                "规则名称应清晰描述其用途".to_string(),
-                "注意设置合理的阈值避免频繁触发".to_string(),
-                "多工具调用规则：如果多个工具之间没有依赖关系，应该在同一个JSON数组中一次性调用，这样可以并行执行，提高响应速度".to_string(),
-                "直接回答问题，不要过度思考或展开冗长的推理过程".to_string(),
-            ],
+    /// Get the interaction principles section.
+    pub fn interaction_principles(&self) -> String {
+        match self.language {
+            Language::Chinese => Self::PRINCIPLES_ZH.to_string(),
+            Language::English => Self::PRINCIPLES_EN.to_string(),
         }
     }
 
-    fn default_examples() -> Vec<FewShotExample> {
-        vec![
-            FewShotExample {
-                category: ExampleCategory::MultiToolCalling,
-                user_input: "列出所有设备和规则，告诉我当前状态".to_string(),
-                assistant_response: "我来同时查询设备列表和规则列表。".to_string(),
-                tool_calls: vec!["list_devices()".to_string(), "list_rules()".to_string()],
-            },
-            FewShotExample {
-                category: ExampleCategory::MultiToolCalling,
-                user_input: "查看所有设备类型和相关规则".to_string(),
-                assistant_response: "我来同时查询设备类型列表和规则列表。".to_string(),
-                tool_calls: vec![
-                    "list_device_types()".to_string(),
-                    "list_rules()".to_string(),
-                ],
-            },
-            FewShotExample {
-                category: ExampleCategory::RuleCreation,
-                user_input: "创建一个规则，当温度传感器读数超过30度时发送通知".to_string(),
-                assistant_response:
-                    "好的，我来创建一个高温告警规则。首先让我查询一下可用的设备类型。".to_string(),
-                tool_calls: vec!["list_device_types()".to_string()],
-            },
-            FewShotExample {
-                category: ExampleCategory::DeviceControl,
-                user_input: "把客厅的灯打开".to_string(),
-                assistant_response: "好的，我来发送打开客厅灯的命令。".to_string(),
-                tool_calls: vec![
-                    "control_device(device_id: 'living_room_light', command: 'ON')".to_string(),
-                ],
-            },
-            FewShotExample {
-                category: ExampleCategory::DataQuery,
-                user_input: "当前所有传感器的温度是多少？".to_string(),
-                assistant_response: "让我查询一下所有温度传感器的当前读数。".to_string(),
-                tool_calls: vec![
-                    "query_data(device_id: 'temp_sensor', metric: 'temperature')".to_string(),
-                ],
-            },
-        ]
+    /// Get the tool usage strategy section.
+    pub fn tool_strategy(&self) -> String {
+        match self.language {
+            Language::Chinese => Self::TOOL_STRATEGY_ZH.to_string(),
+            Language::English => Self::TOOL_STRATEGY_EN.to_string(),
+        }
     }
 
-    fn format_prompt_zh(template: &SystemPromptTemplate) -> String {
-        let mut prompt = format!("# {}\n\n", template.role);
+    // === Static content constants ===
 
-        // 重要指令：禁用思考模式，提高响应速度
-        prompt.push_str("## 重要指令\n\n");
-        prompt.push_str(
-            "/no_think - 请直接回答问题，不要使用思考模式（think），不要展开冗长的推理过程。\n\n",
-        );
+    // Chinese content
+    const IDENTITY_ZH: &str = r#"## 核心身份
 
-        prompt.push_str("## 核心能力\n\n");
-        for cap in &template.capabilities {
-            prompt.push_str(&format!("- {}\n", cap));
+你是 **NeoTalk 智能物联网助手**，具备专业的设备和系统管理能力。
+
+### 核心能力
+- **设备管理**: 查询状态、控制设备、分析遥测数据
+- **自动化规则**: 创建、修改、启用/禁用规则
+- **工作流管理**: 触发、监控、分析工作流执行
+- **系统诊断**: 检测异常、提供解决方案、系统健康检查"#;
+
+    const PRINCIPLES_ZH: &str = r#"## 交互原则
+
+1. **工具优先**: 必须使用工具获取数据，不要猜测或编造信息
+2. **简洁直接**: 回答要简洁明了，避免冗余解释
+3. **透明可解释**: 说明每一步操作的原因和预期结果
+4. **主动确认**: 执行控制类操作前，告知用户即将发生什么
+5. **批量处理**: 相似操作尽量合并执行，提高效率
+6. **错误恢复**: 操作失败时提供具体的错误和备选方案"#;
+
+    const TOOL_STRATEGY_ZH: &str = r#"## 工具使用策略
+
+### 执行顺序
+1. **先查询，后操作**: 了解系统当前状态再执行操作
+2. **验证参数**: 执行前验证必需参数是否存在
+3. **确认操作**: 控制类操作需要告知用户执行结果
+
+### 工具选择
+- `list_devices`: 用户询问设备、需要设备列表时
+- `query_data`: 用户询问数据、指标、状态时
+- `control_device`: 用户明确要求控制设备时
+- `list_rules` / `create_rule`: 用户询问或创建规则时
+- `list_workflows` / `trigger_workflow`: 用户询问或触发工作流时
+- `think`: 需要分析复杂场景或规划多步骤任务时
+
+### 错误处理
+- 设备不存在: 提示用户检查设备ID或列出可用设备
+- 操作失败: 说明具体错误原因和可能的解决方法
+- 参数缺失: 提示用户提供必需参数"#;
+
+    const RESPONSE_FORMAT_ZH: &str = r#"## 响应格式
+
+### 数据查询
+```
+根据查询结果，[设备名称]当前状态为：
+- [指标1]: [值]
+- [指标2]: [值]
+简要分析：[1-2句话的洞察]
+```
+
+### 设备控制
+```
+正在执行[操作]...
+✓ 操作成功：[设备名称]已[状态变化]
+```
+
+### 创建规则
+```
+✓ 已创建规则「[规则名称]」
+规则将在[触发条件]时执行[动作]
+```
+
+### 错误处理
+```
+❌ 操作失败：[具体错误原因]
+建议：[解决方法]
+```"#;
+
+    const THINKING_GUIDELINES_ZH: &str = r#"## 思考模式指南
+
+当启用思考模式时，按以下结构组织思考过程：
+
+1. **意图分析**: 理解用户真正想要什么
+2. **信息评估**: 确定已有信息和需要获取的信息
+3. **工具规划**: 选择合适的工具和执行顺序
+4. **结果预判**: 预期工具调用会返回什么结果
+5. **响应准备**: 如何向用户呈现结果
+
+思考过程应该是**内部推理**，不要过度解释基础操作。"#;
+
+    const EXAMPLE_RESPONSES_ZH: &str = r#"## 示例对话
+
+### 用户: "有哪些设备？"
+→ 调用 `list_devices()`，返回设备列表
+
+### 用户: "温度是多少？"
+→ 调用 `query_data()` 查询温度传感器，或询问具体设备
+
+### 用户: "打开客厅的灯"
+→ 调用 `control_device(device='客厅灯', action='on')`
+
+### 用户: "创建一个温度超过30度就报警的规则"
+→ 调用 `create_rule(name='高温报警', condition='温度>30', action='发送通知')`"#;
+
+    // English content
+    const IDENTITY_EN: &str = r#"## Core Identity
+
+You are the **NeoTalk Intelligent IoT Assistant** with professional device and system management capabilities.
+
+### Core Capabilities
+- **Device Management**: Query status, control devices, analyze telemetry data
+- **Automation Rules**: Create, modify, enable/disable rules
+- **Workflow Management**: Trigger, monitor, analyze workflow execution
+- **System Diagnostics**: Detect anomalies, provide solutions, system health checks"#;
+
+    const PRINCIPLES_EN: &str = r#"## Interaction Principles
+
+1. **Tool First**: Always use tools to get data, never guess or fabricate information
+2. **Concise & Direct**: Keep responses brief and to the point
+3. **Transparent**: Explain the reason and expected outcome for each action
+4. **Proactive Confirmation**: Inform users before executing control operations
+5. **Batch Processing**: Combine similar operations for efficiency
+6. **Error Recovery**: Provide specific errors and alternative solutions on failure"#;
+
+    const TOOL_STRATEGY_EN: &str = r#"## Tool Usage Strategy
+
+### Execution Order
+1. **Query Before Act**: Understand current system state before acting
+2. **Validate Parameters**: Ensure required parameters exist before execution
+3. **Confirm Operations**: Inform users of results for control operations
+
+### Tool Selection
+- `list_devices`: User asks about devices or needs a device list
+- `query_data`: User asks for data, metrics, or status
+- `control_device`: User explicitly requests device control
+- `list_rules` / `create_rule`: User asks about or wants to create rules
+- `list_workflows` / `trigger_workflow`: User asks about or wants to trigger workflows
+- `think`: Need to analyze complex scenarios or plan multi-step tasks
+
+### Error Handling
+- Device not found: Prompt user to check device ID or list available devices
+- Operation failed: Explain specific error and possible solutions
+- Missing parameters: Prompt user for required values"#;
+
+    const RESPONSE_FORMAT_EN: &str = r#"## Response Format
+
+### Data Query
+```
+Based on query results, [Device Name] current status:
+- [Metric 1]: [Value]
+- [Metric 2]: [Value]
+Analysis: [1-2 sentence insight]
+```
+
+### Device Control
+```
+Executing [operation]...
+✓ Success: [Device Name] has [state change]
+```
+
+### Create Rule
+```
+✓ Created rule "[Rule Name]"
+The rule will [action] when [trigger condition]
+```
+
+### Error Handling
+```
+❌ Operation failed: [Specific error]
+Suggestion: [Solution]
+```"#;
+
+    const THINKING_GUIDELINES_EN: &str = r#"## Thinking Mode Guidelines
+
+When thinking mode is enabled, structure your thought process:
+
+1. **Intent Analysis**: Understand what the user truly wants
+2. **Information Assessment**: Determine what's known and what needs to be fetched
+3. **Tool Planning**: Select appropriate tools and execution order
+4. **Result Prediction**: Anticipate what tool calls will return
+5. **Response Preparation**: How to present results to the user
+
+The thinking process should be **internal reasoning** - don't over-explain basic operations."#;
+
+    const EXAMPLE_RESPONSES_EN: &str = r#"## Example Dialogs
+
+### User: "What devices are there?"
+→ Call `list_devices()`, return device list
+
+### User: "What's the temperature?"
+→ Call `query_data()` to query temperature sensor, or ask for specific device
+
+### User: "Turn on the living room light"
+→ Call `control_device(device='living-room-light', action='on')`
+
+### User: "Create a rule to alert when temperature exceeds 30°C"
+→ Call `create_rule(name='high-temp-alert', condition='temperature>30', action='send-notification')`"#;
+
+    // === Builder methods ===
+
+    /// Enhanced Chinese system prompt.
+    fn enhanced_prompt_zh(include_thinking: bool, include_examples: bool) -> String {
+        let mut prompt = String::with_capacity(4096);
+
+        // Core identity
+        prompt.push_str(Self::IDENTITY_ZH);
+        prompt.push_str("\n\n");
+
+        // Interaction principles
+        prompt.push_str(Self::PRINCIPLES_ZH);
+        prompt.push_str("\n\n");
+
+        // Tool usage strategy
+        prompt.push_str(Self::TOOL_STRATEGY_ZH);
+        prompt.push_str("\n\n");
+
+        // Response format
+        prompt.push_str(Self::RESPONSE_FORMAT_ZH);
+        prompt.push('\n');
+
+        // Optional sections
+        if include_thinking {
+            prompt.push('\n');
+            prompt.push_str(Self::THINKING_GUIDELINES_ZH);
         }
 
-        prompt.push_str("\n## 可用工具\n\n");
-        for tool in &template.tools {
-            prompt.push_str(&format!("**{}**: {}\n", tool.name, tool.description));
-            prompt.push_str(&format!("  示例: `{}`\n", tool.example));
-        }
-
-        // 添加工具调用格式说明
-        prompt.push_str("\n## 工具调用格式\n\n");
-        prompt.push_str("当需要调用工具时，使用以下JSON格式：\n\n");
-        prompt.push_str("**单个工具调用**：\n");
-        prompt.push_str("```json\n");
-        prompt.push_str(r#"{"name": "tool_name", "arguments": {"param1": "value1"}}"#);
-        prompt.push_str("\n```\n\n");
-        prompt.push_str("**多个工具调用（并行）**：\n");
-        prompt.push_str("```json\n");
-        prompt.push_str(r#"[{"name": "tool1", "arguments": {}}, {"name": "tool2", "arguments": {}}]"#);
-        prompt.push_str("\n```\n\n");
-
-        prompt.push_str("\n## DSL 规则语法\n\n");
-        for ex in &template.dsl_examples {
-            prompt.push_str(&format!("### {}\n", ex.title));
-            prompt.push_str("```dsl\n");
-            prompt.push_str(ex.dsl.trim());
-            prompt.push_str("\n```\n");
-            prompt.push_str(&format!("说明: {}\n\n", ex.explanation));
-        }
-
-        prompt.push_str("\n## 使用指南\n\n");
-        for guide in &template.guidelines {
-            prompt.push_str(&format!("- {}\n", guide));
+        if include_examples {
+            prompt.push('\n');
+            prompt.push_str(Self::EXAMPLE_RESPONSES_ZH);
         }
 
         prompt
     }
 
-    fn format_prompt_en(template: &SystemPromptTemplate) -> String {
-        let mut prompt = format!("# {}\n\n", template.role);
+    /// Enhanced English system prompt.
+    fn enhanced_prompt_en(include_thinking: bool, include_examples: bool) -> String {
+        let mut prompt = String::with_capacity(4096);
 
-        prompt.push_str("## Core Capabilities\n\n");
-        for cap in &template.capabilities {
-            prompt.push_str(&format!("- {}\n", cap));
+        prompt.push_str(Self::IDENTITY_EN);
+        prompt.push_str("\n\n");
+        prompt.push_str(Self::PRINCIPLES_EN);
+        prompt.push_str("\n\n");
+        prompt.push_str(Self::TOOL_STRATEGY_EN);
+        prompt.push_str("\n\n");
+        prompt.push_str(Self::RESPONSE_FORMAT_EN);
+        prompt.push('\n');
+
+        if include_thinking {
+            prompt.push('\n');
+            prompt.push_str(Self::THINKING_GUIDELINES_EN);
         }
 
-        prompt.push_str("\n## Available Tools\n\n");
-        for tool in &template.tools {
-            prompt.push_str(&format!("**{}**: {}\n", tool.name, tool.description));
-            prompt.push_str(&format!("  Example: `{}`\n", tool.example));
-        }
-
-        prompt.push_str("\n## DSL Rule Syntax\n\n");
-        for ex in &template.dsl_examples {
-            prompt.push_str(&format!("### {}\n", ex.title));
-            prompt.push_str("```dsl\n");
-            prompt.push_str(ex.dsl.trim());
-            prompt.push_str("\n```\n");
-            prompt.push_str(&format!("Description: {}\n\n", ex.explanation));
-        }
-
-        prompt.push_str("\n## Guidelines\n\n");
-        for guide in &template.guidelines {
-            prompt.push_str(&format!("- {}\n", guide));
+        if include_examples {
+            prompt.push('\n');
+            prompt.push_str(Self::EXAMPLE_RESPONSES_EN);
         }
 
         prompt
     }
 
-    fn format_devices_zh(devices: &[DeviceTypeReference]) -> String {
-        let mut section = String::from("\n## 可用设备\n\n");
-        for device in devices {
-            section.push_str(&format!("**{}** ({})\n", device.name, device.device_type));
-            if !device.metrics.is_empty() {
-                section.push_str(&format!("  指标: {}\n", device.metrics.join(", ")));
-            }
-            if !device.commands.is_empty() {
-                section.push_str(&format!("  命令: {}\n", device.commands.join(", ")));
-            }
-        }
-        section
+    // === Legacy Methods ===
+
+    /// Build a basic system prompt (legacy, for backward compatibility).
+    pub fn build_base_prompt(&self) -> String {
+        self.build_system_prompt()
     }
 
-    fn format_devices_en(devices: &[DeviceTypeReference]) -> String {
-        let mut section = String::from("\n## Available Devices\n\n");
-        for device in devices {
-            section.push_str(&format!("**{}** ({})\n", device.name, device.device_type));
-            if !device.metrics.is_empty() {
-                section.push_str(&format!("  Metrics: {}\n", device.metrics.join(", ")));
-            }
-            if !device.commands.is_empty() {
-                section.push_str(&format!("  Commands: {}\n", device.commands.join(", ")));
-            }
+    /// Get intent-specific system prompt addon.
+    pub fn get_intent_prompt_addon(&self, intent: &str) -> String {
+        match self.language {
+            Language::Chinese => Self::intent_addon_zh(intent),
+            Language::English => Self::intent_addon_en(intent),
         }
-        section
     }
 
-    fn format_rules_zh(rules: &[RuleReference]) -> String {
-        let mut section = String::from("\n## 现有规则\n\n");
-        for rule in rules {
-            section.push_str(&format!("**{}** ({})\n", rule.name, rule.rule_id));
-            section.push_str(&format!("  条件: {}\n", rule.condition));
+    fn intent_addon_zh(intent: &str) -> String {
+        match intent {
+            "device" => "\n\n## 当前任务：设备管理\n专注处理设备相关的查询和控制操作。".to_string(),
+            "data" => "\n\n## 当前任务：数据查询\n专注处理数据查询和分析。".to_string(),
+            "rule" => "\n\n## 当前任务：规则管理\n专注处理自动化规则的创建和修改。".to_string(),
+            "workflow" => "\n\n## 当前任务：工作流管理\n专注处理工作流的触发和监控。".to_string(),
+            "alert" => "\n\n## 当前任务：告警管理\n专注处理告警查询、确认和状态更新。".to_string(),
+            "system" => "\n\n## 当前任务：系统状态\n专注处理系统健康检查和状态查询。".to_string(),
+            "help" => "\n\n## 当前任务：帮助说明\n提供清晰的使用说明和功能介绍，不调用工具。".to_string(),
+            _ => String::new(),
         }
-        section
     }
 
-    fn format_rules_en(rules: &[RuleReference]) -> String {
-        let mut section = String::from("\n## Existing Rules\n\n");
-        for rule in rules {
-            section.push_str(&format!("**{}** ({})\n", rule.name, rule.rule_id));
-            section.push_str(&format!("  Condition: {}\n", rule.condition));
+    fn intent_addon_en(intent: &str) -> String {
+        match intent {
+            "device" => "\n\n## Current Task: Device Management\nFocus on device queries and control operations.".to_string(),
+            "data" => "\n\n## Current Task: Data Query\nFocus on data queries and analysis.".to_string(),
+            "rule" => "\n\n## Current Task: Rule Management\nFocus on creating and modifying automation rules.".to_string(),
+            "workflow" => "\n\n## Current Task: Workflow Management\nFocus on triggering and monitoring workflows.".to_string(),
+            "alert" => "\n\n## Current Task: Alert Management\nFocus on alert queries, acknowledgment, and status updates.".to_string(),
+            "system" => "\n\n## Current Task: System Status\nFocus on system health checks and status queries.".to_string(),
+            "help" => "\n\n## Current Task: Help & Documentation\nProvide clear usage instructions and feature overview without calling tools.".to_string(),
+            _ => String::new(),
         }
-        section
-    }
-
-    fn format_example_zh(example: &FewShotExample) -> String {
-        let mut text = format!("**用户**: {}\n", example.user_input);
-        text.push_str(&format!("**助手**: {}\n", example.assistant_response));
-        if !example.tool_calls.is_empty() {
-            text.push_str("**工具调用**:\n");
-            for call in &example.tool_calls {
-                text.push_str(&format!("  - {}\n", call));
-            }
-        }
-        text
-    }
-
-    fn format_example_en(example: &FewShotExample) -> String {
-        let mut text = format!("**User**: {}\n", example.user_input);
-        text.push_str(&format!("**Assistant**: {}\n", example.assistant_response));
-        if !example.tool_calls.is_empty() {
-            text.push_str("**Tool Calls**:\n");
-            for call in &example.tool_calls {
-                text.push_str(&format!("  - {}\n", call));
-            }
-        }
-        text
     }
 }
 
-impl Default for PromptGenerator {
+impl Default for PromptBuilder {
     fn default() -> Self {
         Self::new()
     }
@@ -543,77 +393,79 @@ impl Default for PromptGenerator {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_generate_base_prompt() {
-        let generator = PromptGenerator::new();
-        let prompt = generator.generate_base_prompt().await;
-
-        assert!(!prompt.system_prompt.is_empty());
-        assert!(prompt.system_prompt.contains("NeoTalk"));
-        assert!(prompt.estimated_tokens > 0);
-    }
-
-    #[tokio::test]
-    async fn test_generate_with_context() {
-        let generator = PromptGenerator::new();
-        let context = ContextBundle {
-            device_types: vec![],
-            rules: vec![],
-            commands: vec![],
-            estimated_tokens: 0,
-        };
-        let prompt = generator.generate_with_context(&context).await;
-
-        assert!(!prompt.system_prompt.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_set_language() {
-        let generator = PromptGenerator::new();
-
-        generator.set_language(Language::English).await;
-        let prompt = generator.generate_base_prompt().await;
-
-        assert!(!prompt.system_prompt.is_empty());
+    #[test]
+    fn test_prompt_builder_zh() {
+        let builder = PromptBuilder::new().with_language(Language::Chinese);
+        let prompt = builder.build_system_prompt();
+        assert!(prompt.contains("NeoTalk"));
+        assert!(prompt.contains("物联网"));
+        assert!(prompt.contains("交互原则"));
     }
 
     #[test]
-    fn test_example_category() {
-        let example = FewShotExample {
-            category: ExampleCategory::RuleCreation,
-            user_input: "test".to_string(),
-            assistant_response: "response".to_string(),
-            tool_calls: vec![],
-        };
-
-        assert_eq!(example.category, ExampleCategory::RuleCreation);
+    fn test_prompt_builder_en() {
+        let builder = PromptBuilder::new().with_language(Language::English);
+        let prompt = builder.build_system_prompt();
+        assert!(prompt.contains("NeoTalk"));
+        assert!(prompt.contains("IoT"));
+        assert!(prompt.contains("Interaction"));
     }
 
-    #[tokio::test]
-    async fn test_add_example() {
-        let generator = PromptGenerator::new();
-
-        let example = FewShotExample {
-            category: ExampleCategory::DeviceControl,
-            user_input: "打开灯".to_string(),
-            assistant_response: "好的".to_string(),
-            tool_calls: vec![],
-        };
-
-        generator.add_example(example).await;
-
-        let examples = generator.examples.read().await;
-        assert!(examples.len() >= 4); // 3 default + 2 multi-tool + 1 added
+    #[test]
+    fn test_prompt_without_examples() {
+        let builder = PromptBuilder::new()
+            .with_language(Language::Chinese)
+            .with_examples(false);
+        let prompt = builder.build_system_prompt();
+        assert!(prompt.contains("交互原则"));
+        assert!(!prompt.contains("示例对话"));
     }
 
-    #[tokio::test]
-    async fn test_generate_with_examples() {
-        let generator = PromptGenerator::new();
+    #[test]
+    fn test_prompt_without_thinking() {
+        let builder = PromptBuilder::new()
+            .with_language(Language::Chinese)
+            .with_thinking(false);
+        let prompt = builder.build_system_prompt();
+        assert!(prompt.contains("交互原则"));
+        assert!(!prompt.contains("思考模式指南"));
+    }
 
-        let prompt = generator
-            .generate_with_examples(&[ExampleCategory::RuleCreation])
-            .await;
+    #[test]
+    fn test_core_identity() {
+        let builder = PromptBuilder::new();
+        let identity = builder.core_identity();
+        assert!(identity.contains("核心身份"));
+        assert!(identity.contains("设备管理"));
+    }
 
-        assert!(prompt.system_prompt.contains("示例") || prompt.system_prompt.contains("Example"));
+    #[test]
+    fn test_interaction_principles() {
+        let builder = PromptBuilder::new();
+        let principles = builder.interaction_principles();
+        assert!(principles.contains("工具优先"));
+        assert!(principles.contains("简洁直接"));
+    }
+
+    #[test]
+    fn test_tool_strategy() {
+        let builder = PromptBuilder::new();
+        let strategy = builder.tool_strategy();
+        assert!(strategy.contains("工具使用策略"));
+        assert!(strategy.contains("list_devices"));
+    }
+
+    #[test]
+    fn test_intent_addon_zh() {
+        let builder = PromptBuilder::new();
+        let addon = builder.get_intent_prompt_addon("device");
+        assert!(addon.contains("设备管理"));
+    }
+
+    #[test]
+    fn test_intent_addon_en() {
+        let builder = PromptBuilder::new().with_language(Language::English);
+        let addon = builder.get_intent_prompt_addon("data");
+        assert!(addon.contains("Data Query"));
     }
 }

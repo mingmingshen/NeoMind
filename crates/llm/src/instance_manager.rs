@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
-use edge_ai_core::llm::backend::{GenerationParams, LlmError, LlmInput, LlmOutput, LlmRuntime};
+use edge_ai_core::llm::backend::{LlmError, LlmInput, LlmRuntime};
 use edge_ai_storage::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStore, LlmBackendType,
 };
@@ -219,7 +219,7 @@ impl LlmBackendInstanceManager {
     /// Add or update an instance
     pub async fn upsert_instance(&self, instance: LlmBackendInstance) -> Result<(), LlmError> {
         // Validate
-        instance.validate().map_err(|e| LlmError::InvalidInput(e))?;
+        instance.validate().map_err(LlmError::InvalidInput)?;
 
         let id = instance.id.clone();
 

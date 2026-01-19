@@ -7,9 +7,9 @@
 
 use edge_ai_agent::LlmBackend;
 use edge_ai_core::config::{
-    self, endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
+    endpoints, env_vars, models, normalize_ollama_endpoint, normalize_openai_endpoint,
 };
-use edge_ai_storage::{Error as StorageError, LlmBackendType, LlmSettings};
+use edge_ai_storage::{LlmBackendType, LlmSettings};
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -39,15 +39,14 @@ impl ConfigSource {
     /// Priority: redb > TOML > Env
     fn detect() -> Self {
         // Try redb database first (highest priority - Web UI saved settings)
-        if let Ok(store) = get_settings_store() {
-            if store.has_llm_settings() {
+        if let Ok(store) = get_settings_store()
+            && store.has_llm_settings() {
                 info!(
                     category = "config",
                     "Loading config from: {} (redb database)", SETTINGS_DB_PATH
                 );
                 return ConfigSource::Database;
             }
-        }
 
         // Try TOML second
         if let Ok(content) = std::fs::read_to_string("config.toml") {

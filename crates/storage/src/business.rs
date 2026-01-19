@@ -163,7 +163,12 @@ impl EventLogStore {
     /// Query events with filter.
     pub fn query(&self, filter: &EventFilter) -> Result<Vec<EventLog>> {
         let txn = self.db.begin_read()?;
-        let table = txn.open_table(EVENT_LOG_TABLE)?;
+
+        // Table may not exist yet if no events have been written
+        let table = match txn.open_table(EVENT_LOG_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(Vec::new()),  // Return empty if table doesn't exist
+        };
 
         let cutoff_timestamp = Utc::now().timestamp() - (self.retention_days * 86400);
         let mut results = Vec::new();
@@ -173,16 +178,14 @@ impl EventLogStore {
 
         for result in table.range(&*start_key..=&*end_key)? {
             let (_key, value) = result?;
-            if let Ok(event) = serde_json::from_slice::<EventLog>(value.value()) {
-                if self.matches_filter(&event, filter) {
+            if let Ok(event) = serde_json::from_slice::<EventLog>(value.value())
+                && self.matches_filter(&event, filter) {
                     results.push(event);
-                    if let Some(limit) = filter.limit {
-                        if results.len() >= limit {
+                    if let Some(limit) = filter.limit
+                        && results.len() >= limit {
                             break;
                         }
-                    }
                 }
-            }
         }
 
         Ok(results)
@@ -218,7 +221,7 @@ impl EventLogStore {
 
             let mut keys_to_delete: Vec<String> = Vec::new();
             let mut range = table.range(&*start_key..=&*end_key)?;
-            while let Some(result) = range.next() {
+            for result in range.by_ref() {
                 let (key_ref, _) = result?;
                 keys_to_delete.push(key_ref.value().to_string());
             }
@@ -576,11 +579,10 @@ impl WorkflowHistoryStore {
         let mut results = Vec::new();
         for result in table.iter()? {
             let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<WorkflowExecution>(value.value()) {
-                if execution.status == WorkflowStatus::Running {
+            if let Ok(execution) = serde_json::from_slice::<WorkflowExecution>(value.value())
+                && execution.status == WorkflowStatus::Running {
                     results.push(execution);
                 }
-            }
         }
 
         Ok(results)
@@ -774,16 +776,14 @@ impl AlertStore {
         let mut results = Vec::new();
         for result in table.range(&*start_key..=&*end_key)? {
             let (_key, value) = result?;
-            if let Ok(alert) = serde_json::from_slice::<Alert>(value.value()) {
-                if self.matches_filter(&alert, filter) {
+            if let Ok(alert) = serde_json::from_slice::<Alert>(value.value())
+                && self.matches_filter(&alert, filter) {
                     results.push(alert);
-                    if let Some(limit) = filter.limit {
-                        if results.len() >= limit {
+                    if let Some(limit) = filter.limit
+                        && results.len() >= limit {
                             break;
                         }
-                    }
                 }
-            }
         }
 
         Ok(results)
@@ -803,8 +803,8 @@ impl AlertStore {
 
     /// Acknowledge an alert.
     pub fn acknowledge(&self, alert_id: &str, acknowledged_by: &str) -> Result<bool> {
-        if let Some(mut alert) = self.get(alert_id)? {
-            if alert.status == AlertStatus::Active {
+        if let Some(mut alert) = self.get(alert_id)?
+            && alert.status == AlertStatus::Active {
                 alert.status = AlertStatus::Acknowledged;
                 alert.acknowledged_at = Some(Utc::now().timestamp());
                 alert.acknowledged_by = Some(acknowledged_by.to_string());
@@ -821,14 +821,13 @@ impl AlertStore {
 
                 return Ok(true);
             }
-        }
         Ok(false)
     }
 
     /// Resolve an alert.
     pub fn resolve(&self, alert_id: &str) -> Result<bool> {
-        if let Some(mut alert) = self.get(alert_id)? {
-            if alert.status != AlertStatus::Resolved {
+        if let Some(mut alert) = self.get(alert_id)?
+            && alert.status != AlertStatus::Resolved {
                 alert.status = AlertStatus::Resolved;
                 alert.resolved_at = Some(Utc::now().timestamp());
 
@@ -844,7 +843,6 @@ impl AlertStore {
 
                 return Ok(true);
             }
-        }
         Ok(false)
     }
 
@@ -890,11 +888,10 @@ impl AlertStore {
             return false;
         }
 
-        if let Some(ref source) = filter.source {
-            if alert.source != *source {
+        if let Some(ref source) = filter.source
+            && alert.source != *source {
                 return false;
             }
-        }
 
         true
     }

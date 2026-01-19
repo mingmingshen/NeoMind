@@ -5,11 +5,9 @@
 
 use std::sync::Arc;
 
-use crate::types::*;
 use crate::error::{AutomationError, Result};
 use edge_ai_core::{LlmRuntime, Message, GenerationParams};
 use edge_ai_core::llm::backend::LlmInput;
-use serde_json::json;
 
 /// Threshold recommender for automation conditions
 pub struct ThresholdRecommender {
@@ -245,7 +243,7 @@ Guidelines:
     }
 
     /// Detect anomalies in data
-    pub fn detect_anomalies(&self, data_points: &[f64], threshold: f64, std_dev_multiplier: f64) -> Vec<usize> {
+    pub fn detect_anomalies(&self, data_points: &[f64], _threshold: f64, std_dev_multiplier: f64) -> Vec<usize> {
         let stats = self.calculate_statistics(data_points);
         let anomaly_threshold = stats.mean + (stats.std_dev * std_dev_multiplier);
 

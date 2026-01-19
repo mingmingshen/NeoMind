@@ -25,6 +25,7 @@ pub struct AlertDto {
     pub status: String,
     pub acknowledged: bool,
     pub timestamp: String,
+    pub source: String,
 }
 
 /// Create alert request.
@@ -80,6 +81,7 @@ pub async fn list_alerts_handler(
                 AlertStatus::Acknowledged | AlertStatus::Resolved | AlertStatus::FalsePositive
             ),
             timestamp: a.timestamp.to_rfc3339(),
+            source: a.source,
         })
         .collect();
 
@@ -140,6 +142,7 @@ pub async fn get_alert_handler(
         "status": alert.status.as_str(),
         "acknowledged": matches!(alert.status, AlertStatus::Acknowledged | AlertStatus::Resolved | AlertStatus::FalsePositive),
         "timestamp": alert.timestamp.to_rfc3339(),
+        "source": alert.source,
     }))
 }
 

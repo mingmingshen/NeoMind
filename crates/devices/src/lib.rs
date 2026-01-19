@@ -7,8 +7,6 @@
 //! | Feature | Default | Description |
 //! |---------|---------|-------------|
 //! | `mqtt` | ✅ | MQTT protocol support |
-//! | `modbus` | ✅ | Modbus TCP protocol support |
-//! | `hass` | ❌ | Home Assistant integration |
 //! | `discovery` | ❌ | mDNS device discovery |
 //! | `embedded-broker` | ❌ | Embedded MQTT broker |
 //! | `all` | ❌ | All features |
@@ -18,17 +16,17 @@
 //! The device management system uses a simplified architecture:
 //! - **DeviceRegistry**: Storage for device configurations and type templates
 //! - **DeviceService**: Unified interface for all device operations
-//! - **DeviceAdapter**: Protocol-specific adapter interface (MQTT, Modbus, HASS)
+//! - **DeviceAdapter**: Protocol-specific adapter interface (MQTT)
 //! - **DeviceAdapterPluginRegistry**: Plugin system for managing adapters
 //!
 //! Devices are configured using `DeviceConfig` and accessed through `DeviceService`.
 //! Protocol adapters are registered as plugins for unified management.
 
 pub mod builtin_types;
+pub mod command_retry;
 pub mod discovery;
 pub mod mdl;
 pub mod mdl_format;
-pub mod modbus;
 pub mod mqtt;
 pub mod mqtt_v2;
 pub mod telemetry;
@@ -49,26 +47,20 @@ pub mod plugin_registry;
 
 // Protocol mapping re-exports
 pub use protocol::{
-    Address, BinaryFormat, Capability, CapabilityType, HassMapping, HassMappingBuilder,
-    MappingConfig, ModbusDataType, ModbusMapping, ModbusMappingBuilder, ModbusRegisterType,
-    MqttMapping, MqttMappingBuilder, ProtocolMapping, SharedMapping,
+    Address, BinaryFormat, Capability, CapabilityType,
+    MappingConfig, MqttMapping, MqttMappingBuilder, ProtocolMapping, SharedMapping,
 };
 
 // Re-export protocol mapping functions
 pub use builtin_types::{
-    builtin_device_types, builtin_hass_mappings, builtin_modbus_mappings, builtin_mqtt_mappings,
+    builtin_device_types, builtin_mqtt_mappings,
 };
 
 // Device adapters implementing the adapter interface
 pub mod adapters;
 
-#[cfg(feature = "hass")]
-pub mod hass;
-
-// HASS MQTT Discovery protocol support (always available)
-pub mod hass_discovery;
-pub mod hass_discovery_listener;
-pub mod hass_discovery_mapper;
+// Unified data extraction for all adapters
+pub mod unified_extractor;
 
 #[cfg(feature = "embedded-broker")]
 pub mod embedded_broker;
@@ -86,18 +78,17 @@ pub use mdl_format::{
 };
 
 // New architecture exports
+pub use command_retry::{
+    CommandRetryConfig, CommandResult, CommandRetryManager, CommandStatus as RetryCommandStatus, PendingCommand,
+};
 pub use discovery::{DeviceDiscovery, DiscoveredDevice, DiscoveryResult};
 pub use registry::{ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceTypeTemplate};
-pub use service::{CommandHistoryRecord, CommandStatus, DeviceService, DeviceStatus};
+pub use service::{AdapterInfo, AdapterStats, CommandHistoryRecord, CommandStatus, DeviceHealth, DeviceService, DeviceStatus, HeartbeatConfig};
 pub use telemetry::{AggregatedData, DataPoint, MetricCache, TimeSeriesStorage};
 
-#[cfg(feature = "embedded-broker")]
-pub use embedded_broker::{BrokerMode, EmbeddedBroker, EmbeddedBrokerConfig};
-
-#[cfg(feature = "hass")]
-pub use hass::{
-    EntityMapping, HassClient, HassConnectionConfig, HassEntityMapper, HassSettings,
-    HassWebSocketClient, MappedDevice,
+// Unified data extraction re-exports
+pub use unified_extractor::{
+    ExtractionConfig, ExtractionMode, ExtractionResult, ExtractedMetric, UnifiedExtractor,
 };
 
 // HASS Discovery re-exports
@@ -112,6 +103,9 @@ pub use hass_discovery_listener::{
 pub use hass_discovery_mapper::{
     generate_uplink_config, map_hass_to_mdl, register_hass_device_type,
 };
+
+#[cfg(feature = "embedded-broker")]
+pub use embedded_broker::{BrokerMode, EmbeddedBroker, EmbeddedBrokerConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -144,7 +138,7 @@ pub use adapters::{available_adapters, create_adapter};
 
 // Specialized adapter plugins
 pub use adapters::plugins::{
-    ExternalBrokerConfig, ExternalMqttBrokerPlugin, ModbusAdapterConfig, ModbusAdapterPlugin,
+    ExternalBrokerConfig, ExternalMqttBrokerPlugin,
     UnifiedAdapterPluginFactory,
 };
 

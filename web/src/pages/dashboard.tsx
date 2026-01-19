@@ -11,51 +11,69 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Send, Bot, User, ChevronDown, ChevronUp, Settings, Copy, Check, CheckCircle2, Wrench, Loader2, Brain, MessageSquare } from "lucide-react"
+import { Send, Bot, User, Settings, Copy, Check, Wrench, Brain, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Message, ServerMessage, ToolCall } from "@/types"
-import { SessionSidebar, MarkdownMessage } from "@/components/chat"
+import { SessionSidebar, MarkdownMessage, ConnectionStatus, ThinkingBlock, ToolCallVisualization } from "@/components/chat"
+import type { ConnectionState } from "@/lib/websocket"
 
 export function DashboardPage() {
   const { t } = useTranslation(['common', 'dashboard'])
-  const {
-    messages,
-    sessions,
-    sessionId,
-    setSessionId,
-    addMessage,
-    setWsConnected,
-    wsConnected,
-    setCurrentPage,
-    loadSessions,
-    // LLM Backend
-    llmBackends,
-    llmBackendLoading,
-    loadBackends,
-    activateBackend,
-    updateBackend,
-  } = useStore()
+
+  // Use selectors to subscribe only to specific state fields
+  // This prevents unnecessary re-renders when other parts of the store change
+  const messages = useStore((state) => state.messages)
+  const sessions = useStore((state) => state.sessions)
+  const sessionId = useStore((state) => state.sessionId)
+  const setSessionId = useStore((state) => state.setSessionId)
+  const addMessage = useStore((state) => state.addMessage)
+  const setWsConnected = useStore((state) => state.setWsConnected)
+  const wsConnected = useStore((state) => state.wsConnected)
+  const setCurrentPage = useStore((state) => state.setCurrentPage)
+  const loadSessions = useStore((state) => state.loadSessions)
+  const llmBackends = useStore((state) => state.llmBackends)
+  const llmBackendLoading = useStore((state) => state.llmBackendLoading)
+  const loadBackends = useStore((state) => state.loadBackends)
+  const activateBackend = useStore((state) => state.activateBackend)
+  const updateBackend = useStore((state) => state.updateBackend)
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
-  const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set())
-  const [expandedToolResults, setExpandedToolResults] = useState<Set<string>>(new Set())
   const [streamingContent, setStreamingContent] = useState("")
   const [streamingThinking, setStreamingThinking] = useState("")
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCall[]>([])
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [connectionState, setConnectionState] = useState<ConnectionState>({ status: 'disconnected' })
+  const [hasLoadedBackendsOnce, setHasLoadedBackendsOnce] = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
   const streamingToolCallsRef = useRef<ToolCall[]>([])
+  const isMountedRef = useRef(true)
+  // Track partial message ID for incremental saving
+  const partialMessageIdRef = useRef<string | null>(null)
+  // Track last save time to avoid too frequent updates
+  const lastPartialSaveRef = useRef<number>(0)
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   // Load LLM backends
   const hasFetchedBackends = useRef(false)
   useEffect(() => {
-    if (!hasFetchedBackends.current) {
+    if (!hasFetchedBackends.current && isMountedRef.current) {
       hasFetchedBackends.current = true
-      loadBackends()
+      loadBackends().then(() => {
+        if (isMountedRef.current) {
+          setHasLoadedBackendsOnce(true)
+        }
+      })
     }
   }, [])
 
@@ -71,6 +89,7 @@ export function DashboardPage() {
   // Handle backend change
   const handleBackendChange = async (backendId: string) => {
     await activateBackend(backendId)
+    ws.setActiveBackend(backendId)
   }
 
   // Handle thinking toggle
@@ -80,6 +99,16 @@ export function DashboardPage() {
       await updateBackend(activeBackend.id, { thinking_enabled: checked })
     }
   }
+
+  // Initialize active backend in WebSocket when backends are loaded
+  useEffect(() => {
+    if (hasLoadedBackendsOnce && llmBackends && llmBackends.length > 0) {
+      const activeBackend = llmBackends.find(b => b.is_active)
+      if (activeBackend) {
+        ws.setActiveBackend(activeBackend.id)
+      }
+    }
+  }, [hasLoadedBackendsOnce, llmBackends])
 
   // Initialize session
   useEffect(() => {
@@ -96,8 +125,15 @@ export function DashboardPage() {
     const unsubscribeConn = ws.onConnection((connected) => {
       setWsConnected(connected)
     })
+
+    // Listen for detailed connection state changes
+    const unsubscribeState = ws.onStateChange((state) => {
+      setConnectionState(state)
+    })
+
     return () => {
       unsubscribeConn()
+      unsubscribeState()
     }
   }, [setWsConnected])
 
@@ -126,19 +162,45 @@ export function DashboardPage() {
 
   // Reset streaming states when sessionId changes
   useEffect(() => {
-    // Reset all streaming states when switching sessions
+    // Before clearing, save any partial message that was being streamed
+    // This prevents data loss when switching sessions during an active stream
+    const content = streamingContentRef.current
+    const thinking = streamingThinkingRef.current
+    const toolCalls = streamingToolCallsRef.current
+
+    // Only save if we have actual content (not just empty state)
+    if (content || thinking || toolCalls.length > 0) {
+      const partialMsg: Message = {
+        id: partialMessageIdRef.current || crypto.randomUUID(),
+        role: "assistant",
+        content: content,
+        timestamp: Date.now(),
+        thinking: thinking || undefined,
+        tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+        // Mark as non-partial since we're finalizing it
+        isPartial: false,
+      }
+      // Save the message before switching sessions
+      addMessage(partialMsg)
+      console.log('[dashboard] Saved partial message before session switch:', {
+        contentLength: content.length,
+        thinkingLength: thinking.length,
+        toolCallsCount: toolCalls.length,
+      })
+    }
+
+    // Now reset all streaming states when switching sessions
     setIsStreaming(false)
     setStreamingContent("")
     setStreamingThinking("")
     setStreamingToolCalls([])
-    // Reset UI expansion states for the new session
-    setExpandedThinking(new Set())
-    setExpandedToolResults(new Set())
     // Also reset refs to ensure no stale data persists
     streamingContentRef.current = ""
     streamingThinkingRef.current = ""
     streamingToolCallsRef.current = []
-  }, [sessionId])
+    partialMessageIdRef.current = null
+    lastPartialSaveRef.current = 0
+  }, [sessionId, addMessage])
 
   // Setup WebSocket message handler
   // Use ref to avoid re-subscription when addMessage changes
@@ -151,6 +213,38 @@ export function DashboardPage() {
     loadSessionsRef.current = loadSessions
     setSessionIdRef.current = setSessionId
   }, [addMessage, loadSessions, setSessionId])
+
+  // Function to save/update partial message during streaming
+  const savePartialMessage = useCallback(() => {
+    const content = streamingContentRef.current
+    const thinking = streamingThinkingRef.current
+    const toolCalls = streamingToolCallsRef.current
+
+    // Skip if nothing to save
+    if (!content && !thinking && toolCalls.length === 0) return
+
+    const partialMsg: Message = {
+      id: partialMessageIdRef.current || crypto.randomUUID(),
+      role: "assistant",
+      content: content,
+      timestamp: Date.now(),
+      thinking: thinking || undefined,
+      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+      // Mark as partial to indicate it's still being updated
+      isPartial: true,
+    }
+
+    // Store the ID for future updates
+    if (!partialMessageIdRef.current) {
+      partialMessageIdRef.current = partialMsg.id
+      // Add new partial message
+      addMessageRef.current(partialMsg)
+    } else {
+      // Update existing partial message
+      // We need to update the message in the list
+      addMessageRef.current(partialMsg)
+    }
+  }, [addMessageRef])
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     // Debug: Log all incoming message types
@@ -198,6 +292,13 @@ export function DashboardPage() {
         // Update ref synchronously to avoid stale data in end event
         streamingThinkingRef.current += (msg.content || "")
         setStreamingThinking(streamingThinkingRef.current)
+
+        // Incremental save: Update partial message every 500ms
+        const now = Date.now()
+        if (now - lastPartialSaveRef.current > 500) {
+          lastPartialSaveRef.current = now
+          savePartialMessage()
+        }
         break
 
       case 'Content':
@@ -206,6 +307,13 @@ export function DashboardPage() {
         // Update ref synchronously to avoid stale data in end event
         streamingContentRef.current += (msg.content || "")
         setStreamingContent(streamingContentRef.current)
+
+        // Incremental save: Update partial message every 500ms
+        const now2 = Date.now()
+        if (now2 - lastPartialSaveRef.current > 500) {
+          lastPartialSaveRef.current = now2
+          savePartialMessage()
+        }
         break
 
       case 'ToolCallStart':
@@ -218,6 +326,8 @@ export function DashboardPage() {
         }
         streamingToolCallsRef.current.push(newToolCall)
         setStreamingToolCalls([...streamingToolCallsRef.current])
+        // Save partial message when tool call starts
+        savePartialMessage()
         break
 
       case 'ToolCallEnd':
@@ -227,11 +337,16 @@ export function DashboardPage() {
             : tc
         )
         setStreamingToolCalls(streamingToolCallsRef.current)
+        // Save partial message when tool call ends
+        savePartialMessage()
         break
 
       case 'Error':
         console.error('Server error:', msg.message)
         setIsStreaming(false)
+        // Clear partial message state on error
+        partialMessageIdRef.current = null
+        lastPartialSaveRef.current = 0
         break
 
       case 'end':
@@ -252,15 +367,18 @@ export function DashboardPage() {
         })
 
         if (finalContent || finalThinking || finalCalls.length > 0) {
+          // Convert partial message to final message, or create new one
           const assistantMsg: Message = {
-            id: crypto.randomUUID(),
+            id: partialMessageIdRef.current || crypto.randomUUID(),
             role: "assistant",
             content: finalContent,
             timestamp: Date.now(),
             thinking: finalThinking || undefined,
             tool_calls: finalCalls.length > 0 ? finalCalls : undefined,
+            // Remove partial flag to indicate this is the final message
+            isPartial: false,
           }
-          console.log('[dashboard] Adding assistant message with content')
+          console.log('[dashboard] Adding final assistant message')
           addMessageRef.current(assistantMsg)
         } else {
           console.warn('[dashboard] end event received but no content to save')
@@ -270,6 +388,8 @@ export function DashboardPage() {
         streamingContentRef.current = ""
         streamingThinkingRef.current = ""
         streamingToolCallsRef.current = []
+        partialMessageIdRef.current = null
+        lastPartialSaveRef.current = 0
 
         setStreamingContent("")
         setStreamingThinking("")
@@ -327,30 +447,6 @@ export function DashboardPage() {
     setIsStreaming(true)
   }
 
-  const toggleThinking = (msgId: string) => {
-    setExpandedThinking((prev) => {
-      const next = new Set(prev)
-      if (next.has(msgId)) {
-        next.delete(msgId)
-      } else {
-        next.add(msgId)
-      }
-      return next
-    })
-  }
-
-  const toggleToolResult = (key: string) => {
-    setExpandedToolResults((prev) => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
-  }
-
   const handleCopy = (content: string, id: string) => {
     navigator.clipboard.writeText(content)
     setCopiedId(id)
@@ -364,8 +460,9 @@ export function DashboardPage() {
     }
   }
 
-  // Show LLM setup prompt if no LLM backend is configured
-  if (!llmBackends || llmBackends.length === 0) {
+  // Show LLM setup prompt if no LLM backend is configured (only after first load attempt)
+  // This prevents UI flashing during backend switching/updates
+  if (hasLoadedBackendsOnce && (!llmBackends || llmBackends.length === 0)) {
     return (
       <div className="flex h-full flex-row relative">
         {/* Sidebar - always expanded on desktop/tablet */}
@@ -475,6 +572,16 @@ export function DashboardPage() {
         </button>
 
         <ScrollArea className="flex-1">
+          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b px-4 py-2">
+            <div className="flex items-center justify-between">
+              <ConnectionStatus state={connectionState} />
+              {sessionId && (
+                <span className="text-xs text-muted-foreground">
+                  会话: {sessionId.slice(0, 8)}
+                </span>
+              )}
+            </div>
+          </div>
           <div ref={scrollRef} className="p-4">
           {messages.length === 0 && !isStreaming && (
             <div className="flex h-[calc(100vh-200px)] items-center justify-center">
@@ -491,7 +598,7 @@ export function DashboardPage() {
           )}
 
           <div className="space-y-4">
-            {messages.map((msg) => {
+            {messages.filter(msg => !msg.isPartial).map((msg) => {
               return (
               <div
                 key={msg.id}
@@ -509,106 +616,18 @@ export function DashboardPage() {
                 <div className="max-w-[80%]">
                   {/* Thinking */}
                   {msg.role === "assistant" && msg.thinking && (
-                    <div className="mb-2 rounded-md bg-muted/50 px-3 py-2 text-xs">
-                      <button
-                        onClick={() => toggleThinking(msg.id)}
-                        className="flex items-center gap-1 font-medium text-muted-foreground"
-                      >
-                        {t('dashboard:thinkingProcess')}
-                        {expandedThinking.has(msg.id) ? (
-                          <ChevronUp className="h-3 w-3" />
-                        ) : (
-                          <ChevronDown className="h-3 w-3" />
-                        )}
-                      </button>
-                      {expandedThinking.has(msg.id) && (
-                        <div className="mt-2 max-h-[200px] overflow-y-auto whitespace-pre-wrap text-muted-foreground scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">
-                          {msg.thinking}
-                        </div>
-                      )}
+                    <div className="mb-2">
+                      <ThinkingBlock
+                        thinking={msg.thinking}
+                        defaultExpanded={true}
+                      />
                     </div>
                   )}
 
-                  {/* Tool Calls - Improved Visual Flow */}
+                  {/* Tool Calls */}
                   {msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0 && (
-                    <div className="mb-3 rounded-lg border border-border/50 bg-muted/30 overflow-hidden">
-                      {/* Header */}
-                      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border/50">
-                        <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-medium text-xs text-muted-foreground">
-                          {t('dashboard:toolCalls')} ({msg.tool_calls.length})
-                        </span>
-                      </div>
-
-                      {/* Tool List with Timeline */}
-                      <div className="divide-y divide-border/30">
-                        {msg.tool_calls.map((tc, i) => {
-                          const resultKey = `${msg.id}-${i}`
-                          const isExpanded = expandedToolResults.has(resultKey)
-                          const hasResult = tc.result !== undefined && tc.result !== null
-
-                          return (
-                            <div key={resultKey} className="px-3 py-2">
-                              {/* Tool Name Row */}
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {/* Timeline indicator */}
-                                  <div className="flex flex-col items-center">
-                                    <div className={`h-5 w-5 rounded-full flex items-center justify-center ${
-                                      hasResult ? 'bg-green-500/20 text-green-600' : 'bg-amber-500/20 text-amber-600'
-                                    }`}>
-                                      {hasResult ? (
-                                        <CheckCircle2 className="h-3 w-3" />
-                                      ) : (
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                      )}
-                                    </div>
-                                    {i < (msg.tool_calls?.length ?? 0) - 1 && (
-                                      <div className="w-px h-4 bg-border/50 mt-1" />
-                                    )}
-                                  </div>
-
-                                  {/* Tool info */}
-                                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    <span className="font-mono text-xs font-medium bg-background px-2 py-0.5 rounded border border-border/50 truncate">
-                                      {tc.name}
-                                    </span>
-                                    <span className={`text-xs ${
-                                      hasResult ? 'text-green-600' : 'text-amber-600'
-                                    }`}>
-                                      {hasResult ? t('completed') : t('executing')}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* Expand button for results */}
-                                {hasResult && (
-                                  <button
-                                    onClick={() => toggleToolResult(resultKey)}
-                                    className="p-1 hover:bg-background/50 rounded transition-colors"
-                                  >
-                                    {isExpanded ? (
-                                      <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-                                    ) : (
-                                      <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-
-                              {/* Expandable Result */}
-                              {isExpanded && hasResult && (
-                                <div className="mt-2 ml-7 p-2 bg-background rounded border border-border/50">
-                                  <div className="text-xs text-muted-foreground mb-1">{t('executionResult')}:</div>
-                                  <pre className="text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-words">
-                                    {typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result, null, 2)}
-                                  </pre>
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
+                    <div className="mb-3">
+                      <ToolCallVisualization toolCalls={msg.tool_calls} />
                     </div>
                   )}
 
@@ -654,34 +673,17 @@ export function DashboardPage() {
                 </div>
                 <div className="max-w-[80%]">
                   {streamingThinking && (
-                    <div className="mb-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                      {t('dashboard:thinkingProcess')}
-                      <p className="mt-2 max-h-[200px] overflow-y-auto whitespace-pre-wrap scrollbar-thin scrollbar-thumb-muted-foreground/20 scrollbar-track-transparent">{streamingThinking}</p>
+                    <div className="mb-2">
+                      <ThinkingBlock
+                        thinking={streamingThinking}
+                        isStreaming={true}
+                        defaultExpanded={true}
+                      />
                     </div>
                   )}
                   {streamingToolCalls.length > 0 && (
-                    <div className="mb-3 rounded-lg border border-border/50 bg-muted/30 overflow-hidden">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b border-border/50">
-                        <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-medium text-xs text-muted-foreground">
-                          {t('dashboard:toolCalls')} ({streamingToolCalls.length})
-                        </span>
-                      </div>
-                      <div className="divide-y divide-border/30">
-                        {streamingToolCalls.map((tc, i) => (
-                          <div key={tc.id || `streaming-${i}`} className="px-3 py-2">
-                            <div className="flex items-center gap-2">
-                              <div className="h-5 w-5 rounded-full flex items-center justify-center bg-amber-500/20 text-amber-600">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              </div>
-                              <span className="font-mono text-xs font-medium bg-background px-2 py-0.5 rounded border border-border/50">
-                                {tc.name}
-                              </span>
-                              <span className="text-xs text-amber-600">{t('executing')}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="mb-3">
+                      <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} />
                     </div>
                   )}
                   <div className="rounded-lg px-3 py-2 text-sm bg-muted">

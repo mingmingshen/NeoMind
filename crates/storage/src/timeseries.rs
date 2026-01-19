@@ -362,7 +362,7 @@ impl BatchWriteRequest {
     pub fn add_point(&mut self, metric: String, point: DataPoint) {
         self.metrics
             .entry(metric)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(point);
     }
 
@@ -417,11 +417,10 @@ impl TimeSeriesStore {
         // Check if we already have a store for this path
         {
             let singleton = TIMESERIES_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create new store and save to singleton
@@ -644,14 +643,13 @@ impl TimeSeriesStore {
         // Check cache first
         {
             let cache = self.latest_cache.read().await;
-            if let Some(entry) = cache.get(&cache_key) {
-                if entry.cached_at.elapsed() < self.cache_ttl {
+            if let Some(entry) = cache.get(&cache_key)
+                && entry.cached_at.elapsed() < self.cache_ttl {
                     let mut stats = self.stats.write().await;
                     stats.record_cache_hit();
                     stats.record_read(start.elapsed());
                     return Ok(Some(entry.point.clone()));
                 }
-            }
         }
 
         // Cache miss - query from database
@@ -661,12 +659,15 @@ impl TimeSeriesStore {
         let start_key = (device_id, metric, i64::MIN);
         let end_key = (device_id, metric, i64::MAX);
 
-        let mut latest: Option<DataPoint> = None;
-        for result in table.range(start_key..=end_key)?.rev().take(1) {
-            let (_key, value) = result?;
-            latest = Some(serde_json::from_slice(value.value())?);
-            break;
-        }
+        // Get the latest data point (most recent timestamp)
+        let latest: Option<DataPoint> = table
+            .range(start_key..=end_key)?
+            .next_back()
+            .map(|result| -> Result<DataPoint, Error> {
+                let (_key, value) = result?;
+                Ok(serde_json::from_slice(value.value())?)
+            })
+            .transpose()?;
 
         // Update cache with result
         if let Some(ref point) = latest {
@@ -729,7 +730,7 @@ impl TimeSeriesStore {
             // Collect keys as owned tuples
             let mut keys_to_delete: Vec<(String, String, i64)> = Vec::new();
             let mut range = table.range(start_key..=end_key)?;
-            while let Some(result) = range.next() {
+            for result in range.by_ref() {
                 let (key_ref, _val_ref) = result?;
                 let did: &str = key_ref.value().0;
                 let met: &str = key_ref.value().1;
@@ -826,15 +827,14 @@ impl TimeSeriesStore {
                         let key = (device_id.clone(), metric.clone());
                         if cache.len() >= max_cache_size {
                             cache.retain(|k, _| k != &key);
-                            if cache.len() >= max_cache_size {
-                                if let Some(lru) = cache
+                            if cache.len() >= max_cache_size
+                                && let Some(lru) = cache
                                     .iter()
                                     .min_by_key(|(_, e)| e.access_count)
                                     .map(|(k, _)| k.clone())
                                 {
                                     cache.remove(&lru);
                                 }
-                            }
                         }
                         let entry = cache.entry(key).or_insert_with(|| CacheEntry {
                             point: DataPoint::new(0, 0.0),
@@ -898,8 +898,8 @@ impl TimeSeriesStore {
             let metric_key = format!("{}:{}", device_id, metric);
             let device_type = ""; // Could be enhanced to look up device type
 
-            if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric) {
-                if cutoff < now {
+            if let Some(cutoff) = policy.cutoff_timestamp(device_type, metric)
+                && cutoff < now {
                     let removed = self
                         .delete_range(device_id, metric, i64::MIN, cutoff)
                         .await?;
@@ -908,7 +908,6 @@ impl TimeSeriesStore {
                         metrics_cleaned.insert(metric_key.clone());
                     }
                 }
-            }
         }
 
         // Update stats

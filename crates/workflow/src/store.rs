@@ -32,11 +32,10 @@ impl WorkflowStore {
         // Check if we already have a store for this path
         {
             let singleton = WORKFLOW_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create new store and save to singleton
@@ -119,8 +118,8 @@ impl WorkflowStore {
             Err(_) => return Ok(ids),
         };
 
-        let mut iter: redb::Range<&str, &[u8]> = table.iter()?;
-        while let Some(result) = iter.next() {
+        let iter: redb::Range<&str, &[u8]> = table.iter()?;
+        for result in iter {
             let (key, _) = result?;
             let key_str = key.value();
             if let Some(id) = key_str.strip_prefix("workflow:") {
@@ -143,8 +142,8 @@ impl WorkflowStore {
             Err(_) => return Ok(workflows),
         };
 
-        let mut iter: redb::Range<&str, &[u8]> = table.iter()?;
-        while let Some(result) = iter.next() {
+        let iter: redb::Range<&str, &[u8]> = table.iter()?;
+        for result in iter {
             let (_, value) = result?;
             let workflow: Workflow = serde_json::from_slice(value.value())?;
             workflows.push(workflow);
@@ -233,11 +232,10 @@ impl ExecutionStore {
         // Check if we already have a store for this path
         {
             let singleton = EXECUTION_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create new store and save to singleton
@@ -360,8 +358,8 @@ impl ExecutionStore {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(EXECUTION_TABLE)?;
 
-        let mut iter: redb::Range<&str, &[u8]> = table.iter()?;
-        while let Some(result) = iter.next() {
+        let iter: redb::Range<&str, &[u8]> = table.iter()?;
+        for result in iter {
             let (_, value) = result?;
             let record: ExecutionRecord = serde_json::from_slice(value.value())?;
             executions.push(record);
@@ -383,7 +381,7 @@ impl ExecutionStore {
 
             // Collect keys to delete
             let mut keys_to_delete = Vec::new();
-            while let Some(result) = iter.next() {
+            for result in iter.by_ref() {
                 let (key, value) = result?;
                 let record: ExecutionRecord = serde_json::from_slice(value.value())?;
                 if record.started_at < older_than {

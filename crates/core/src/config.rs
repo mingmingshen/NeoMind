@@ -61,6 +61,107 @@ pub mod env_vars {
     pub const OPENAI_ENDPOINT: &str = "OPENAI_ENDPOINT";
 }
 
+/// Agent 配置常量
+pub mod agent {
+    /// 默认最大上下文 token 数
+    pub const DEFAULT_MAX_CONTEXT_TOKENS: usize = 8000;
+    /// 默认 LLM 温度
+    pub const DEFAULT_TEMPERATURE: f32 = 0.4;
+    /// 默认 top-p 采样
+    pub const DEFAULT_TOP_P: f32 = 0.7;
+    /// 默认最大生成 token 数
+    pub const DEFAULT_MAX_TOKENS: usize = 4096;
+    /// 默认最大并发 LLM 请求数
+    pub const DEFAULT_CONCURRENT_LIMIT: usize = 3;
+    /// 默认上下文选择器 token 预算
+    pub const DEFAULT_CONTEXT_SELECTOR_TOKENS: usize = 4000;
+}
+
+/// Agent 配置环境变量
+pub mod agent_env_vars {
+    use super::agent;
+
+    pub const MAX_CONTEXT_TOKENS: &str = "AGENT_MAX_CONTEXT_TOKENS";
+    pub const TEMPERATURE: &str = "AGENT_TEMPERATURE";
+    pub const TOP_P: &str = "AGENT_TOP_P";
+    pub const MAX_TOKENS: &str = "AGENT_MAX_TOKENS";
+    pub const CONCURRENT_LIMIT: &str = "AGENT_CONCURRENT_LIMIT";
+    pub const CONTEXT_SELECTOR_TOKENS: &str = "AGENT_CONTEXT_SELECTOR_TOKENS";
+    /// LLM request timeout in seconds (for Ollama and OpenAI backends)
+    pub const LLM_TIMEOUT_SECS: &str = "AGENT_LLM_TIMEOUT_SECS";
+
+    /// 从环境变量获取最大上下文 token 数，或返回默认值
+    pub fn max_context_tokens() -> usize {
+        std::env::var(MAX_CONTEXT_TOKENS)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(agent::DEFAULT_MAX_CONTEXT_TOKENS)
+    }
+
+    /// 从环境变量获取温度，或返回默认值
+    pub fn temperature() -> f32 {
+        std::env::var(TEMPERATURE)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(agent::DEFAULT_TEMPERATURE)
+    }
+
+    /// 从环境变量获取 top-p，或返回默认值
+    pub fn top_p() -> f32 {
+        std::env::var(TOP_P)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(agent::DEFAULT_TOP_P)
+    }
+
+    /// 从环境变量获取最大生成 token 数，或返回默认值
+    pub fn max_tokens() -> usize {
+        std::env::var(MAX_TOKENS)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(agent::DEFAULT_MAX_TOKENS)
+    }
+
+    /// 从环境变量获取最大并发请求数，或返回默认值
+    pub fn concurrent_limit() -> usize {
+        std::env::var(CONCURRENT_LIMIT)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(agent::DEFAULT_CONCURRENT_LIMIT)
+    }
+
+    /// 从环境变量获取上下文选择器 token 预算，或返回默认值
+    pub fn context_selector_tokens() -> usize {
+        std::env::var(CONTEXT_SELECTOR_TOKENS)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(agent::DEFAULT_CONTEXT_SELECTOR_TOKENS)
+    }
+
+    /// 从环境变量获取 LLM 请求超时时间（秒），或返回默认值
+    ///
+    /// 默认值：
+    /// - Ollama: 180 秒
+    /// - OpenAI/Cloud: 60 秒
+    ///
+    /// 此环境变量会同时应用于两种后端
+    pub fn llm_timeout_secs() -> Option<u64> {
+        std::env::var(LLM_TIMEOUT_SECS)
+            .ok()
+            .and_then(|s| s.parse().ok())
+    }
+
+    /// 获取 Ollama 后端的超时时间（秒）
+    pub fn ollama_timeout_secs() -> u64 {
+        llm_timeout_secs().unwrap_or(180)
+    }
+
+    /// 获取 OpenAI/Cloud 后端的超时时间（秒）
+    pub fn cloud_timeout_secs() -> u64 {
+        llm_timeout_secs().unwrap_or(60)
+    }
+}
+
 /// 标准化 Ollama 端点 (移除 /v1 后缀)
 ///
 /// Ollama 使用原生 API，不需要 /v1 后缀

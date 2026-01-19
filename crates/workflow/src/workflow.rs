@@ -153,7 +153,7 @@ impl Workflow {
         let mut step_ids = std::collections::HashSet::new();
         for step in &self.steps {
             let step_id = step.id();
-            if !step_ids.insert(step_id.clone()) {
+            if !step_ids.insert(step_id) {
                 return Err(WorkflowError::InvalidDefinition(format!(
                     "Duplicate step ID: {}",
                     step_id
@@ -178,18 +178,15 @@ impl Workflow {
 /// Workflow status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum WorkflowStatus {
+    #[default]
     Active,
     Paused,
     Disabled,
     Failed,
 }
 
-impl Default for WorkflowStatus {
-    fn default() -> Self {
-        Self::Active
-    }
-}
 
 /// Retry configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]

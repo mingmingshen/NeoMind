@@ -18,15 +18,11 @@ const TEMPLATES_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("auto
 /// Storage for automations
 pub struct AutomationStore {
     db: Arc<Database>,
-    #[allow(dead_code)]
-    path: String,
 }
 
 impl AutomationStore {
     /// Open or create a store at the given path
     pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path_str = path.as_ref().to_string_lossy().to_string();
-
         // Create parent directory if needed
         if let Some(parent) = path.as_ref().parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -45,7 +41,6 @@ impl AutomationStore {
 
         Ok(Self {
             db: Arc::new(db),
-            path: path_str,
         })
     }
 
@@ -66,7 +61,6 @@ impl AutomationStore {
 
         Ok(Self {
             db: Arc::new(db),
-            path: temp_path.to_string_lossy().to_string(),
         })
     }
 

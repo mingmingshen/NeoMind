@@ -11,7 +11,7 @@ use edge_ai_core::llm::backend::LlmRuntime;
 use serde_json::{json, Value};
 
 use crate::agent::intent_classifier::{
-    IntentClassifier, IntentCategory, ProcessingStrategy, Entity, EntityType,
+    IntentClassifier, IntentCategory, Entity, EntityType,
     IntentClassification
 };
 
@@ -24,6 +24,12 @@ pub struct CreateAutomationTool {
 
 // Wrapper for AutomationStore to make it clone-able
 pub struct MutexAutomationStore;
+
+impl Default for MutexAutomationStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl MutexAutomationStore {
     pub fn new() -> Self {
@@ -150,7 +156,7 @@ impl CreateAutomationTool {
                 let after_temp = &description[temp_pos..];
                 if let Some(num_end) = after_temp.find(|c: char| !c.is_numeric() && c != ' ' && c != '度' && c != '高' && c != '低') {
                     let num_str = &after_temp[2..num_end];
-                    if let Ok(_) = num_str.parse::<f32>() {
+                    if num_str.parse::<f32>().is_ok() {
                         return Ok(format!("sensor.temperature > {}", num_str.trim()));
                     }
                 }
@@ -271,11 +277,9 @@ END
                 let dsl = output.text.trim().to_string();
                 Ok(dsl)
             }
-            Err(e) => {
+            Err(_e) => {
                 // Fallback to simple DSL
-                Ok(format!(
-                    "RULE \"自动化规则\"\nWHEN sensor.temperature > 30\nFOR 1 minutes\nDO NOTIFY \"条件触发\"\nEND"
-                ))
+                Ok("RULE \"自动化规则\"\nWHEN sensor.temperature > 30\nFOR 1 minutes\nDO NOTIFY \"条件触发\"\nEND".to_string())
             }
         }
     }
@@ -423,7 +427,7 @@ impl Tool for CreateAutomationTool {
         self.validate_dsl(&dsl)?;
 
         // Step 4: Generate automation ID
-        let automation_id = format!("auto_{}", uuid::Uuid::new_v4().to_string());
+        let automation_id = format!("auto_{}", uuid::Uuid::new_v4());
 
         Ok(ToolOutput::success(json!({
             "automation_id": automation_id,
@@ -436,15 +440,12 @@ impl Tool for CreateAutomationTool {
 }
 
 /// List automations tool
-pub struct ListAutomationsTool {
-    #[allow(dead_code)]
-    store: Option<Arc<MutexAutomationStore>>,
-}
+pub struct ListAutomationsTool;
 
 impl ListAutomationsTool {
     /// Create a new ListAutomationsTool
-    pub fn new(store: Option<Arc<MutexAutomationStore>>) -> Self {
-        Self { store }
+    pub fn new(_store: Option<Arc<MutexAutomationStore>>) -> Self {
+        Self
     }
 }
 
@@ -552,15 +553,12 @@ impl Tool for ListAutomationsTool {
 }
 
 /// Trigger automation tool
-pub struct TriggerAutomationTool {
-    #[allow(dead_code)]
-    store: Option<Arc<MutexAutomationStore>>,
-}
+pub struct TriggerAutomationTool;
 
 impl TriggerAutomationTool {
     /// Create a new TriggerAutomationTool
-    pub fn new(store: Option<Arc<MutexAutomationStore>>) -> Self {
-        Self { store }
+    pub fn new(_store: Option<Arc<MutexAutomationStore>>) -> Self {
+        Self
     }
 }
 
@@ -641,7 +639,7 @@ impl Tool for TriggerAutomationTool {
             .ok_or_else(|| ToolError::InvalidArguments("automation_id must be a string".to_string()))?;
 
         // Generate execution ID
-        let execution_id = format!("exec_{}", uuid::Uuid::new_v4().to_string());
+        let execution_id = format!("exec_{}", uuid::Uuid::new_v4());
 
         // Note: Actual execution would be handled by the automation engine
         // This just records the trigger request
@@ -655,15 +653,12 @@ impl Tool for TriggerAutomationTool {
 }
 
 /// Delete automation tool
-pub struct DeleteAutomationTool {
-    #[allow(dead_code)]
-    store: Option<Arc<MutexAutomationStore>>,
-}
+pub struct DeleteAutomationTool;
 
 impl DeleteAutomationTool {
     /// Create a new DeleteAutomationTool
-    pub fn new(store: Option<Arc<MutexAutomationStore>>) -> Self {
-        Self { store }
+    pub fn new(_store: Option<Arc<MutexAutomationStore>>) -> Self {
+        Self
     }
 }
 
@@ -747,7 +742,7 @@ impl Tool for DeleteAutomationTool {
 mod tests {
     use super::*;
     use crate::agent::intent_classifier::IntentClassifier;
-    use edge_ai_core::llm::backend::{LlmError, LlmOutput, FinishReason, TokenUsage, BackendId, StreamChunk, BackendType};
+    use edge_ai_core::llm::backend::{LlmError, LlmOutput, FinishReason, TokenUsage, BackendId, StreamChunk};
     use std::pin::Pin;
 
     // Note: These tests require an LLM runtime
@@ -797,7 +792,7 @@ mod tests {
     #[async_trait::async_trait]
     impl LlmRuntime for MockLlm {
         fn backend_id(&self) -> BackendId {
-            BackendId::from(BackendType::Mock)
+            BackendId::new("mock")
         }
 
         fn model_name(&self) -> &str {

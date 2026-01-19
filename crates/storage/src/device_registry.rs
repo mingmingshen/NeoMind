@@ -35,6 +35,7 @@ pub enum DeviceTypeMode {
 
 /// Device type template (simplified version matching edge_ai_devices::mdl_format::DeviceTypeTemplate)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct DeviceTypeTemplate {
     pub device_type: String,
     pub name: String,
@@ -54,20 +55,6 @@ pub struct DeviceTypeTemplate {
     pub commands: Vec<CommandDefinition>,
 }
 
-impl Default for DeviceTypeTemplate {
-    fn default() -> Self {
-        Self {
-            device_type: String::new(),
-            name: String::new(),
-            description: String::new(),
-            categories: Vec::new(),
-            mode: DeviceTypeMode::default(),
-            metrics: Vec::new(),
-            uplink_samples: Vec::new(),
-            commands: Vec::new(),
-        }
-    }
-}
 
 /// Metric definition (matches edge_ai_devices::mdl_format::MetricDefinition)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,10 +77,12 @@ pub struct MetricDefinition {
 /// Metric data type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum MetricDataType {
     Float,
     Integer,
     Boolean,
+    #[default]
     String,
     Binary,
     Enum { options: Vec<String> },
@@ -139,11 +128,6 @@ pub struct ParameterDefinition {
     pub allowed_values: Vec<ParamMetricValue>,
 }
 
-impl Default for MetricDataType {
-    fn default() -> Self {
-        Self::String
-    }
-}
 
 /// Metric value for parameter defaults (renamed to avoid conflict with device_state::MetricValue)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +146,7 @@ pub enum ParamMetricValue {
 
 /// Device configuration (simplified version matching edge_ai_devices::registry::DeviceConfig)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct DeviceConfig {
     pub device_id: String,
     pub name: String,
@@ -173,18 +158,6 @@ pub struct DeviceConfig {
     pub adapter_id: Option<String>,
 }
 
-impl Default for DeviceConfig {
-    fn default() -> Self {
-        Self {
-            device_id: String::new(),
-            name: String::new(),
-            device_type: String::new(),
-            adapter_type: String::new(),
-            connection_config: ConnectionConfig::default(),
-            adapter_id: None,
-        }
-    }
-}
 
 /// Connection configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -251,11 +224,10 @@ impl DeviceRegistryStore {
         // Check if we already have a store for this path
         {
             let singleton = REGISTRY_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create new store
@@ -570,8 +542,8 @@ impl DeviceRegistryStore {
             devices_table.insert(device_id, json.as_str())?;
 
             // Update type index if type changed
-            if let Some(old_type) = old_device_type {
-                if old_type != new_device_type {
+            if let Some(old_type) = old_device_type
+                && old_type != new_device_type {
                     let mut index_table = write_txn.open_table(TYPE_INDEX_TABLE)?;
 
                     // Remove from old type
@@ -610,7 +582,6 @@ impl DeviceRegistryStore {
 
                     index_table.insert(key, device_ids.join(",").as_str())?;
                 }
-            }
         }
         write_txn.commit()?;
         Ok(())

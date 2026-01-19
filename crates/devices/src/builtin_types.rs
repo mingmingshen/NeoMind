@@ -10,7 +10,7 @@ use serde_json::json;
 /// Get all built-in device type definitions
 ///
 /// These definitions describe device capabilities (metrics and commands)
-/// without protocol-specific details like MQTT topics or Modbus registers.
+/// without protocol-specific details like MQTT topics or HASS entity IDs.
 /// Protocol mappings are configured separately through the ProtocolMapping layer.
 pub fn builtin_device_types() -> Vec<DeviceTypeDefinition> {
     vec![
@@ -26,7 +26,7 @@ pub fn builtin_device_types() -> Vec<DeviceTypeDefinition> {
 /// 1. DHT22 温湿度传感器
 ///
 /// Protocol-agnostic device capability definition.
-/// Use with protocol mappings (MQTT, Modbus, HASS) for actual communication.
+/// Use with protocol mappings (MQTT, HASS) for actual communication.
 fn dht22_sensor() -> DeviceTypeDefinition {
     serde_json::from_value(json!({
         "device_type": "dht22_sensor",
@@ -732,7 +732,7 @@ fn image_sensor() -> DeviceTypeDefinition {
 ///
 /// These mappings define how to access device capabilities via MQTT.
 pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::protocol::MqttMapping> {
-    use crate::protocol::{MqttMappingBuilder, MqttValueParser};
+    use crate::protocol::MqttMappingBuilder;
     use std::collections::HashMap;
 
     let mut mappings = HashMap::new();
@@ -803,50 +803,6 @@ pub fn builtin_mqtt_mappings() -> std::collections::HashMap<String, crate::proto
         )
         .build();
     mappings.insert("energy_meter_mqtt".to_string(), energy_meter_mapping);
-
-    mappings
-}
-
-/// Get Modbus protocol mappings for built-in device types
-///
-/// These mappings define how to access device capabilities via Modbus.
-pub fn builtin_modbus_mappings() -> std::collections::HashMap<String, crate::protocol::ModbusMapping>
-{
-    use crate::protocol::{ModbusDataType, ModbusMappingBuilder};
-    use std::collections::HashMap;
-
-    let mut mappings = HashMap::new();
-
-    // Energy meter Modbus mapping (common Modbus energy meter layout)
-    let energy_meter_mapping = ModbusMappingBuilder::new("energy_meter")
-        .default_slave(1)
-        .add_input_register("voltage", 0x0000, ModbusDataType::Float32)
-        .add_input_register("current", 0x0002, ModbusDataType::Float32)
-        .add_input_register("active_power", 0x0004, ModbusDataType::Float32)
-        .add_input_register("energy", 0x0006, ModbusDataType::Float32)
-        .add_input_register("frequency", 0x0008, ModbusDataType::Float32)
-        .add_holding_register("reset_energy", 0x0100, ModbusDataType::Bool)
-        .build();
-    mappings.insert("energy_meter_modbus".to_string(), energy_meter_mapping);
-
-    mappings
-}
-
-/// Get Home Assistant protocol mappings for built-in device types
-///
-/// These mappings define how to access device capabilities via Home Assistant.
-pub fn builtin_hass_mappings() -> std::collections::HashMap<String, crate::protocol::HassMapping> {
-    use crate::protocol::HassMappingBuilder;
-    use std::collections::HashMap;
-
-    let mut mappings = HashMap::new();
-
-    // Climate sensor HASS mapping
-    let climate_mapping = HassMappingBuilder::new("dht22_sensor")
-        .add_sensor("temperature", "sensor.indoor_temperature")
-        .add_sensor("humidity", "sensor.indoor_humidity")
-        .build();
-    mappings.insert("dht22_sensor_hass".to_string(), climate_mapping);
 
     mappings
 }
@@ -980,17 +936,5 @@ mod tests {
         assert!(mqtt_mappings.contains_key("dht22_sensor_mqtt"));
         assert!(mqtt_mappings.contains_key("relay_module_mqtt"));
         assert!(mqtt_mappings.contains_key("energy_meter_mqtt"));
-    }
-
-    #[test]
-    fn test_modbus_mappings_exist() {
-        let modbus_mappings = builtin_modbus_mappings();
-        assert!(modbus_mappings.contains_key("energy_meter_modbus"));
-    }
-
-    #[test]
-    fn test_hass_mappings_exist() {
-        let hass_mappings = builtin_hass_mappings();
-        assert!(hass_mappings.contains_key("dht22_sensor_hass"));
     }
 }

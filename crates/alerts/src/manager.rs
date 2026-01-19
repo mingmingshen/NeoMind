@@ -285,11 +285,10 @@ impl AlertManager {
         let mut triggered = Vec::new();
 
         for rule in rules.iter() {
-            if let Some(alert) = rule.evaluate().await {
-                if let Ok(created) = self.create_alert(alert).await {
+            if let Some(alert) = rule.evaluate().await
+                && let Ok(created) = self.create_alert(alert).await {
                     triggered.push(created);
                 }
-            }
         }
 
         triggered
@@ -372,7 +371,7 @@ impl AlwaysTrueRule {
 
     pub async fn evaluate(&self) -> Option<Alert> {
         Some(Alert::new(
-            self.severity.clone(),
+            self.severity,
             self.title_template.clone(),
             self.message_template.clone(),
             "rule".to_string(),
@@ -382,6 +381,12 @@ impl AlwaysTrueRule {
 
 /// Always-false rule for testing.
 pub struct AlwaysFalseRule;
+
+impl Default for AlwaysFalseRule {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl AlwaysFalseRule {
     pub fn new() -> Self {
@@ -419,7 +424,7 @@ impl CustomRule {
     pub async fn evaluate(&self) -> Option<Alert> {
         if (self.predicate)() {
             Some(Alert::new(
-                self.severity.clone(),
+                self.severity,
                 self.title_template.clone(),
                 self.message_template.clone(),
                 "rule".to_string(),

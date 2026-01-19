@@ -375,18 +375,17 @@ impl SemanticType {
         }
 
         // Try to infer from value range
-        if let Some(v) = value {
-            if let Some(n) = v.as_f64() {
+        if let Some(v) = value
+            && let Some(n) = v.as_f64() {
                 // Temperature range check (typical: -40 to 100)
-                if n >= -50.0 && n <= 150.0 {
+                if (-50.0..=150.0).contains(&n) {
                     // Could be temperature, but need more context
                 }
                 // Humidity range check (0-100)
-                if n >= 0.0 && n <= 100.0 {
+                if (0.0..=100.0).contains(&n) {
                     // Could be humidity or percentage
                 }
             }
-        }
 
         SemanticType::Unknown
     }

@@ -566,22 +566,20 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
             let path = entry.path();
 
             // Check for WASM plugins
-            if path.extension().map_or(false, |e| e == "wasm") {
+            if path.extension().is_some_and(|e| e == "wasm") {
                 let plugin_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
 
                 if let Some(ref filter_type) = ty {
                     let json_path = path.with_extension("json");
-                    if let Ok(content) = fs::read_to_string(&json_path) {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            if json
+                    if let Ok(content) = fs::read_to_string(&json_path)
+                        && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+                            && json
                                 .get("type")
                                 .and_then(|v| v.as_str())
-                                .map_or(true, |t| t != filter_type)
+                                .is_none_or(|t| t != filter_type)
                             {
                                 continue;
                             }
-                        }
-                    }
                 }
 
                 println!("  WASM: {}", plugin_name);
@@ -633,7 +631,7 @@ async fn show_plugin_info(path: &PathBuf) -> Result<()> {
         anyhow::bail!("Plugin file not found: {}", path.display());
     }
 
-    let is_wasm = path.extension().map_or(false, |e| e == "wasm");
+    let is_wasm = path.extension().is_some_and(|e| e == "wasm");
 
     if is_wasm {
         let loader = WasmPluginLoader::new();

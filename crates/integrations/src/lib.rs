@@ -8,7 +8,7 @@
 //! External System          Integration Framework          NeoTalk
 //! ┌─────────────┐          ┌─────────────────────┐          ┌──────────┐
 //! │             │  Ingest  │                     │  Event   │          │
-//! │   HASS/MQTT │──────────▶│  Integration        │──────────▶│ EventBus │
+//! │    MQTT     │──────────▶│  Integration        │──────────▶│ EventBus │
 //! │             │          │  - Connector         │          │          │
 //! │             │  Egress  │  - Transformer      │  Command │          │
 //! │             │◀─────────│  - Protocol Adapter  │◀─────────│  Agent   │
@@ -22,11 +22,6 @@
 //! | `mqtt` | ❌ | MQTT broker integration |
 //! | `websocket` | ❌ | WebSocket client integration |
 //! | `http` | ❌ | HTTP/REST API integration |
-//! | `modbus` | ❌ | Modbus TCP integration |
-//! | `hass` | ❌ | Home Assistant integration (HTTP+WebSocket) |
-//! | `hass-mqtt` | ❌ | Home Assistant via MQTT Discovery |
-//! | `tasmota` | ❌ | Tasmota device integration |
-//! | `zigbee` | ❌ | Zigbee2MQTT integration |
 //! | `all` | ❌ | All integrations |
 //!
 //! ## Example

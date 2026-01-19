@@ -23,11 +23,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ChevronLeft, RefreshCw, Activity, Send, Clock, Server, Info } from "lucide-react"
+import { ChevronLeft, RefreshCw, Activity, Send, Clock, Server } from "lucide-react"
 import { toast } from "@/components/ui/use-toast"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Device, DeviceType, CommandDefinition, TelemetryDataResponse, CommandHistoryResponse } from "@/types"
-import { formatMetricValue, isBase64Image } from "./utils"
+import { isBase64Image } from "./utils"
 import { EmptyStateInline } from "@/components/shared"
 
 interface DeviceDetailProps {
@@ -42,6 +42,57 @@ interface DeviceDetailProps {
   onMetricClick: (metricName: string) => void
   onMetricBack: () => void
   onSendCommand: (commandName: string, params: string) => void
+}
+
+// Expanded metric with nested path support
+interface ExpandedMetric {
+  path: string[]
+  displayName: string
+  fullName: string
+  value: unknown
+  isNested: boolean
+  depth: number
+}
+
+/**
+ * Expand nested objects in current_values to show all levels
+ * For example: { "environment": { "temperature": 25, "humidity": 60 } }
+ * becomes: [
+ *   { path: ["environment", "temperature"], displayName: "environment.temperature", value: 25 },
+ *   { path: ["environment", "humidity"], displayName: "environment.humidity", value: 60 }
+ * ]
+ */
+function expandNestedValues(
+  values: Record<string, unknown>,
+  parentPath: string[] = [],
+  parentDisplayName: string = "",
+  depth: number = 0
+): ExpandedMetric[] {
+  const result: ExpandedMetric[] = []
+
+  for (const [key, value] of Object.entries(values)) {
+    const currentPath = [...parentPath, key]
+    const displayName = parentDisplayName ? `${parentDisplayName}.${key}` : key
+    const fullName = currentPath.join('.')
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      // Nested object - expand it
+      const nested = expandNestedValues(value as Record<string, unknown>, currentPath, displayName, depth + 1)
+      result.push(...nested)
+    } else {
+      // Leaf value - add to results
+      result.push({
+        path: currentPath,
+        displayName,
+        fullName,
+        value,
+        isNested: parentPath.length > 0,
+        depth,
+      })
+    }
+  }
+
+  return result
 }
 
 // Render metric value - returns either a text string or an img element (truncated for table)
@@ -156,17 +207,36 @@ export function DeviceDetail({
     setDialogParams(prev => ({ ...prev, [name]: value }))
   }
 
-  // Get HASS state topics from config (for HASS discovered devices)
-  const hassStateTopics = device?.config
-    ? Object.entries(device.config)
-        .filter(([key]) => key.startsWith('hass_state:'))
-        .map(([key, value]) => ({ metric: key.replace('hass_state:', ''), topic: value }))
-    : []
-
   const getMetricDisplayName = (metricName: string): string => {
-    // Use simplified format (direct metrics array)
-    const metricDef = deviceType?.metrics?.find(m => m.name === metricName)
-    return metricDef?.display_name || metricName
+    // First try exact match
+    let metricDef = deviceType?.metrics?.find(m => m.name === metricName)
+    if (metricDef) {
+      return metricDef.display_name || metricName
+    }
+
+    // For nested paths like "environment.temperature", try matching parts
+    if (metricName.includes('.')) {
+      const parts = metricName.split('.')
+      // Try matching the full path
+      metricDef = deviceType?.metrics?.find(m => m.name === metricName)
+      if (metricDef) {
+        return metricDef.display_name || metricName
+      }
+      // Try matching the last part with its parent prefix
+      const lastPart = parts[parts.length - 1]!
+      const parentPrefix = parts.slice(0, -1).join('.')
+      metricDef = deviceType?.metrics?.find(m => m.name === lastPart && m.display_name?.includes(parentPrefix))
+      if (metricDef) {
+        return metricDef.display_name || metricName
+      }
+      // Build display name from parts
+      return metricName.split('.').map(part => {
+        const def = deviceType?.metrics?.find(m => m.name === part)
+        return def?.display_name || part
+      }).join(' → ')
+    }
+
+    return metricName
   }
 
   const handleImageClick = (dataUrl: string) => {
@@ -314,56 +384,9 @@ export function DeviceDetail({
                           </div>
                         </>
                       )}
-                      {/* Modbus Connection Info */}
-                      {device.connection_config?.host && device.adapter_type === 'modbus' && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Modbus Host</p>
-                          <p className="text-sm font-mono text-xs">{device.connection_config.host}:{device.connection_config.port || 502}</p>
-                        </div>
-                      )}
-                      {/* HASS Connection Info */}
-                      {device.connection_config?.entity_id && device.adapter_type === 'hass' && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">HASS Entity ID</p>
-                          <p className="text-sm font-mono text-xs">{device.connection_config.entity_id}</p>
-                        </div>
-                      )}
                     </div>
                   </CardContent>
                 </Card>
-
-                {/* HASS Device State Topics */}
-                {hassStateTopics.length > 0 && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Info className="h-4 w-4" />
-                        {t('devices:detail.hassSubscription')}
-                      </CardTitle>
-                      <CardDescription className="text-xs">
-                        {t('devices:detail.hassDescription')}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>{t('devices:detail.hassTable.metric')}</TableHead>
-                            <TableHead>{t('devices:detail.hassTable.topic')}</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {hassStateTopics.map(({ metric, topic }) => (
-                            <TableRow key={metric}>
-                              <TableCell>{metric}</TableCell>
-                              <TableCell className="font-mono text-xs">{topic}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                )}
               </div>
             </TabsContent>
 
@@ -419,40 +442,120 @@ export function DeviceDetail({
                   )}
                 </div>
               ) : deviceType?.metrics && deviceType.metrics.length > 0 ? (
-                // Defined metrics - show card grid
+                // Defined metrics - show card grid with expanded nested values
                 device.current_values && Object.keys(device.current_values).length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Object.entries(device.current_values).map(([metricName, value]) => {
-                      // Use simplified format
-                      const metricDef = deviceType?.metrics?.find(m => m.name === metricName)
-                      const displayName = metricDef?.display_name || metricName
-                      const unit = metricDef?.unit || ""
-                      const dataType = metricDef?.data_type || ""
+                  (() => {
+                    // Expand nested values to show all levels
+                    const expandedMetrics = expandNestedValues(device.current_values)
 
+                    if (expandedMetrics.length === 0) {
                       return (
-                        <Card
-                          key={metricName}
-                          className="cursor-pointer transition-all hover:border-primary/50"
-                          onClick={() => onMetricClick(metricName)}
-                        >
-                          <CardHeader className="pb-3">
-                            <CardDescription className="text-xs truncate" title={displayName}>
-                              {displayName}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="text-2xl font-bold truncate" title={formatMetricValue(value, dataType, t)}>
-                              {renderMetricValue(value, dataType, handleImageClick, t)}
-                              {unit && <span className="text-base font-normal text-muted-foreground ml-1">{unit}</span>}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1 truncate" title={metricName}>
-                              {metricName}
-                            </div>
+                        <Card>
+                          <CardContent className="flex items-center justify-center py-12">
+                            <p className="text-muted-foreground">{t('devices:detail.noMetrics')}</p>
                           </CardContent>
                         </Card>
                       )
-                    })}
-                  </div>
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        {/* Group by top-level metric for better organization */}
+                        {(() => {
+                          const grouped = new Map<string, ExpandedMetric[]>()
+                          expandedMetrics.forEach(m => {
+                            const topLevel = m.path[0]!
+                            if (!grouped.has(topLevel)) {
+                              grouped.set(topLevel, [])
+                            }
+                            grouped.get(topLevel)!.push(m)
+                          })
+
+                          return Array.from(grouped.entries()).map(([topLevel, subMetrics]) => {
+                            const topLevelValue = device.current_values?.[topLevel]
+                            const isNestedGroup = subMetrics.some(m => m.isNested)
+                            const metricDef = deviceType?.metrics?.find(m => m.name === topLevel)
+                            const groupDisplayName = metricDef?.display_name || topLevel
+
+                            return (
+                              <div key={topLevel}>
+                                {isNestedGroup ? (
+                                  // Show nested metrics as a group
+                                  <Card>
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="text-base flex items-center gap-2">
+                                        <span>{groupDisplayName}</span>
+                                        <Badge variant="outline" className="text-xs">
+                                          {subMetrics.length} {t('devices:detail.fields') || 'fields'}
+                                        </Badge>
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {subMetrics.map((metric) => {
+                                          const subMetricDef = deviceType?.metrics?.find(m => m.name === metric.fullName)
+                                          const displayName = subMetricDef?.display_name || metric.displayName
+                                          const unit = subMetricDef?.unit || ""
+                                          const dataType = subMetricDef?.data_type || ""
+
+                                          return (
+                                            <Card
+                                              key={metric.fullName}
+                                              className={`cursor-pointer transition-all hover:border-primary/50 ${
+                                                metric.isNested ? "border-l-2 border-l-primary/30" : ""
+                                              }`}
+                                              onClick={() => onMetricClick(metric.fullName)}
+                                            >
+                                              <CardContent className="p-3">
+                                                <div className="space-y-1">
+                                                  <p className="text-xs text-muted-foreground truncate" title={displayName}>
+                                                    {displayName}
+                                                  </p>
+                                                  <p className="text-lg font-semibold truncate">
+                                                    {renderMetricValue(metric.value, dataType, handleImageClick, t)}
+                                                    {unit && <span className="text-sm font-normal text-muted-foreground ml-1">{unit}</span>}
+                                                  </p>
+                                                  <p className="text-xs text-muted-foreground font-mono truncate" title={metric.fullName}>
+                                                    {metric.fullName}
+                                                  </p>
+                                                </div>
+                                              </CardContent>
+                                            </Card>
+                                          )
+                                        })}
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                ) : (
+                                  // Show single metric card
+                                  <Card
+                                    key={topLevel}
+                                    className="cursor-pointer transition-all hover:border-primary/50"
+                                    onClick={() => onMetricClick(topLevel)}
+                                  >
+                                    <CardHeader className="pb-3">
+                                      <CardDescription className="text-xs truncate" title={groupDisplayName}>
+                                        {groupDisplayName}
+                                      </CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                      <div className="text-2xl font-bold truncate">
+                                        {renderMetricValue(topLevelValue, metricDef?.data_type, handleImageClick, t)}
+                                        {metricDef?.unit && <span className="text-base font-normal text-muted-foreground ml-1">{metricDef.unit}</span>}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground mt-1 truncate" title={topLevel}>
+                                        {topLevel}
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                )}
+                              </div>
+                            )
+                          })
+                        })()}
+                      </div>
+                    )
+                  })()
                 ) : (
                   <Card>
                     <CardContent className="flex items-center justify-center py-12">

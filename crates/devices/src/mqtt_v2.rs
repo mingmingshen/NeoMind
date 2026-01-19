@@ -11,22 +11,28 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::mdl::{
-    Command, ConnectionStatus, DeviceCapability, DeviceError, DeviceId, DeviceInfo, DeviceState,
-    DeviceType as DeviceCategory, MetricValue,
+    ConnectionStatus, DeviceError, DeviceId, MetricValue,
 };
 use super::mdl_format::{DeviceInstance, DeviceTypeDefinition, MdlRegistry, MdlStorage};
 use super::telemetry::{DataPoint, TimeSeriesStorage};
 use edge_ai_core::EventBus;
 
-use super::hass_discovery::{
-    discovery_subscription_patterns, is_discovery_topic, parse_discovery_message,
-};
+// HASS discovery functionality has been removed - providing stubs
+// TODO: Re-implement HASS discovery if needed
+fn discovery_subscription_patterns(_components: Option<Vec<String>>) -> Vec<String> {
+    vec![]
+}
+fn is_discovery_topic(topic: &str) -> bool {
+    topic.starts_with("homeassistant/") && topic.contains("/+/config/")
+}
+fn parse_discovery_message(_topic: &str, _payload: &[u8]) -> Result<serde_json::Value, String> {
+    Err("HASS discovery deprecated".to_string())
+}
 
 /// Simple discovery announcement for internal NeoTalk discovery
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,8 +86,8 @@ impl DiscoveredHassDevice {
         // Try to get device identifier from device_info
         if let Some(identifiers) = self.device_info.get("identifiers") {
             // Parse identifiers (stored as JSON array string)
-            if let Ok(parsed) = serde_json::from_str::<Vec<String>>(identifiers) {
-                if let Some(first_id) = parsed.first() {
+            if let Ok(parsed) = serde_json::from_str::<Vec<String>>(identifiers)
+                && let Some(first_id) = parsed.first() {
                     tracing::debug!(
                         "Entity {} using device.identifiers: {}",
                         self.entity_id,
@@ -89,7 +95,6 @@ impl DiscoveredHassDevice {
                     );
                     return format!("hass_{}", first_id);
                 }
-            }
         }
 
         // Derive from topic: homeassistant/sensor/hass-simulator-001/temperature/config
@@ -412,9 +417,7 @@ impl MqttDeviceManager {
 
         // Use configured storage dir or default to "data"
         let storage_dir = self
-            .storage_dir
-            .as_ref()
-            .map(|s| s.as_str())
+            .storage_dir.as_deref()
             .unwrap_or("data");
         let db_path = std::path::Path::new(storage_dir).join("devices.redb");
 
@@ -480,8 +483,8 @@ impl MqttDeviceManager {
 
                 // Restore current_values from time-series storage
                 // Load the latest value for each metric defined in the device type
-                if let Some(ts) = &ts_storage {
-                    if let Some(dt) = self.mdl_registry.get(&device_type).await {
+                if let Some(ts) = &ts_storage
+                    && let Some(dt) = self.mdl_registry.get(&device_type).await {
                         let mut restored_values = std::collections::HashMap::new();
                         for metric in &dt.uplink.metrics {
                             if let Ok(Some(latest)) = ts.latest(&device_id, &metric.name).await {
@@ -489,7 +492,7 @@ impl MqttDeviceManager {
                                     latest.timestamp,
                                     0,
                                 )
-                                .unwrap_or_else(|| chrono::Utc::now());
+                                .unwrap_or_else(chrono::Utc::now);
                                 restored_values
                                     .insert(metric.name.clone(), (latest.value, timestamp));
                             }
@@ -504,11 +507,10 @@ impl MqttDeviceManager {
                             );
                         }
                     }
-                }
 
                 // Also update metric cache
                 let mut cache = self.metric_cache.write().await;
-                let mut cache_entry = cache.entry(device_id.clone()).or_default();
+                let cache_entry = cache.entry(device_id.clone()).or_default();
                 for (metric_name, (value, timestamp)) in &updated_instance.current_values {
                     cache_entry.insert(metric_name.clone(), (value.clone(), *timestamp));
                 }
@@ -604,7 +606,7 @@ impl MqttDeviceManager {
         // Subscribe to HASS discovery topics if enabled
         if saved_enabled {
             // Subscribe to both 4-part and 5-part topic formats
-            let hass_topics = super::hass_discovery::discovery_subscription_patterns(None);
+            let hass_topics = discovery_subscription_patterns(None);
             for hass_topic in &hass_topics {
                 client
                     .subscribe(hass_topic, rumqttc::QoS::AtLeastOnce)
@@ -847,11 +849,10 @@ impl MqttDeviceManager {
                 device_info.insert("discovery_topic".to_string(), discovery_topic.clone());
                 if let Some(ref device) = msg.config.device {
                     // Store identifiers as JSON array string for grouping
-                    if !device.identifiers.is_empty() {
-                        if let Ok(identifiers_json) = serde_json::to_string(&device.identifiers) {
+                    if !device.identifiers.is_empty()
+                        && let Ok(identifiers_json) = serde_json::to_string(&device.identifiers) {
                             device_info.insert("identifiers".to_string(), identifiers_json);
                         }
-                    }
                     if let Some(ref name) = device.name {
                         device_info.insert("device_name".to_string(), name.clone());
                     }
@@ -1090,11 +1091,11 @@ impl MqttDeviceManager {
         let value = match metric_def.data_type {
             super::mdl::MetricDataType::Float => payload_str
                 .parse::<f64>()
-                .map(|v| super::mdl::MetricValue::Float(v))
+                .map(super::mdl::MetricValue::Float)
                 .unwrap_or_else(|_| super::mdl::MetricValue::String(payload_str.to_string())),
             super::mdl::MetricDataType::Integer => payload_str
                 .parse::<i64>()
-                .map(|v| super::mdl::MetricValue::Integer(v))
+                .map(super::mdl::MetricValue::Integer)
                 .unwrap_or_else(|_| super::mdl::MetricValue::String(payload_str.to_string())),
             super::mdl::MetricDataType::Boolean => {
                 let bool_val = payload_str.eq_ignore_ascii_case("true")
@@ -1273,7 +1274,7 @@ impl MqttDeviceManager {
 
         let device_type_name = parts[1].to_string();
         let device_id = parts[2].to_string();
-        let direction = parts.get(3).map(|s| *s);
+        let direction = parts.get(3).copied();
 
         // Get MDL definition directly from device_type in topic
         let device_type = match mdl_registry.get(&device_type_name).await {
@@ -1348,8 +1349,8 @@ impl MqttDeviceManager {
 
                 // Persist newly registered device to storage
                 if is_new_device {
-                    if let Some(store) = storage.read().await.as_ref() {
-                        if let Some(device) = devices.read().await.get(&device_id).cloned() {
+                    if let Some(store) = storage.read().await.as_ref()
+                        && let Some(device) = devices.read().await.get(&device_id).cloned() {
                             if let Err(e) = store.save_device_instance(&device).await {
                                 tracing::warn!(
                                     "Failed to persist auto-registered device {}: {}",
@@ -1363,7 +1364,6 @@ impl MqttDeviceManager {
                                 );
                             }
                         }
-                    }
 
                     // Publish DeviceOnline event for new device
                     if let Some(bus) = event_bus {
@@ -1842,11 +1842,10 @@ impl MqttDeviceManager {
     async fn save_hass_discovery_state(&self, enabled: bool) {
         if let Some(ref dir) = self.storage_dir {
             let settings_path = std::path::Path::new(dir).join("settings.redb");
-            if let Ok(store) = edge_ai_storage::SettingsStore::open(&settings_path) {
-                if let Err(e) = store.save_hass_discovery_enabled(enabled) {
+            if let Ok(store) = edge_ai_storage::SettingsStore::open(&settings_path)
+                && let Err(e) = store.save_hass_discovery_enabled(enabled) {
                     tracing::warn!("Failed to save HASS discovery state: {:?}", e);
                 }
-            }
         }
     }
 
@@ -1854,11 +1853,10 @@ impl MqttDeviceManager {
     async fn load_hass_discovery_state(&self) -> bool {
         if let Some(ref dir) = self.storage_dir {
             let settings_path = std::path::Path::new(dir).join("settings.redb");
-            if let Ok(store) = edge_ai_storage::SettingsStore::open(&settings_path) {
-                if let Ok(enabled) = store.load_hass_discovery_enabled() {
+            if let Ok(store) = edge_ai_storage::SettingsStore::open(&settings_path)
+                && let Ok(enabled) = store.load_hass_discovery_enabled() {
                     return enabled;
                 }
-            }
         }
         false
     }

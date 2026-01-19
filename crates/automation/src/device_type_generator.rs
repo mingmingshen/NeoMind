@@ -6,7 +6,6 @@
 use std::sync::Arc;
 
 use crate::discovery::*;
-use crate::types::*;
 use crate::error::{AutomationError, Result};
 use edge_ai_core::{LlmRuntime, Message, GenerationParams};
 use edge_ai_core::llm::backend::LlmInput;
@@ -223,7 +222,7 @@ Respond with a JSON object:
     async fn infer_commands(
         &self,
         paths: &[DiscoveredPath],
-        context: &InferenceContext,
+        _context: &InferenceContext,
     ) -> Result<Vec<DiscoveredCommand>> {
         let mut commands = Vec::new();
 
@@ -357,11 +356,8 @@ Respond with a JSON object:
         }
 
         // Check for required fields based on category
-        match device_type.category {
-            DeviceCategory::Unknown => {
-                warnings.push("Device category could not be determined.".to_string());
-            }
-            _ => {}
+        if device_type.category == DeviceCategory::Unknown {
+            warnings.push("Device category could not be determined.".to_string());
         }
 
         // Check for duplicate metric names

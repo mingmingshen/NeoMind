@@ -811,7 +811,7 @@ impl TransformAutomation {
 
     /// Check if this is a JS-based (AI-native) transform
     pub fn is_js_based(&self) -> bool {
-        self.js_code.is_some() && self.js_code.as_ref().map_or(false, |c| !c.is_empty())
+        self.js_code.is_some() && self.js_code.as_ref().is_some_and(|c| !c.is_empty())
     }
 
     /// Check if this transform applies to the given device

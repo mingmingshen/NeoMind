@@ -224,6 +224,7 @@ impl Default for ToolExecutionHistory {
 
 /// Statistics about tool executions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ToolExecutionStats {
     /// Total number of executions
     pub total_count: usize,
@@ -237,15 +238,66 @@ pub struct ToolExecutionStats {
     pub avg_duration_ms: u64,
 }
 
-impl Default for ToolExecutionStats {
+
+
+/// Configuration for tool execution retry behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolRetryConfig {
+    /// Maximum number of retry attempts
+    pub max_retries: usize,
+    /// Initial retry delay in milliseconds
+    pub initial_delay_ms: u64,
+    /// Whether to use exponential backoff
+    pub exponential_backoff: bool,
+    /// Backoff multiplier (used when exponential_backoff is true)
+    pub backoff_multiplier: f32,
+    /// Maximum retry delay in milliseconds
+    pub max_delay_ms: u64,
+    /// Error patterns that should NOT be retried
+    pub non_retryable_patterns: Vec<String>,
+}
+
+impl Default for ToolRetryConfig {
     fn default() -> Self {
         Self {
-            total_count: 0,
-            success_count: 0,
-            failure_count: 0,
-            tool_counts: HashMap::new(),
-            avg_duration_ms: 0,
+            max_retries: 3,
+            initial_delay_ms: 100,
+            exponential_backoff: true,
+            backoff_multiplier: 2.0,
+            max_delay_ms: 5000,
+            non_retryable_patterns: vec![
+                "not found".to_string(),
+                "invalid".to_string(),
+                "unauthorized".to_string(),
+                "permission".to_string(),
+            ],
         }
+    }
+}
+
+impl ToolRetryConfig {
+    /// Check if an error should be retried based on the error message.
+    pub fn should_retry(&self, error: &ToolError) -> bool {
+        let error_msg = error.to_string().to_lowercase();
+
+        // Check if error matches any non-retryable pattern
+        for pattern in &self.non_retryable_patterns {
+            if error_msg.contains(&pattern.to_lowercase()) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Calculate delay for a given retry attempt (0-indexed).
+    pub fn calculate_delay(&self, attempt: usize) -> u64 {
+        if !self.exponential_backoff {
+            return self.initial_delay_ms;
+        }
+
+        let delay = self.initial_delay_ms * self.backoff_multiplier.powi(attempt as i32) as u64;
+        delay.min(self.max_delay_ms)
     }
 }
 
@@ -255,6 +307,7 @@ impl Default for ToolExecutionStats {
 /// - Event publishing for tool executions
 /// - Execution history tracking
 /// - Error handling with event publishing
+/// - Configurable retry mechanism
 #[derive(Clone)]
 pub struct EventIntegratedToolRegistry {
     /// Underlying tool registry
@@ -263,6 +316,8 @@ pub struct EventIntegratedToolRegistry {
     event_bus: Arc<EventBus>,
     /// Execution history
     history: ToolExecutionHistory,
+    /// Retry configuration
+    retry_config: Arc<tokio::sync::RwLock<ToolRetryConfig>>,
 }
 
 impl EventIntegratedToolRegistry {
@@ -272,6 +327,21 @@ impl EventIntegratedToolRegistry {
             inner: Arc::new(registry),
             event_bus: Arc::new(event_bus),
             history: ToolExecutionHistory::new(),
+            retry_config: Arc::new(tokio::sync::RwLock::new(ToolRetryConfig::default())),
+        }
+    }
+
+    /// Create with custom retry configuration.
+    pub fn with_retry_config(
+        registry: ToolRegistry,
+        event_bus: EventBus,
+        retry_config: ToolRetryConfig,
+    ) -> Self {
+        Self {
+            inner: Arc::new(registry),
+            event_bus: Arc::new(event_bus),
+            history: ToolExecutionHistory::new(),
+            retry_config: Arc::new(tokio::sync::RwLock::new(retry_config)),
         }
     }
 
@@ -285,6 +355,7 @@ impl EventIntegratedToolRegistry {
             inner: Arc::new(registry),
             event_bus: Arc::new(event_bus),
             history: ToolExecutionHistory::with_max_size(max_history_size),
+            retry_config: Arc::new(tokio::sync::RwLock::new(ToolRetryConfig::default())),
         }
     }
 
@@ -448,6 +519,87 @@ impl EventIntegratedToolRegistry {
         }
 
         result
+    }
+
+    /// Get the retry configuration.
+    pub async fn get_retry_config(&self) -> ToolRetryConfig {
+        self.retry_config.read().await.clone()
+    }
+
+    /// Set the retry configuration.
+    pub async fn set_retry_config(&self, config: ToolRetryConfig) {
+        *self.retry_config.write().await = config;
+    }
+
+    /// Execute a tool with automatic retry on failure.
+    ///
+    /// This method will retry the tool execution if:
+    /// - The execution fails
+    /// - The error is retryable (not in non_retryable_patterns)
+    /// - The retry limit has not been reached
+    ///
+    /// Returns the final result (success or last error).
+    pub async fn execute_with_retry(
+        &self,
+        name: &str,
+        args: Value,
+    ) -> Result<ToolOutput, ToolError> {
+        let retry_config = self.retry_config.read().await.clone();
+
+        let mut last_error = None;
+        let mut total_duration_ms = 0u64;
+
+        for attempt in 0..=retry_config.max_retries {
+            // Execute the tool
+            let result = self.execute(name, args.clone()).await;
+
+            match &result {
+                Ok(_output) => {
+                    // Success - if we retried, log it
+                    if attempt > 0 {
+                        tracing::info!(
+                            "Tool '{}' succeeded after {} retries (took {}ms)",
+                            name,
+                            attempt,
+                            total_duration_ms
+                        );
+                    }
+                    return result;
+                }
+                Err(error) => {
+                    last_error = Some(error.clone());
+
+                    // Check if we should retry
+                    if attempt >= retry_config.max_retries || !retry_config.should_retry(error) {
+                        tracing::warn!(
+                            "Tool '{}' failed after {} attempts: {}",
+                            name,
+                            attempt + 1,
+                            error
+                        );
+                        return Err(error.clone());
+                    }
+
+                    // Calculate delay and wait
+                    let delay_ms = retry_config.calculate_delay(attempt);
+                    tracing::info!(
+                        "Tool '{}' failed (attempt {}), retrying in {}ms: {}",
+                        name,
+                        attempt + 1,
+                        delay_ms,
+                        error
+                    );
+
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    total_duration_ms += delay_ms;
+                }
+            }
+        }
+
+        // Should not reach here, but handle the case
+        Err(last_error.unwrap_or(ToolError::Execution(
+            "Unknown error".to_string(),
+        )))
     }
 
     /// Publish tool execution start event.
@@ -657,38 +809,6 @@ impl ToolErrorExt for ToolError {
 /// },
 /// ```
 
-// Temporary wrapper events for publishing to event bus
-// These will be replaced once the core events are added
-#[allow(dead_code)]
-enum ToolEvent {
-    ExecutionStart {
-        tool_name: String,
-        arguments: Value,
-        session_id: Option<String>,
-        timestamp: i64,
-    },
-    ExecutionSuccess {
-        tool_name: String,
-        arguments: Value,
-        result: Value,
-        duration_ms: u64,
-        session_id: Option<String>,
-        timestamp: i64,
-    },
-    ExecutionFailure {
-        tool_name: String,
-        arguments: Value,
-        error: String,
-        error_type: String,
-        duration_ms: u64,
-        session_id: Option<String>,
-        timestamp: i64,
-    },
-}
-
-// We need to add these to the NeoTalkEvent enum in core/src/event.rs
-// For now, let's update that file to include these events
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -807,7 +927,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_integrated_registry() {
-        let registry = ToolRegistryBuilder::new().with_standard_tools().build();
+        let registry = ToolRegistryBuilder::new()
+            .with_query_data_tool()
+            .with_control_device_tool()
+            .with_list_devices_tool()
+            .with_create_rule_tool()
+            .with_list_rules_tool()
+            .build();
 
         let event_bus = EventBus::new();
         let integrated = EventIntegratedToolRegistry::new(registry, event_bus);
@@ -819,7 +945,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_integrated_registry_execute() {
-        let registry = ToolRegistryBuilder::new().with_standard_tools().build();
+        let registry = ToolRegistryBuilder::new()
+            .with_query_data_tool()
+            .with_control_device_tool()
+            .with_list_devices_tool()
+            .with_create_rule_tool()
+            .with_list_rules_tool()
+            .build();
 
         let event_bus = EventBus::new();
         let integrated = EventIntegratedToolRegistry::new(registry, event_bus);

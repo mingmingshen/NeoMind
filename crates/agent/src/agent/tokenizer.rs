@@ -81,7 +81,7 @@ pub fn select_messages_within_token_limit(
     let mut current_tokens = 0;
 
     // Always include at least min_messages most recent messages
-    let min_from_end = messages.len().saturating_sub(min_messages);
+    let _min_from_end = messages.len().saturating_sub(min_messages);
 
     // Process in reverse (most recent first)
     for (i, msg) in messages.iter().rev().enumerate() {

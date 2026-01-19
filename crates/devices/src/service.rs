@@ -9,9 +9,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio::time::{interval, Duration};
 
 use super::adapter::{ConnectionStatus, DeviceAdapter};
-use super::mdl::{Command as MdlCommand, DeviceError, MetricValue};
+use super::mdl::{DeviceError, MetricValue};
 use super::registry::{DeviceConfig, DeviceRegistry, DeviceTypeTemplate};
 use super::telemetry::TimeSeriesStorage;
 use edge_ai_core::EventBus;
@@ -21,7 +22,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use edge_ai_storage::device_registry::{
     CommandHistoryRecord as StorageCommandRecord,
     CommandStatus as StorageCommandStatus,
-    DeviceRegistryStore,
 };
 
 /// Command history record
@@ -121,6 +121,40 @@ fn command_from_storage(record: StorageCommandRecord) -> CommandHistoryRecord {
     }
 }
 
+/// Adapter information for API responses.
+///
+/// This provides a simplified view of adapter state without the plugin system overhead.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdapterInfo {
+    /// Adapter ID
+    pub id: String,
+    /// Adapter name
+    pub name: String,
+    /// Adapter type (mqtt, http, webhook, etc.)
+    pub adapter_type: String,
+    /// Whether the adapter is running
+    pub running: bool,
+    /// Number of devices managed by this adapter
+    pub device_count: usize,
+    /// Connection status
+    pub status: String,
+    /// Last activity timestamp
+    pub last_activity: i64,
+}
+
+/// Aggregated adapter statistics.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AdapterStats {
+    /// Total number of adapters
+    pub total_adapters: usize,
+    /// Number of running adapters
+    pub running_adapters: usize,
+    /// Total number of devices across all adapters
+    pub total_devices: usize,
+    /// Per-adapter information
+    pub adapters: Vec<AdapterInfo>,
+}
+
 /// Device status information
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceStatus {
@@ -139,6 +173,50 @@ impl Default for DeviceStatus {
             last_seen: chrono::Utc::now().timestamp(),
             adapter_id: None,
         }
+    }
+}
+
+/// Heartbeat configuration for device health monitoring
+#[derive(Debug, Clone)]
+pub struct HeartbeatConfig {
+    /// Heartbeat interval in seconds (default: 60)
+    pub heartbeat_interval: u64,
+    /// Device offline timeout in seconds (default: 300 = 5 minutes)
+    pub offline_timeout: u64,
+    /// Whether to automatically mark stale devices as offline
+    pub auto_mark_offline: bool,
+}
+
+impl Default for HeartbeatConfig {
+    fn default() -> Self {
+        Self {
+            heartbeat_interval: 60,
+            offline_timeout: 300,
+            auto_mark_offline: true,
+        }
+    }
+}
+
+impl HeartbeatConfig {
+    /// Create a new heartbeat configuration
+    pub fn new(interval_secs: u64, timeout_secs: u64) -> Self {
+        Self {
+            heartbeat_interval: interval_secs,
+            offline_timeout: timeout_secs,
+            auto_mark_offline: true,
+        }
+    }
+
+    /// Get the interval as Duration
+    pub fn interval_duration(&self) -> Duration {
+        Duration::from_secs(self.heartbeat_interval)
+    }
+
+    /// Check if a device is stale based on last_seen timestamp
+    pub fn is_stale(&self, last_seen: i64) -> bool {
+        let now = chrono::Utc::now().timestamp();
+        let elapsed = (now - last_seen) as u64;
+        elapsed > self.offline_timeout
     }
 }
 
@@ -191,6 +269,10 @@ pub struct DeviceService {
     command_id_counter: Arc<AtomicU64>,
     /// Maximum history entries per device
     max_history_entries: usize,
+    /// Heartbeat configuration
+    heartbeat_config: HeartbeatConfig,
+    /// Whether heartbeat monitoring is running
+    heartbeat_running: Arc<RwLock<bool>>,
 }
 
 impl DeviceService {
@@ -205,7 +287,39 @@ impl DeviceService {
             command_history: Arc::new(RwLock::new(HashMap::new())),
             command_id_counter: Arc::new(AtomicU64::new(1)),
             max_history_entries: 100, // Keep last 100 commands per device
+            heartbeat_config: HeartbeatConfig::default(),
+            heartbeat_running: Arc::new(RwLock::new(false)),
         }
+    }
+
+    /// Create a new device service with custom heartbeat configuration
+    pub fn with_heartbeat(
+        registry: Arc<DeviceRegistry>,
+        event_bus: EventBus,
+        heartbeat_config: HeartbeatConfig,
+    ) -> Self {
+        Self {
+            registry,
+            event_bus,
+            telemetry_storage: Arc::new(RwLock::new(None)),
+            adapters: Arc::new(RwLock::new(HashMap::new())),
+            device_status: Arc::new(RwLock::new(HashMap::new())),
+            command_history: Arc::new(RwLock::new(HashMap::new())),
+            command_id_counter: Arc::new(AtomicU64::new(1)),
+            max_history_entries: 100,
+            heartbeat_config,
+            heartbeat_running: Arc::new(RwLock::new(false)),
+        }
+    }
+
+    /// Set heartbeat configuration
+    pub fn set_heartbeat_config(&mut self, config: HeartbeatConfig) {
+        self.heartbeat_config = config;
+    }
+
+    /// Get current heartbeat configuration
+    pub fn heartbeat_config(&self) -> &HeartbeatConfig {
+        &self.heartbeat_config
     }
 
     /// Start the device service - listens for device events and updates status
@@ -306,8 +420,146 @@ impl DeviceService {
                 }
             }
         });
+
+        // Start heartbeat monitoring task
+        self.start_heartbeat_monitor();
     }
 
+    /// Start the heartbeat monitoring task
+    fn start_heartbeat_monitor(&self) {
+        let device_status = self.device_status.clone();
+        let event_bus = self.event_bus.clone();
+        let heartbeat_config = self.heartbeat_config.clone();
+        let heartbeat_running = self.heartbeat_running.clone();
+
+        tokio::spawn(async move {
+            // Mark heartbeat as running
+            *heartbeat_running.write().await = true;
+
+            let mut timer = interval(heartbeat_config.interval_duration());
+            timer.tick().await; // Skip first tick
+
+            loop {
+                timer.tick().await;
+
+                let config = heartbeat_config.clone();
+                if !config.auto_mark_offline {
+                    continue;
+                }
+
+                let now = chrono::Utc::now().timestamp();
+                let mut stale_devices = Vec::new();
+
+                // Check for stale devices
+                {
+                    let status_map = device_status.read().await;
+                    for (device_id, status) in status_map.iter() {
+                        if status.is_connected() && config.is_stale(status.last_seen) {
+                            stale_devices.push((device_id.clone(), status.last_seen));
+                        }
+                    }
+                }
+
+                // Mark stale devices as offline
+                for (device_id, last_seen) in stale_devices {
+                    let elapsed = now - last_seen;
+                    tracing::info!(
+                        "Device {} is stale (last seen {}s ago), marking as offline",
+                        device_id, elapsed
+                    );
+
+                    // Update status
+                    {
+                        let mut status_map = device_status.write().await;
+                        if let Some(entry) = status_map.get_mut(&device_id) {
+                            entry.status = ConnectionStatus::Disconnected;
+                        }
+                    }
+
+                    // Publish offline event with reason
+                    event_bus.publish(
+                        edge_ai_core::NeoTalkEvent::DeviceOffline {
+                            device_id: device_id.clone(),
+                            reason: Some(format!("Heartbeat timeout: no activity for {} seconds", elapsed)),
+                            timestamp: now,
+                        }
+                    );
+                }
+            }
+        });
+    }
+
+    /// Check if a device is currently stale (hasn't been seen within timeout)
+    pub async fn is_device_stale(&self, device_id: &str) -> bool {
+        let status_map = self.device_status.read().await;
+        if let Some(status) = status_map.get(device_id) {
+            self.heartbeat_config.is_stale(status.last_seen)
+        } else {
+            // Unknown devices are considered stale
+            true
+        }
+    }
+
+    /// Get health status for all devices
+    pub async fn get_device_health(&self) -> HashMap<String, DeviceHealth> {
+        let status_map = self.device_status.read().await;
+        let now = chrono::Utc::now().timestamp();
+        let config = self.heartbeat_config.clone();
+
+        status_map
+            .iter()
+            .map(|(device_id, status)| {
+                let elapsed = now - status.last_seen;
+                let is_stale = config.is_stale(status.last_seen);
+                let health_score = if is_stale {
+                    0
+                } else if elapsed < config.offline_timeout as i64 / 3 {
+                    100
+                } else if elapsed < (config.offline_timeout as i64 * 2) / 3 {
+                    50
+                } else {
+                    25
+                };
+
+                (
+                    device_id.clone(),
+                    DeviceHealth {
+                        device_id: device_id.clone(),
+                        status: status.status,
+                        last_seen: status.last_seen,
+                        elapsed_since_last_seen: elapsed,
+                        is_stale,
+                        health_score,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    /// Stop the heartbeat monitoring
+    pub async fn stop_heartbeat(&self) {
+        *self.heartbeat_running.write().await = false;
+    }
+}
+
+/// Device health information
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeviceHealth {
+    /// Device ID
+    pub device_id: String,
+    /// Current connection status
+    pub status: ConnectionStatus,
+    /// Last activity timestamp
+    pub last_seen: i64,
+    /// Seconds since last activity
+    pub elapsed_since_last_seen: i64,
+    /// Whether device is considered stale
+    pub is_stale: bool,
+    /// Health score (0-100)
+    pub health_score: u8,
+}
+
+impl DeviceService {
     /// Set telemetry storage
     pub async fn set_telemetry_storage(&self, storage: Arc<TimeSeriesStorage>) {
         *self.telemetry_storage.write().await = Some(storage);
@@ -339,6 +591,98 @@ impl DeviceService {
     pub async fn get_adapter(&self, adapter_id: &str) -> Option<Arc<dyn DeviceAdapter>> {
         let adapters = self.adapters.read().await;
         adapters.get(adapter_id).cloned()
+    }
+
+    /// List all registered adapter IDs
+    pub async fn list_adapter_ids(&self) -> Vec<String> {
+        let adapters = self.adapters.read().await;
+        adapters.keys().cloned().collect()
+    }
+
+    /// Get adapter information for a specific adapter
+    pub async fn get_adapter_info(&self, adapter_id: &str) -> Option<AdapterInfo> {
+        let adapters = self.adapters.read().await;
+        if let Some(adapter) = adapters.get(adapter_id) {
+            Some(AdapterInfo {
+                id: adapter_id.to_string(),
+                name: adapter.name(),
+                adapter_type: adapter.adapter_type(),
+                running: adapter.is_running(),
+                device_count: adapter.device_count(),
+                status: format!("{:?}", adapter.connection_status()),
+                last_activity: chrono::Utc::now().timestamp(),
+            })
+        } else {
+            None
+        }
+    }
+
+    /// List all adapters with their information
+    pub async fn list_adapters(&self) -> Vec<AdapterInfo> {
+        let adapters = self.adapters.read().await;
+        adapters
+            .iter()
+            .map(|(id, adapter)| AdapterInfo {
+                id: id.clone(),
+                name: adapter.name(),
+                adapter_type: adapter.adapter_type(),
+                running: adapter.is_running(),
+                device_count: adapter.device_count(),
+                status: format!("{:?}", adapter.connection_status()),
+                last_activity: chrono::Utc::now().timestamp(),
+            })
+            .collect()
+    }
+
+    /// Get aggregated statistics for all adapters
+    pub async fn get_adapter_stats(&self) -> AdapterStats {
+        let adapters = self.list_adapters().await;
+        let total_adapters = adapters.len();
+        let running_adapters = adapters.iter().filter(|a| a.running).count();
+        let total_devices: usize = adapters.iter().map(|a| a.device_count).sum();
+
+        AdapterStats {
+            total_adapters,
+            running_adapters,
+            total_devices,
+            adapters,
+        }
+    }
+
+    /// Get device IDs managed by a specific adapter
+    pub async fn get_adapter_device_ids(&self, adapter_id: &str) -> Option<Vec<String>> {
+        let adapters = self.adapters.read().await;
+        adapters.get(adapter_id).map(|a| a.list_devices())
+    }
+
+    /// Start an adapter by ID
+    pub async fn start_adapter(&self, adapter_id: &str) -> Result<(), DeviceError> {
+        let adapters = self.adapters.read().await;
+        if let Some(adapter) = adapters.get(adapter_id) {
+            adapter.start().await.map_err(|e| {
+                DeviceError::Communication(format!("Failed to start adapter: {}", e))
+            })
+        } else {
+            Err(DeviceError::NotFoundStr(format!(
+                "Adapter not found: {}",
+                adapter_id
+            )))
+        }
+    }
+
+    /// Stop an adapter by ID
+    pub async fn stop_adapter(&self, adapter_id: &str) -> Result<(), DeviceError> {
+        let adapters = self.adapters.read().await;
+        if let Some(adapter) = adapters.get(adapter_id) {
+            adapter.stop().await.map_err(|e| {
+                DeviceError::Communication(format!("Failed to stop adapter: {}", e))
+            })
+        } else {
+            Err(DeviceError::NotFoundStr(format!(
+                "Adapter not found: {}",
+                adapter_id
+            )))
+        }
     }
 
     // ========== Template Management ==========
@@ -667,7 +1011,7 @@ impl DeviceService {
         end_time: Option<i64>,
     ) -> Result<Vec<(i64, MetricValue)>, DeviceError> {
         // Get device config and template
-        let (config, template) = self.get_device_with_template(device_id).await?;
+        let (_config, template) = self.get_device_with_template(device_id).await?;
 
         // Validate metric exists in template (skip validation in simple mode where no metrics are defined)
         if !template.metrics.is_empty() && !template.metrics.iter().any(|m| m.name == metric_name) {
@@ -738,8 +1082,8 @@ impl DeviceService {
             // Simple mode: no metrics defined - return all available metrics from storage
             // Query all metrics for this device from the last hour
             // Use telemetry_storage to list all metrics for this device
-            if let Some(storage) = self.telemetry_storage.read().await.as_ref() {
-                if let Ok(all_metrics) = storage.list_metrics(device_id).await {
+            if let Some(storage) = self.telemetry_storage.read().await.as_ref()
+                && let Ok(all_metrics) = storage.list_metrics(device_id).await {
                     for metric_name in all_metrics {
                         if !metric_name.is_empty() {
                             // Query latest value for this metric
@@ -759,7 +1103,6 @@ impl DeviceService {
                         }
                     }
                 }
-            }
         }
 
         Ok(result)
@@ -889,8 +1232,8 @@ impl DeviceService {
 
         {
             let mut history = self.command_history.write().await;
-            if let Some(device_commands) = history.get_mut(device_id) {
-                if let Some(record) = device_commands
+            if let Some(device_commands) = history.get_mut(device_id)
+                && let Some(record) = device_commands
                     .iter_mut()
                     .find(|r| r.command_id == command_id)
                 {
@@ -903,7 +1246,6 @@ impl DeviceService {
                     // Clone for storage after updating
                     record_for_storage = Some(record.clone());
                 }
-            }
         }
 
         // Persist to storage if record was found and updated
@@ -970,11 +1312,10 @@ impl DeviceService {
             let record = command_from_storage(storage_record);
 
             // Update command ID counter based on loaded records
-            if let Some(suffix) = record.command_id.strip_prefix("cmd_") {
-                if let Ok(num) = suffix.parse::<u64>() {
+            if let Some(suffix) = record.command_id.strip_prefix("cmd_")
+                && let Ok(num) = suffix.parse::<u64>() {
                     max_counter = max_counter.max(num);
                 }
-            }
 
             history
                 .entry(device_id)

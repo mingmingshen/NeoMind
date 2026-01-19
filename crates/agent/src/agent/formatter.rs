@@ -37,7 +37,7 @@ fn format_as_table(items: &[Value]) -> String {
     for item in items {
         if let Some(obj) = item.as_object() {
             for key in obj.keys() {
-                if !all_keys.contains(&key) {
+                if !all_keys.contains(key) {
                     all_keys.push(key.clone());
                 }
             }
@@ -65,7 +65,7 @@ fn format_as_table(items: &[Value]) -> String {
     for _ in &all_keys {
         table.push_str("--- | ");
     }
-    table.push_str("\n");
+    table.push('\n');
 
     // Build data rows
     for item in items {
@@ -74,11 +74,11 @@ fn format_as_table(items: &[Value]) -> String {
             for key in &all_keys {
                 let value = obj
                     .get(key)
-                    .map(|v| format_value(v))
+                    .map(format_value)
                     .unwrap_or_else(|| "-".to_string());
                 table.push_str(&format!("{} | ", truncate(&value, 30)));
             }
-            table.push_str("\n");
+            table.push('\n');
         }
     }
 
@@ -138,13 +138,11 @@ fn format_value(value: &Value) -> String {
         }
         Value::String(s) => {
             // Check if it's a timestamp
-            if let Ok(ts) = s.parse::<i64>() {
-                if ts > 1_000_000_000 && ts < 2_000_000_000 {
-                    if let Some(datetime) = timestamp_to_datetime(ts) {
+            if let Ok(ts) = s.parse::<i64>()
+                && ts > 1_000_000_000 && ts < 2_000_000_000
+                    && let Some(datetime) = timestamp_to_datetime(ts) {
                         return datetime;
                     }
-                }
-            }
             s.clone()
         }
         Value::Array(arr) if arr.len() == 1 => format_value(&arr[0]),
@@ -236,13 +234,13 @@ pub fn format_summary(tool_name: &str, result: &serde_json::Map<String, Value>) 
             format!("📜 找到 {} 条规则", count)
         }
         "control_device" => {
-            format!("✅ 设备控制命令已发送")
+            "✅ 设备控制命令已发送".to_string()
         }
         "create_rule" => {
-            format!("➕ 自动化规则已创建")
+            "➕ 自动化规则已创建".to_string()
         }
         "trigger_workflow" => {
-            format!("⚡ 工作流已触发")
+            "⚡ 工作流已触发".to_string()
         }
         "query_rule_history" => {
             let count = result.get("count").and_then(|v| v.as_i64()).unwrap_or(0);

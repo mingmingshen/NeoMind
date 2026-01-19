@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher"
+import { ThemeToggle } from "./ThemeToggle"
 import { MobileMenuTrigger } from "./mobile-menu"
 
 export function Header() {
@@ -37,6 +38,7 @@ export function Header() {
     decisions: t('navigation:decisions'),
     settings: t('navigation:settings'),
     plugins: t('navigation:plugins'),
+    events: t('navigation:events'),
   }
 
   const getUserInitials = (username: string) => {
@@ -54,6 +56,9 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Theme Toggle */}
+        <ThemeToggle />
+
         {/* Language Switcher */}
         <LanguageSwitcher />
 

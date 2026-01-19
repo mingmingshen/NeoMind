@@ -10,10 +10,6 @@ import type {
   AddDeviceRequest,
   MqttStatus,
   ExternalBroker,
-  HassDiscoveryStatus,
-  HassDiscoveryRequest,
-  HassDiscoveryResponse,
-  HassDiscoveredDevice,
   TelemetryDataResponse,
   TelemetrySummaryResponse,
   CommandHistoryResponse,
@@ -32,8 +28,6 @@ import type {
   WorkflowResources,
   WorkflowExport,
   WorkflowImportResult,
-  Scenario,
-  ScenarioTemplate,
   MemoryEntry,
   Plugin,
   PluginStatsDto,
@@ -55,6 +49,7 @@ import type {
   LlmBackendListResponse,
   BackendTypeDefinition,
   BackendTestResult,
+  AdapterType,
   AlertChannel,
   ChannelListResponse,
   ChannelStats,
@@ -291,6 +286,43 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+  generateDeviceTypeFromSamples: (req: {
+    device_id?: string
+    manufacturer?: string
+    samples: Array<{ timestamp: number; data: Record<string, unknown> }>
+    min_coverage?: number
+    min_confidence?: number
+  }) =>
+    fetchAPI<{
+      id: string
+      name: string
+      description: string
+      category: string
+      manufacturer: string
+      metrics: Array<{
+        name: string
+        path: string
+        display_name: string
+        description: string
+        data_type: string
+        semantic_type: string
+        unit: string | null
+        readable: boolean
+        writable: boolean
+        confidence: number
+      }>
+      commands: Array<{
+        name: string
+        display_name: string
+        description: string
+        parameters: Array<{ name: string; type: string; required: boolean }>
+        confidence: number
+      }>
+      confidence: number
+    }>('/device-types/generate-from-samples', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
 
   // Device Discovery
   discoverDevices: (host: string, ports?: number[], timeoutMs?: number) =>
@@ -386,7 +418,7 @@ export const api = {
   getLlmBackendStats: () =>
     fetchAPI<{ total_backends: number; active_backends: number; by_type: Record<string, number> }>('/llm-backends/stats'),
 
-  // ========== MQTT / Brokers / HASS Status API ==========
+  // ========== MQTT / Brokers API ==========
   // Used by UnifiedDeviceConnectionsTab to display connection status
 
   getMqttStatus: () => fetchAPI<{ status: MqttStatus }>('/mqtt/status'),
@@ -412,30 +444,10 @@ export const api = {
       method: 'POST',
     }),
 
-  getHassDiscoveryStatus: () => fetchAPI<HassDiscoveryStatus>('/devices/hass/status'),
-  startHassDiscovery: (req: HassDiscoveryRequest) =>
-    fetchAPI<HassDiscoveryResponse>('/devices/hass/discover', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  stopHassDiscovery: () =>
-    fetchAPI<{ stopped: boolean }>('/devices/hass/stop', {
-      method: 'POST',
-    }),
-  getHassDiscoveredDevices: () => fetchAPI<{ devices: HassDiscoveredDevice[]; count: number }>('/devices/hass/discovered'),
-  clearHassDiscoveredDevices: () =>
-    fetchAPI<{ cleared: boolean }>('/devices/hass/discovered', {
-      method: 'DELETE',
-    }),
-  registerAggregatedHassDevice: (deviceId: string) =>
-    fetchAPI<{ device_id: string; name?: string; entity_count: number; total_metrics: number; total_commands: number; errors?: string[] }>('/devices/hass/register', {
-      method: 'POST',
-      body: JSON.stringify({ device_id: deviceId }),
-    }),
-  unregisterHassDevice: (deviceId: string) =>
-    fetchAPI<{ device_id: string; unregistered: boolean }>(`/devices/hass/unregister/${encodeURIComponent(deviceId)}`, {
-      method: 'DELETE',
-    }),
+  // ========== Device Adapters Types API ==========
+  // Available adapter types (mqtt, http, webhook, etc.) - similar to LLM backend types
+  listAdapterTypes: () =>
+    fetchAPI<{ types: AdapterType[]; count: number }>('/device-adapters/types'),
 
   // Sessions
   // Note: Backend returns paginated response with data as array (auto-unwrapped by fetchAPI)
@@ -456,19 +468,6 @@ export const api = {
     fetchAPI<{ deleted: boolean; sessionId: string }>(`/sessions/${id}`, {
       method: 'DELETE',
     }),
-
-  // HASS Integration API (for REST API connection)
-  connectHass: (req: { url: string; token: string; verify_ssl?: boolean; auto_import?: boolean }) =>
-    fetchAPI<{ settings: { enabled: boolean; url: string; auto_import: boolean } }>('/integration/hass/connect', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  disconnectHass: () =>
-    fetchAPI<{ disconnected: boolean }>('/integration/hass/disconnect', {
-      method: 'DELETE',
-    }),
-  getHassStatus: () =>
-    fetchAPI<{ status: { enabled: boolean; connected: boolean; url: string; last_sync?: number; entity_count: number } }>('/integration/hass'),
 
   // Device Telemetry
   getDeviceTelemetry: (deviceId: string, metric?: string, start?: number, end?: number, limit?: number) =>
@@ -699,34 +698,146 @@ export const api = {
   getWorkflowResources: () =>
     fetchAPI<WorkflowResources>('/workflows/resources'),
 
-  // ========== Scenarios API ==========
-  listScenarios: () =>
-    fetchAPI<{ scenarios: Array<Scenario>; count: number }>('/scenarios'),
-  getScenario: (id: string) => fetchAPI<{ scenario: Scenario }>(`/scenarios/${id}`),
-  createScenario: (scenario: Omit<Scenario, 'id' | 'created_at' | 'updated_at'>) =>
-    fetchAPI<{ scenario: Scenario; message?: string }>('/scenarios', {
+  // ========== Unified Automations API ==========
+  // Matches backend: crates/api/src/handlers/automations.rs
+  listAutomations: (params?: {
+    type?: 'rule' | 'workflow' | 'all'
+    enabled?: boolean
+    search?: string
+  }) =>
+    fetchAPI<{ automations: Array<import('@/types').Automation>; count: number }>(
+      `/automations${params ? `?${new URLSearchParams(
+        Object.entries(params).reduce((acc, [key, value]) => {
+          if (value !== undefined) acc[key] = String(value)
+          return acc
+        }, {} as Record<string, string>)
+      )}` : ''}`
+    ),
+  getAutomation: (id: string) =>
+    fetchAPI<{ automation: import('@/types').Automation; definition: unknown }>(`/automations/${id}`),
+  createAutomation: (req: {
+    name: string
+    description?: string
+    type?: 'transform' | 'rule' | 'workflow'
+    enabled?: boolean
+    definition: unknown
+  }) =>
+    fetchAPI<{ automation: import('@/types').Automation; message: string }>('/automations', {
       method: 'POST',
-      body: JSON.stringify(scenario),
+      body: JSON.stringify(req),
     }),
-  updateScenario: (id: string, scenario: Partial<Scenario>) =>
-    fetchAPI<{ scenario: Scenario; message?: string }>(`/scenarios/${id}`, {
+  updateAutomation: (id: string, req: {
+    name?: string
+    description?: string
+    definition?: unknown
+    enabled?: boolean
+  }) =>
+    fetchAPI<{ automation: import('@/types').Automation; message: string }>(`/automations/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(scenario),
+      body: JSON.stringify(req),
     }),
-  deleteScenario: (id: string) =>
-    fetchAPI<{ message: string }>(`/scenarios/${id}`, {
+  deleteAutomation: (id: string) =>
+    fetchAPI<{ message: string }>(`/automations/${id}`, {
       method: 'DELETE',
     }),
-  activateScenario: (id: string) =>
-    fetchAPI<{ message: string }>(`/scenarios/${id}/activate`, {
+  setAutomationStatus: (id: string, enabled: boolean) =>
+    fetchAPI<{ message: string; enabled: boolean }>(`/automations/${id}/enable`, {
       method: 'POST',
+      body: JSON.stringify({ enabled }),
     }),
-  deactivateScenario: (id: string) =>
-    fetchAPI<{ message: string }>(`/scenarios/${id}/deactivate`, {
+  analyzeAutomationIntent: (description: string) =>
+    fetchAPI<import('@/types').IntentResult>('/automations/analyze-intent', {
       method: 'POST',
+      body: JSON.stringify({ description }),
     }),
-  getScenarioTemplates: () =>
-    fetchAPI<{ templates: Array<ScenarioTemplate> }>('/scenarios/templates'),
+  convertAutomation: (id: string, targetType: 'transform' | 'rule' | 'workflow') =>
+    fetchAPI<{ automation: import('@/types').Automation; message: string; original_id: string; new_id: string }>(`/automations/${id}/convert`, {
+      method: 'POST',
+      body: JSON.stringify({ type: targetType }),
+    }),
+  getConversionInfo: (id: string) =>
+    fetchAPI<{ automation_id: string; current_type: string; can_convert: boolean; target_type?: string; reason: string; estimated_complexity?: number }>(`/automations/${id}/conversion-info`),
+  getAutomationExecutions: (id: string, limit?: number) =>
+    fetchAPI<{ automation_id: string; executions: unknown[]; count: number }>(
+      `/automations/${id}/executions${limit ? `?limit=${limit}` : ''}`
+    ),
+  listAutomationTemplates: () =>
+    fetchAPI<{ templates: unknown[]; count: number }>('/automations/templates'),
+
+  // ========== Transform API (Data Processing) ==========
+  // Process device data through transforms
+  processTransformData: (req: {
+    device_id: string
+    device_type?: string
+    data: unknown
+    timestamp?: number
+  }) =>
+    fetchAPI<{
+      success: boolean
+      metrics: Array<{
+        device_id: string
+        metric: string
+        value: number
+        timestamp: number
+        quality: number | null
+      }>
+      count: number
+      warnings: string[]
+    }>('/automations/transforms/process', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  // Test a specific transform with sample data
+  testTransform: (id: string, req: {
+    device_id: string
+    device_type?: string
+    data: unknown
+    timestamp?: number
+  }) =>
+    fetchAPI<{
+      transform_id: string
+      metrics: Array<{
+        device_id: string
+        metric: string
+        value: number
+        timestamp: number
+        quality: number | null
+      }>
+      count: number
+      warnings: string[]
+    }>(`/automations/transforms/${id}/test`, {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  // List all transforms
+  listTransforms: () =>
+    fetchAPI<{ transforms: Array<import('@/types').TransformAutomation>; count: number }>('/automations/transforms'),
+  // List all virtual metrics generated by transforms
+  listVirtualMetrics: () =>
+    fetchAPI<{ metrics: Array<{ device_id: string; metric: string; transform_id: string }>; count: number }>('/automations/transforms/metrics'),
+  // Generate transform code using AI
+  generateTransformCode: (req: {
+    intent: string
+    sample_input?: Record<string, unknown>
+    language?: string
+  }) =>
+    fetchAPI<{
+      js_code: string
+      output_prefix: string
+      suggested_name: string
+      explanation: string
+    }>('/automations/generate-code', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  exportAutomations: () =>
+    fetchAPI<{ automations: unknown[]; count: number; exported_at: string }>('/automations/export'),
+  importAutomations: (automations: unknown[]) =>
+    fetchAPI<{ message: string; imported: number; failed: number }>('/automations/import', {
+      method: 'POST',
+      body: JSON.stringify({ automations }),
+    }),
 
   // ========== Memory API ==========
   getShortTermMemory: (limit?: number) =>

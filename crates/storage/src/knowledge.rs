@@ -120,8 +120,8 @@ impl LlmKnowledgeBase {
 
         let entry = KnowledgeEntry::new(id.clone(), KnowledgeType::MdlDevice, name, content)
             .with_metadata("device_type", device_type)
-            .with_metadata("metrics", &metrics.join(","))
-            .with_metadata("commands", &commands.join(","));
+            .with_metadata("metrics", metrics.join(","))
+            .with_metadata("commands", commands.join(","));
 
         self.insert_entry(entry).await?;
 
@@ -143,7 +143,7 @@ impl LlmKnowledgeBase {
         let entry = KnowledgeEntry::new(id.clone(), KnowledgeType::DslRule, name, content)
             .with_metadata("rule_id", rule_id)
             .with_metadata("condition", condition)
-            .with_metadata("actions", &actions.join(","));
+            .with_metadata("actions", actions.join(","));
 
         self.insert_entry(entry).await?;
 
@@ -220,11 +220,10 @@ impl LlmKnowledgeBase {
         for result in raw_results {
             if let Some(entry) = entries.get(&result.id) {
                 // Filter by type if specified
-                if let Some(ref ft) = filter_type {
-                    if &entry.entry_type != ft {
+                if let Some(ref ft) = filter_type
+                    && &entry.entry_type != ft {
                         continue;
                     }
-                }
 
                 results.push(KnowledgeSearchResult {
                     entry: entry.clone(),

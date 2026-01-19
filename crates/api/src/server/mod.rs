@@ -34,10 +34,6 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // Initialize LLM
     state.init_llm().await;
 
-    // Initialize built-in plugins (must be after LLM initialization)
-    state.init_builtin_plugins().await;
-    startup.service("Built-in plugins", ServiceStatus::Started);
-
     // Initialize workflow engine
     state.init_workflow_engine().await;
     startup.service("Workflow engine", ServiceStatus::Started);

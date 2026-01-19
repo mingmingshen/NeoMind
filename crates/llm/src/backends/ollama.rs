@@ -24,9 +24,15 @@ use edge_ai_core::message::{Content, ContentPart, Message, MessageRole};
 /// Stream timeout in seconds - prevents infinite loops
 const STREAM_TIMEOUT_SECS: u64 = 300;
 
-/// Maximum thinking characters - set to unlimited to allow full model thinking
-/// The model should decide when to stop thinking, not an arbitrary limit
-const MAX_THINKING_CHARS: usize = usize::MAX;
+/// Maximum thinking characters - set to limit to prevent infinite thinking loops
+/// Some models (like qwen3-vl:2b) can get stuck in thinking loops
+const MAX_THINKING_CHARS: usize = 1000;
+
+/// Maximum consecutive identical thinking chunks before assuming loop
+const MAX_THINKING_LOOP: usize = 3;
+
+/// Maximum thinking time before forcing completion (in seconds)
+const MAX_THINKING_TIME_SECS: u64 = 10;
 
 /// Ollama configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -128,37 +134,37 @@ impl OllamaRuntime {
     }
 
     /// Format tools for text-based tool calling (for models without native tool support).
+    /// Uses JSON format instead of XML for better model compatibility.
     fn format_tools_for_text_calling(
         tools: &[edge_ai_core::llm::backend::ToolDefinition],
     ) -> String {
-        let mut result = String::from("## 工具调用要求\n");
-        result.push_str("你必须使用以下XML格式调用工具，不要只描述要做什么：\n\n");
-        result.push_str("<tool_calls>\n");
-        result.push_str("  <invoke name=\"工具名称\">\n");
-        result.push_str("    <parameter name=\"参数名\">参数值</parameter>\n");
-        result.push_str("  </invoke>\n");
-        result.push_str("</tool_calls>\n\n");
+        let mut result = String::from("## Tool Calling Requirements\n");
+        result.push_str("You must call tools using JSON format. Do not just describe what to do.\n\n");
+        result.push_str("Format:\n");
+        result.push_str("[{\"name\": \"tool_name\", \"arguments\": {\"param\": \"value\"}}]\n\n");
 
-        result.push_str("## 使用示例\n");
-        result.push_str("用户: 有哪些设备？\n");
-        result
-            .push_str("助手: <tool_calls><invoke name=\"list_devices\"></invoke></tool_calls>\n\n");
+        result.push_str("## Examples\n");
+        result.push_str("User: 有哪些设备？\n");
+        result.push_str("Assistant: [{\"name\": \"list_devices\", \"arguments\": {}}]\n\n");
 
-        result.push_str("## 可用工具\n\n");
+        result.push_str("User: 把客厅灯打开\n");
+        result.push_str("Assistant: [{\"name\": \"control_device\", \"arguments\": {\"device_id\": \"light_living\", \"action\": \"on\"}}]\n\n");
+
+        result.push_str("## Available Tools\n\n");
 
         for tool in tools {
             result.push_str(&format!("### {}\n", tool.name));
-            result.push_str(&format!("描述: {}\n", tool.description));
+            result.push_str(&format!("Description: {}\n", tool.description));
 
-            if let Some(props) = tool.parameters.get("properties") {
-                if let Some(obj) = props.as_object() {
-                    if !obj.is_empty() {
-                        result.push_str("参数:\n");
+            if let Some(props) = tool.parameters.get("properties")
+                && let Some(obj) = props.as_object()
+                    && !obj.is_empty() {
+                        result.push_str("Parameters:\n");
                         for (name, prop) in obj {
                             let desc = prop
                                 .get("description")
                                 .and_then(|d| d.as_str())
-                                .unwrap_or("无描述");
+                                .unwrap_or("No description");
                             let type_name = prop
                                 .get("type")
                                 .and_then(|t| t.as_str())
@@ -166,27 +172,24 @@ impl OllamaRuntime {
                             result.push_str(&format!("- {}: {} ({})\n", name, desc, type_name));
                         }
                     }
-                }
-            }
 
-            if let Some(required) = tool.parameters.get("required") {
-                if let Some(arr) = required.as_array() {
-                    if !arr.is_empty() {
+            if let Some(required) = tool.parameters.get("required")
+                && let Some(arr) = required.as_array()
+                    && !arr.is_empty() {
                         let required_names: Vec<&str> =
                             arr.iter().filter_map(|v| v.as_str()).collect();
-                        result.push_str(&format!("必填参数: {}\n", required_names.join(", ")));
+                        result.push_str(&format!("Required: {}\n", required_names.join(", ")));
                     }
-                }
-            }
 
             result.push('\n');
         }
 
-        result.push_str("## 关键规则\n");
-        result.push_str("1. 用户询问设备时必须调用 list_devices 工具\n");
-        result.push_str("2. 用户询问数据时必须调用 query_data 工具\n");
-        result.push_str("3. 用户询问控制设备时必须调用 control_device 工具\n");
-        result.push_str("4. 不要过度解释，直接调用工具并返回结果\n");
+        result.push_str("## Important Rules\n");
+        result.push_str("1. ALWAYS output tool calls as a JSON array\n");
+        result.push_str("2. When user asks about devices, call list_devices\n");
+        result.push_str("3. When user asks about data, call query_data\n");
+        result.push_str("4. When user asks to control device, call control_device\n");
+        result.push_str("5. Don't explain, just call the tool directly\n");
 
         result
     }
@@ -198,7 +201,7 @@ impl OllamaRuntime {
         tools: Option<&[edge_ai_core::llm::backend::ToolDefinition]>,
         supports_native_tools: bool,
     ) -> Vec<OllamaMessage> {
-        let tool_instructions = if !supports_native_tools && tools.map_or(false, |t| !t.is_empty())
+        let tool_instructions = if !supports_native_tools && tools.is_some_and(|t| !t.is_empty())
         {
             Some(Self::format_tools_for_text_calling(tools.unwrap()))
         } else {
@@ -212,11 +215,10 @@ impl OllamaRuntime {
                 let mut text = msg.text();
 
                 // Inject tool instructions into system message for models without native tool support
-                if msg.role == MessageRole::System {
-                    if let Some(instructions) = &tool_instructions {
+                if msg.role == MessageRole::System
+                    && let Some(instructions) = &tool_instructions {
                         text = format!("{}\n\n{}", text, instructions);
                     }
-                }
 
                 // Extract images from multimodal content
                 let images = extract_images_from_content(&msg.content);
@@ -268,11 +270,11 @@ fn extract_images_from_content(content: &Content) -> Vec<String> {
                 }
             }
             ContentPart::ImageBase64 {
-                data, mime_type, ..
+                data, mime_type: _, ..
             } => {
                 // Already base64 encoded, just remove the mime type prefix if present
                 let base64_data = if data.contains(',') {
-                    data.split(',').last().unwrap_or(data).to_string()
+                    data.split(',').next_back().unwrap_or(data).to_string()
                 } else {
                     data.clone()
                 };
@@ -371,7 +373,7 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine tool support and prepare accordingly
         let supports_native_tools = caps.supports_tools;
-        let has_tools = input.tools.as_ref().map_or(false, |t| !t.is_empty());
+        let has_tools = input.tools.as_ref().is_some_and(|t| !t.is_empty());
 
         // Only use native tools parameter for models that support it
         // For other models, tools will be injected into the system message
@@ -434,10 +436,9 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
-        // Thinking: Don't explicitly set think parameter
-        // Let the model decide - setting think=false may cause issues with qwen3-vl:2b
-        // where it generates only thinking with no content
-        let think = None;
+        // Thinking: Don't pass think parameter at all to avoid qwen3-vl:2b thinking loops
+        // The think parameter doesn't work reliably for qwen3-vl:2b
+        let think: Option<OllamaThink> = None;
 
         let format: Option<String> = None;
 
@@ -459,7 +460,7 @@ impl LlmRuntime for OllamaRuntime {
         };
 
         let request_json =
-            serde_json::to_string(&request).map_err(|e| LlmError::Serialization(e))?;
+            serde_json::to_string(&request).map_err(LlmError::Serialization)?;
         tracing::debug!("Ollama: sending request to model: {}", model);
 
         let response = self
@@ -489,24 +490,29 @@ impl LlmRuntime for OllamaRuntime {
         }
 
         let ollama_response: OllamaChatResponse =
-            serde_json::from_str(&body).map_err(|e| LlmError::Serialization(e))?;
+            serde_json::from_str(&body).map_err(LlmError::Serialization)?;
 
         // Handle response - detect if content is actually thinking
-        // Some models (qwen3-vl) put thinking in the content field instead of the thinking field
+        // Some models (qwen3-vl, qwen3:1.7b) put thinking in the content or thinking field
         // We need to detect and filter this out
         let (mut response_text, detected_thinking_in_content) =
             if ollama_response.message.content.is_empty() {
-                // Content is empty - don't use thinking as response
-                (String::new(), false)
+                // Content is empty - check if thinking field has the response
+                if ollama_response.message.thinking.is_empty() {
+                    // Both content and thinking are empty - truly empty response
+                    (String::new(), false)
+                } else {
+                    // Thinking field has content - use it as response
+                    // This is the expected behavior for models like qwen3:1.7b
+                    (ollama_response.message.thinking.clone(), true)
+                }
             } else {
                 // Content is not empty - check if it's actually thinking
                 let content = &ollama_response.message.content;
-                let thinking = &ollama_response.message.thinking;
+                let _thinking = &ollama_response.message.thinking;
 
-                // If thinking is much longer than content, model likely put thinking in content
-                // Also check for common thinking patterns
-                let is_likely_thinking = thinking.len() > content.len() * 2
-                    || content.starts_with("好的，用户")
+                // Check for common thinking patterns that should be filtered
+                let is_likely_thinking = content.starts_with("好的，用户")
                     || content.starts_with("首先，")
                     || content.starts_with("让我")
                     || content.starts_with("我需要")
@@ -624,7 +630,7 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine tool support and prepare accordingly
         let supports_native_tools = caps.supports_tools;
-        let has_tools = input.tools.as_ref().map_or(false, |t| !t.is_empty());
+        let has_tools = input.tools.as_ref().is_some_and(|t| !t.is_empty());
 
         // Only use native tools parameter for models that support it
         let native_tools = if supports_native_tools {
@@ -685,10 +691,9 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
-        // Thinking: Don't explicitly set think parameter
-        // Let the model decide - setting think=false may cause issues with qwen3-vl:2b
-        // where it generates only thinking with no content
-        let think = None;
+        // Thinking: Don't pass think parameter at all to avoid qwen3-vl:2b thinking loops
+        // The think parameter doesn't work reliably for qwen3-vl:2b
+        let think: Option<OllamaThink> = None;
 
         // Determine if we should send thinking to the client (for display purposes)
         // Default to true for models that support thinking - user can disable if desired
@@ -713,6 +718,11 @@ impl LlmRuntime for OllamaRuntime {
 
         // No format parameter needed - let Ollama handle thinking naturally
         let format: Option<String> = None;
+
+        // Log request details before creating the request
+        tracing::debug!("Ollama: stream request config - has_tools={}, think={:?}",
+            native_tools.as_ref().is_some_and(|t| !t.is_empty()),
+            think);
 
         tokio::spawn(async move {
             let request = OllamaChatRequest {
@@ -770,11 +780,21 @@ impl LlmRuntime for OllamaRuntime {
                     let mut total_bytes = 0usize;
                     let mut total_chars = 0usize; // Track total output characters
                     let mut thinking_chars = 0usize; // Track thinking characters separately
+                    let mut thinking_start_time: Option<Instant> = None; // Track when thinking started
+                    let mut terminate_early = false; // Flag to terminate stream early
+                    let mut last_thinking_chunk = String::new(); // Track last thinking chunk for loop detection
+                    let mut consecutive_same_thinking = 0usize; // Count consecutive identical thinking chunks
                     let stream_start = Instant::now(); // Track stream duration
                     let mut content_buffer = String::new(); // Buffer for detecting thinking in content
                     let mut detected_thinking_in_content = false; // Flag for thinking detection
 
                     while let Some(chunk_result) = byte_stream.next().await {
+                        // Check for early termination flag
+                        if terminate_early {
+                            tracing::info!("[ollama.rs] Early termination requested, ending stream.");
+                            break;
+                        }
+
                         // Check for timeout
                         if stream_start.elapsed() > Duration::from_secs(STREAM_TIMEOUT_SECS) {
                             let error_msg =
@@ -897,22 +917,55 @@ impl LlmRuntime for OllamaRuntime {
                                                 // qwen3 models generate thinking but we filter it out for performance
 
                                                 // Track thinking characters for loop detection
-                                                thinking_chars +=
-                                                    ollama_chunk.message.thinking.chars().count();
-                                                total_chars +=
-                                                    ollama_chunk.message.thinking.chars().count();
+                                                let thinking_content = &ollama_chunk.message.thinking;
+                                                thinking_chars += thinking_content.chars().count();
+                                                total_chars += thinking_content.chars().count();
 
-                                                // SAFETY CHECK: Detect if model is stuck in thinking loop (with MAX_THINKING_CHARS = usize::MAX, this won't trigger)
+                                                // Track when thinking started
+                                                if thinking_start_time.is_none() {
+                                                    thinking_start_time = Some(Instant::now());
+                                                }
+
+                                                // Check if thinking has gone on too long
+                                                if let Some(start) = thinking_start_time
+                                                    && start.elapsed() > Duration::from_secs(MAX_THINKING_TIME_SECS) {
+                                                        tracing::warn!(
+                                                            "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Terminating early.",
+                                                            start.elapsed(),
+                                                            thinking_chars
+                                                        );
+                                                        // Set flag to terminate stream early
+                                                        terminate_early = true;
+                                                        break;
+                                                    }
+
+                                                // Detect consecutive identical thinking chunks (model stuck in loop)
+                                                if thinking_content == &last_thinking_chunk {
+                                                    consecutive_same_thinking += 1;
+                                                    if consecutive_same_thinking > MAX_THINKING_LOOP {
+                                                        tracing::warn!(
+                                                            "[ollama.rs] Model stuck in thinking loop ({} identical chunks: \"{}\"). Terminating early.",
+                                                            consecutive_same_thinking,
+                                                            thinking_content
+                                                        );
+                                                        // Set flag to terminate stream early
+                                                        terminate_early = true;
+                                                        break;
+                                                    }
+                                                } else {
+                                                    consecutive_same_thinking = 0;
+                                                    last_thinking_chunk = thinking_content.clone();
+                                                }
+
+                                                // SAFETY CHECK: Detect if model is stuck in thinking loop
                                                 if thinking_chars > MAX_THINKING_CHARS {
-                                                    let error_msg = format!(
-                                                        "Model appears stuck in thinking loop ({} chars thinking). Terminating stream.",
+                                                    tracing::warn!(
+                                                        "[ollama.rs] Max thinking chars reached ({}). Terminating thinking phase early.",
                                                         thinking_chars
                                                     );
-                                                    tracing::error!("[ollama.rs] {}", error_msg);
-                                                    let _ = tx
-                                                        .send(Err(LlmError::Generation(error_msg)))
-                                                        .await;
-                                                    return;
+                                                    // Set flag to terminate stream early
+                                                    terminate_early = true;
+                                                    break;
                                                 }
 
                                                 if should_send_thinking {

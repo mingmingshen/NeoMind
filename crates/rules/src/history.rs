@@ -183,26 +183,22 @@ impl RuleHistoryStorage {
         let mut results: Vec<_> = entries
             .iter()
             .filter(|entry| {
-                if let Some(ref rule_id) = filter.rule_id {
-                    if &entry.rule_id != rule_id {
+                if let Some(ref rule_id) = filter.rule_id
+                    && &entry.rule_id != rule_id {
                         return false;
                     }
-                }
-                if let Some(success) = filter.success {
-                    if entry.success != success {
+                if let Some(success) = filter.success
+                    && entry.success != success {
                         return false;
                     }
-                }
-                if let Some(start) = filter.start {
-                    if entry.timestamp < start {
+                if let Some(start) = filter.start
+                    && entry.timestamp < start {
                         return false;
                     }
-                }
-                if let Some(end) = filter.end {
-                    if entry.timestamp >= end {
+                if let Some(end) = filter.end
+                    && entry.timestamp >= end {
                         return false;
                     }
-                }
                 true
             })
             .cloned()

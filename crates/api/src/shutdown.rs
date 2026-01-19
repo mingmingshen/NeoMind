@@ -46,23 +46,21 @@ pub async fn cleanup_resources(state: &ServerState) {
     let device_service = state.device_service.clone();
     let mqtt_task = tokio::spawn(async move {
         use edge_ai_devices::adapter::DeviceAdapter;
-        if let Some(adapter) = device_service.get_adapter("internal-mqtt").await {
-            if let Err(e) = adapter.stop().await {
+        if let Some(adapter) = device_service.get_adapter("internal-mqtt").await
+            && let Err(e) = adapter.stop().await {
                 tracing::warn!("MQTT adapter stop error: {}", e);
             }
-        }
     });
     let _ = tokio::time::timeout(Duration::from_secs(5), mqtt_task).await;
 
     // 2. Note embedded broker status (feature-gated)
     #[cfg(feature = "embedded-broker")]
-    if let Some(broker) = &state.embedded_broker {
-        if broker.is_running() {
+    if let Some(broker) = &state.embedded_broker
+        && broker.is_running() {
             tracing::info!("Embedded MQTT broker was running");
             // Note: EmbeddedBroker doesn't have a stop method,
             // it will be cleaned up when the process exits
         }
-    }
 
     // 3. Flush any pending database writes
     tracing::info!("Flushing storage...");

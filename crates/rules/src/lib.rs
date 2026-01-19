@@ -33,6 +33,7 @@
 //! }
 //! ```
 
+pub mod dependencies;
 pub mod device_integration;
 pub mod dsl;
 pub mod engine;
@@ -43,7 +44,11 @@ pub mod integration;
 pub mod store;
 pub mod validator;
 
+pub use dependencies::{
+    DependencyManager, DependencyType, DependencyValidationResult, RuleDependency,
+};
 pub use device_integration::{
+    CommandActionResult, CommandExecutionStats, CommandResultHistory, CommandResultValue,
     DeviceActionExecutor, DeviceIntegratedRuleEngine, DeviceIntegrationError,
     DeviceIntegrationResult, DeviceValueProvider,
 };

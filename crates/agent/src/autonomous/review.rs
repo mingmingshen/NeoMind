@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use edge_ai_core::event::NeoTalkEvent;
 use edge_ai_core::eventbus::EventBus;
 
 use super::config::ReviewType;
@@ -477,7 +476,7 @@ impl SystemReview for TrendAnalysisReview {
         ReviewType::TrendAnalysis
     }
 
-    async fn review(&self, context: &mut ReviewContext) -> ReviewResult {
+    async fn review(&self, _context: &mut ReviewContext) -> ReviewResult {
         // Trend analysis would examine historical data patterns
         ReviewResult::NoFindings {
             message:
@@ -505,7 +504,7 @@ impl SystemReview for AnomalyDetectionReview {
         ReviewType::AnomalyDetection
     }
 
-    async fn review(&self, context: &mut ReviewContext) -> ReviewResult {
+    async fn review(&self, _context: &mut ReviewContext) -> ReviewResult {
         ReviewResult::NoFindings {
             message: "No anomalies detected in the current system state.".to_string(),
         }
@@ -530,7 +529,7 @@ impl SystemReview for EnergyOptimizationReview {
         ReviewType::EnergyOptimization
     }
 
-    async fn review(&self, context: &mut ReviewContext) -> ReviewResult {
+    async fn review(&self, _context: &mut ReviewContext) -> ReviewResult {
         ReviewResult::NoFindings {
             message: "No energy optimization opportunities identified.".to_string(),
         }

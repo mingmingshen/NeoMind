@@ -24,7 +24,6 @@ pub mod backends;
 pub mod config;
 pub mod factories;
 pub mod instance_manager;
-pub mod plugin_adapter;
 pub mod rate_limited_client;
 pub mod tokenizer;
 
@@ -47,12 +46,6 @@ pub use backend_plugin::{BackendRegistry, DynBackendPlugin, LlmBackendPlugin};
 // Instance manager
 pub use instance_manager::{
     BackendTypeDefinition, LlmBackendInstanceManager, get_instance_manager,
-};
-
-// Plugin adapter
-pub use plugin_adapter::{
-    DynLlmBackendPlugin, LlmBackendPluginFactory, LlmBackendUnifiedPlugin,
-    llm_backend_to_unified_plugin,
 };
 
 #[cfg(feature = "cloud")]

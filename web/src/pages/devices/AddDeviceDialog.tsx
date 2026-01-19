@@ -44,7 +44,7 @@ export function AddDeviceDialog({
   const [selectedDeviceType, setSelectedDeviceType] = useState("")
   const [deviceId, setDeviceId] = useState("")
   const [deviceName, setDeviceName] = useState("")
-  const [adapterType, setAdapterType] = useState<"mqtt" | "modbus" | "hass">("mqtt")
+  const [adapterType, setAdapterType] = useState<"mqtt" | "http" | "webhook">("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
 
   // Generate random ID when dialog opens
@@ -198,7 +198,7 @@ export function AddDeviceDialog({
           <div className="space-y-2">
             <Label htmlFor="adapter-type">{t('devices:adapterType') || 'Adapter Type'}</Label>
             <Select value={adapterType} onValueChange={(v) => {
-              setAdapterType(v as "mqtt" | "modbus" | "hass")
+              setAdapterType(v as "mqtt" | "http" | "webhook")
               setConnectionConfig({}) // Reset config when adapter type changes
             }}>
               <SelectTrigger id="adapter-type">
@@ -206,8 +206,8 @@ export function AddDeviceDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="mqtt">MQTT</SelectItem>
-                <SelectItem value="modbus">Modbus TCP</SelectItem>
-                <SelectItem value="hass">Home Assistant</SelectItem>
+                <SelectItem value="http">HTTP (Polling)</SelectItem>
+                <SelectItem value="webhook">Webhook (Push)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -237,40 +237,75 @@ export function AddDeviceDialog({
               )}
             </div>
           )}
-          {adapterType === 'modbus' && (
-            <div className="space-y-2">
-              <Label htmlFor="modbus-host">Host</Label>
-              <Input
-                id="modbus-host"
-                value={connectionConfig.host || ''}
-                onChange={(e) => setConnectionConfig({ ...connectionConfig, host: e.target.value })}
-                placeholder="192.168.1.100"
-              />
-              <Label htmlFor="modbus-port">Port</Label>
-              <Input
-                id="modbus-port"
-                type="number"
-                value={connectionConfig.port || 502}
-                onChange={(e) => setConnectionConfig({ ...connectionConfig, port: parseInt(e.target.value) || 502 })}
-              />
-              <Label htmlFor="modbus-slave-id">Slave ID</Label>
-              <Input
-                id="modbus-slave-id"
-                type="number"
-                value={connectionConfig.slave_id || 1}
-                onChange={(e) => setConnectionConfig({ ...connectionConfig, slave_id: parseInt(e.target.value) || 1 })}
-              />
+          {adapterType === 'http' && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="http-url">URL</Label>
+                <Input
+                  id="http-url"
+                  value={connectionConfig.url || ''}
+                  onChange={(e) => setConnectionConfig({ ...connectionConfig, url: e.target.value })}
+                  placeholder="http://192.168.1.100/api/telemetry"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="http-method">Method</Label>
+                  <Select
+                    value={connectionConfig.method || 'GET'}
+                    onValueChange={(v) => setConnectionConfig({ ...connectionConfig, method: v })}
+                  >
+                    <SelectTrigger id="http-method">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GET">GET</SelectItem>
+                      <SelectItem value="POST">POST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="poll-interval">Poll Interval (sec)</Label>
+                  <Input
+                    id="poll-interval"
+                    type="number"
+                    min="1"
+                    value={connectionConfig.poll_interval || 30}
+                    onChange={(e) => setConnectionConfig({ ...connectionConfig, poll_interval: parseInt(e.target.value) || 30 })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="data-path">Data Path (JSONPath, optional)</Label>
+                <Input
+                  id="data-path"
+                  value={connectionConfig.data_path || ''}
+                  onChange={(e) => setConnectionConfig({ ...connectionConfig, data_path: e.target.value })}
+                  placeholder="$.data.sensors[0]"
+                />
+                <p className="text-xs text-muted-foreground">Extract nested JSON values using dot notation</p>
+              </div>
             </div>
           )}
-          {adapterType === 'hass' && (
-            <div className="space-y-2">
-              <Label htmlFor="hass-entity-id">Entity ID</Label>
-              <Input
-                id="hass-entity-id"
-                value={connectionConfig.entity_id || ''}
-                onChange={(e) => setConnectionConfig({ ...connectionConfig, entity_id: e.target.value })}
-                placeholder="sensor.temperature_living_room"
-              />
+          {adapterType === 'webhook' && (
+            <div className="space-y-4 rounded-lg border p-4 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-medium">Webhook Configuration</h4>
+                <span className="text-xs text-muted-foreground">Devices push data to you</span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  After adding the device, use the Webhook URL below to configure your device:
+                </p>
+                <div className="flex items-center gap-2 rounded-md bg-background p-3 font-mono text-sm">
+                  <code className="flex-1">
+                    {window.location.origin}/api/devices/webhook/{deviceId}
+                  </code>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Device should POST JSON data: <code className="bg-muted px-1 rounded">{"{\"data\": {\"temperature\": 23.5}}"}</code>
+                </p>
+              </div>
             </div>
           )}
         </div>

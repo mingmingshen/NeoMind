@@ -327,7 +327,7 @@ impl VersionManager {
         let current_version = self
             .get_latest_version(workflow_id)
             .await
-            .unwrap_or_else(|| WorkflowVersion::initial());
+            .unwrap_or_else(WorkflowVersion::initial);
 
         // Determine the new version (increment patch for rollback)
         let new_version = current_version.increment_patch();

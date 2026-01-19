@@ -12,7 +12,7 @@ import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
 import {
   RefreshCw, CheckCircle, X, Trash2, Play, Brain,
-  AlertCircle, Eye
+  AlertCircle, Eye, Wand2
 } from 'lucide-react'
 import {
   Dialog,
@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { AutomationCreatorDialog } from '@/components/automation'
 
 type DecisionFilter = 'all' | 'proposed' | 'approved' | 'executed' | 'rejected'
 
@@ -36,6 +37,8 @@ export function DecisionsPage() {
   const [filter, setFilter] = useState<DecisionFilter>('all')
   const [selectedDecision, setSelectedDecision] = useState<DecisionDto | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [automationDialogOpen, setAutomationDialogOpen] = useState(false)
+  const [automationFromDecision, setAutomationFromDecision] = useState<{ description: string; suggestedType?: 'rule' | 'workflow' } | null>(null)
   const { toast } = useToast()
 
   const { data: decisions, loading, refetch } = useApiData(
@@ -94,6 +97,41 @@ export function DecisionsPage() {
     } finally {
       setProcessingId(null)
     }
+  }
+
+  const handleCreateAutomation = (decision: DecisionDto) => {
+    // Build a description from the decision data
+    let description = decision.description || ''
+
+    // Add reasoning if available
+    if (decision.reasoning) {
+      description += '\n\n' + decision.reasoning
+    }
+
+    // Add action details if available
+    if (decision.actions && decision.actions.length > 0) {
+      description += '\n\n' + t('decisions:proposedActions') + ':\n'
+      decision.actions.forEach((action, index) => {
+        description += `${index + 1}. ${action.action_type}: ${action.description}\n`
+      })
+    }
+
+    // Determine suggested type based on decision type
+    let suggestedType: 'rule' | 'workflow' | undefined
+    if (decision.decision_type === 'automation_recommendation') {
+      // Check action complexity to suggest type
+      const hasMultipleActions = decision.actions && decision.actions.length > 1
+      suggestedType = hasMultipleActions ? 'workflow' : 'rule'
+    }
+
+    setAutomationFromDecision({ description, suggestedType })
+    setAutomationDialogOpen(true)
+  }
+
+  const handleAutomationCreated = () => {
+    setAutomationDialogOpen(false)
+    setAutomationFromDecision(null)
+    toast({ title: t('common:success'), description: t('decisions:automationCreated') })
   }
 
   const getStatusBadge = (status: string) => {
@@ -195,6 +233,15 @@ export function DecisionsPage() {
                         </Button>
                         {decision.status === 'Proposed' && (
                           <>
+                            <Button
+                              onClick={() => handleCreateAutomation(decision)}
+                              variant="default"
+                              size="sm"
+                              title={t('decisions:createAutomationDesc')}
+                            >
+                              <Wand2 className="h-3 w-3 mr-1" />
+                              {t('decisions:createAutomation')}
+                            </Button>
                             <Button
                               onClick={() => handleExecute(decision.id)}
                               size="sm"
@@ -429,6 +476,15 @@ export function DecisionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Automation Creator Dialog */}
+      <AutomationCreatorDialog
+        open={automationDialogOpen}
+        onOpenChange={setAutomationDialogOpen}
+        onAutomationCreated={handleAutomationCreated}
+        initialDescription={automationFromDecision?.description}
+        suggestedType={automationFromDecision?.suggestedType}
+      />
     </PageLayout>
   )
 }

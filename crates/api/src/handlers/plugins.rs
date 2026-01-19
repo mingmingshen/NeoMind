@@ -20,7 +20,7 @@ use super::{
 use crate::models::ErrorResponse;
 
 use edge_ai_core::plugin::{
-    PluginInfo, PluginLoadOptions, PluginState, PluginStats, PluginType, UnifiedPluginRegistry,
+    PluginInfo, PluginLoadOptions, PluginStats, PluginType, UnifiedPluginRegistry,
 };
 
 /// Plugin list query parameters.
@@ -146,6 +146,7 @@ impl From<PluginStats> for PluginStatsDto {
     }
 }
 
+#[allow(deprecated)]
 impl From<PluginInfo> for PluginDto {
     fn from(info: PluginInfo) -> Self {
         use edge_ai_core::plugin::types::PluginCategory;
@@ -220,8 +221,8 @@ pub async fn list_plugins_handler(
     State(state): State<ServerState>,
     Query(query): Query<PluginListQuery>,
 ) -> HandlerResult<serde_json::Value> {
-    use edge_ai_core::plugin::types::PluginCategory;
-    use edge_ai_devices::DeviceAdapterPluginRegistry;
+    
+    
 
     let exclude_builtin = query.builtin == Some(false);
 
@@ -238,18 +239,23 @@ pub async fn list_plugins_handler(
         all_plugins.push(PluginDto::from(plugin));
     }
 
-    // 2. Get device adapter plugins from DeviceAdapterPluginRegistry
+    // 2. Get device adapter information directly from DeviceService
     // Skip these entirely when exclude_builtin is true
     if !exclude_builtin {
-        if let Some(_event_bus) = &state.event_bus {
-            // Try to get the global registry
-            if let Some(adapter_registry) = edge_ai_devices::DeviceAdapterPluginRegistry::try_get()
-            {
-                let adapter_stats = adapter_registry.get_stats().await;
-                for adapter in adapter_stats.adapters {
-                    all_plugins.push(adapter_to_plugin_dto(AdapterPluginDto::from(adapter)));
-                }
-            }
+        let adapter_stats = state.device_service.get_adapter_stats().await;
+        for adapter in adapter_stats.adapters {
+            all_plugins.push(adapter_to_plugin_dto(AdapterPluginDto {
+                id: adapter.id,
+                name: adapter.name,
+                adapter_type: adapter.adapter_type,
+                enabled: true,
+                running: adapter.running,
+                device_count: adapter.device_count,
+                state: adapter.status,
+                version: "1.0.0".to_string(),
+                uptime_secs: None,
+                last_activity: adapter.last_activity,
+            }));
         }
 
         // 3. Add the internal MQTT device manager as a built-in plugin
@@ -400,18 +406,16 @@ pub async fn register_plugin_handler(
         };
 
         // Initialize if config provided
-        if let Some(config) = options.config {
-            if let Err(e) = registry.initialize(&plugin_id, &config).await {
+        if let Some(config) = options.config
+            && let Err(e) = registry.initialize(&plugin_id, &config).await {
                 tracing::warn!("Failed to initialize plugin {}: {}", plugin_id, e);
             }
-        }
 
         // Start if auto-start is enabled
-        if options.auto_start {
-            if let Err(e) = registry.start(&plugin_id).await {
+        if options.auto_start
+            && let Err(e) = registry.start(&plugin_id).await {
                 tracing::warn!("Failed to start plugin {}: {}", plugin_id, e);
             }
-        }
 
         ok(json!({
             "message": "Plugin registered successfully",
@@ -788,20 +792,25 @@ impl From<edge_ai_devices::AdapterPluginInfo> for AdapterPluginDto {
 ///
 /// GET /api/plugins/device-adapters
 pub async fn list_device_adapter_plugins_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    use edge_ai_devices::DeviceAdapterPluginRegistry;
-
-    let registry = DeviceAdapterPluginRegistry::try_get().ok_or_else(|| {
-        ErrorResponse::service_unavailable("Device adapter registry not initialized")
-    })?;
-
-    let stats = registry.get_stats().await;
+    let stats = state.device_service.get_adapter_stats().await;
 
     let adapters: Vec<AdapterPluginDto> = stats
         .adapters
         .into_iter()
-        .map(AdapterPluginDto::from)
+        .map(|adapter| AdapterPluginDto {
+            id: adapter.id,
+            name: adapter.name,
+            adapter_type: adapter.adapter_type,
+            enabled: true,
+            running: adapter.running,
+            device_count: adapter.device_count,
+            state: adapter.status,
+            version: "1.0.0".to_string(),
+            uptime_secs: None,
+            last_activity: adapter.last_activity,
+        })
         .collect();
 
     ok(json!({
@@ -816,25 +825,16 @@ pub async fn list_device_adapter_plugins_handler(
 ///
 /// POST /api/plugins/device-adapters
 pub async fn register_device_adapter_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
-    use edge_ai_devices::{AdapterPluginConfig, DeviceAdapterPluginRegistry};
-
-    let registry = DeviceAdapterPluginRegistry::try_get().ok_or_else(|| {
-        ErrorResponse::service_unavailable("Device adapter registry not initialized")
-    })?;
+    use edge_ai_devices::adapters::create_adapter;
 
     // Parse request
     let id = req
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorResponse::bad_request("Missing 'id' field"))?;
-
-    let name = req
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ErrorResponse::bad_request("Missing 'name' field"))?;
 
     let adapter_type = req
         .get("adapter_type")
@@ -850,32 +850,32 @@ pub async fn register_device_adapter_handler(
         .get("auto_start")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let enabled = req.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
 
-    // Build AdapterPluginConfig
-    let plugin_config = AdapterPluginConfig {
-        id: id.to_string(),
-        name: name.to_string(),
-        adapter_type: adapter_type.to_string(),
-        config,
-        auto_start,
-        enabled,
-    };
+    // Get event bus for adapter creation
+    let event_bus = state.event_bus.as_ref().ok_or_else(|| {
+        ErrorResponse::internal("Event bus not initialized")
+    })?;
 
-    // Register the adapter
-    registry
-        .register_from_config(plugin_config.clone())
-        .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to register adapter: {}", e)))?;
+    // Create the adapter using the factory
+    let adapter = create_adapter(adapter_type, &config, event_bus)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to create adapter: {}", e)))?;
+
+    // Register with DeviceService
+    state
+        .device_service
+        .register_adapter(id.to_string(), adapter.clone())
+        .await;
 
     // Auto-start if requested
-    if plugin_config.auto_start {
-        let _ = registry.start_plugin(&plugin_config.id).await;
+    if auto_start {
+        if let Err(e) = adapter.start().await {
+            tracing::warn!("Failed to auto-start adapter {}: {}", id, e);
+        }
     }
 
     ok(json!({
-        "message": "Device adapter plugin registered successfully",
-        "plugin_id": plugin_config.id,
+        "message": "Device adapter registered successfully",
+        "adapter_id": id,
     }))
 }
 
@@ -883,19 +883,14 @@ pub async fn register_device_adapter_handler(
 ///
 /// GET /api/plugins/:id/devices
 pub async fn get_adapter_devices_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Path(id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    use edge_ai_devices::DeviceAdapterPluginRegistry;
-
-    let registry = DeviceAdapterPluginRegistry::try_get().ok_or_else(|| {
-        ErrorResponse::service_unavailable("Device adapter registry not initialized")
-    })?;
-
-    let devices = registry
-        .get_adapter_devices(&id)
+    let devices = state
+        .device_service
+        .get_adapter_device_ids(&id)
         .await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to get devices: {}", e)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Adapter {}", id)))?;
 
     let device_dtos: Vec<AdapterDeviceDto> = devices
         .into_iter()
@@ -909,7 +904,7 @@ pub async fn get_adapter_devices_handler(
         .collect();
 
     ok(json!({
-        "plugin_id": id,
+        "adapter_id": id,
         "devices": device_dtos,
         "count": device_dtos.len(),
     }))
@@ -919,14 +914,101 @@ pub async fn get_adapter_devices_handler(
 ///
 /// GET /api/plugins/device-adapters/stats
 pub async fn get_device_adapter_stats_handler(
+    State(state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    let stats = state.device_service.get_adapter_stats().await;
+
+    ok(json!({
+        "total_adapters": stats.total_adapters,
+        "running_adapters": stats.running_adapters,
+        "total_devices": stats.total_devices,
+        "adapters": stats.adapters,
+    }))
+}
+
+/// Adapter type definition for frontend.
+#[derive(Debug, Serialize)]
+pub struct AdapterTypeDto {
+    /// Type ID (e.g., "mqtt", "http", "webhook")
+    pub id: String,
+    /// Display name
+    pub name: String,
+    /// Description
+    pub description: String,
+    /// Icon name (for frontend)
+    pub icon: String,
+    /// Icon background color class
+    pub icon_bg: String,
+    /// Connection mode (push/pull/hybrid)
+    pub mode: String,
+    /// Whether multiple instances can be created
+    pub can_add_multiple: bool,
+    /// Whether this is a built-in adapter
+    pub builtin: bool,
+}
+
+/// Get available device adapter types.
+///
+/// Similar to /llm-backends/types, this returns the available adapter types
+/// that can be used to create new connections.
+///
+/// GET /api/device-adapters/types
+pub async fn list_adapter_types_handler(
     State(_state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    use edge_ai_devices::DeviceAdapterPluginRegistry;
+    use edge_ai_devices::adapters::available_adapters;
 
-    let registry = DeviceAdapterPluginRegistry::try_get().ok_or_else(|| {
-        ErrorResponse::service_unavailable("Device adapter registry not initialized")
-    })?;
-    let stats = registry.get_stats().await;
+    let available = available_adapters();
 
-    ok(json!(stats))
+    // Define adapter type metadata (this could be moved to a config file in the future)
+    let type_info: Vec<AdapterTypeDto> = available
+        .into_iter()
+        .map(|adapter_type| match adapter_type {
+            "mqtt" => AdapterTypeDto {
+                id: "mqtt".to_string(),
+                name: "MQTT".to_string(),
+                description: "MQTT broker connections (built-in + external)".to_string(),
+                icon: "Server".to_string(),
+                icon_bg: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400".to_string(),
+                mode: "push".to_string(),
+                can_add_multiple: true,
+                builtin: true,
+            },
+            "http" => AdapterTypeDto {
+                id: "http".to_string(),
+                name: "HTTP (Polling)".to_string(),
+                description: "Poll data from device REST APIs on a schedule".to_string(),
+                icon: "Radio".to_string(),
+                icon_bg: "bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400".to_string(),
+                mode: "pull".to_string(),
+                can_add_multiple: true,
+                builtin: true,
+            },
+            "webhook" => AdapterTypeDto {
+                id: "webhook".to_string(),
+                name: "Webhook".to_string(),
+                description: "Devices push data via HTTP POST to your server".to_string(),
+                icon: "Webhook".to_string(),
+                icon_bg: "bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400".to_string(),
+                mode: "push".to_string(),
+                can_add_multiple: false,
+                builtin: true,
+            },
+            _ => AdapterTypeDto {
+                id: adapter_type.to_string(),
+                name: adapter_type.to_uppercase(),
+                description: format!("{} device adapter", adapter_type),
+                icon: "Server".to_string(),
+                icon_bg: "bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400".to_string(),
+                mode: "unknown".to_string(),
+                can_add_multiple: true,
+                builtin: true,
+            },
+        })
+        .collect();
+
+    ok(json!({
+        "types": type_info,
+        "count": type_info.len(),
+    }))
 }

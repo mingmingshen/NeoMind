@@ -3,9 +3,10 @@
 //! This module provides functionality for generating WASM code from natural language
 //! descriptions using Large Language Models.
 
-use crate::compiler::{CompilationResult, SourceLanguage};
+use crate::compiler::SourceLanguage;
 use crate::error::{Result, WorkflowError};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Result of LLM code generation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +63,8 @@ pub struct WasmCodeGenerator {
     config: GeneratorConfig,
     /// Compiler for converting source code to WASM
     compiler: crate::compiler::MultiLanguageCompiler,
+    /// Optional LLM runtime for code generation
+    llm_runtime: Option<Arc<dyn edge_ai_core::llm::backend::LlmRuntime>>,
 }
 
 impl WasmCodeGenerator {
@@ -70,6 +73,7 @@ impl WasmCodeGenerator {
         Ok(Self {
             config: GeneratorConfig::default(),
             compiler: crate::compiler::MultiLanguageCompiler::new_internal_only()?,
+            llm_runtime: None,
         })
     }
 
@@ -78,27 +82,62 @@ impl WasmCodeGenerator {
         Ok(Self {
             config,
             compiler: crate::compiler::MultiLanguageCompiler::new_internal_only()?,
+            llm_runtime: None,
         })
+    }
+
+    /// Create a new code generator with LLM runtime for code generation.
+    pub fn with_llm(
+        config: GeneratorConfig,
+        llm_runtime: Arc<dyn edge_ai_core::llm::backend::LlmRuntime>,
+    ) -> Result<Self> {
+        Ok(Self {
+            config,
+            compiler: crate::compiler::MultiLanguageCompiler::new_internal_only()?,
+            llm_runtime: Some(llm_runtime),
+        })
+    }
+
+    /// Set the LLM runtime for code generation.
+    pub fn set_llm_runtime(&mut self, llm_runtime: Arc<dyn edge_ai_core::llm::backend::LlmRuntime>) {
+        self.llm_runtime = Some(llm_runtime);
+    }
+
+    /// Check if LLM runtime is configured.
+    pub fn has_llm(&self) -> bool {
+        self.llm_runtime.is_some()
     }
 
     /// Generate WASM code from a natural language description.
     ///
     /// This method creates a prompt for the LLM, sends it, and compiles the
     /// generated code to WASM.
+    ///
+    /// If an LLM runtime is configured, it will be used for code generation.
+    /// Otherwise, falls back to template-based generation.
     pub async fn generate_from_description(
         &self,
         description: &str,
         preferred_language: Option<SourceLanguage>,
     ) -> Result<GeneratedWasmCode> {
         let language = preferred_language.unwrap_or(self.config.default_language);
-        let prompt = self.build_prompt(description, &language);
 
-        // In a real implementation, this would call an LLM API
-        // For now, we return a placeholder that indicates the integration point
-        tracing::info!("LLM prompt: {}", prompt);
+        let source_code = if let Some(llm) = &self.llm_runtime {
+            // Use real LLM API for code generation
+            let prompt = self.build_prompt(description, &language);
+            tracing::info!("Calling LLM for code generation with prompt length: {}", prompt.len());
 
-        // Simulate LLM response with a simple template
-        let source_code = self.generate_template_code(description, &language);
+            self.generate_with_llm(llm, &prompt, description, &language)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!("LLM generation failed, falling back to template: {}", e);
+                    self.generate_template_code(description, &language)
+                })
+        } else {
+            tracing::info!("No LLM runtime configured, using template-based generation");
+            // Fall back to template generation
+            self.generate_template_code(description, &language)
+        };
 
         // Try to compile the generated code
         let compilation_result = self.compiler.compile(&source_code, language).await?;
@@ -119,6 +158,53 @@ impl WasmCodeGenerator {
             compilation_success: compilation_result.success,
             compilation_error: compilation_result.error,
         })
+    }
+
+    /// Generate code using the LLM runtime.
+    async fn generate_with_llm(
+        &self,
+        llm: &Arc<dyn edge_ai_core::llm::backend::LlmRuntime>,
+        prompt: &str,
+        _description: &str,
+        language: &SourceLanguage,
+    ) -> Result<String> {
+        use edge_ai_core::{
+            llm::backend::{GenerationParams, LlmInput, LlmOutput},
+            message::Message,
+        };
+
+        // Create the LLM input with the prompt
+        let input = LlmInput {
+            messages: vec![Message::user(prompt)],
+            params: GenerationParams {
+                temperature: Some(0.2), // Lower temperature for more consistent code
+                max_tokens: Some(4096),
+                top_p: Some(0.9),
+                ..Default::default()
+            },
+            model: llm.model_name().to_string().into(),
+            stream: false,
+            tools: None,
+        };
+
+        // Call the LLM
+        let LlmOutput { text, .. } = tokio::time::timeout(
+            tokio::time::Duration::from_secs(self.config.timeout_seconds),
+            llm.generate(input),
+        )
+        .await
+        .map_err(|e| WorkflowError::Other(format!("LLM request timed out: {}", e)))?
+        .map_err(|e| WorkflowError::Other(format!("LLM generation failed: {}", e)))?;
+
+        // Extract code from LLM response
+        let extracted = self.extract_code(&text, language)?;
+        if !extracted.trim().is_empty() {
+            Ok(extracted)
+        } else {
+            // If extraction failed, try to use the raw response
+            tracing::warn!("Failed to extract code block, using raw response");
+            Ok(text)
+        }
     }
 
     /// Generate code from a pre-existing source code string.
@@ -359,6 +445,7 @@ impl Default for WasmCodeGenerator {
             Self {
                 config,
                 compiler: crate::compiler::MultiLanguageCompiler::default(),
+                llm_runtime: None,
             }
         })
     }

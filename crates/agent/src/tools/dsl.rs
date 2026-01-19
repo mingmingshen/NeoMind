@@ -12,12 +12,12 @@ use tokio::sync::RwLock;
 
 use edge_ai_rules::{
     CompiledRule, HistoryFilter, RuleEngine, RuleHistoryStorage, RuleId, RuleStatus,
-    dsl::{ComparisonOperator, RuleAction, RuleDslParser},
+    dsl::{ComparisonOperator, RuleAction},
 };
 use edge_ai_tools::{
     Tool, ToolError, ToolOutput,
     error::Result as ToolResult,
-    tool::{array_property, boolean_property, number_property, object_schema, string_property},
+    tool::{boolean_property, number_property, object_schema, string_property},
 };
 
 /// ListRules tool - queries all rules with filtering.
@@ -69,11 +69,10 @@ impl ListRulesTool {
                         return false;
                     }
                 }
-                if let Some(d) = device_id {
-                    if rule.condition.device_id != d {
+                if let Some(d) = device_id
+                    && rule.condition.device_id != d {
                         return false;
                     }
-                }
                 true
             })
             .map(|rule| RuleSummary::from_compiled(&rule))
@@ -654,13 +653,11 @@ impl Tool for GetRuleHistoryTool {
             "count": entries.len(),
         });
 
-        if include_stats {
-            if let Some(rid) = rule_id {
-                if let Some(stats) = self.get_stats(rid).await {
+        if include_stats
+            && let Some(rid) = rule_id
+                && let Some(stats) = self.get_stats(rid).await {
                     result["stats"] = serde_json::to_value(stats).unwrap();
                 }
-            }
-        }
 
         Ok(ToolOutput::success(result))
     }
@@ -795,6 +792,7 @@ impl RuleStatistics {
 mod tests {
     use super::*;
     use edge_ai_rules::InMemoryValueProvider;
+    use edge_ai_rules::RuleDslParser;
 
     #[tokio::test]
     async fn test_list_rules_empty() {

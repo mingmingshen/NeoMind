@@ -371,7 +371,7 @@ impl LlmRuntime for CloudRuntime {
         }
 
         let chat_response: ChatCompletionResponse =
-            serde_json::from_str(&body).map_err(|e| LlmError::Serialization(e))?;
+            serde_json::from_str(&body).map_err(LlmError::Serialization)?;
 
         let choice = chat_response
             .choices
@@ -501,19 +501,16 @@ impl LlmRuntime for CloudRuntime {
                                         let _ = tx.send(Ok((String::new(), false))).await;
                                         continue;
                                     }
-                                    if line.starts_with("data: ") {
-                                        let json = &line[6..];
+                                    if let Some(json) = line.strip_prefix("data: ") {
                                         if let Ok(evt) =
                                             serde_json::from_str::<StreamChunkEvent>(json)
-                                        {
-                                            if let Some(choice) = evt.choices.first() {
+                                            && let Some(choice) = evt.choices.first() {
                                                 let delta = &choice.delta.content;
                                                 if !delta.is_empty() {
                                                     let _ =
                                                         tx.send(Ok((delta.clone(), false))).await;
                                                 }
                                             }
-                                        }
                                     }
                                 }
                             }

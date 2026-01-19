@@ -55,15 +55,19 @@
 //! ```
 
 pub mod builtin;
+pub mod core_tools;
 pub mod error;
 pub mod real;
 pub mod registry;
 pub mod tool;
+pub mod simplified;
 
 // Re-exports commonly used types
 pub use error::{NeoTalkError, Result, ToolError};
 pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult, format_for_llm};
 pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
+pub use simplified::{ErrorMessages, Example, FriendlyError, LlmToolDefinition, SimplifiedConfig,
+                   format_tools_as_json, format_tools_for_llm, get_simplified_tools};
 
 // Re-exports from core (backward compatibility)
 pub use edge_ai_core::tools::{
@@ -83,6 +87,28 @@ pub use builtin::{
     // New tools
     DeleteRuleTool, EnableRuleTool, DisableRuleTool, UpdateRuleTool,
     QueryDeviceStatusTool, GetDeviceConfigTool, SetDeviceConfigTool, BatchControlDevicesTool,
+};
+
+// New core business-scenario tools
+pub use core_tools::{
+    // Device tools
+    DeviceDiscoverTool, DeviceQueryTool, DeviceControlTool, DeviceAnalyzeTool,
+    // Rule tools
+    RuleFromContextTool,
+    // Types
+    DeviceInfo as CoreDeviceInfo, DeviceCapabilities, DeviceFilter,
+    DeviceGroup, DiscoverySummary,
+    MetricInfo as CoreMetricInfo, CommandInfo as CoreCommandInfo, ParameterInfo,
+    // Query types
+    TimeRange, DataPoint as CoreDataPoint, MetricQueryResult, MetricStatistics,
+    // Control types
+    ControlCommand, ControlResult, BatchControlResult,
+    // Analysis types
+    AnalysisType, AnalysisResult,
+    // Rule types
+    ExtractedRuleDefinition, RuleActionDef,
+    // Registry
+    MockDeviceRegistry,
 };
 
 // Feature-gated real tools

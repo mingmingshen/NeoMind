@@ -12,12 +12,14 @@ import {
 } from "@/components/ui/table"
 import { LoadingState, EmptyStateInline, Pagination, BulkActionBar, ActionBar } from "@/components/shared"
 import { Card } from "@/components/ui/card"
-import { Eye, Pencil, Trash2, FileJson, Plus, Download, Upload } from "lucide-react"
+import { Eye, Pencil, Trash2, FileJson, Plus, Download, Upload, Sparkles } from "lucide-react"
 import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import type { DeviceType } from "@/types"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { DeviceTypeGeneratorDialog } from "@/components/devices/DeviceTypeGeneratorDialog"
+import { TransformsBadge } from "@/components/automation"
 
 interface DeviceTypeListProps {
   deviceTypes: DeviceType[]
@@ -55,6 +57,7 @@ export function DeviceTypeList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkProcessing, setBulkProcessing] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [generatorOpen, setGeneratorOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const toggleSelection = (id: string) => {
@@ -100,53 +103,76 @@ export function DeviceTypeList({
   }
 
   // Export single device type as JSON file
-  const handleExportSingle = (deviceType: DeviceType) => {
-    const data = JSON.stringify(deviceType, null, 2)
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `device-type-${deviceType.device_type}.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    toast({ title: t('common:success'), description: `Exported ${deviceType.name}` })
+  // Note: Need to fetch full details first since list API only returns counts
+  const handleExportSingle = async (deviceType: DeviceType) => {
+    try {
+      // Fetch full device type details with metrics and commands
+      const fullType = await api.getDeviceType(deviceType.device_type)
+      const data = JSON.stringify(fullType, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `device-type-${deviceType.device_type}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast({ title: t('common:success'), description: `Exported ${deviceType.name}` })
+    } catch (error) {
+      toast({ title: t('common:failed'), description: 'Failed to export device type', variant: 'destructive' })
+    }
   }
 
   // Export selected device types
-  const handleExportSelected = () => {
+  const handleExportSelected = async () => {
     if (selectedIds.size === 0) {
       toast({ title: t('common:failed'), description: 'No device types selected', variant: 'destructive' })
       return
     }
-    const selectedTypes = deviceTypes.filter(t => selectedIds.has(t.device_type))
-    const data = JSON.stringify(selectedTypes, null, 2)
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `device-types-${selectedIds.size}.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    toast({ title: t('common:success'), description: `Exported ${selectedIds.size} device types` })
+    try {
+      // Fetch full details for each selected device type
+      const selectedTypes = deviceTypes.filter(t => selectedIds.has(t.device_type))
+      const fullTypes = await Promise.all(
+        selectedTypes.map(t => api.getDeviceType(t.device_type))
+      )
+      const data = JSON.stringify(fullTypes, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `device-types-${selectedIds.size}.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast({ title: t('common:success'), description: `Exported ${selectedIds.size} device types` })
+    } catch (error) {
+      toast({ title: t('common:failed'), description: 'Failed to export device types', variant: 'destructive' })
+    }
   }
 
   // Export all device types
-  const handleExportAll = () => {
-    const data = JSON.stringify(deviceTypes, null, 2)
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `all-device-types.json`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-    toast({ title: t('common:success'), description: `Exported ${deviceTypes.length} device types` })
+  const handleExportAll = async () => {
+    try {
+      // Fetch full details for all device types
+      const fullTypes = await Promise.all(
+        deviceTypes.map(t => api.getDeviceType(t.device_type))
+      )
+      const data = JSON.stringify(fullTypes, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `all-device-types.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast({ title: t('common:success'), description: `Exported ${deviceTypes.length} device types` })
+    } catch (error) {
+      toast({ title: t('common:failed'), description: 'Failed to export device types', variant: 'destructive' })
+    }
   }
 
   // Import device types from JSON file
@@ -232,11 +258,20 @@ export function DeviceTypeList({
           <>
             <Button variant="outline" size="sm" onClick={handleImportClick} disabled={importing}>
               <Upload className="mr-2 h-4 w-4" />
-              {importing ? 'Importing...' : 'Import'}
+              {importing ? t('common:importing') : t('common:import')}
             </Button>
             <Button variant="outline" size="sm" onClick={handleExportAll} disabled={deviceTypes.length === 0}>
               <Download className="mr-2 h-4 w-4" />
-              Export All
+              {t('common:export')} All
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setGeneratorOpen(true)}
+              className="border-purple-500 text-purple-500 hover:bg-purple-50"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              {t('devices:types.generator.button')}
             </Button>
             <Dialog>
               <DialogTrigger asChild>
@@ -289,12 +324,13 @@ export function DeviceTypeList({
                 <TableHead>{t('devices:types.headers.description')}</TableHead>
                 <TableHead align="center">{t('devices:types.headers.metrics')}</TableHead>
                 <TableHead align="center">{t('devices:types.headers.commands')}</TableHead>
+                <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms' })}</TableHead>
                 <TableHead align="right">{t('devices:types.headers.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {deviceTypes.length === 0 ? (
-                <EmptyStateInline title={t('devices:types.noTypes')} colSpan={7} />
+                <EmptyStateInline title={t('devices:types.noTypes')} colSpan={8} />
               ) : (
                 paginatedDeviceTypes.map((type) => (
                   <TableRow key={type.device_type} className={cn(selectedIds.has(type.device_type) && "bg-muted/50")}>
@@ -316,6 +352,9 @@ export function DeviceTypeList({
                     </TableCell>
                     <TableCell align="center">
                       {type.commands?.length ?? type.command_count ?? 0}
+                    </TableCell>
+                    <TableCell align="center">
+                      <TransformsBadge deviceTypeId={type.device_type} onRefresh={onRefresh} />
                     </TableCell>
                     <TableCell align="right">
                       <div className="flex justify-end gap-1">
@@ -351,6 +390,16 @@ export function DeviceTypeList({
           />
         </div>
       )}
+
+      {/* Device Type Generator Dialog */}
+      <DeviceTypeGeneratorDialog
+        open={generatorOpen}
+        onOpenChange={setGeneratorOpen}
+        onDeviceTypeCreated={() => {
+          onRefresh()
+          setGeneratorOpen(false)
+        }}
+      />
     </>
   )
 }

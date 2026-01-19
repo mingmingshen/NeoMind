@@ -8,7 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use edge_ai_tools::tool::{ResponseFormat, array_property, object_schema, string_property};
+use edge_ai_tools::tool::{array_property, object_schema, string_property};
 use edge_ai_tools::{Tool, ToolDefinition, ToolOutput};
 
 /// Think Tool for structured reasoning.
@@ -93,14 +93,13 @@ impl ThinkTool {
     /// Format a thought for display.
     fn format_thought(&self, thought: &str, breakdown: Option<&[String]>) -> String {
         let mut result = format!("🧠 Thinking: {}", thought);
-        if let Some(steps) = breakdown {
-            if !steps.is_empty() {
+        if let Some(steps) = breakdown
+            && !steps.is_empty() {
                 result.push_str("\n\nPlan:\n");
                 for (i, step) in steps.iter().enumerate() {
                     result.push_str(&format!("  {}. {}\n", i + 1, step));
                 }
             }
-        }
         result
     }
 }
@@ -147,7 +146,7 @@ impl Tool for ThinkTool {
         let formatted = self.format_thought(thought, task_breakdown.as_deref());
 
         // Optionally store the thought
-        if let Some(storage) = &self.storage {
+        if let Some(_storage) = &self.storage {
             // Note: We'd need session_id from context, but for now this is a placeholder
             // In a real implementation, the session_id should be passed via args or context
         }

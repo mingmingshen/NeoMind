@@ -95,7 +95,7 @@ pub use session::{SessionMessage, SessionMetadata, SessionStore};
 pub use multimodal::{DocumentMetadata, ImageMetadata, MultimodalStore};
 
 pub use settings::{
-    ConfigChangeEntry, ExternalBroker, HassSettings, LlmBackendType, LlmSettings, MqttSettings,
+    ConfigChangeEntry, ExternalBroker, LlmBackendType, LlmSettings, MqttSettings,
     SecurityLevel, SecurityWarning, SettingsStore,
 };
 

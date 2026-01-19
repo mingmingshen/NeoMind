@@ -303,9 +303,7 @@ function toAdapterPluginData(adapter: AdapterPluginDto, deviceCount: number = 0)
     name: adapter.name,
     description: `${adapter.adapter_type.toUpperCase()} device adapter`,
     version: adapter.version,
-    icon: adapter.adapter_type === 'mqtt' ? 'Server' :
-           adapter.adapter_type === 'modbus' ? 'Network' :
-           adapter.adapter_type === 'hass' ? 'Home' : 'Wifi',
+    icon: adapter.adapter_type === 'mqtt' ? 'Server' : 'Wifi',
     canAddMultiple: true,
     builtin: false,
     fields: {

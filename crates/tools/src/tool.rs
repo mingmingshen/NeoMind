@@ -76,6 +76,17 @@ impl ToolOutput {
             metadata: Some(metadata),
         }
     }
+
+    /// Create a warning output with metadata.
+    /// A warning is considered successful but should be noted by the user.
+    pub fn warning_with_metadata(warning: impl Into<String>, metadata: Value) -> Self {
+        Self {
+            success: true,
+            data: metadata.clone(),
+            error: Some(warning.into()),
+            metadata: Some(metadata),
+        }
+    }
 }
 
 /// Tool parameter definition.
@@ -235,24 +246,22 @@ pub trait Tool: Send + Sync {
     /// Validate arguments before execution.
     fn validate_args(&self, args: &Value) -> Result<()> {
         let params = self.parameters();
-        if let Some(obj) = params.as_object() {
-            if let Some(required) = obj.get("required").and_then(|r| r.as_array()) {
+        if let Some(obj) = params.as_object()
+            && let Some(required) = obj.get("required").and_then(|r| r.as_array()) {
                 let args_obj = args
                     .as_object()
                     .ok_or_else(|| ToolError::InvalidArguments("Expected object".to_string()))?;
 
                 for req in required {
-                    if let Some(req_str) = req.as_str() {
-                        if !args_obj.contains_key(req_str) {
+                    if let Some(req_str) = req.as_str()
+                        && !args_obj.contains_key(req_str) {
                             return Err(ToolError::InvalidArguments(format!(
                                 "Missing required parameter: {}",
                                 req_str
                             )));
                         }
-                    }
                 }
             }
-        }
         Ok(())
     }
 }

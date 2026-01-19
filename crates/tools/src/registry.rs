@@ -363,6 +363,15 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::real::ListRulesTool::new(engine)))
     }
 
+    /// Add the device analyze tool with real device service and storage.
+    pub fn with_real_device_analyze_tool(
+        self,
+        service: Arc<edge_ai_devices::DeviceService>,
+        storage: Arc<edge_ai_devices::TimeSeriesStorage>,
+    ) -> Self {
+        self.with_tool(Arc::new(super::real::DeviceAnalyzeTool::new(service, storage)))
+    }
+
     /// Add the trigger workflow tool with real workflow engine.
     pub fn with_real_trigger_workflow_tool(
         self,
@@ -380,9 +389,71 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::real::GetDeviceDataTool::new(service, storage)))
     }
 
+    // ============================================================================
+    // Core business-scenario tools (MOCK VERSIONS - FOR TESTING ONLY)
+    // ============================================================================
+
+    /// Add the device discover tool (mock).
+    /// Note: This uses mock data and should only be used for testing.
+    #[cfg(test)]
+    pub fn with_device_discover_tool(self) -> Self {
+        self.with_tool(Arc::new(super::core_tools::DeviceDiscoverTool::mock()))
+    }
+
+    /// Add the device query tool (mock).
+    /// Note: This uses mock data and should only be used for testing.
+    #[cfg(test)]
+    pub fn with_device_query_tool(self) -> Self {
+        self.with_tool(Arc::new(super::core_tools::DeviceQueryTool::mock()))
+    }
+
+    /// Add the device control tool (mock).
+    /// Note: This uses mock data and should only be used for testing.
+    #[cfg(test)]
+    pub fn with_device_control_tool(self) -> Self {
+        self.with_tool(Arc::new(super::core_tools::DeviceControlTool::mock()))
+    }
+
+    /// Add the device analyze tool (mock).
+    /// Note: This uses mock data and should only be used for testing.
+    #[cfg(test)]
+    pub fn with_device_analyze_tool(self) -> Self {
+        self.with_tool(Arc::new(super::core_tools::DeviceAnalyzeTool::mock()))
+    }
+
+    /// Add the rule from context tool (mock).
+    /// Note: This uses mock data and should only be used for testing.
+    #[cfg(test)]
+    pub fn with_rule_from_context_tool(self) -> Self {
+        self.with_tool(Arc::new(super::core_tools::RuleFromContextTool::mock()))
+    }
+
+    /// Add all core business-scenario tools (mock versions).
+    /// Note: This uses mock data and should only be used for testing.
+    #[cfg(test)]
+    pub fn with_core_tools(self) -> Self {
+        self.with_device_discover_tool()
+            .with_device_query_tool()
+            .with_device_control_tool()
+            .with_device_analyze_tool()
+            .with_rule_from_context_tool()
+    }
+
     /// Add all standard tools (mock versions).
+    /// Note: This uses mock data for core tools and should only be used for testing.
+    /// For production, use the specific with_real_*_tool() methods instead.
+    #[cfg(test)]
     pub fn with_standard_tools(self) -> Self {
-        self.with_query_data_tool()
+        // Core mock tools
+        let registry = self
+            .with_device_discover_tool()
+            .with_device_query_tool()
+            .with_device_control_tool()
+            .with_device_analyze_tool()
+            .with_rule_from_context_tool();
+
+        // Standard mock tools (from the simplified module)
+        registry.with_query_data_tool()
             .with_control_device_tool()
             .with_list_devices_tool()
             .with_get_device_metrics_tool()
@@ -484,8 +555,8 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
 
                 // Parameters
                 result.push_str("**参数**:\n");
-                if let Some(props) = def.parameters.get("properties") {
-                    if let Some(obj) = props.as_object() {
+                if let Some(props) = def.parameters.get("properties")
+                    && let Some(obj) = props.as_object() {
                         for (name, prop) in obj {
                             let desc = prop.get("description")
                                 .and_then(|d| d.as_str())
@@ -496,26 +567,21 @@ pub fn format_for_llm(definitions: &[ToolDefinition]) -> String {
                             result.push_str(&format!("  - `{}`: {} ({})", name, desc, type_name));
 
                             // Check if required
-                            if let Some(required) = def.parameters.get("required") {
-                                if let Some(arr) = required.as_array() {
-                                    if arr.iter().any(|v| v.as_str() == Some(name)) {
+                            if let Some(required) = def.parameters.get("required")
+                                && let Some(arr) = required.as_array()
+                                    && arr.iter().any(|v| v.as_str() == Some(name)) {
                                         result.push_str(" **[必需]**");
                                     }
-                                }
-                            }
                             result.push('\n');
                         }
                     }
-                }
 
-                if let Some(required) = def.parameters.get("required") {
-                    if let Some(arr) = required.as_array() {
-                        if !arr.is_empty() {
+                if let Some(required) = def.parameters.get("required")
+                    && let Some(arr) = required.as_array()
+                        && !arr.is_empty() {
                             let required_names: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
                             result.push_str(&format!("**必需参数**: {}\n", required_names.join(", ")));
                         }
-                    }
-                }
 
                 result.push('\n');
             }
@@ -617,6 +683,8 @@ mod tests {
 
     #[test]
     fn test_format_for_llm() {
+        use edge_ai_core::tools::{ToolCategory, ToolRelationships, UsageScenario};
+
         let definitions = vec![ToolDefinition {
             name: "test_tool".to_string(),
             description: "A test tool".to_string(),
@@ -632,8 +700,14 @@ mod tests {
             }),
             example: None,
             examples: vec![],
-            response_format: crate::tool::ResponseFormat::Concise,
+            response_format: Some("concise".to_string()),
             namespace: Some("test".to_string()),
+            category: ToolCategory::System,
+            scenarios: vec![],
+            relationships: ToolRelationships::default(),
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
         }];
 
         let formatted = format_for_llm(&definitions);

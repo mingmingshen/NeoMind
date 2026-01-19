@@ -15,8 +15,8 @@ use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use super::staged::{IntentCategory, IntentClassifier, IntentResult};
-use super::tool_parser::{parse_tool_calls, remove_tool_calls_from_response};
+use super::staged::{IntentCategory, IntentClassifier};
+use super::tool_parser::parse_tool_calls;
 use super::types::{AgentEvent, AgentInternalState, AgentMessage, ToolCall};
 use crate::error::{AgentError, Result};
 use crate::llm::LlmInterface;
@@ -176,13 +176,57 @@ pub fn cleanup_thinking_content(thinking: &str) -> String {
 
     // Pass 3: If still too long, truncate with ellipsis at char boundary
     if result.chars().count() > 500 {
-        let char_count = result.chars().count();
+        let _char_count = result.chars().count();
         // Take first 500 chars and add ellipsis
         result = result.chars().take(500).collect::<String>();
         result.push_str("...");
     }
 
     result
+}
+
+/// Detect JSON tool calls in buffer.
+///
+/// Looks for JSON array format: [{"name": "tool", "arguments": {...}}, ...]
+/// Returns Some((start_pos, json_text, remaining_buffer)) if found, None otherwise.
+fn detect_json_tool_calls(buffer: &str) -> Option<(usize, String, String)> {
+    // Find the first '[' that might start a JSON array
+    let start = buffer.find('[')?;
+
+    // Find the matching closing ']' by counting brackets
+    let mut bracket_count = 0;
+    let mut end = None;
+
+    for (i, c) in buffer[start..].char_indices() {
+        if c == '[' {
+            bracket_count += 1;
+        } else if c == ']' {
+            bracket_count -= 1;
+            if bracket_count == 0 {
+                end = Some(start + i + 1);
+                break;
+            }
+        }
+    }
+
+    let end = end?;
+
+    // Extract the JSON array
+    let json_str = buffer[start..end].to_string();
+
+    // Check if it looks like a tool call (has "name", "tool", or "function" key)
+    if !json_str.contains("\"name\"") && !json_str.contains("\"tool\"") && !json_str.contains("\"function\"") {
+        return None;
+    }
+
+    // Verify it's valid JSON
+    if serde_json::from_str::<serde_json::Value>(&json_str).is_err() {
+        return None;
+    }
+
+    // Return start position, the JSON, and remaining buffer
+    let remaining = buffer[end..].to_string();
+    Some((start, json_str, remaining))
 }
 
 /// Detect if content is repetitive (indicating a loop)
@@ -266,10 +310,11 @@ fn detect_repetition(recent_chunks: &[String], new_chunk: &str, threshold: usize
     false
 }
 
-/// Simple in-memory cache for tool results with TTL
+/// Simple in-memory cache for tool results with TTL and size limit
 struct ToolResultCache {
     entries: HashMap<String, (edge_ai_tools::ToolOutput, Instant)>,
     ttl: Duration,
+    max_entries: usize,
 }
 
 impl ToolResultCache {
@@ -277,6 +322,7 @@ impl ToolResultCache {
         Self {
             entries: HashMap::new(),
             ttl,
+            max_entries: 1000, // Prevent unbounded memory growth
         }
     }
 
@@ -291,17 +337,49 @@ impl ToolResultCache {
     }
 
     fn insert(&mut self, key: String, value: edge_ai_tools::ToolOutput) {
+        // Enforce size limit - remove oldest entry if at capacity
+        if self.entries.len() >= self.max_entries {
+            // Remove the oldest entry (first key in iteration)
+            if let Some(oldest_key) = self.entries.keys().next().cloned() {
+                self.entries.remove(&oldest_key);
+            }
+        }
         self.entries.insert(key, (value, Instant::now()));
     }
 
     fn cleanup_expired(&mut self) {
         self.entries
             .retain(|_, (_, timestamp)| timestamp.elapsed() < self.ttl);
+
+        // Also enforce size limit after cleanup
+        while self.entries.len() > self.max_entries {
+            if let Some(oldest_key) = self.entries.keys().next().cloned() {
+                self.entries.remove(&oldest_key);
+            }
+        }
     }
 
-    /// Generate cache key from tool name and arguments
+    /// Get current cache size (for monitoring)
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Generate cache key from tool name and arguments.
+    /// Sorts object keys to ensure consistent keys regardless of parameter order.
     fn make_key(name: &str, arguments: &Value) -> String {
-        format!("{}:{}", name, arguments.to_string())
+        // For objects, sort keys to ensure consistent cache keys
+        if let Some(obj) = arguments.as_object() {
+            let mut sorted_pairs: Vec<_> = obj.iter().collect();
+            sorted_pairs.sort_by(|a, b| a.0.cmp(b.0));
+
+            let sorted_obj: serde_json::Map<String, Value> =
+                sorted_pairs.into_iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+
+            format!("{}:{}", name, serde_json::to_string(&sorted_obj).unwrap_or_default())
+        } else {
+            // For non-objects (arrays, strings, numbers, etc.), use as-is
+            format!("{}:{}", name, arguments)
+        }
     }
 }
 
@@ -529,7 +607,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
                             serde_json::to_string_pretty(data).unwrap_or_default()
                         ));
                     } else {
-                        response.push_str(&format!("查询完成。\n"));
+                        response.push_str("查询完成。\n");
                     }
                 }
                 "control_device" | "send_command" => {
@@ -602,7 +680,7 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
             continue;
         }
 
-        if msg.tool_calls.is_some() && msg.tool_calls.as_ref().map_or(false, |t| !t.is_empty()) {
+        if msg.tool_calls.is_some() && msg.tool_calls.as_ref().is_some_and(|t| !t.is_empty()) {
             tool_result_count += 1;
 
             if tool_result_count <= KEEP_RECENT_TOOL_RESULTS {
@@ -721,46 +799,39 @@ pub async fn process_stream_events_with_safeguards(
     // === FAST PATH: Simple greetings and common patterns ===
     // Bypass LLM for simple, common interactions to improve speed and reliability
     let trimmed = user_message.trim();
+    let lower = trimmed.to_lowercase();
+
+    // Greeting patterns
     let greeting_patterns = [
-        "你好",
-        "您好",
-        "hi",
-        "hello",
-        "嗨",
-        "在吗",
-        "早上好",
-        "下午好",
-        "晚上好",
+        "你好", "您好", "hi", "hello", "嗨", "在吗",
+        "早上好", "下午好", "晚上好",
+    ];
+
+    // Device list query patterns - fast path for common device queries
+    let device_list_patterns = [
+        "有哪些设备", "有什么设备", "设备列表", "查看设备", "所有设备",
+        "列出设备", "系统设备", "显示设备",
+        "devices", "list devices",
+    ];
+
+    // Temperature query patterns - fast path for temperature queries
+    let temp_query_patterns = [
+        "温度", "temperature",
     ];
 
     let is_greeting = greeting_patterns
         .iter()
         .any(|&pat| trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat));
 
-    if is_greeting && trimmed.len() < 20 {
-        // Fast response for greetings - no LLM call needed
-        let greeting_response = AgentMessage::assistant(
-            "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
-            • 查看设备列表 - 说「列出设备」\n\
-            • 查询设备数据 - 说「查询温度」\n\
-            • 创建自动化规则 - 说「创建规则」\n\
-            • 查看所有规则 - 说「列出规则」",
-        );
+    // Check for device list query
+    let is_device_query = device_list_patterns
+        .iter()
+        .any(|&pat| lower.contains(&pat.to_lowercase()) && lower.len() < 30);
 
-        // Pure async - no block_in_place
-        internal_state.write().await.push_message(greeting_response);
-
-        let response_content = "您好！我是 NeoTalk 智能助手。我可以帮您：\n\
-            • 查看设备列表 - 说「列出设备」\n\
-            • 查询设备数据 - 说「查询温度」\n\
-            • 创建自动化规则 - 说「创建规则」\n\
-            • 查看所有规则 - 说「列出规则」";
-
-        return Ok(Box::pin(async_stream::stream! {
-            yield AgentEvent::content(response_content.to_string());
-            yield AgentEvent::end();
-        }));
-    }
+    // Check for temperature query (simple single-word queries)
+    let is_temp_query = temp_query_patterns
+        .iter()
+        .any(|&pat| lower == pat || lower.ends_with(pat) || lower.starts_with("当前") && lower.contains("温度"));
 
     // === INTENT RECOGNITION: Understand user intent before LLM call ===
     // This helps reduce cognitive load and provides better visualization
@@ -804,6 +875,20 @@ pub async fn process_stream_events_with_safeguards(
             ("查询设备数据", "Execution"),
             ("返回数据结果", "Response"),
         ],
+        IntentCategory::Alert => vec![
+            ("识别告警查询意图", "Intent"),
+            ("获取告警列表", "Execution"),
+            ("返回告警信息", "Response"),
+        ],
+        IntentCategory::System => vec![
+            ("识别系统状态意图", "Intent"),
+            ("获取系统信息", "Execution"),
+            ("返回系统状态", "Response"),
+        ],
+        IntentCategory::Help => vec![
+            ("识别帮助请求意图", "Intent"),
+            ("提供使用说明", "Response"),
+        ],
         IntentCategory::General => vec![("理解用户问题", "Intent"), ("生成回复", "Response")],
     };
 
@@ -838,6 +923,17 @@ pub async fn process_stream_events_with_safeguards(
     // === INTENT-BASED THINKING CONTROL ===
     // For simple list-type queries, disable thinking to get faster responses
     // This prevents the model from using all tokens for thinking
+    // IMPORTANT: Disable thinking when tools are likely needed to prevent timeout
+    let has_tool_keywords = user_message.contains("温度")
+        || user_message.contains("湿度")
+        || user_message.contains("查询")
+        || user_message.contains("多少")
+        || user_message.contains("状态")
+        || user_message.contains("设备")
+        || user_message.contains("打开")
+        || user_message.contains("关闭")
+        || user_message.contains("控制");
+
     let use_thinking = match intent_result.category {
         // Disable thinking for simple list queries
         IntentCategory::Device => {
@@ -856,8 +952,24 @@ pub async fn process_stream_events_with_safeguards(
                 && !user_message.contains("触发")
                 && !user_message.contains("状态")
         }
-        // Keep thinking enabled for complex queries
-        IntentCategory::Data | IntentCategory::General => true,
+        IntentCategory::Alert => {
+            // Enable thinking for alert analysis
+            user_message.contains("分析")
+                || user_message.contains("原因")
+                || user_message.contains("统计")
+        }
+        IntentCategory::System => {
+            // Enable thinking for system analysis
+            user_message.contains("诊断")
+                || user_message.contains("问题")
+                || user_message.contains("异常")
+        }
+        IntentCategory::Help => {
+            // Disable thinking for simple help queries
+            !user_message.contains("怎么") && !user_message.contains("如何")
+        }
+        // Data/General: disable thinking when tool keywords present, enable otherwise
+        IntentCategory::Data | IntentCategory::General => !has_tool_keywords,
     };
 
     tracing::info!(
@@ -968,8 +1080,15 @@ pub async fn process_stream_events_with_safeguards(
 
                 if elapsed > timeout_threshold {
                     tracing::warn!("Stream timeout ({:?} elapsed, max: {:?}), forcing completion", elapsed, timeout_threshold);
-                    yield AgentEvent::error(format!("请求超时（已用时{:.1}秒），正在完成处理...", elapsed.as_secs_f64()));
-                    break;
+                    // Don't break here - let tool calls be processed
+                    // Just log the timeout and continue to check for tool calls
+                    if tool_calls_detected {
+                        tracing::info!("Timeout with tool calls detected, proceeding to execution");
+                        break;
+                    } else {
+                        yield AgentEvent::error(format!("请求超时（已用时{:.1}秒），正在完成处理...", elapsed.as_secs_f64()));
+                        break;
+                    }
                 } else if elapsed > warning_threshold && !timeout_warned {
                     tracing::warn!("Stream approaching timeout ({:.1}s elapsed, max: {:.1}s)", elapsed.as_secs_f64(), timeout_threshold.as_secs_f64());
                     yield AgentEvent::warning(format!("响应时间较长（已用时{:.1}秒），请耐心等待...", elapsed.as_secs_f64()));
@@ -1042,9 +1161,94 @@ pub async fn process_stream_events_with_safeguards(
 
                         if is_thinking {
                             // No thinking limit - let the model think as much as needed
+                            // First, add the new text to thinking content
                             thinking_content.push_str(&text);
                             has_thinking = true;
-                            yield AgentEvent::thinking(text);
+
+                            // === IMPORTANT: Check for tool calls BEFORE yielding thinking event ===
+                            // Some models (like qwen3-vl:2b) output tool calls within thinking field
+                            // We need to detect and extract them BEFORE sending to frontend
+                            let mut text_to_yield = text.clone();
+                            let thinking_with_new = thinking_content.as_str();
+                            let mut had_tool_calls = false;
+
+                            // Check for XML tool calls in thinking: <tool_calls>...</tool_calls>
+                            if let Some(tool_start) = thinking_with_new.find("<tool_calls>") {
+                                if let Some(tool_end) = thinking_with_new.find("</tool_calls>") {
+                                    let tool_content = thinking_with_new[tool_start..tool_end + 13].to_string();
+
+                                    // Parse the tool calls from thinking
+                                    if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
+                                        let mut duplicate_found = false;
+                                        for call in &calls {
+                                            if recently_executed_tools.contains(&call.name) {
+                                                tracing::warn!(
+                                                    "Tool '{}' was recently executed - potential loop detected",
+                                                    call.name
+                                                );
+                                                yield AgentEvent::error(format!(
+                                                    "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                                    call.name
+                                                ));
+                                                duplicate_found = true;
+                                                tool_calls.clear();
+                                                break;
+                                            }
+                                        }
+
+                                        if !duplicate_found {
+                                            tool_calls_detected = true;
+                                            tool_calls.extend(calls);
+                                            had_tool_calls = true;
+                                            // Remove tool calls from thinking content
+                                            thinking_content = format!("{}{}", &thinking_with_new[..tool_start], &thinking_with_new[tool_end + 13..]);
+                                            // Don't yield tool call XML as thinking content
+                                            text_to_yield = String::new();
+                                            tracing::info!("Extracted {} tool calls from thinking content", tool_calls.len());
+                                        }
+                                    }
+                                }
+                            }
+                            // Also check for JSON tool calls in thinking
+                            else if let Some((json_start, tool_json, remaining)) = detect_json_tool_calls(thinking_with_new)
+                                && let Ok((_, calls)) = parse_tool_calls(&tool_json) {
+                                    let mut duplicate_found = false;
+                                    for call in &calls {
+                                        if recently_executed_tools.contains(&call.name) {
+                                            tracing::warn!(
+                                                "Tool '{}' was recently executed - potential loop detected",
+                                                call.name
+                                            );
+                                            yield AgentEvent::error(format!(
+                                                "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                                call.name
+                                            ));
+                                            duplicate_found = true;
+                                            tool_calls.clear();
+                                            break;
+                                        }
+                                    }
+
+                                    if !duplicate_found {
+                                        tool_calls_detected = true;
+                                        tool_calls.extend(calls);
+                                        had_tool_calls = true;
+                                        // Remove tool calls from thinking content
+                                        thinking_content = format!("{}{}", &thinking_with_new[..json_start], remaining);
+                                        // Don't yield tool call JSON as thinking content
+                                        text_to_yield = String::new();
+                                        tracing::info!("Extracted {} JSON tool calls from thinking content", tool_calls.len());
+                                    }
+                                }
+
+                            // Only yield non-empty thinking content (without tool calls)
+                            if !text_to_yield.is_empty() {
+                                yield AgentEvent::thinking(text_to_yield);
+                            } else if had_tool_calls {
+                                // If we had tool calls but no other thinking content, yield empty thinking
+                                // to ensure the frontend knows thinking phase is happening
+                                yield AgentEvent::thinking(String::new());
+                            }
                             last_event_time = Instant::now();
                             continue;
                         }
@@ -1063,8 +1267,45 @@ pub async fn process_stream_events_with_safeguards(
 
                         buffer.push_str(&text);
 
-                        // Check for tool calls in buffer
-                        if let Some(tool_start) = buffer.find("<tool_calls>") {
+                        // Check for tool calls in buffer (support both XML and JSON formats)
+                        // Try JSON format first: [{"name": "tool", "arguments": {...}}]
+                        let json_tool_check = detect_json_tool_calls(&buffer);
+                        if let Some((json_start, tool_json, remaining)) = json_tool_check {
+                            // Found JSON tool calls - split buffer into before, tool, and remaining
+                            let before_tool = &buffer[..json_start];
+                            if !before_tool.is_empty() {
+                                content_before_tools.push_str(before_tool);
+                                yield AgentEvent::content(before_tool.to_string());
+                            }
+
+                            // Parse the JSON tool calls
+                            if let Ok((_, calls)) = parse_tool_calls(&tool_json) {
+                                let mut duplicate_found = false;
+                                for call in &calls {
+                                    if recently_executed_tools.contains(&call.name) {
+                                        tracing::warn!(
+                                            "Tool '{}' was recently executed - potential loop detected",
+                                            call.name
+                                        );
+                                        yield AgentEvent::error(format!(
+                                            "Tool '{}' was recently executed. To prevent infinite loops, please try a different approach.",
+                                            call.name
+                                        ));
+                                        duplicate_found = true;
+                                        tool_calls.clear();
+                                        break;
+                                    }
+                                }
+
+                                if !duplicate_found {
+                                    tool_calls_detected = true;
+                                    tool_calls.extend(calls);
+                                }
+                            }
+
+                            // Update buffer with remaining content
+                            buffer = remaining.to_string();
+                        } else if let Some(tool_start) = buffer.find("<tool_calls>") {
                             let before_tool = &buffer[..tool_start];
                             if !before_tool.is_empty() {
                                 content_before_tools.push_str(before_tool);
@@ -1370,8 +1611,25 @@ pub async fn process_stream_events_with_safeguards(
                     final_response_content = fallback;
                 }
 
-                let final_msg = AgentMessage::assistant(&final_response_content);
-                internal_state.write().await.push_message(final_msg);
+                // IMPORTANT: Update the initial message with the follow-up content
+                // instead of saving a separate message. This ensures the message
+                // has both tool_calls and content in one place.
+                {
+                    let mut state = internal_state.write().await;
+                    if let Some(last_msg) = state.memory.last_mut() {
+                        if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
+                            // Update the last assistant message (which has tool_calls) with the content
+                            last_msg.content = final_response_content.clone();
+                        } else {
+                            // Fallback: push a new message if the last one isn't what we expect
+                            let final_msg = AgentMessage::assistant(&final_response_content);
+                            state.memory.push(final_msg);
+                        }
+                    } else {
+                        let final_msg = AgentMessage::assistant(&final_response_content);
+                        state.memory.push(final_msg);
+                    }
+                }
 
                 tracing::info!("Tool execution and Phase 2 response complete");
             } else {
@@ -1469,19 +1727,67 @@ async fn execute_tool_with_retry(
     let result = execute_with_retry_impl(tools, name, arguments.clone(), max_retries).await;
 
     // Cache successful results for cacheable tools
-    if is_tool_cacheable(name) {
-        if let Ok(ref output) = result {
-            if output.success {
+    if is_tool_cacheable(name)
+        && let Ok(ref output) = result
+            && output.success {
                 let cache_key = ToolResultCache::make_key(name, &arguments);
                 let mut cache_write = cache.write().await;
                 cache_write.insert(cache_key, output.clone());
                 // Periodic cleanup
                 cache_write.cleanup_expired();
             }
-        }
-    }
 
     result
+}
+
+/// Map simplified tool names to real tool names.
+///
+/// Simplified names are used in LLM prompts (e.g., "device.discover")
+/// while real names are used in ToolRegistry (e.g., "list_devices").
+///
+/// NOTE: This must match the mapping in agent/mod.rs to ensure consistency.
+fn resolve_tool_name(simplified_name: &str) -> String {
+    match simplified_name {
+        // Device tools - note: device.* tools are registered with their simplified names
+        // device.discover → list_devices (for backward compatibility)
+        "device.discover" => "list_devices".to_string(),
+        // device.query, device.control, device.analyze are registered as-is
+        "device.query" | "device.control" | "device.analyze" => simplified_name.to_string(),
+
+        // Rule tools
+        "rule.list" | "rules.list" => "list_rules".to_string(),
+        // rule.from_context is a separate tool that generates DSL from natural language
+        // It should keep its name as it's registered as "rule.from_context" in core_tools
+        // Note: "rule.create" is an alias for create_rule
+        "rule.create" => "create_rule".to_string(),
+        // These tools are registered with their simplified names
+        "rule.from_context" => "rule.from_context".to_string(),
+        "rule.enable" => "enable_rule".to_string(),
+        "rule.disable" => "disable_rule".to_string(),
+        "rule.test" => "test_rule".to_string(),
+
+        // Workflow tools
+        "workflow.list" | "workflows.list" => "list_workflows".to_string(),
+        "workflow.create" => "create_workflow".to_string(),
+        "workflow.trigger" | "workflow.execute" => "trigger_workflow".to_string(),
+
+        // Scenario tools
+        "scenario.list" => "list_scenarios".to_string(),
+        "scenario.create" => "create_scenario".to_string(),
+        "scenario.execute" => "execute_scenario".to_string(),
+
+        // Data tools
+        "data.query" => "query_data".to_string(),
+        "data.analyze" => "analyze_data".to_string(),
+
+        // Alert tools
+        "alert.list" => "list_alerts".to_string(),
+        "alert.create" => "create_alert".to_string(),
+        "alert.acknowledge" => "acknowledge_alert".to_string(),
+
+        // Default: use the name as-is (already a real tool name)
+        _ => simplified_name.to_string(),
+    }
 }
 
 /// Inner retry logic without caching (for code reuse)
@@ -1491,8 +1797,11 @@ async fn execute_with_retry_impl(
     arguments: serde_json::Value,
     max_retries: u32,
 ) -> std::result::Result<edge_ai_tools::ToolOutput, edge_ai_tools::ToolError> {
+    // Map simplified tool name to real tool name
+    let real_tool_name = resolve_tool_name(name);
+
     for attempt in 0..=max_retries {
-        let result = tools.execute(name, arguments.clone()).await;
+        let result = tools.execute(&real_tool_name, arguments.clone()).await;
 
         match &result {
             Ok(output) if output.success => return result,

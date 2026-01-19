@@ -3,12 +3,12 @@
 use axum::{
     extract::{Extension, Path, State},
     http::StatusCode,
-    response::{IntoResponse, Json, Response},
+    response::Json,
 };
 
 use crate::auth_users::{
-    AuthError, AuthUserState, ChangePasswordRequest, LoginRequest, LoginResponse, RegisterRequest,
-    SessionInfo, UserInfo, UserRole,
+    AuthError, ChangePasswordRequest, LoginRequest, LoginResponse, RegisterRequest,
+    SessionInfo, UserRole,
 };
 use crate::server::ServerState;
 

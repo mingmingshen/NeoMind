@@ -1,7 +1,20 @@
 //! Device adapter as UnifiedPlugin implementation.
 //!
+//! **DEPRECATED**: This module is deprecated. Device adapters should be managed
+//! directly through `DeviceService` using `register_adapter()`, `list_adapters()`,
+//! and `get_adapter_stats()` methods.
+//!
 //! This module provides a bridge between the DeviceAdapter trait and the UnifiedPlugin trait,
-//! allowing device adapters (MQTT, Modbus, HASS, etc.) to be managed as plugins.
+//! allowing device adapters (MQTT, HASS, etc.) to be managed as plugins.
+//!
+//! For new code, use:
+//! - `DeviceService::register_adapter()` to register adapters
+//! - `DeviceService::list_adapters()` to list adapters
+//! - `DeviceService::get_adapter_stats()` for statistics
+#![deprecated(
+    since = "1.0.0",
+    note = "Use DeviceService::register_adapter() and DeviceService::list_adapters() instead"
+)]
 
 use anyhow::anyhow;
 use futures::StreamExt;
@@ -9,7 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 
-use crate::adapter::{AdapterError, DeviceAdapter};
+use crate::adapter::DeviceAdapter;
 use edge_ai_core::EventBus;
 use edge_ai_core::plugin::{
     ExtendedPluginMetadata, PluginError, PluginMetadata, PluginPermission, PluginState,
@@ -318,7 +331,7 @@ pub struct AdapterPluginInfo {
     pub id: String,
     /// Plugin name
     pub name: String,
-    /// Adapter type (mqtt, modbus, hass, etc.)
+    /// Adapter type (mqtt, hass, etc.)
     pub adapter_type: String,
     /// Whether the plugin is enabled
     pub enabled: bool,

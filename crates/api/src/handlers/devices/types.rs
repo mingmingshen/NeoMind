@@ -4,9 +4,20 @@ use axum::{
     Json,
     extract::{Path, State},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 
-use edge_ai_devices::{DeviceTypeDefinition, registry::DeviceTypeTemplate};
+use edge_ai_devices::registry::DeviceTypeTemplate;
+use edge_ai_core::llm::backend::LlmRuntime;
+use edge_ai_storage::{LlmBackendInstance, LlmBackendType};
+use edge_ai_llm::{
+    instance_manager::get_instance_manager,
+    OllamaConfig, OllamaRuntime,
+};
+use edge_ai_llm::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
+use edge_ai_automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
+use edge_ai_automation::discovery::DeviceSample;
 
 use super::models::DeviceTypeDto;
 use crate::handlers::{
@@ -90,7 +101,7 @@ pub async fn register_device_type_handler(
         .register_template(template)
         .await
         .map_err(|e| {
-            ErrorResponse::bad_request(&format!("Failed to register device type: {}", e))
+            ErrorResponse::bad_request(format!("Failed to register device type: {}", e))
         })?;
 
     ok(json!({
@@ -109,7 +120,7 @@ pub async fn delete_device_type_handler(
         .device_service
         .unregister_template(&device_type)
         .await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to delete device type: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to delete device type: {}", e)))?;
 
     ok(json!({
         "success": true,
@@ -169,16 +180,14 @@ pub async fn validate_device_type_handler(
         if matches!(
             metric.data_type,
             edge_ai_devices::MetricDataType::Integer | edge_ai_devices::MetricDataType::Float
-        ) {
-            if let (Some(min), Some(max)) = (metric.min, metric.max) {
-                if min > max {
+        )
+            && let (Some(min), Some(max)) = (metric.min, metric.max)
+                && min > max {
                     errors.push(format!(
                         "metrics[{}]: min ({}) 不能大于 max ({})",
                         idx, min, max
                     ));
                 }
-            }
-        }
     }
 
     // Validate commands (simplified structure - direct array)
@@ -230,4 +239,262 @@ pub async fn validate_device_type_handler(
             "message": format!("发现 {} 个错误", errors.len())
         }))
     }
+}
+
+/// Request for generating device type from samples
+#[derive(Debug, Deserialize)]
+pub struct GenerateDeviceTypeRequest {
+    /// Optional device ID
+    #[serde(rename = "device_id")]
+    pub device_id: Option<String>,
+    /// Optional manufacturer
+    #[serde(rename = "manufacturer")]
+    pub manufacturer: Option<String>,
+    /// Data samples from the device
+    pub samples: Vec<DeviceSampleData>,
+    /// Minimum coverage threshold (0.0-1.0) for including fields
+    /// Fields appearing in less than this ratio of samples will be excluded
+    #[serde(rename = "min_coverage", default = "default_min_coverage")]
+    pub min_coverage: f32,
+    /// Minimum confidence threshold (0.0-1.0) for including metrics
+    /// Metrics with AI confidence below this will be excluded
+    #[serde(rename = "min_confidence", default = "default_min_confidence")]
+    pub min_confidence: f32,
+}
+
+fn default_min_coverage() -> f32 { 0.0 }
+fn default_min_confidence() -> f32 { 0.0 }
+
+/// A single data sample with timestamp
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeviceSampleData {
+    /// Timestamp of the sample
+    pub timestamp: i64,
+    /// Data payload
+    pub data: serde_json::Value,
+}
+
+/// Response from device type generation
+#[derive(Debug, Serialize)]
+pub struct GenerateDeviceTypeResponse {
+    /// Generated device type ID
+    #[serde(rename = "id")]
+    pub id: String,
+    /// Generated device type name
+    pub name: String,
+    /// Description
+    pub description: String,
+    /// Device category
+    pub category: String,
+    /// Manufacturer
+    pub manufacturer: String,
+    /// Discovered metrics
+    pub metrics: Vec<GeneratedMetricDto>,
+    /// Discovered commands
+    pub commands: Vec<GeneratedCommandDto>,
+    /// Confidence score (0-1)
+    pub confidence: f32,
+}
+
+/// A generated metric
+#[derive(Debug, Serialize)]
+pub struct GeneratedMetricDto {
+    /// Field name (internal)
+    pub name: String,
+    /// Path to the data
+    pub path: String,
+    /// Display name
+    #[serde(rename = "display_name")]
+    pub display_name: String,
+    /// Description
+    pub description: String,
+    /// Data type
+    #[serde(rename = "data_type")]
+    pub data_type: String,
+    /// Semantic type
+    #[serde(rename = "semantic_type")]
+    pub semantic_type: String,
+    /// Unit (if applicable)
+    pub unit: Option<String>,
+    /// Whether metric is readable
+    pub readable: bool,
+    /// Whether metric is writable
+    pub writable: bool,
+    /// Confidence score
+    pub confidence: f32,
+}
+
+/// A generated command
+#[derive(Debug, Serialize)]
+pub struct GeneratedCommandDto {
+    /// Command name
+    pub name: String,
+    /// Display name
+    #[serde(rename = "display_name")]
+    pub display_name: String,
+    /// Description
+    pub description: String,
+    /// Command parameters
+    pub parameters: Vec<GeneratedParameterDto>,
+    /// Confidence score
+    pub confidence: f32,
+}
+
+/// A command parameter
+#[derive(Debug, Serialize)]
+pub struct GeneratedParameterDto {
+    /// Parameter name
+    pub name: String,
+    /// Parameter type
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Whether parameter is required
+    pub required: bool,
+}
+
+/// Convert LlmBackendInstance to LlmRuntime
+fn instance_to_runtime(instance: &LlmBackendInstance) -> Result<Arc<dyn LlmRuntime>, String> {
+    match instance.backend_type {
+        LlmBackendType::Ollama => {
+            let config = OllamaConfig {
+                endpoint: instance.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string()),
+                model: instance.model.clone(),
+                timeout_secs: 120,
+            };
+            OllamaRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create Ollama runtime: {}", e))
+        }
+        LlmBackendType::OpenAi => {
+            let provider = CloudProvider::OpenAI;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create OpenAI runtime: {}", e))
+        }
+        LlmBackendType::Anthropic => {
+            let provider = CloudProvider::Anthropic;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create Anthropic runtime: {}", e))
+        }
+        LlmBackendType::Google => {
+            let provider = CloudProvider::Google;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create Google runtime: {}", e))
+        }
+        LlmBackendType::XAi => {
+            let provider = CloudProvider::Grok;
+            let config = CloudConfig {
+                api_key: instance.api_key.clone().unwrap_or_default(),
+                provider,
+                model: Some(instance.model.clone()),
+                base_url: instance.endpoint.clone(),
+                timeout_secs: 120,
+            };
+            CloudRuntime::new(config)
+                .map(|runtime| Arc::new(runtime) as Arc<dyn LlmRuntime>)
+                .map_err(|e| format!("Failed to create xAI runtime: {}", e))
+        }
+    }
+}
+
+/// Generate a device type from data samples
+pub async fn generate_device_type_from_samples_handler(
+    State(_state): State<ServerState>,
+    Json(request): Json<GenerateDeviceTypeRequest>,
+) -> HandlerResult<GenerateDeviceTypeResponse> {
+    // Get LLM instance
+    let instance_manager = get_instance_manager()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get LLM manager: {}", e)))?;
+
+    let instance = instance_manager.get_active_instance()
+        .ok_or_else(|| ErrorResponse::internal("No active LLM backend. Please configure an LLM backend first."))?;
+
+    // Convert to LlmRuntime
+    let llm = instance_to_runtime(&instance)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e)))?;
+
+    // Create generator
+    let generator = DeviceTypeGenerator::new(llm);
+
+    // Convert request samples to DeviceSample format
+    let device_id = request.device_id.as_deref().unwrap_or("unknown-device");
+    let manufacturer = request.manufacturer.as_deref();
+
+    let samples: Vec<DeviceSample> = request.samples
+        .into_iter()
+        .map(|s| DeviceSample::from_json(s.data, format!("sample-{}", s.timestamp)))
+        .collect();
+
+    if samples.is_empty() {
+        return Err(ErrorResponse::bad_request("No valid samples provided"));
+    }
+
+    // Create generation config from request
+    let config = GenerationConfig {
+        min_coverage: request.min_coverage,
+        min_confidence: request.min_confidence,
+    };
+
+    // Generate device type with config
+    let generated = generator.generate_device_type_with_config(device_id, manufacturer, &samples, config)
+        .await
+        .map_err(|e| ErrorResponse::internal(format!("Failed to generate device type: {}", e)))?;
+
+    // Convert to response format
+    let response = GenerateDeviceTypeResponse {
+        id: generated.id,
+        name: generated.name,
+        description: generated.description,
+        category: format!("{:?}", generated.category),
+        manufacturer: generated.manufacturer,
+        metrics: generated.metrics.into_iter().map(|m| GeneratedMetricDto {
+            name: m.name,
+            path: m.path,
+            display_name: m.display_name,
+            description: m.description,
+            data_type: format!("{:?}", m.data_type),
+            semantic_type: format!("{:?}", m.semantic_type),
+            unit: m.unit,
+            readable: m.is_readable,
+            writable: m.is_writable,
+            confidence: m.confidence,
+        }).collect(),
+        commands: generated.commands.into_iter().map(|c| GeneratedCommandDto {
+            name: c.name,
+            display_name: c.display_name,
+            description: c.description,
+            parameters: c.parameters.into_iter().map(|p| GeneratedParameterDto {
+                name: p.name,
+                type_: format!("{:?}", p.param_type),
+                required: p.required,
+            }).collect(),
+            confidence: c.confidence,
+        }).collect(),
+        confidence: generated.confidence,
+    };
+
+    ok(response)
 }

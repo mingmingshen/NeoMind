@@ -1,19 +1,19 @@
 //! Server state and types.
 
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::broadcast;
 
 use edge_ai_agent::SessionManager;
 use edge_ai_alerts::AlertManager;
 use edge_ai_commands::{CommandManager, CommandQueue, CommandStateStore};
-use edge_ai_core::{EventBus, plugin::UnifiedPluginRegistry};
+use edge_ai_core::{EventBus, extension::ExtensionRegistry, plugin::UnifiedPluginRegistry};
 use edge_ai_devices::adapter::AdapterResult;
 use edge_ai_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
 use edge_ai_rules::{InMemoryValueProvider, RuleEngine};
 use edge_ai_storage::business::EventLogStore;
 use edge_ai_storage::decisions::DecisionStore;
 use edge_ai_workflow::WorkflowEngine;
+use edge_ai_automation::{store::SharedAutomationStore, intent::IntentAnalyzer, transform::TransformEngine};
 
 use crate::auth::AuthState;
 use crate::auth_users::AuthUserState;
@@ -52,6 +52,12 @@ pub struct ServerState {
     pub alert_manager: Arc<AlertManager>,
     /// Workflow engine (initialized asynchronously).
     pub workflow_engine: Arc<tokio::sync::RwLock<Option<Arc<WorkflowEngine>>>>,
+    /// Automation store for unified automations.
+    pub automation_store: Option<Arc<SharedAutomationStore>>,
+    /// Intent analyzer for automation type recommendations.
+    pub intent_analyzer: Option<Arc<IntentAnalyzer>>,
+    /// Transform engine for data processing.
+    pub transform_engine: Option<Arc<TransformEngine>>,
     /// Embedded broker (only used in embedded mode)
     #[cfg(feature = "embedded-broker")]
     pub embedded_broker: Option<Arc<EmbeddedBroker>>,
@@ -73,8 +79,10 @@ pub struct ServerState {
     pub response_cache: Arc<crate::cache::ResponseCache>,
     /// Rate limiter for API request throttling.
     pub rate_limiter: Arc<RateLimiter>,
-    /// Plugin registry for managing all plugins.
+    /// Plugin registry for managing all plugins (deprecated, use extension_registry).
     pub plugin_registry: Arc<UnifiedPluginRegistry>,
+    /// Extension registry for managing dynamically loaded extensions (.so/.wasm).
+    pub extension_registry: Arc<tokio::sync::RwLock<ExtensionRegistry>>,
     /// Device registry for templates and configurations (new architecture)
     pub device_registry: Arc<DeviceRegistry>,
     /// Device service for unified device operations (new architecture)
@@ -200,8 +208,13 @@ impl ServerState {
         let rate_limit_config = RateLimitConfig::default();
         let rate_limiter = Arc::new(RateLimiter::with_config(rate_limit_config));
 
-        // Create plugin registry with NeoTalk version
+        // Create plugin registry with NeoTalk version (deprecated, use extension_registry)
         let plugin_registry = Arc::new(UnifiedPluginRegistry::new(env!("CARGO_PKG_VERSION")));
+
+        // Create extension registry for dynamically loaded extensions (.so/.wasm)
+        let extension_registry = Arc::new(tokio::sync::RwLock::new(
+            ExtensionRegistry::new(env!("CARGO_PKG_VERSION")),
+        ));
 
         // Create device service (new architecture)
         let device_service = Arc::new(DeviceService::new(
@@ -214,12 +227,43 @@ impl ServerState {
             .set_telemetry_storage(time_series_storage.clone())
             .await;
 
+        // Create automation store
+        let automation_store: Option<Arc<SharedAutomationStore>> = match SharedAutomationStore::open("data/automations.redb").await {
+            Ok(store) => {
+                tracing::info!("Automation store initialized at data/automations.redb");
+                Some(Arc::new(store))
+            }
+            Err(e) => {
+                tracing::warn!(category = "storage", error = %e, "Failed to open automation store, using in-memory");
+                match SharedAutomationStore::memory() {
+                    Ok(store) => {
+                        tracing::info!("Automation store using in-memory storage");
+                        Some(Arc::new(store))
+                    }
+                    Err(e) => {
+                        tracing::error!(category = "storage", error = %e, "Failed to create in-memory automation store");
+                        None
+                    }
+                }
+            }
+        };
+
+        // Create intent analyzer (will use LLM backend when available)
+        let intent_analyzer: Option<Arc<IntentAnalyzer>> = None; // TODO: Initialize with LLM backend
+
+        // Create transform engine for data processing
+        let transform_engine: Option<Arc<TransformEngine>> = Some(Arc::new(TransformEngine::new()));
+        tracing::info!("Transform engine initialized");
+
         Self {
             session_manager: Arc::new(session_manager),
             time_series_storage,
             rule_engine: Arc::new(RuleEngine::new(value_provider)),
             alert_manager: Arc::new(AlertManager::new()),
             workflow_engine,
+            automation_store,
+            intent_analyzer,
+            transform_engine,
             #[cfg(feature = "embedded-broker")]
             embedded_broker: None,
             device_update_tx,
@@ -232,6 +276,7 @@ impl ServerState {
             response_cache: Arc::new(crate::cache::ResponseCache::with_default_ttl()),
             rate_limiter,
             plugin_registry,
+            extension_registry,
             device_registry,
             device_service,
             started_at,
@@ -361,16 +406,30 @@ impl ServerState {
         };
 
         // Create the MQTT adapter
+        let event_bus = self.event_bus.as_ref();
+        if event_bus.is_none() {
+            tracing::error!("EventBus not initialized, cannot create MQTT adapter");
+            return;
+        }
+        let event_bus = event_bus.unwrap();
+
+        let mqtt_config_value = match serde_json::to_value(mqtt_config) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to serialize MQTT config: {}", e);
+                return;
+            }
+        };
+
         let mqtt_adapter_result: AdapterResult<Arc<dyn DeviceAdapter>> = {
-            create_adapter(
-                "mqtt",
-                &serde_json::to_value(mqtt_config).unwrap(),
-                self.event_bus.as_ref().unwrap(),
-            )
+            create_adapter("mqtt", &mqtt_config_value, event_bus)
         };
 
         match mqtt_adapter_result {
             Ok(mqtt_adapter) => {
+                // Set telemetry storage for the MQTT adapter so it can write metrics
+                mqtt_adapter.set_telemetry_storage(self.time_series_storage.clone());
+
                 // Register adapter with device service
                 self.device_service
                     .register_adapter("internal-mqtt".to_string(), mqtt_adapter.clone())
@@ -388,18 +447,7 @@ impl ServerState {
             }
         }
 
-        // Initialize the global device adapter plugin registry
-        if let Some(event_bus) = &self.event_bus {
-            use edge_ai_devices::DeviceAdapterPluginRegistry;
-            let registry = DeviceAdapterPluginRegistry::get_or_init((**event_bus).clone());
-            // Connect DeviceService with plugin registry for automatic adapter registration
-            registry
-                .set_device_service(self.device_service.clone())
-                .await;
-            tracing::info!(
-                "Device adapter plugin registry initialized and connected to DeviceService"
-            );
-        }
+        tracing::info!("Device adapters managed directly via DeviceService");
     }
 
     /// Initialize tool registry with real service connections.
@@ -413,19 +461,15 @@ impl ServerState {
         let workflow_engine_clone = workflow_engine_read.as_ref().cloned();
         drop(workflow_engine_read);
 
-        // Build tool registry with real implementations
+        // Build tool registry with real implementations that connect to actual services
         let mut builder = ToolRegistryBuilder::new()
-            // Query time series data (requires metric name)
+            // Real implementations
             .with_real_query_data_tool(self.time_series_storage.clone())
-            // Get device data (simplified - returns all metrics)
             .with_real_get_device_data_tool(self.device_service.clone(), self.time_series_storage.clone())
-            // Control devices via DeviceService
             .with_real_control_device_tool(self.device_service.clone())
-            // List devices
             .with_real_list_devices_tool(self.device_service.clone())
-            // Create rules
+            .with_real_device_analyze_tool(self.device_service.clone(), self.time_series_storage.clone())
             .with_real_create_rule_tool(self.rule_engine.clone())
-            // List rules
             .with_real_list_rules_tool(self.rule_engine.clone());
 
         // Add trigger workflow tool if workflow engine is initialized
@@ -467,7 +511,7 @@ impl ServerState {
         let settings = request.to_llm_settings();
         crate::config::save_llm_settings(&settings)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("{}", e)))
+            .map_err(|e| std::io::Error::other(format!("{}", e)))
     }
 }
 

@@ -421,6 +421,8 @@ pub async fn chat_handler(
 ) -> Result<Json<ChatResponse>, ErrorResponse> {
     use tokio::time::{Duration, timeout};
 
+    println!("[chat_handler] Received request for session {}, message: {}", id, req.message);
+
     // Add a 120-second timeout to support thinking models
     // QWEN3 with thinking enabled can take 60-90 seconds for complex queries
     // due to the model's repetitive thinking generation, especially with longer context
@@ -550,8 +552,8 @@ async fn handle_ws_socket(
                                     let mut session_id_guard = current_session_id.write().await;
 
                                     // If request has a different sessionId, switch to it
-                                    if let Some(req_id) = &requested_session_id {
-                                        if req_id != session_id_guard.as_ref().unwrap_or(&String::new()) {
+                                    if let Some(req_id) = &requested_session_id
+                                        && req_id != session_id_guard.as_ref().unwrap_or(&String::new()) {
                                             // Verify session exists
                                             if state.session_manager.get_session(req_id).await.is_ok() {
                                                 *session_id_guard = Some(req_id.to_string());
@@ -579,7 +581,6 @@ async fn handle_ws_socket(
                                                 }
                                             }
                                         }
-                                    }
 
                                     // Ensure we have a valid session (not None and not empty string)
                                     let has_valid_session = session_id_guard.as_ref()
@@ -624,7 +625,8 @@ async fn handle_ws_socket(
 
                                     // Try event streaming first (rich response with tool calls)
                                     // Spawn a task to process the stream asynchronously, keeping the main loop responsive
-                                    match state.session_manager.process_message_events(&session_id, &chat_req.message).await {
+                                    let backend_id = chat_req.backend_id.as_deref();
+                                    match state.session_manager.process_message_events_with_backend(&session_id, &chat_req.message, backend_id).await {
                                         Ok(stream) => {
                                             // Clone the channel sender and session ID for the spawned task
                                             let task_tx = stream_tx.clone();
@@ -638,7 +640,8 @@ async fn handle_ws_socket(
                                         }
                                         Err(_e) => {
                                             // Fallback to non-streaming on error
-                                            let response = match state.session_manager.process_message(&session_id, &chat_req.message).await {
+                                            let backend_id = chat_req.backend_id.as_deref();
+                                            let response = match state.session_manager.process_message_with_backend(&session_id, &chat_req.message, backend_id).await {
                                                 Ok(resp) => json!({
                                                     "type": "response",
                                                     "content": resp.message.content,
@@ -729,10 +732,9 @@ async fn handle_ws_socket(
         }
 
         // Cleanup: persist session history before closing
-        if let Some(session_id) = current_session_id.read().await.as_ref() {
-            if let Err(e) = state.session_manager.persist_history(session_id).await {
+        if let Some(session_id) = current_session_id.read().await.as_ref()
+            && let Err(e) = state.session_manager.persist_history(session_id).await {
                 tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
             }
-        }
     }
 }

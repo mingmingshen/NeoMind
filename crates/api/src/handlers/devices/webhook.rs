@@ -6,7 +6,6 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
 };
 use serde_json::Value;
 use tracing::{debug, info, warn};
@@ -73,7 +72,7 @@ pub async fn webhook_handler(
 
     if device_opt.is_none() {
         warn!(device_id = %device_id, "Webhook from unknown device");
-        return Err(ErrorResponse::bad_request(&format!(
+        return Err(ErrorResponse::bad_request(format!(
             "Unknown device: {}",
             device_id
         )));
@@ -88,7 +87,7 @@ pub async fn webhook_handler(
             adapter_type = %device.adapter_type,
             "Webhook received for non-webhook device"
         );
-        return Err(ErrorResponse::bad_request(&format!(
+        return Err(ErrorResponse::bad_request(format!(
             "Device {} is not configured for webhook (adapter_type: {})",
             device_id, device.adapter_type
         )));
@@ -231,7 +230,7 @@ async fn process_device_transforms(
     device_id: &str,
     device_type: Option<&str>,
     raw_data: &Value,
-    timestamp: i64,
+    _timestamp: i64,
 ) {
     use edge_ai_core::NeoTalkEvent;
 
@@ -340,7 +339,7 @@ pub async fn get_webhook_url_handler(
     let device_opt = state.device_service.get_device(&device_id).await;
 
     if device_opt.is_none() {
-        return Err(ErrorResponse::not_found(&format!(
+        return Err(ErrorResponse::not_found(format!(
             "Device {} not found",
             device_id
         )));

@@ -1,8 +1,7 @@
 //! MDL (Message Definition Language) generation handlers.
 
 use axum::{Json, extract::State};
-use serde_json::json;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use edge_ai_devices::{
     mdl::{MetricDataType, MetricValue},
@@ -197,11 +196,7 @@ fn json_to_metric_value(value: &serde_json::Value) -> Option<MetricValue> {
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 Some(MetricValue::Integer(i))
-            } else if let Some(f) = n.as_f64() {
-                Some(MetricValue::Float(f))
-            } else {
-                None
-            }
+            } else { n.as_f64().map(MetricValue::Float) }
         }
         serde_json::Value::String(s) => Some(MetricValue::String(s.clone())),
         serde_json::Value::Bool(b) => Some(MetricValue::Boolean(*b)),

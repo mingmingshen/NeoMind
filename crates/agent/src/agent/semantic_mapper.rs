@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::context::{
-    ResourceIndex, Resource, Capability, CapabilityType, AccessType,
+    ResourceIndex, Resource,
     ResourceDataHelper,
 };
 
@@ -441,12 +441,11 @@ impl SemanticToolMapper {
                 }
 
                 // Also check device type in resource data
-                if let Some(device_data) = result.resource.as_device() {
-                    if device_data.device_type.to_lowercase() == type_part_lower ||
-                       type_translations.iter().any(|t| t.to_lowercase() == device_data.device_type.to_lowercase()) {
+                if let Some(device_data) = result.resource.as_device()
+                    && (device_data.device_type.to_lowercase() == type_part_lower ||
+                       type_translations.iter().any(|t| t.to_lowercase() == device_data.device_type.to_lowercase())) {
                         type_matches = true;
                     }
-                }
 
                 if type_matches || device_type_part.len() <= 2 {
                     return Some(DeviceMapping {
@@ -480,14 +479,13 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = device_name {
-                    if let Some(mapping) = self.resolve_device(&name).await {
+                if let Some(name) = device_name
+                    && let Some(mapping) = self.resolve_device(&name).await {
                         params["device_id"] = Value::String(mapping.device_id.clone());
                         params["_device_name"] = Value::String(name);
                         params["_match_type"] = Value::String(format!("{:?}", mapping.match_type));
                         mapping_applied = true;
                     }
-                }
             }
 
             // Data query tools
@@ -497,13 +495,12 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = device_name {
-                    if let Some(mapping) = self.resolve_device(&name).await {
+                if let Some(name) = device_name
+                    && let Some(mapping) = self.resolve_device(&name).await {
                         params["device_id"] = Value::String(mapping.device_id.clone());
                         params["_device_name"] = Value::String(name);
                         mapping_applied = true;
                     }
-                }
             }
 
             // Device status query
@@ -513,12 +510,11 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = device_name {
-                    if let Some(mapping) = self.resolve_device(&name).await {
+                if let Some(name) = device_name
+                    && let Some(mapping) = self.resolve_device(&name).await {
                         params["device_id"] = Value::String(mapping.device_id.clone());
                         mapping_applied = true;
                     }
-                }
             }
 
             // Device configuration
@@ -528,12 +524,11 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = device_name {
-                    if let Some(mapping) = self.resolve_device(&name).await {
+                if let Some(name) = device_name
+                    && let Some(mapping) = self.resolve_device(&name).await {
                         params["device_id"] = Value::String(mapping.device_id.clone());
                         mapping_applied = true;
                     }
-                }
             }
 
             // Rule management tools
@@ -543,13 +538,12 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = rule_name {
-                    if let Some(mapping) = self.resolve_rule(&name).await {
+                if let Some(name) = rule_name
+                    && let Some(mapping) = self.resolve_rule(&name).await {
                         params["rule_id"] = Value::String(mapping.rule_id.clone());
                         params["_rule_name"] = Value::String(name);
                         mapping_applied = true;
                     }
-                }
             }
 
             "rule.enable" | "enable_rule" | "rule.disable" | "disable_rule" => {
@@ -558,12 +552,11 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = rule_name {
-                    if let Some(mapping) = self.resolve_rule(&name).await {
+                if let Some(name) = rule_name
+                    && let Some(mapping) = self.resolve_rule(&name).await {
                         params["rule_id"] = Value::String(mapping.rule_id.clone());
                         mapping_applied = true;
                     }
-                }
             }
 
             "rule.update" | "update_rule" => {
@@ -572,12 +565,11 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = rule_name {
-                    if let Some(mapping) = self.resolve_rule(&name).await {
+                if let Some(name) = rule_name
+                    && let Some(mapping) = self.resolve_rule(&name).await {
                         params["rule_id"] = Value::String(mapping.rule_id.clone());
                         mapping_applied = true;
                     }
-                }
             }
 
             // Workflow tools
@@ -587,36 +579,33 @@ impl SemanticToolMapper {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                if let Some(name) = wf_name {
-                    if let Some(mapping) = self.resolve_workflow(&name).await {
+                if let Some(name) = wf_name
+                    && let Some(mapping) = self.resolve_workflow(&name).await {
                         params["workflow_id"] = Value::String(mapping.workflow_id.clone());
                         params["_workflow_name"] = Value::String(name);
                         mapping_applied = true;
                     }
-                }
             }
 
             // Batch device control
             "devices.batch_control" | "batch_control_devices" => {
-                if let Some(devices_array) = params.get_mut("devices") {
-                    if let Some(devices) = devices_array.as_array_mut() {
+                if let Some(devices_array) = params.get_mut("devices")
+                    && let Some(devices) = devices_array.as_array_mut() {
                         for device_param in devices.iter_mut() {
                             let device_name = device_param.get("device")
                                 .or(device_param.get("device_id"))
                                 .and_then(|v| v.as_str());
 
-                            if let Some(name) = device_name {
-                                if let Some(mapping) = self.resolve_device(name).await {
+                            if let Some(name) = device_name
+                                && let Some(mapping) = self.resolve_device(name).await {
                                     *device_param = serde_json::json!({
                                         "device_id": mapping.device_id,
                                         "_device_name": name
                                     });
                                     mapping_applied = true;
                                 }
-                            }
                         }
                     }
-                }
             }
 
             _ => {
@@ -901,10 +890,10 @@ impl SemanticToolMapper {
         context.push_str("- 客厅 ↔ living room / lounge\n\n");
 
         context.push_str(&self.get_device_names_for_llm().await);
-        context.push_str("\n");
+        context.push('\n');
 
         context.push_str(&self.get_rule_names_for_llm().await);
-        context.push_str("\n");
+        context.push('\n');
 
         context.push_str(&self.get_workflow_names_for_llm().await);
 

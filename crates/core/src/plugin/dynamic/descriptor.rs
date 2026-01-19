@@ -72,7 +72,7 @@ pub struct PluginDescriptor {
     pub capabilities: u64,
 }
 
-/// Bit flags for plugin capabilities.
+// Bit flags for plugin capabilities.
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct PluginCapabilities: u64 {
@@ -152,7 +152,7 @@ impl ParsedPluginDescriptor {
     ///
     /// # Safety
     /// The raw descriptor pointers must be valid and point to null-terminated strings.
-    pub unsafe fn from_raw(raw: &PluginDescriptor) -> Result<Self, DescriptorError> {
+    pub unsafe fn from_raw(raw: &PluginDescriptor) -> Result<Self, DescriptorError> { unsafe {
         // Check ABI version
         if raw.abi_version != PLUGIN_ABI_VERSION {
             return Err(DescriptorError::AbiMismatch {
@@ -212,7 +212,7 @@ impl ParsedPluginDescriptor {
             create_fn: raw.create_fn,
             destroy_fn: raw.destroy_fn,
         })
-    }
+    }}
 }
 
 /// Descriptor parsing errors.

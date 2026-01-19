@@ -6,7 +6,6 @@
 //! 3. 记住当前对话主题
 //! 4. 解析代词引用（"它"、"那个"、"这个"）
 
-use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 /// 对话主题
@@ -363,11 +362,10 @@ impl ConversationContext {
         // 检测并替换代词
         let pronouns = ["它", "这个", "那个", "它的", "这个的", "那个的"];
         for pronoun in &pronouns {
-            if enhanced.contains(pronoun) {
-                if let Some(resolved) = self.resolve_pronoun(pronoun) {
+            if enhanced.contains(pronoun)
+                && let Some(resolved) = self.resolve_pronoun(pronoun) {
                     enhanced = enhanced.replace(pronoun, &resolved);
                 }
-            }
         }
 
         // 如果没有指定位置但有当前上下文位置，添加上下文
@@ -404,18 +402,16 @@ impl ConversationContext {
         }
 
         // "关闭"
-        if lower == "关闭" || lower == "关" {
-            if let Some(device) = &self.current_device {
+        if (lower == "关闭" || lower == "关")
+            && let Some(device) = &self.current_device {
                 return Some(format!("关闭{}", device));
             }
-        }
 
         // "温度多少" -> 补充位置
-        if lower == "温度" || lower == "温度多少" {
-            if let Some(location) = &self.current_location {
+        if (lower == "温度" || lower == "温度多少")
+            && let Some(location) = &self.current_location {
                 return Some(format!("{}的温度", location));
             }
-        }
 
         None
     }

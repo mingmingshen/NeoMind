@@ -4,12 +4,10 @@ use super::{
     ServerState,
     common::{HandlerResult, ok},
 };
-use crate::models::ErrorResponse;
-use axum::{Json, extract::State};
+use axum::extract::State;
 use serde_json::json;
 
 // Re-export ConnectionStatus from mdl_format for DeviceInstance
-use edge_ai_devices::mdl_format::ConnectionStatus as DeviceConnectionStatus;
 
 /// System statistics summary.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -130,11 +128,9 @@ pub async fn get_system_stats_handler(
             .device_service
             .get_current_metrics(&config.device_id)
             .await
-        {
-            if !metrics.is_empty() {
+            && !metrics.is_empty() {
                 devices_with_metrics += 1;
             }
-        }
     }
 
     let device_stats = DeviceStats {

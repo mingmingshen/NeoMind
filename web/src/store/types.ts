@@ -99,7 +99,7 @@ export interface DecisionState {
 // ============================================================================
 // Settings State
 // ============================================================================
-// LLM/MQTT/Device/HASS settings are now managed via the Plugin system.
+// LLM/MQTT/Device settings are now managed via the Plugin system.
 // Only general system settings remain here.
 
 export interface SettingsState {
@@ -119,6 +119,7 @@ export type PageName =
   | 'decisions'
   | 'plugins'
   | 'settings'
+  | 'events'
 
 export interface UIState {
   currentPage: PageName
@@ -161,4 +162,5 @@ export const pageTitles: Record<PageName, string> = {
   decisions: 'AI决策',
   plugins: '插件',
   settings: '设置',
+  events: '事件中心',
 }

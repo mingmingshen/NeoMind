@@ -22,16 +22,12 @@ const HISTORY_TABLE: TableDefinition<(&str, u64), Vec<u8>> = TableDefinition::ne
 
 /// Session metadata (title, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct SessionMetadata {
     /// User-defined title for the session
     pub title: Option<String>,
 }
 
-impl Default for SessionMetadata {
-    fn default() -> Self {
-        Self { title: None }
-    }
-}
 
 /// A message in a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,15 +142,14 @@ impl SessionStore {
         // Check if we already have a store for this path
         {
             let singleton = SESSION_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     eprintln!(
                         "[DEBUG SessionStore::open] Returning cached store for: {}",
                         path_str
                     );
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create new store and save to singleton
@@ -208,8 +203,8 @@ impl SessionStore {
                 let start_key = (session_id, 0u64);
                 let end_key = (session_id, u64::MAX);
                 let range = t.range(start_key..=end_key);
-                if let Ok(mut r) = range {
-                    if r.next().is_some() {
+                if let Ok(mut r) = range
+                    && r.next().is_some() {
                         // Existing history found, don't clear it
                         eprintln!(
                             "[DEBUG save_history] Refusing to clear existing history for session {}",
@@ -217,13 +212,19 @@ impl SessionStore {
                         );
                         return Ok(());
                     }
-                }
             }
         }
 
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(HISTORY_TABLE)?;
+
+            // If messages is empty, don't delete existing data
+            // This prevents accidental data loss
+            if messages.is_empty() {
+                eprintln!("[save_history] Warning: Attempting to save empty message list for session {}, skipping to avoid data loss", session_id);
+                return Ok(());
+            }
 
             // Delete old records for this session
             let start_key = (session_id, 0u64);
@@ -232,7 +233,7 @@ impl SessionStore {
             // Collect keys as owned tuples
             let mut keys_to_delete: Vec<(String, u64)> = Vec::new();
             let mut range = table.range(start_key..=end_key)?;
-            while let Some(result) = range.next() {
+            for result in range.by_ref() {
                 let (key_ref, _val_ref) = result?;
                 let sid: &str = key_ref.value().0;
                 let idx: u64 = key_ref.value().1;
@@ -250,6 +251,8 @@ impl SessionStore {
                 let value = bincode::serialize(message)?;
                 table.insert(key, value)?;
             }
+
+            eprintln!("[save_history] Saved {} messages for session {}", messages.len(), session_id);
         }
         write_txn.commit()?;
         Ok(())
@@ -268,7 +271,7 @@ impl SessionStore {
             // Collect keys to delete
             let mut keys_to_delete: Vec<(String, u64)> = Vec::new();
             let mut range = table.range(start_key..=end_key)?;
-            while let Some(result) = range.next() {
+            for result in range.by_ref() {
                 let (key_ref, _val_ref) = result?;
                 let sid: &str = key_ref.value().0;
                 let idx: u64 = key_ref.value().1;
@@ -422,7 +425,7 @@ impl SessionStore {
             let mut keys_to_delete: Vec<(String, u64)> = Vec::new();
             eprintln!("[DEBUG SessionStore] collecting history keys to delete");
             let mut range = history_table.range(start_key..=end_key)?;
-            while let Some(result) = range.next() {
+            for result in range.by_ref() {
                 let (key_ref, _val_ref) = result?;
                 let sid: &str = key_ref.value().0;
                 let idx: u64 = key_ref.value().1;

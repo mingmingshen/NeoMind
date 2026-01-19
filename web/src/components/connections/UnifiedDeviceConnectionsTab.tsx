@@ -1,75 +1,46 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Loader2,
   ArrowLeft,
   Server,
-  Home,
-  Wifi,
   Edit,
   Trash2,
   TestTube,
   MoreVertical,
+  Webhook,
+  Radio,
+  Copy,
+  Check,
+  LucideIcon,
+  Cable,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ActionBar, EmptyState } from '@/components/shared'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, fetchAPI } from '@/lib/api'
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from '@/components/plugins/UniversalPluginConfigDialog'
-import type { PluginConfigSchema } from '@/types'
+import type { PluginConfigSchema, AdapterType } from '@/types'
+import { useToast } from '@/hooks/use-toast'
+
+// Icon mapping for adapter types
+const ICON_MAP: Record<string, LucideIcon> = {
+  Server,
+  Webhook,
+  Radio,
+}
 
 type View = 'list' | 'detail'
-
-interface UnifiedDeviceConnectionsTabProps {
-  onRegisterAdapter?: (adapter: any) => Promise<void>
-  onDeleteAdapter?: (id: string) => Promise<void>
-}
-
-// Device Adapter type info
-const ADAPTER_TYPE_INFO: Record<string, {
-  id: string
-  name: string
-  icon: React.ReactNode
-  iconBg: string
-  canAddMultiple: boolean
-  builtin: boolean
-  description: string
-}> = {
-  mqtt: {
-    id: 'mqtt',
-    name: 'MQTT',
-    icon: <Server className="h-6 w-6" />,
-    iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
-    canAddMultiple: true,
-    builtin: true, // Has built-in broker as default
-    description: 'MQTT broker connections (built-in + external)',
-  },
-  modbus: {
-    id: 'modbus',
-    name: 'Modbus TCP',
-    icon: <Wifi className="h-6 w-6" />,
-    iconBg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
-    canAddMultiple: true,
-    builtin: false,
-    description: 'Connect to Modbus TCP devices',
-  },
-  hass: {
-    id: 'hass',
-    name: 'Home Assistant',
-    icon: <Home className="h-6 w-6" />,
-    iconBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400',
-    canAddMultiple: false,
-    builtin: false,
-    description: 'Home Assistant discovery integration',
-  },
-}
 
 // Config schemas for each adapter type
 const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
@@ -117,79 +88,51 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
           },
         },
       }
-    case 'modbus':
+    case 'http':
       return {
         type: 'object',
         properties: {
-          host: {
+          name: {
             type: 'string',
-            description: 'Modbus device IP address',
-            format: 'hostname',
-            default: '192.168.1.100',
+            description: 'Adapter name',
           },
-          port: {
+          poll_interval: {
             type: 'number',
-            description: 'Modbus port',
-            default: 502,
+            description: 'Default poll interval (seconds)',
+            default: 30,
             minimum: 1,
-            maximum: 65535,
           },
-          slave_id: {
+          timeout: {
             type: 'number',
-            description: 'Modbus slave ID',
-            default: 1,
+            description: 'Request timeout (seconds)',
+            default: 10,
             minimum: 1,
-            maximum: 247,
           },
         },
-        required: ['host'],
+        required: ['name'],
         ui_hints: {
-          field_order: ['host', 'port', 'slave_id'],
+          field_order: ['name', 'poll_interval', 'timeout'],
           display_names: {
-            host: 'Host Address',
-            port: 'Port',
-            slave_id: 'Slave ID',
+            name: 'Adapter Name',
+            poll_interval: 'Poll Interval (sec)',
+            timeout: 'Timeout (sec)',
           },
         },
       }
-    case 'hass':
+    case 'webhook':
       return {
         type: 'object',
         properties: {
-          url: {
+          webhook_url: {
             type: 'string',
-            description: 'Home Assistant URL',
-            format: 'uri',
-            default: 'http://homeassistant.local:8123',
-          },
-          token: {
-            type: 'string',
-            description: 'Long-lived access token',
-            secret: true,
-          },
-          verify_ssl: {
-            type: 'boolean',
-            description: 'Verify SSL certificate',
-            default: true,
-          },
-          auto_import: {
-            type: 'boolean',
-            description: 'Automatically import discovered devices',
-            default: false,
+            description: 'Webhook URL for devices',
           },
         },
-        required: ['url', 'token'],
+        required: [],
         ui_hints: {
-          field_order: ['url', 'token', 'verify_ssl', 'auto_import'],
+          field_order: ['webhook_url'],
           display_names: {
-            url: 'Home Assistant URL',
-            token: 'Access Token',
-            verify_ssl: 'Verify SSL',
-            auto_import: 'Auto Import Devices',
-          },
-          help_texts: {
-            url: 'URL of your Home Assistant server',
-            token: 'Generate in Home Assistant: Profile > Long-Lived Access Tokens',
+            webhook_url: 'Webhook URL',
           },
         },
       }
@@ -204,103 +147,63 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
 }
 
 /**
- * Convert adapter type to UnifiedPluginType
+ * Convert AdapterType from API to UnifiedPluginType
  */
-function toUnifiedPluginType(typeKey: string): UnifiedPluginType {
-  const info = ADAPTER_TYPE_INFO[typeKey]
-  const schema = getAdapterSchema(typeKey)
+function toUnifiedPluginType(type: AdapterType): UnifiedPluginType {
+  const schema = getAdapterSchema(type.id)
 
   return {
-    id: info.id,
+    id: type.id,
     type: 'device_adapter',
-    name: info.name,
-    description: info.description,
-    icon: info.icon,
-    color: info.iconBg,
+    name: type.name,
+    description: type.description,
+    icon: type.icon, // Icon name string
+    color: type.icon_bg,
     config_schema: schema,
-    can_add_multiple: info.canAddMultiple,
-    builtin: info.builtin,
+    can_add_multiple: type.can_add_multiple,
+    builtin: type.builtin,
   }
 }
 
-/**
- * Convert external broker to PluginInstance
- */
-function brokerToInstance(broker: any): PluginInstance {
-  return {
-    id: broker.id,
-    name: broker.name,
-    plugin_type: 'mqtt',
-    enabled: broker.enabled ?? true,
-    running: broker.connected ?? false,
-    config: {
-      broker: String(broker.broker || ''),
-      port: Number(broker.port || 1883),
-      username: broker.username || '',
-      tls: broker.tls || false,
-    } as Record<string, unknown>,
-    status: {
-      connected: broker.connected ?? false,
-      error: broker.last_error,
-    },
-  }
-}
-
-/**
- * Convert Modbus adapter to PluginInstance
- */
-function modbusToInstance(adapter: any): PluginInstance {
-  return {
-    id: adapter.id,
-    name: adapter.name,
-    plugin_type: 'modbus',
-    enabled: adapter.enabled,
-    running: adapter.running,
-    config: (adapter.config || {}) as Record<string, unknown>,
-    status: {
-      connected: adapter.running,
-    },
-  }
-}
-
-export function UnifiedDeviceConnectionsTab({
-  onRegisterAdapter,
-  onDeleteAdapter,
-}: UnifiedDeviceConnectionsTabProps) {
+export function UnifiedDeviceConnectionsTab() {
   const { t } = useTranslation(['plugins', 'devices', 'common'])
+  const { toast } = useToast()
   const [view, setView] = useState<View>('list')
   const [loading, setLoading] = useState(true)
-  const [schemaLoading, setSchemaLoading] = useState(false)
+
+  // Dynamically loaded adapter types
+  const [adapterTypes, setAdapterTypes] = useState<AdapterType[]>([])
 
   // Data states
   const [mqttStatus, setMqttStatus] = useState<any>(null)
   const [externalBrokers, setExternalBrokers] = useState<any[]>([])
-  const [modbusAdapters, setModbusAdapters] = useState<any[]>([])
-  const [hassStatus, setHassStatus] = useState<any>(null)
   const [devices, setDevices] = useState<any[]>([])
+  const [webhookUrlCopied, setWebhookUrlCopied] = useState(false)
 
   // Config dialog state
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [editingInstance, setEditingInstance] = useState<PluginInstance | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
 
-  const hasFetched = useRef(false)
+  const [selectedType, setSelectedType] = useState<UnifiedPluginType | null>(null)
+
+  // Load all data (adapter types + connection data) in one go
   useEffect(() => {
-    if (!hasFetched.current) {
-      hasFetched.current = true
-      loadData()
-    }
+    loadData()
   }, [])
 
   const loadData = async () => {
     setLoading(true)
     try {
-      const [mqttResult, brokersResult, hassResult, devicesResult, adaptersResult] = await Promise.allSettled([
+      // Load adapter types first
+      const typesResponse = await fetchAPI<{ types: AdapterType[]; count: number }>('/device-adapters/types', { skipAuth: true })
+      setAdapterTypes(typesResponse.types || [])
+
+      // Load connection data in parallel
+      const [mqttResult, brokersResult, devicesResult] = await Promise.allSettled([
         api.getMqttStatus(),
         api.getBrokers(),
-        api.getHassDiscoveryStatus(),
         api.getDevices(),
-        api.listDeviceAdapters(),
       ])
 
       if (mqttResult.status === 'fulfilled') {
@@ -311,36 +214,35 @@ export function UnifiedDeviceConnectionsTab({
         setExternalBrokers(brokersResult.value.brokers || [])
       }
 
-      if (hassResult.status === 'fulfilled') {
-        setHassStatus(hassResult.value)
-      }
-
       if (devicesResult.status === 'fulfilled') {
         setDevices(devicesResult.value.devices || [])
       }
-
-      if (adaptersResult.status === 'fulfilled') {
-        const modbus = adaptersResult.value.adapters?.filter((a: any) => a.adapter_type === 'modbus') || []
-        setModbusAdapters(modbus)
-      }
     } catch (error) {
       console.error('Failed to load device connections data:', error)
+      setAdapterTypes([])
+      setMqttStatus(null)
+      setExternalBrokers([])
+      setDevices([])
     } finally {
       setLoading(false)
     }
   }
 
-  const getDeviceCount = (type: string, id?: string) => {
+  const getDeviceCount = (type: string) => {
     if (type === 'mqtt') {
       // Count all MQTT devices (builtin + all external brokers)
       return devices.filter((d: any) =>
         !d.plugin_id || d.plugin_id === 'internal-mqtt' || d.plugin_id === 'builtin' ||
         externalBrokers.some((b: any) => b.id === d.plugin_id)
       ).length
-    } else if (type === 'hass') {
-      return devices.filter((d: any) => d.plugin_id === 'hass-discovery').length
-    } else if (type === 'modbus' && id) {
-      return devices.filter((d: any) => d.plugin_id === id).length
+    }
+    if (type === 'webhook') {
+      // Count webhook devices
+      return devices.filter((d: any) => d.adapter_type === 'webhook').length
+    }
+    if (type === 'http') {
+      // Count HTTP polling devices
+      return devices.filter((d: any) => d.adapter_type === 'http').length
     }
     return 0
   }
@@ -349,23 +251,37 @@ export function UnifiedDeviceConnectionsTab({
     if (type === 'mqtt') {
       // Connected if builtin OR any external broker is connected
       return (mqttStatus?.connected || false) || externalBrokers.some((b) => b.connected)
-    } else if (type === 'hass') {
-      return hassStatus?.hass_integration?.connected || false
-    } else if (type === 'modbus') {
-      return modbusAdapters.some((a) => a.running)
+    }
+    if (type === 'webhook' || type === 'http') {
+      // Always "available" - these are built-in endpoints
+      return getDeviceCount(type) > 0
     }
     return false
   }
 
-  // Handle type selection
-  const handleTypeSelect = (typeKey: string) => {
-    setSchemaLoading(true)
-    setSelectedType(toUnifiedPluginType(typeKey))
-    setSchemaLoading(false)
-    setView('detail')
+  const getWebhookUrl = () => {
+    return `${window.location.origin}/api/devices/webhook/{device_id}`
   }
 
-  const [selectedType, setSelectedType] = useState<UnifiedPluginType | null>(null)
+  const copyWebhookUrl = async () => {
+    const url = getWebhookUrl()
+    await navigator.clipboard.writeText(url)
+    setWebhookUrlCopied(true)
+    toast({
+      title: 'Webhook URL copied to clipboard',
+      description: 'Replace {device_id} with your actual device ID',
+    })
+    setTimeout(() => setWebhookUrlCopied(false), 2000)
+  }
+
+  // Handle type selection
+  const handleTypeSelect = (typeKey: string) => {
+    const adapterType = adapterTypes.find(at => at.id === typeKey)
+    if (adapterType) {
+      setSelectedType(toUnifiedPluginType(adapterType))
+      setView('detail')
+    }
+  }
 
   // Handle create
   const handleCreate = async (name: string, config: Record<string, unknown>) => {
@@ -382,31 +298,6 @@ export function UnifiedDeviceConnectionsTab({
         enabled: true,
       }
       await api.createBroker(data)
-    } else if (type.id === 'modbus') {
-      const data = {
-        id: `modbus-${Date.now()}`,
-        name,
-        adapter_type: 'modbus',
-        config: {
-          host: config.host,
-          port: config.port || 502,
-          slave_id: config.slave_id || 1,
-        },
-        auto_start: true,
-        enabled: true,
-      }
-      if (onRegisterAdapter) {
-        await onRegisterAdapter(data)
-      } else {
-        await api.registerDeviceAdapter(data)
-      }
-    } else if (type.id === 'hass') {
-      await api.connectHass({
-        url: String(config.url),
-        token: String(config.token),
-        verify_ssl: Boolean(config.verify_ssl),
-        auto_import: Boolean(config.auto_import),
-      })
     }
 
     return name
@@ -429,12 +320,6 @@ export function UnifiedDeviceConnectionsTab({
         password: config.password as string,
         enabled: broker.enabled,
       })
-    } else if (type.id === 'modbus') {
-      await api.updatePluginConfig(id, {
-        host: config.host,
-        port: config.port,
-        slave_id: config.slave_id,
-      })
     } else {
       throw new Error('Editing not supported for this adapter type')
     }
@@ -446,12 +331,6 @@ export function UnifiedDeviceConnectionsTab({
 
     if (instance?.plugin_type === 'mqtt') {
       await api.deleteBroker(id)
-    } else if (instance?.plugin_type === 'modbus') {
-      if (onDeleteAdapter) {
-        await onDeleteAdapter(id)
-      } else {
-        await api.unregisterPlugin(id)
-      }
     } else {
       throw new Error('Cannot delete built-in adapter')
     }
@@ -477,6 +356,7 @@ export function UnifiedDeviceConnectionsTab({
     }
   }
 
+  // Loading state - same as LLM backends
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -485,11 +365,24 @@ export function UnifiedDeviceConnectionsTab({
     )
   }
 
-  if (schemaLoading) {
+  // Empty state - when no adapter types are available
+  if (adapterTypes.length === 0) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <>
+        <ActionBar
+          title={t('plugins:deviceConnections')}
+          titleIcon={<Cable className="h-5 w-5" />}
+          description={t('devices:connections.description')}
+          onRefresh={loadData}
+          refreshLoading={loading}
+        />
+        <EmptyState
+          icon="device"
+          title={t('plugins:noAdapters')}
+          description={t('plugins:noAdaptersDesc')}
+          action={{ label: t('common:retry'), onClick: loadData, icon: <Loader2 className="h-4 w-4" /> }}
+        />
+      </>
     )
   }
 
@@ -497,39 +390,38 @@ export function UnifiedDeviceConnectionsTab({
   if (view === 'list') {
     return (
       <>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{t('plugins:deviceConnections')}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t('devices:connections.description')}
-            </p>
-          </div>
-        </div>
+        {/* Header - using ActionBar for consistency */}
+        <ActionBar
+          title={t('plugins:deviceConnections')}
+          titleIcon={<Cable className="h-5 w-5" />}
+          description={t('devices:connections.description')}
+          onRefresh={loadData}
+          refreshLoading={loading}
+        />
 
-        {/* Connection Type Cards Grid */}
+        {/* Connection Type Cards Grid - Dynamically loaded */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {(Object.keys(ADAPTER_TYPE_INFO) as Array<keyof typeof ADAPTER_TYPE_INFO>).map((typeKey) => {
-            const info = ADAPTER_TYPE_INFO[typeKey]
-            const isActive = getConnectionStatus(info.id)
-            const deviceCount = getDeviceCount(info.id)
+          {adapterTypes.map((type) => {
+            const isActive = getConnectionStatus(type.id)
+            const deviceCount = getDeviceCount(type.id)
+            const IconComponent = ICON_MAP[type.icon] || Server
 
             return (
               <Card
-                key={typeKey}
+                key={type.id}
                 className={cn(
                   "cursor-pointer transition-all duration-200 hover:shadow-md",
                   isActive && "border-green-500 border-2"
                 )}
-                onClick={() => handleTypeSelect(typeKey)}
+                onClick={() => handleTypeSelect(type.id)}
               >
                 <CardHeader className="pb-3">
-                  <div className={cn("flex items-center justify-center w-12 h-12 rounded-lg", info.iconBg)}>
-                    {info.icon}
+                  <div className={cn("flex items-center justify-center w-12 h-12 rounded-lg", type.icon_bg)}>
+                    <IconComponent className="h-6 w-6" />
                   </div>
-                  <CardTitle className="text-base mt-3">{info.name}</CardTitle>
+                  <CardTitle className="text-base mt-3">{type.name}</CardTitle>
                   <CardDescription className="mt-1 text-xs line-clamp-2 min-h-[2.5em]">
-                    {info.description}
+                    {type.description}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-sm">
@@ -554,7 +446,125 @@ export function UnifiedDeviceConnectionsTab({
 
   // ========== DETAIL VIEW ==========
   if (view === 'detail' && selectedType) {
-    const info = ADAPTER_TYPE_INFO[selectedType.id as keyof typeof ADAPTER_TYPE_INFO] || ADAPTER_TYPE_INFO.mqtt
+    const adapterType = adapterTypes.find(at => at.id === selectedType.id) || adapterTypes[0]
+
+    // Special handling for Webhook - show usage info instead of instances
+    if (selectedType.id === 'webhook') {
+      const IconComponent = ICON_MAP[adapterType?.icon || 'Webhook'] || Webhook
+
+      return (
+        <>
+          {/* Header with back button */}
+          <div className="flex items-center gap-4 mb-6">
+            <Button variant="ghost" size="sm" onClick={() => setView('list')} className="gap-1">
+              <ArrowLeft className="h-4 w-4" />
+              {t('plugins:llm.back')}
+            </Button>
+            <div className="flex items-center gap-3">
+              <div className={cn("flex items-center justify-center w-12 h-12 rounded-lg", adapterType?.icon_bg)}>
+                <IconComponent className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold">{adapterType?.name}</h2>
+                <p className="text-sm text-muted-foreground">{adapterType?.description}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Webhook Info Card */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>How Webhook Works</CardTitle>
+              <CardDescription>
+                Devices push data to your server via HTTP POST - no connection management needed
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Webhook URL */}
+              <div className="space-y-2">
+                <Label>Webhook URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={getWebhookUrl()}
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyWebhookUrl}
+                    className="shrink-0"
+                  >
+                    {webhookUrlCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Replace <code className="bg-muted px-1 rounded">{'{device_id}'}</code> with your actual device ID
+                </p>
+              </div>
+
+              {/* Request Format */}
+              <div className="space-y-2">
+                <Label>Request Format</Label>
+                <div className="rounded-lg bg-muted p-4">
+                  <pre className="text-sm overflow-x-auto">
+{`POST ${getWebhookUrl()}
+
+{
+  "timestamp": 1234567890,
+  "quality": 1.0,
+  "data": {
+    "temperature": 23.5,
+    "humidity": 65
+  }
+}`}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Response Format */}
+              <div className="space-y-2">
+                <Label>Response Format</Label>
+                <div className="rounded-lg bg-muted p-4">
+                  <pre className="text-sm">
+{`{
+  "success": true,
+  "device_id": "sensor01",
+  "metrics_received": 2,
+  "timestamp": 1234567890
+}`}
+                  </pre>
+                </div>
+              </div>
+
+              {/* Devices using webhook */}
+              <div className="space-y-2">
+                <Label>Devices Using Webhook ({getDeviceCount('webhook')})</Label>
+                {getDeviceCount('webhook') > 0 ? (
+                  <div className="space-y-2">
+                    {devices.filter((d: any) => d.adapter_type === 'webhook').map((device: any) => (
+                      <div key={device.id} className="flex items-center justify-between p-2 rounded border">
+                        <div>
+                          <div className="font-medium">{device.name || device.id}</div>
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {getWebhookUrl().replace('{device_id}', device.id)}
+                          </div>
+                        </div>
+                        <Badge variant={device.online ? 'default' : 'secondary'}>
+                          {device.online ? 'Online' : 'Offline'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No devices using webhook yet</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )
+    }
 
     // Get instances for this type
     let pluginInstances: PluginInstance[] = []
@@ -571,7 +581,7 @@ export function UnifiedDeviceConnectionsTab({
           plugin_type: 'mqtt',
           enabled: true,
           running: mqttStatus?.connected || false,
-          isBuiltin: true, // Mark as built-in, cannot be deleted
+          isBuiltin: true,
           config: {
             listen_address: mqttStatus?.listen_address,
             listen_port: mqttStatus?.listen_port,
@@ -584,25 +594,28 @@ export function UnifiedDeviceConnectionsTab({
 
       // Add external brokers
       pluginInstances.push(...externalBrokers.map(brokerToInstance))
-    } else if (selectedType.id === 'modbus') {
-      pluginInstances = modbusAdapters.map(modbusToInstance)
-    } else if (selectedType.id === 'hass') {
-      if (hassStatus?.hass_integration?.url || hassStatus?.hass_integration?.connected) {
-        pluginInstances = [{
-          id: 'hass-discovery',
-          name: 'Home Assistant',
-          plugin_type: 'hass',
-          enabled: hassStatus?.hass_integration?.enabled || false,
-          running: hassStatus?.hass_integration?.connected || false,
-          config: {
-            url: hassStatus?.hass_integration?.url,
-          } as Record<string, unknown>,
-          status: {
-            connected: hassStatus?.hass_integration?.connected || false,
-          },
-        }]
-      }
+    } else if (selectedType.id === 'http') {
+      // HTTP polling devices - show as "instances" since they are configured per device
+      const httpDevices = devices.filter((d: any) => d.adapter_type === 'http')
+      pluginInstances = httpDevices.map((device: any) => ({
+        id: device.id,
+        name: device.name || device.id,
+        plugin_type: 'http',
+        enabled: true,
+        running: device.online || false,
+        isBuiltin: false,
+        config: {
+          ...(device.connection_config || {}),
+          _url: device.connection_config?.url,
+          _poll_interval: device.connection_config?.poll_interval,
+        },
+        status: {
+          connected: device.online || false,
+        },
+      }))
     }
+
+    const IconComponent = ICON_MAP[adapterType?.icon || 'Server'] || Server
 
     return (
       <>
@@ -613,12 +626,12 @@ export function UnifiedDeviceConnectionsTab({
             {t('plugins:llm.back')}
           </Button>
           <div className="flex items-center gap-3">
-            <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg", info.iconBg)}>
-              {info.icon}
+            <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg", adapterType?.icon_bg)}>
+              <IconComponent className="h-6 w-6" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold">{info.name}</h2>
-              <p className="text-sm text-muted-foreground">{info.description}</p>
+              <h2 className="text-2xl font-bold">{adapterType?.name}</h2>
+              <p className="text-sm text-muted-foreground">{adapterType?.description}</p>
             </div>
           </div>
         </div>
@@ -627,20 +640,27 @@ export function UnifiedDeviceConnectionsTab({
         {pluginInstances.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-12">
-              <div className={cn("flex items-center justify-center w-16 h-16 rounded-lg mb-4", info.iconBg)}>
-                {info.icon}
+              <div className={cn("flex items-center justify-center w-16 h-16 rounded-lg mb-4", adapterType?.icon_bg)}>
+                <IconComponent className="h-8 w-8" />
               </div>
-              <h3 className="text-lg font-semibold mb-1">{t('plugins:llm.noInstanceYet', { name: info.name })}</h3>
+              <h3 className="text-lg font-semibold mb-1">
+                {selectedType.id === 'http' ? 'No HTTP polling devices configured' : t('plugins:llm.noInstanceYet', { name: adapterType?.name })}
+              </h3>
               <p className="text-sm text-muted-foreground mb-4">
-                {t('plugins:llm.configureToStart', { name: info.name })}
+                {selectedType.id === 'http'
+                  ? 'Add devices with HTTP adapter type to enable polling'
+                  : t('plugins:llm.configureToStart', { name: adapterType?.name })
+                }
               </p>
-              <Button onClick={() => {
-                setEditingInstance(null)
-                setConfigDialogOpen(true)
-              }}>
-                <Server className="mr-2 h-4 w-4" />
-                {t('devices:connections.addConnection')}
-              </Button>
+              {selectedType.id === 'mqtt' && (
+                <Button onClick={() => {
+                  setEditingInstance(null)
+                  setConfigDialogOpen(true)
+                }}>
+                  <Server className="mr-2 h-4 w-4" />
+                  {t('devices:connections.addConnection')}
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -648,7 +668,7 @@ export function UnifiedDeviceConnectionsTab({
             {pluginInstances.map((instance) => {
               const testResult = testResults[instance.id]
               const isMqtt = instance.plugin_type === 'mqtt'
-              const isModbus = instance.plugin_type === 'modbus'
+              const isHttp = instance.plugin_type === 'http'
 
               return (
                 <Card
@@ -676,8 +696,9 @@ export function UnifiedDeviceConnectionsTab({
                         <CardDescription className="font-mono text-xs">
                           {isMqtt && (instance as any).isBuiltin
                             ? `${mqttStatus?.server_ip || 'localhost'}:${mqttStatus?.listen_port || 1883}`
+                            : isHttp
+                            ? `${(instance.config as any)?._url || 'N/A'} (${(instance.config as any)?._poll_interval || 30}s)`
                             : `${instance.config?.broker}:${instance.config?.port}`}
-                          {isModbus && `${instance.config?.host}:${instance.config?.port}`}
                         </CardDescription>
                       </div>
                       <DropdownMenu>
@@ -707,15 +728,6 @@ export function UnifiedDeviceConnectionsTab({
                                 {t('plugins:testConnection')}
                               </DropdownMenuItem>
                             </>
-                          )}
-                          {isModbus && (
-                            <DropdownMenuItem onClick={() => {
-                              setEditingInstance(instance)
-                              setConfigDialogOpen(true)
-                            }}>
-                              <Edit className="mr-2 h-4 w-4" />
-                              {t('plugins:edit')}
-                            </DropdownMenuItem>
                           )}
                           {/* Hide delete for builtin MQTT instance */}
                           {!(isMqtt && (instance as any).isBuiltin) && (
@@ -799,4 +811,27 @@ export function UnifiedDeviceConnectionsTab({
   }
 
   return null
+}
+
+/**
+ * Convert external broker to PluginInstance
+ */
+function brokerToInstance(broker: any): PluginInstance {
+  return {
+    id: broker.id,
+    name: broker.name,
+    plugin_type: 'mqtt',
+    enabled: broker.enabled ?? true,
+    running: broker.connected ?? false,
+    config: {
+      broker: String(broker.broker || ''),
+      port: Number(broker.port || 1883),
+      username: broker.username || '',
+      tls: broker.tls || false,
+    } as Record<string, unknown>,
+    status: {
+      connected: broker.connected ?? false,
+      error: broker.last_error,
+    },
+  }
 }

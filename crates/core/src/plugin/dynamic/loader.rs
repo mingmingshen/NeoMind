@@ -8,11 +8,11 @@ use libloading::{Library, Symbol};
 
 use super::{
     ParsedPluginDescriptor,
-    descriptor::{PLUGIN_ABI_VERSION, PluginDescriptor},
+    descriptor::PluginDescriptor,
     security::SecurityContext,
     wrapper::DynamicPluginWrapper,
 };
-use crate::plugin::{DynUnifiedPlugin, PluginError, Result};
+use crate::plugin::{PluginError, Result};
 
 /// Result of loading a plugin.
 #[derive(Debug, Clone)]
@@ -173,14 +173,14 @@ impl DynamicPluginLoader {
     /// Reload a previously loaded plugin.
     pub fn reload(&mut self, path: &Path) -> Result<(DynamicPluginWrapper, Library)> {
         // Unload existing plugin with the same path
-        self.loaded_plugins.retain(|p| &p.path != path);
+        self.loaded_plugins.retain(|p| p.path != path);
         self.load_from_path(path)
     }
 
     /// Unload a plugin by path.
     pub fn unload(&mut self, path: &Path) -> Result<()> {
         let original_len = self.loaded_plugins.len();
-        self.loaded_plugins.retain(|p| &p.path != path);
+        self.loaded_plugins.retain(|p| p.path != path);
 
         if self.loaded_plugins.len() < original_len {
             Ok(())

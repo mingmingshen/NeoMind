@@ -1,9 +1,8 @@
 {
   "dashboard": "Chat",
   "devices": "Devices",
-  "alerts": "Alerts",
   "automation": "Automation",
-  "commands": "Commands",
+  "events": "Events",
   "decisions": "AI Decisions",
   "plugins": "Plugins",
   "settings": "Settings"

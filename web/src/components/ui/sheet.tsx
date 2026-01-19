@@ -4,11 +4,14 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { getPortalRoot } from "@/lib/portal"
 
 const Sheet = SheetPrimitive.Root
 const SheetTrigger = SheetPrimitive.Trigger
 const SheetClose = SheetPrimitive.Close
-const SheetPortal = SheetPrimitive.Portal
+const SheetPortal = (props: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Portal>) => (
+  <SheetPrimitive.Portal {...props} container={getPortalRoot()} />
+)
 
 const SheetTitle = SheetPrimitive.Title
 const SheetDescription = SheetPrimitive.Description

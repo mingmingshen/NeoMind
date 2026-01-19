@@ -3,7 +3,7 @@
 //! This module provides functionality for managing rule dependencies,
 //! including topological sorting and circular dependency detection.
 
-use crate::engine::{RuleId, RuleStatus};
+use crate::engine::RuleId;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -133,12 +133,12 @@ impl DependencyManager {
     pub fn add_dependency(&mut self, rule_id: RuleId, depends_on: RuleId) {
         self.dependencies
             .entry(rule_id.clone())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(depends_on.clone());
 
         self.reverse_dependencies
             .entry(depends_on)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(rule_id);
     }
 
@@ -201,7 +201,7 @@ impl DependencyManager {
     ) -> DependencyValidationResult {
         // Check for missing dependencies
         let mut missing = Vec::new();
-        for (rule_id, deps) in &self.dependencies {
+        for (_rule_id, deps) in &self.dependencies {
             for dep in deps {
                 if !existing_rules.contains(dep) {
                     missing.push(dep.clone());
@@ -231,11 +231,10 @@ impl DependencyManager {
 
         // Only sort rules that exist
         for rule_id in existing_rules {
-            if !visited.contains(rule_id) {
-                if let Some(cycle) = self.visit(rule_id, &mut visited, &mut visiting, &mut sorted) {
+            if !visited.contains(rule_id)
+                && let Some(cycle) = self.visit(rule_id, &mut visited, &mut visiting, &mut sorted) {
                     cycles.push(cycle);
                 }
-            }
         }
 
         if !cycles.is_empty() {

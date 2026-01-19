@@ -32,10 +32,10 @@
 //! ```
 
 use crate::adapter::{
-    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
+    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
 };
 use crate::mdl::MetricValue;
-use crate::registry::{DeviceConfig, DeviceRegistry};
+use crate::registry::DeviceRegistry;
 use crate::telemetry::TimeSeriesStorage;
 use crate::unified_extractor::UnifiedExtractor;
 use async_trait::async_trait;
@@ -48,7 +48,7 @@ use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 /// Webhook device adapter configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,7 +204,7 @@ impl WebhookAdapter {
     /// Validate an incoming webhook request.
     pub fn validate_request(
         &self,
-        device_id: &str,
+        _device_id: &str,
         provided_api_key: Option<&str>,
         remote_ip: Option<&IpAddr>,
     ) -> AdapterResult<()> {
@@ -237,8 +237,8 @@ impl WebhookAdapter {
         }
 
         // Check IP whitelist (if configured)
-        if !self.config.allowed_ips.is_empty() {
-            if let Some(ip) = remote_ip {
+        if !self.config.allowed_ips.is_empty()
+            && let Some(ip) = remote_ip {
                 let ip_str = ip.to_string();
                 if !self.config.allowed_ips.contains(&ip_str) {
                     return Err(AdapterError::Connection(format!(
@@ -247,7 +247,6 @@ impl WebhookAdapter {
                     )));
                 }
             }
-        }
 
         Ok(())
     }

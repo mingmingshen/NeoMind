@@ -36,7 +36,8 @@
   "alertsOverview": "Alerts Overview",
   "filterBySeverity": "Filter by severity",
   "channels": "Channels",
-  "channelsDesc": "Configure alert notification channels",
+  "channelsDesc": "Manage alert notification channels for real-time alert delivery",
+  "activeChannels": "Active Channels",
   "addChannel": "Add Channel",
   "addChannelDesc": "Create a new alert notification channel",
   "channelName": "Channel Name",
@@ -51,5 +52,7 @@
   "totalChannels": "Total Channels",
   "channelTypes": "Channel Types",
   "testChannel": "Test",
-  "testing": "Testing..."
+  "testing": "Testing...",
+  "noChannelTypes": "No channel types available",
+  "noChannelTypesDesc": "Unable to load alert channel types from the server"
 }

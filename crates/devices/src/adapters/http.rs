@@ -27,15 +27,14 @@
 //! ```
 
 use crate::adapter::{
-    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent, DiscoveredDeviceInfo,
+    AdapterError, AdapterResult, ConnectionStatus, DeviceAdapter, DeviceEvent,
 };
 use crate::mdl::MetricValue;
-use crate::registry::{DeviceConfig, DeviceRegistry};
+use crate::registry::DeviceRegistry;
 use crate::telemetry::TimeSeriesStorage;
 use crate::unified_extractor::UnifiedExtractor;
 use async_trait::async_trait;
 use edge_ai_core::EventBus;
-use edge_ai_core::NeoTalkEvent;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -45,9 +44,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{RwLock, broadcast};
-use tokio::time::{interval, Instant};
-use tracing::{debug, error, info, warn};
-use uuid::Uuid;
+use tokio::time::Instant;
+use tracing::{info, warn};
 
 /// HTTP device configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -427,8 +425,8 @@ impl HttpAdapter {
                                 }
 
                                 // Write to telemetry storage if available
-                                if let Some(storage) = &telemetry_storage {
-                                    if let DeviceEvent::Metric {
+                                if let Some(storage) = &telemetry_storage
+                                    && let DeviceEvent::Metric {
                                         device_id,
                                         metric,
                                         value,
@@ -443,7 +441,6 @@ impl HttpAdapter {
                                         };
                                         let _ = storage.write(&device_id, &metric, data_point).await;
                                     }
-                                }
                             }
                         }
                         Err(e) => {

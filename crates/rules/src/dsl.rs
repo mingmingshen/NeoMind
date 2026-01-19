@@ -186,7 +186,7 @@ impl RuleDslParser {
             let mut start = 0;
 
             // Find first non-whitespace position
-            while chars.peek().map_or(false, |c| c.is_whitespace()) {
+            while chars.peek().is_some_and(|c| c.is_whitespace()) {
                 result.push(chars.next().unwrap());
                 start += 1;
             }
@@ -262,15 +262,14 @@ impl RuleDslParser {
     /// Extract rule name from RULE "name" line.
     fn extract_rule_name(lines: &mut Vec<&str>) -> Result<String, RuleError> {
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with("RULE") {
-                if let Some(rest) = line.strip_prefix("RULE") {
+            if line.starts_with("RULE")
+                && let Some(rest) = line.strip_prefix("RULE") {
                     let name_part = rest.trim();
                     if let Some(name) = Self::extract_quoted_string(name_part) {
                         lines.remove(i);
                         return Ok(name);
                     }
                 }
-            }
         }
         Err(RuleError::Parse("Rule name not found".to_string()))
     }
@@ -280,15 +279,14 @@ impl RuleDslParser {
         lines: &mut Vec<&str>,
     ) -> Result<(String, String, ComparisonOperator, f64), RuleError> {
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with("WHEN") {
-                if let Some(rest) = line.strip_prefix("WHEN") {
+            if line.starts_with("WHEN")
+                && let Some(rest) = line.strip_prefix("WHEN") {
                     let condition_str = rest.trim();
                     let (device_id, metric, operator, threshold) =
                         Self::parse_condition(condition_str)?;
                     lines.remove(i);
                     return Ok((device_id, metric, operator, threshold));
                 }
-            }
         }
         Err(RuleError::Parse("WHEN clause not found".to_string()))
     }
@@ -296,13 +294,12 @@ impl RuleDslParser {
     /// Parse FOR clause to extract duration.
     fn parse_for_clause(lines: &mut Vec<&str>) -> Option<Duration> {
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with("FOR") {
-                if let Some(rest) = line.strip_prefix("FOR") {
+            if line.starts_with("FOR")
+                && let Some(rest) = line.strip_prefix("FOR") {
                     let duration_str = rest.trim();
                     lines.remove(i);
                     return Self::parse_duration(duration_str);
                 }
-            }
         }
         None
     }
@@ -320,11 +317,10 @@ impl RuleDslParser {
             if *line == "END" {
                 break;
             }
-            if in_do_block && !line.is_empty() {
-                if let Some(action) = Self::parse_action(line)? {
+            if in_do_block && !line.is_empty()
+                && let Some(action) = Self::parse_action(line)? {
                     actions.push(action);
                 }
-            }
         }
 
         Ok(actions)
@@ -372,8 +368,8 @@ impl RuleDslParser {
         let input = input.trim();
         let mut parts = input.split_whitespace();
 
-        if let (Some(num_str), Some(unit)) = (parts.next(), parts.next()) {
-            if let Ok(value) = num_str.parse::<u64>() {
+        if let (Some(num_str), Some(unit)) = (parts.next(), parts.next())
+            && let Ok(value) = num_str.parse::<u64>() {
                 let duration = match unit {
                     "second" | "seconds" => Duration::from_secs(value),
                     "minute" | "minutes" => Duration::from_secs(value * 60),
@@ -382,7 +378,6 @@ impl RuleDslParser {
                 };
                 return Some(duration);
             }
-        }
 
         None
     }

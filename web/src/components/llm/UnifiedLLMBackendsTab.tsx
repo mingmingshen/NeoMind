@@ -5,10 +5,12 @@ import {
   ArrowLeft,
   Server,
   CheckCircle2,
+  Cpu,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ActionBar, EmptyState } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { fetchAPI } from '@/lib/api'
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from '@/components/plugins/UniversalPluginConfigDialog'
@@ -245,17 +247,37 @@ export function UnifiedLLMBackendsTab({
 
   // ========== LIST VIEW ==========
   if (view === 'list') {
+    // Empty state when no backend types are available
+    if (backendTypes.length === 0) {
+      return (
+        <>
+          <ActionBar
+            title={t('plugins:llmBackends')}
+            titleIcon={<Cpu className="h-5 w-5" />}
+            description={t('plugins:llm.manageBackends')}
+            onRefresh={loadData}
+            refreshLoading={loading}
+          />
+          <EmptyState
+            icon="plugin"
+            title={t('plugins:llm.noBackends')}
+            description={t('plugins:llm.noBackendsDesc')}
+            action={{ label: t('common:retry'), onClick: loadData, icon: <Loader2 className="h-4 w-4" /> }}
+          />
+        </>
+      )
+    }
+
     return (
       <>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{t('plugins:llmBackends')}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t('plugins:llm.manageBackends')}
-            </p>
-          </div>
-        </div>
+        {/* Header - using ActionBar for consistency */}
+        <ActionBar
+          title={t('plugins:llmBackends')}
+          titleIcon={<Cpu className="h-5 w-5" />}
+          description={t('plugins:llm.manageBackends')}
+          onRefresh={loadData}
+          refreshLoading={loading}
+        />
 
         {/* Provider Cards Grid */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

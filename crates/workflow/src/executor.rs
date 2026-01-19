@@ -11,7 +11,6 @@ use crate::store::{ExecutionLog, ExecutionStatus, StepResult};
 use crate::wasm_runtime::WasmRuntime;
 use crate::workflow::Step;
 use chrono::Utc;
-use futures::future::join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -185,14 +184,14 @@ impl Executor {
         context.log("info", format!("Executing step: {}", step.id()));
 
         let result: Result<Option<serde_json::Value>> = match step {
-            Step::Log { id, message, level } => {
+            Step::Log { id: _, message, level } => {
                 let message = context.substitute(message);
                 context.log(level, &message);
                 Ok(Some(serde_json::json!(message)))
             }
 
             Step::Delay {
-                id,
+                id: _,
                 duration_seconds,
             } => {
                 tokio::time::sleep(tokio::time::Duration::from_secs(*duration_seconds)).await;
@@ -226,7 +225,7 @@ impl Executor {
                 };
 
                 if steps_to_execute.is_empty() {
-                    context.log("info", format!("No steps to execute for condition branch"));
+                    context.log("info", "No steps to execute for condition branch".to_string());
                     return Ok(StepResult {
                         step_id: id.clone(),
                         started_at,
@@ -334,7 +333,7 @@ impl Executor {
                     // Clone context for parallel execution
                     let mut sub_context = context.clone();
                     let current_depth = depth;
-                    let wasm_runtime = &self.wasm_runtime;
+                    let _wasm_runtime = &self.wasm_runtime;
 
                     // Create a mini-executor for the sub-step
                     // Note: We can't easily move self into spawn, so we execute synchronously
@@ -390,7 +389,7 @@ impl Executor {
                     ),
                 );
 
-                let overall_status = if failed > 0 {
+                let _overall_status = if failed > 0 {
                     ExecutionStatus::Failed
                 } else {
                     ExecutionStatus::Completed
@@ -603,7 +602,7 @@ impl Executor {
             started_at,
             completed_at: Some(completed_at),
             status: ExecutionStatus::Completed,
-            output: result.unwrap_or(None).map(|v| serde_json::Value::from(v)),
+            output: result.unwrap_or(None),
             error: None,
         })
     }

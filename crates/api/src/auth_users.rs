@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use axum::{
     extract::State,
@@ -49,6 +49,13 @@ use axum::{
 };
 
 type HmacSha256 = Hmac<Sha256>;
+
+/// Helper function to safely create HMAC instance
+fn create_hmac(key: &[u8]) -> Result<HmacSha256, AuthError> {
+    HmacSha256::new_from_slice(key).map_err(|_| {
+        AuthError::InvalidInput("Invalid JWT secret length".to_string())
+    })
+}
 
 // Table definitions
 const USERS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("users");
@@ -256,8 +263,8 @@ impl AuthUserState {
         let path = path.to_string(); // Convert to owned String for 'static
 
         std::thread::spawn(move || {
-            if let Ok(db) = Database::open(&path) {
-                if let Ok(write_txn) = db.begin_write() {
+            if let Ok(db) = Database::open(&path)
+                && let Ok(write_txn) = db.begin_write() {
                     let _ = (|| -> Result<(), Box<dyn std::error::Error>> {
                         let mut table = write_txn.open_table(USERS_TABLE)?;
                         table.insert(username.as_str(), user_bytes.as_slice())?;
@@ -266,7 +273,6 @@ impl AuthUserState {
                         Ok(())
                     })();
                 }
-            }
         });
     }
 
@@ -306,7 +312,7 @@ impl AuthUserState {
     }
 
     /// Generate JWT token.
-    fn generate_token(&self, user: &User) -> String {
+    fn generate_token(&self, user: &User) -> Result<String, AuthError> {
         let now = chrono::Utc::now().timestamp();
         let expires_at = now + self.session_duration;
 
@@ -324,12 +330,12 @@ impl AuthUserState {
         );
         let signature = {
             let data = format!("{}.{}", header, payload);
-            let mut mac = HmacSha256::new_from_slice(self.jwt_secret.as_bytes()).unwrap();
+            let mut mac = create_hmac(self.jwt_secret.as_bytes())?;
             mac.update(data.as_bytes());
             BASE64_URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
         };
 
-        format!("{}.{}.{}", header, payload, signature)
+        Ok(format!("{}.{}.{}", header, payload, signature))
     }
 
     /// Validate JWT token and return session info.
@@ -341,7 +347,7 @@ impl AuthUserState {
 
         // Verify signature
         let data = format!("{}.{}", parts[0], parts[1]);
-        let mut mac = HmacSha256::new_from_slice(self.jwt_secret.as_bytes()).unwrap();
+        let mut mac = create_hmac(self.jwt_secret.as_bytes())?;
         mac.update(data.as_bytes());
 
         let expected_sig = BASE64_URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
@@ -419,7 +425,7 @@ impl AuthUserState {
         drop(users);
 
         // Generate token
-        let token = self.generate_token(&user);
+        let token = self.generate_token(&user)?;
 
         info!(
             category = "auth",
@@ -446,7 +452,7 @@ impl AuthUserState {
             let users = self.users.read().await;
             let user = users
                 .get(username)
-                .ok_or_else(|| AuthError::InvalidCredentials)?;
+                .ok_or(AuthError::InvalidCredentials)?;
 
             if !user.active {
                 return Err(AuthError::UserDisabled);
@@ -469,7 +475,8 @@ impl AuthUserState {
         // Generate token
         let token = {
             let users = self.users.read().await;
-            self.generate_token(users.get(username).unwrap())
+            let user = users.get(username).ok_or_else(|| AuthError::UserNotFound)?;
+            self.generate_token(user)?
         };
 
         // Store session
@@ -523,7 +530,7 @@ impl AuthUserState {
         let mut users = self.users.write().await;
         users
             .remove(username)
-            .ok_or_else(|| AuthError::UserNotFound)?;
+            .ok_or(AuthError::UserNotFound)?;
         Ok(())
     }
 
@@ -543,7 +550,7 @@ impl AuthUserState {
         let mut users = self.users.write().await;
         let user = users
             .get_mut(username)
-            .ok_or_else(|| AuthError::UserNotFound)?;
+            .ok_or(AuthError::UserNotFound)?;
 
         if !Self::verify_password(old_password, &user.password_hash) {
             return Err(AuthError::InvalidCredentials);
@@ -651,13 +658,11 @@ pub async fn optional_jwt_auth_middleware(
     mut req: axum::extract::Request,
     next: Next,
 ) -> Response {
-    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
-            if let Ok(session_info) = state.auth_user_state.validate_token(token) {
+    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok())
+        && let Some(token) = auth_header.strip_prefix("Bearer ")
+            && let Ok(session_info) = state.auth_user_state.validate_token(token) {
                 req.extensions_mut().insert(session_info);
             }
-        }
-    }
 
     next.run(req).await
 }

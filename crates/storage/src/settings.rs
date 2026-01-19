@@ -1,6 +1,6 @@
 //! Settings storage using redb.
 //!
-//! Provides persistent storage for LLM, MQTT, and HASS configuration.
+//! Provides persistent storage for LLM and MQTT configuration.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -275,137 +275,6 @@ impl MqttSettings {
     }
 }
 
-/// Home Assistant settings persisted to database.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HassSettings {
-    /// Whether the integration is enabled.
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// Home Assistant URL.
-    #[serde(default = "default_hass_url")]
-    pub url: String,
-
-    /// Long-lived access token.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token: Option<String>,
-
-    /// Whether to verify SSL certificates.
-    #[serde(default = "default_hass_verify_ssl")]
-    pub verify_ssl: bool,
-
-    /// Auto-import all discovered devices.
-    #[serde(default)]
-    pub auto_import: bool,
-
-    /// State sync interval in seconds.
-    #[serde(default = "default_hass_sync_interval")]
-    pub sync_interval: u64,
-
-    /// Entity domains to include (empty = all).
-    #[serde(default)]
-    pub include_domains: Vec<String>,
-
-    /// Entity ID patterns to exclude (supports wildcards).
-    #[serde(default)]
-    pub exclude_patterns: Vec<String>,
-
-    /// Last sync timestamp.
-    #[serde(default)]
-    pub last_sync: Option<i64>,
-
-    /// Last updated timestamp.
-    pub updated_at: i64,
-}
-
-fn default_hass_url() -> String {
-    "http://homeassistant:8123".to_string()
-}
-
-fn default_hass_verify_ssl() -> bool {
-    true
-}
-
-fn default_hass_sync_interval() -> u64 {
-    30
-}
-
-impl Default for HassSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            url: default_hass_url(),
-            token: None,
-            verify_ssl: default_hass_verify_ssl(),
-            auto_import: false,
-            sync_interval: default_hass_sync_interval(),
-            include_domains: vec![
-                "sensor".to_string(),
-                "binary_sensor".to_string(),
-                "switch".to_string(),
-                "light".to_string(),
-            ],
-            exclude_patterns: vec![],
-            last_sync: None,
-            updated_at: chrono::Utc::now().timestamp(),
-        }
-    }
-}
-
-impl HassSettings {
-    /// Update the timestamp.
-    pub fn touch(&mut self) {
-        self.updated_at = chrono::Utc::now().timestamp();
-    }
-
-    /// Update the last sync timestamp.
-    pub fn mark_synced(&mut self) {
-        self.last_sync = Some(chrono::Utc::now().timestamp());
-        self.touch();
-    }
-
-    /// Check if an entity should be included based on filter settings.
-    pub fn should_include_entity(&self, entity_id: &str) -> bool {
-        // Check exclude patterns first.
-        for pattern in &self.exclude_patterns {
-            if self.matches_pattern(entity_id, pattern) {
-                return false;
-            }
-        }
-
-        // Check include domains.
-        if !self.include_domains.is_empty() {
-            if let Some(domain) = entity_id.split('.').next() {
-                return self.include_domains.contains(&domain.to_string());
-            }
-            return false;
-        }
-
-        true
-    }
-
-    /// Check if entity ID matches a pattern (supports * wildcard).
-    fn matches_pattern(&self, entity_id: &str, pattern: &str) -> bool {
-        if pattern.contains('*') {
-            let pattern_parts: Vec<&str> = pattern.split('.').collect();
-            let entity_parts: Vec<&str> = entity_id.split('.').collect();
-
-            if pattern_parts.len() != entity_parts.len() {
-                return false;
-            }
-
-            for (p, e) in pattern_parts.iter().zip(entity_parts.iter()) {
-                if *p != "*" && *p != *e {
-                    return false;
-                }
-            }
-            true
-        } else {
-            entity_id == pattern
-        }
-    }
-}
-
 /// External MQTT broker configuration for data source subscription.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalBroker {
@@ -652,11 +521,10 @@ impl SettingsStore {
         // Check if we already have a store for this path
         {
             let singleton = SETTINGS_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create a new store
@@ -751,33 +619,6 @@ impl SettingsStore {
         Ok(())
     }
 
-    /// Save HASS settings with change tracking.
-    pub fn save_hass_settings_tracked(
-        &self,
-        settings: &HassSettings,
-        source: &str,
-    ) -> Result<(), Error> {
-        let old_value = self
-            .load_hass_settings()
-            .ok()
-            .flatten()
-            .and_then(|s| serde_json::to_value(s).ok());
-
-        self.save_hass_settings(settings)?;
-
-        if let Ok(new_value) = serde_json::to_value(settings) {
-            let entry = ConfigChangeEntry::new(
-                "hass_config".to_string(),
-                old_value,
-                new_value,
-                source.to_string(),
-            );
-            self.record_config_change(&entry)?;
-        }
-
-        Ok(())
-    }
-
     /// Record a configuration change in history.
     pub fn record_config_change(&self, entry: &ConfigChangeEntry) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
@@ -802,13 +643,12 @@ impl SettingsStore {
 
         let mut entries = Vec::new();
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_, data) = result?;
-            if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value()) {
-                if entry.config_key == config_key {
+            if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value())
+                && entry.config_key == config_key {
                     entries.push(entry);
                 }
-            }
         }
 
         // Sort by timestamp descending (newest first)
@@ -827,7 +667,7 @@ impl SettingsStore {
 
         let mut entries = Vec::new();
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_, data) = result?;
             if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value()) {
                 entries.push(entry);
@@ -850,7 +690,7 @@ impl SettingsStore {
         // Collect all entries
         let mut entries: Vec<(String, i64)> = Vec::new();
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (key, data) = result?;
             if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value()) {
                 entries.push((key.value().to_string(), entry.timestamp));
@@ -892,10 +732,6 @@ impl SettingsStore {
             export["mqtt"] = serde_json::to_value(mqtt).unwrap_or(serde_json::Value::Null);
         }
 
-        if let Some(hass) = self.load_hass_settings()? {
-            export["hass"] = serde_json::to_value(hass).unwrap_or(serde_json::Value::Null);
-        }
-
         let brokers = self.load_all_external_brokers()?;
         export["external_brokers"] =
             serde_json::to_value(brokers).unwrap_or(serde_json::Value::Null);
@@ -906,36 +742,26 @@ impl SettingsStore {
     /// Import settings from JSON.
     pub fn import_settings(&self, import: serde_json::Value, source: &str) -> Result<(), Error> {
         // Import LLM settings
-        if let Some(llm_value) = import.get("llm") {
-            if let Ok(llm_settings) = serde_json::from_value::<LlmSettings>(llm_value.clone()) {
+        if let Some(llm_value) = import.get("llm")
+            && let Ok(llm_settings) = serde_json::from_value::<LlmSettings>(llm_value.clone()) {
                 self.save_llm_settings_tracked(&llm_settings, source)?;
             }
-        }
 
         // Import MQTT settings
-        if let Some(mqtt_value) = import.get("mqtt") {
-            if let Ok(mqtt_settings) = serde_json::from_value::<MqttSettings>(mqtt_value.clone()) {
+        if let Some(mqtt_value) = import.get("mqtt")
+            && let Ok(mqtt_settings) = serde_json::from_value::<MqttSettings>(mqtt_value.clone()) {
                 self.save_mqtt_settings_tracked(&mqtt_settings, source)?;
             }
-        }
-
-        // Import HASS settings
-        if let Some(hass_value) = import.get("hass") {
-            if let Ok(hass_settings) = serde_json::from_value::<HassSettings>(hass_value.clone()) {
-                self.save_hass_settings_tracked(&hass_settings, source)?;
-            }
-        }
 
         // Import external brokers
-        if let Some(brokers_value) = import.get("external_brokers") {
-            if let Ok(brokers) =
+        if let Some(brokers_value) = import.get("external_brokers")
+            && let Ok(brokers) =
                 serde_json::from_value::<Vec<ExternalBroker>>(brokers_value.clone())
             {
                 for broker in brokers {
                     self.save_external_broker(&broker)?;
                 }
             }
-        }
 
         Ok(())
     }
@@ -949,7 +775,7 @@ impl SettingsStore {
         match settings.backend {
             LlmBackendType::Ollama => {
                 // Ollama typically doesn't require an API key
-                if settings.endpoint.as_ref().map_or(false, |e| e.is_empty()) {
+                if settings.endpoint.as_ref().is_some_and(|e| e.is_empty()) {
                     return Err("Ollama endpoint must be specified".to_string());
                 }
             }
@@ -957,7 +783,7 @@ impl SettingsStore {
             | LlmBackendType::Anthropic
             | LlmBackendType::Google
             | LlmBackendType::XAi => {
-                if settings.api_key.as_ref().map_or(true, |k| k.is_empty()) {
+                if settings.api_key.as_ref().is_none_or(|k| k.is_empty()) {
                     return Err(format!("{:?} requires an API key", settings.backend));
                 }
             }
@@ -986,25 +812,6 @@ impl SettingsStore {
 
         if settings.listen.is_empty() {
             return Err("Listen address cannot be empty".to_string());
-        }
-
-        Ok(())
-    }
-
-    /// Validate HASS settings.
-    pub fn validate_hass_settings(settings: &HassSettings) -> Result<(), String> {
-        if settings.enabled {
-            if settings.url.is_empty() {
-                return Err("HASS URL cannot be empty when enabled".to_string());
-            }
-
-            if settings.token.as_ref().map_or(true, |t| t.is_empty()) {
-                return Err("HASS token cannot be empty when enabled".to_string());
-            }
-
-            if settings.sync_interval == 0 {
-                return Err("Sync interval must be greater than 0".to_string());
-            }
         }
 
         Ok(())
@@ -1133,81 +940,6 @@ impl SettingsStore {
         self.load_mqtt_settings().ok().flatten().is_some()
     }
 
-    /// Save HASS settings.
-    pub fn save_hass_settings(&self, settings: &HassSettings) -> Result<(), Error> {
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let value =
-                serde_json::to_vec(settings).map_err(|e| Error::Serialization(e.to_string()))?;
-            table.insert("hass_config", value.as_slice())?;
-        }
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    /// Load HASS settings.
-    pub fn load_hass_settings(&self) -> Result<Option<HassSettings>, Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SETTINGS_TABLE)?;
-
-        if let Some(data) = table.get("hass_config")? {
-            let settings: HassSettings = serde_json::from_slice(data.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?;
-            Ok(Some(settings))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Get HASS settings or return default.
-    pub fn get_hass_settings(&self) -> HassSettings {
-        self.load_hass_settings().ok().flatten().unwrap_or_default()
-    }
-
-    /// Delete HASS settings.
-    pub fn delete_hass_settings(&self) -> Result<bool, Error> {
-        let write_txn = self.db.begin_write()?;
-        let existed = {
-            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            table.remove("hass_config")?.is_some()
-        };
-        write_txn.commit()?;
-        Ok(existed)
-    }
-
-    /// Check if HASS settings exist.
-    pub fn has_hass_settings(&self) -> bool {
-        self.load_hass_settings().ok().flatten().is_some()
-    }
-
-    /// Save HASS discovery enabled state.
-    pub fn save_hass_discovery_enabled(&self, enabled: bool) -> Result<(), Error> {
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let value =
-                serde_json::to_vec(&(enabled)).map_err(|e| Error::Serialization(e.to_string()))?;
-            table.insert("hass_discovery_enabled", value.as_slice())?;
-        }
-        write_txn.commit()?;
-        Ok(())
-    }
-
-    /// Load HASS discovery enabled state.
-    pub fn load_hass_discovery_enabled(&self) -> Result<bool, Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SETTINGS_TABLE)?;
-
-        if let Some(data) = table.get("hass_discovery_enabled")? {
-            let enabled: bool = serde_json::from_slice(data.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?;
-            Ok(enabled)
-        } else {
-            Ok(false)
-        }
-    }
-
     /// Save an external broker configuration.
     pub fn save_external_broker(&self, broker: &ExternalBroker) -> Result<(), Error> {
         let write_txn = self.db.begin_write()?;
@@ -1242,7 +974,7 @@ impl SettingsStore {
 
         let mut brokers = Vec::new();
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_, data) = result?;
             let broker: ExternalBroker = serde_json::from_slice(data.value())
                 .map_err(|e| Error::Serialization(e.to_string()))?;
@@ -1266,6 +998,33 @@ impl SettingsStore {
     pub fn get_enabled_brokers(&self) -> Result<Vec<ExternalBroker>, Error> {
         let all = self.load_all_external_brokers()?;
         Ok(all.into_iter().filter(|b| b.enabled).collect())
+    }
+
+    /// Save HASS discovery enabled state.
+    pub fn save_hass_discovery_enabled(&self, enabled: bool) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
+            let key = "hass_discovery_enabled";
+            let value: &[u8] = if enabled { b"true" } else { b"false" };
+            table.insert(key, value)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Load HASS discovery enabled state.
+    pub fn load_hass_discovery_enabled(&self) -> Result<bool, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(SETTINGS_TABLE)?;
+
+        if let Some(value) = table.get("hass_discovery_enabled")? {
+            let s = std::str::from_utf8(value.value())
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            Ok(s == "true")
+        } else {
+            Ok(false) // Default to disabled
+        }
     }
 }
 

@@ -354,8 +354,8 @@ impl LongTermMemoryStore {
                 memory.last_accessed = Utc::now().timestamp();
                 memory.access_count += 1;
 
-                if let Ok(updated) = serde_json::to_vec(&memory) {
-                    if let Ok(txn) = db.begin_write() {
+                if let Ok(updated) = serde_json::to_vec(&memory)
+                    && let Ok(txn) = db.begin_write() {
                         {
                             let mut table = match txn.open_table(MEMORY_TABLE) {
                                 Ok(t) => t,
@@ -365,7 +365,6 @@ impl LongTermMemoryStore {
                         } // table dropped here
                         let _ = txn.commit();
                     }
-                }
             }
         });
     }
@@ -379,16 +378,14 @@ impl LongTermMemoryStore {
 
         for result in table.iter()? {
             let (_key, value) = result?;
-            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value()) {
-                if self.matches_filter(&memory, filter) {
+            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value())
+                && self.matches_filter(&memory, filter) {
                     results.push(memory);
-                    if let Some(limit) = filter.limit {
-                        if results.len() >= limit {
+                    if let Some(limit) = filter.limit
+                        && results.len() >= limit {
                             break;
                         }
-                    }
                 }
-            }
         }
 
         Ok(results)
@@ -448,19 +445,15 @@ impl LongTermMemoryStore {
         let mut table = txn.open_table(MEMORY_TABLE)?;
 
         // Get memory before deleting to update indexes
-        let memory_data = if let Some(value) = table.get(id)? {
-            Some(value.value().to_vec())
-        } else {
-            None
-        };
+        let memory_data = table.get(id)?.map(|value| value.value().to_vec());
 
         let removed = table.remove(id)?.is_some();
         drop(table); // Drop table before commit
 
         if removed {
             // Update indexes
-            if let Some(data) = memory_data {
-                if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(&data) {
+            if let Some(data) = memory_data
+                && let Ok(memory) = serde_json::from_slice::<MemoryEntry>(&data) {
                     // Update type index
                     let mut type_index = self.type_index.write().await;
                     if let Some(count) = type_index.get_mut(&memory.memory_type) {
@@ -481,7 +474,6 @@ impl LongTermMemoryStore {
                         }
                     }
                 }
-            }
         }
 
         txn.commit()?;
@@ -498,13 +490,11 @@ impl LongTermMemoryStore {
 
         for result in table.iter()? {
             let (key, value) = result?;
-            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value()) {
-                if let Some(expires_at) = memory.expires_at() {
-                    if expires_at < now {
+            if let Ok(memory) = serde_json::from_slice::<MemoryEntry>(value.value())
+                && let Some(expires_at) = memory.expires_at()
+                    && expires_at < now {
                         ids_to_delete.push(key.value().to_string());
                     }
-                }
-            }
         }
         drop(table);
 
@@ -532,9 +522,8 @@ impl LongTermMemoryStore {
             Ok(txn) => match txn.open_table(MEMORY_TABLE) {
                 Ok(table) => {
                     let mut count = 0;
-                    let _ = table.iter().map(|x| {
+                    let _ = table.iter().inspect(|x| {
                         count += 1;
-                        x
                     });
                     count
                 }
@@ -568,7 +557,7 @@ impl LongTermMemoryStore {
                 for keyword in &memory.keywords {
                     keyword_index
                         .entry(keyword.clone())
-                        .or_insert_with(HashSet::new)
+                        .or_default()
                         .insert(memory.id.clone());
                 }
             }
@@ -605,25 +594,22 @@ impl LongTermMemoryStore {
         }
 
         // Check source
-        if let Some(ref source) = filter.source {
-            if &memory.source != source {
+        if let Some(ref source) = filter.source
+            && &memory.source != source {
                 return false;
             }
-        }
 
         // Check session
-        if let Some(ref session_id) = filter.session_id {
-            if memory.session_id.as_ref() != Some(session_id) {
+        if let Some(ref session_id) = filter.session_id
+            && memory.session_id.as_ref() != Some(session_id) {
                 return false;
             }
-        }
 
         // Check importance
-        if let Some(min_importance) = filter.min_importance {
-            if memory.importance < min_importance {
+        if let Some(min_importance) = filter.min_importance
+            && memory.importance < min_importance {
                 return false;
             }
-        }
 
         // Check keywords
         if !filter.keywords.is_empty() {
@@ -637,16 +623,14 @@ impl LongTermMemoryStore {
         }
 
         // Check time range
-        if let Some(start) = filter.start_time {
-            if memory.created_at < start {
+        if let Some(start) = filter.start_time
+            && memory.created_at < start {
                 return false;
             }
-        }
-        if let Some(end) = filter.end_time {
-            if memory.created_at > end {
+        if let Some(end) = filter.end_time
+            && memory.created_at > end {
                 return false;
             }
-        }
 
         true
     }

@@ -162,7 +162,7 @@ impl AutomationConverter {
             .filter_map(|step| -> Option<Action> {
                 match step {
                     Step::SendAlert {
-                        severity,
+                        severity: _,
                         title,
                         message,
                         ..
@@ -240,7 +240,7 @@ impl AutomationConverter {
                     estimated_complexity: transform.complexity_score(),
                 }
             }
-            Automation::Rule(rule) => {
+            Automation::Rule(_rule) => {
                 // Rules can always be converted to workflows
                 ConversionRecommendation {
                     can_convert: true,
@@ -297,7 +297,7 @@ fn parse_condition_string(condition: &str) -> Option<(ComparisonOperator, f64)> 
     ];
 
     for (op_str, op) in &operators {
-        if let Some(pos) = condition.find(op_str) {
+        if let Some(_pos) = condition.find(op_str) {
             let parts: Vec<&str> = condition.splitn(2, op_str).collect();
             if parts.len() == 2 {
                 let threshold = parts[1].trim().trim_start_matches('$').trim_matches('{').trim_matches('}').trim().parse().ok()?;
@@ -309,7 +309,7 @@ fn parse_condition_string(condition: &str) -> Option<(ComparisonOperator, f64)> 
     // Try single character operators
     let single_ops = [">", "<"];
     for op in &single_ops {
-        if let Some(pos) = condition.find(op) {
+        if let Some(_pos) = condition.find(op) {
             let parts: Vec<&str> = condition.splitn(2, op).collect();
             if parts.len() == 2 {
                 let threshold = parts[1].trim().trim_start_matches('$').trim_matches('{').trim_matches('}').trim().parse().ok()?;

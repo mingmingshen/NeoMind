@@ -7,11 +7,9 @@
 //! 4. Support natural language parameter names
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::error::{Result, ToolError};
 use super::tool::ToolOutput;
 
 /// User-friendly error response format.
@@ -49,7 +47,8 @@ impl FriendlyError {
 
     /// Convert to ToolOutput.
     pub fn to_output(&self) -> ToolOutput {
-        let mut output = if self.is_warning {
+        
+        if self.is_warning {
             ToolOutput::warning_with_metadata(
                 &self.message,
                 serde_json::json!({
@@ -65,8 +64,7 @@ impl FriendlyError {
                     "type": "friendly_error"
                 })
             )
-        };
-        output
+        }
     }
 }
 
@@ -687,7 +685,7 @@ pub fn format_tools_for_llm() -> String {
             prompt.push_str(&format!("\n**使用场景**: {}\n", tool.use_when.join("、")));
         }
 
-        prompt.push_str("\n");
+        prompt.push('\n');
     }
 
     prompt

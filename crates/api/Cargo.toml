@@ -17,9 +17,9 @@ edge-ai-alerts = { path = "../alerts", features = ["webhook", "email"] }
 edge-ai-storage = { path = "../storage" }
 edge-ai-workflow = { path = "../workflow" }
 edge-ai-memory = { path = "../memory" }
-edge-ai-scenarios = { path = "../scenarios" }
 edge-ai-tools = { path = "../tools" }
 edge-ai-commands = { path = "../commands" }
+edge-ai-automation = { path = "../automation" }
 
 tokio = { workspace = true }
 futures = { workspace = true }

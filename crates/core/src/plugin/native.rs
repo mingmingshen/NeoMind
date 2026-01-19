@@ -3,11 +3,9 @@
 //! This module provides the ability to load Rust-compiled plugins
 //! as dynamic libraries (.so, .dylib, .dll) at runtime.
 
-use crate::plugin::{Plugin, PluginError, PluginMetadata, Result};
+use crate::plugin::{PluginError, PluginMetadata, Result};
 use libloading::{Library, Symbol};
-use serde_json::Value;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
 /// Native plugin descriptor that must be exported by the plugin library.
@@ -323,7 +321,7 @@ impl NativePluginWrapper {
     ///
     /// # Safety
     /// The create_fn must produce a valid plugin instance.
-    pub unsafe fn from_loaded(plugin: &LoadedNativePlugin) -> Result<Self> {
+    pub unsafe fn from_loaded(plugin: &LoadedNativePlugin) -> Result<Self> { unsafe {
         let instance = (plugin.create_fn)();
 
         if instance.is_null() {
@@ -338,7 +336,7 @@ impl NativePluginWrapper {
             destroy_fn: plugin.destroy_fn,
             destroyed: StdMutex::new(false),
         })
-    }
+    }}
 }
 
 impl Drop for NativePluginWrapper {

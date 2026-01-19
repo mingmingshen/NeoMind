@@ -139,11 +139,10 @@ impl RuleStore {
         // Check singleton
         {
             let singleton = RULE_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Open database
@@ -237,7 +236,7 @@ impl RuleStore {
         let table = read_txn.open_table(RULES_TABLE)?;
 
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_, value) = result?;
             let rule: CompiledRule = serde_json::from_slice(value.value())?;
             rules.push(rule);
@@ -254,7 +253,7 @@ impl RuleStore {
         let table = read_txn.open_table(RULES_TABLE)?;
 
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (key, _) = result?;
             let key_str = key.value();
             if let Some(id) = key_str.strip_prefix("rule:") {
@@ -316,7 +315,7 @@ impl RuleStore {
 
         let rule_id_str = rule_id.to_string();
         let mut iter = table.iter()?;
-        while let Some(result) = iter.next() {
+        for result in iter {
             let (_, value) = result?;
             let entry: RuleHistoryEntry = serde_json::from_slice(value.value())?;
             if entry.rule_id == rule_id_str {
@@ -351,8 +350,8 @@ impl RuleStore {
         let min = *durations.iter().min().unwrap_or(&0);
         let max = *durations.iter().max().unwrap_or(&0);
 
-        let last = entries.first().and_then(|e| Some(e.timestamp));
-        let first = entries.last().and_then(|e| Some(e.timestamp));
+        let last = entries.first().map(|e| e.timestamp);
+        let first = entries.last().map(|e| e.timestamp);
 
         Ok(RuleHistoryStats {
             total_executions: total,
@@ -377,7 +376,7 @@ impl RuleStore {
             let mut iter = table.iter()?;
             let mut keys_to_remove = Vec::new();
 
-            while let Some(result) = iter.next() {
+            for result in iter.by_ref() {
                 let (key, value) = result?;
                 let entry: RuleHistoryEntry = serde_json::from_slice(value.value())?;
                 if entry.rule_id == rule_id_str {
@@ -410,7 +409,7 @@ impl RuleStore {
             let mut rule_keys = Vec::new();
             {
                 let mut iter = rules_table.iter()?;
-                while let Some(result) = iter.next() {
+                for result in iter {
                     let (key, _) = result?;
                     rule_keys.push(key.value().to_string());
                 }
@@ -425,7 +424,7 @@ impl RuleStore {
             let mut history_keys = Vec::new();
             {
                 let mut iter = history_table.iter()?;
-                while let Some(result) = iter.next() {
+                for result in iter {
                     let (key, _) = result?;
                     history_keys.push(key.value().to_string());
                 }

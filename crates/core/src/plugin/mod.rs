@@ -304,13 +304,11 @@ impl PluginRegistry {
 
         // Check if current version satisfies requirement
         // This is a simplified check - use semver crate in production
-        if required.starts_with('^') {
+        if let Some(req_ver) = required.strip_prefix('^') {
             // Caret requirement - same logic as Cargo
-            let req_ver = &required[1..];
             Ok(current.starts_with(req_ver))
-        } else if required.starts_with('~') {
+        } else if let Some(req_ver) = required.strip_prefix('~') {
             // Tilde requirement
-            let req_ver = &required[1..];
             Ok(current.starts_with(req_ver))
         } else if required.contains('=') {
             // Exact version
@@ -321,26 +319,229 @@ impl PluginRegistry {
         }
     }
 
-    /// Load a WASM plugin (placeholder for future implementation).
+    /// Load a WASM plugin from a file path.
     ///
-    /// This method is a placeholder for future WASM plugin loading.
-    /// When implemented, it will:
-    /// 1. Load the WASM file
-    /// 2. Extract metadata from the WASM module
-    /// 3. Create a WASM plugin wrapper
-    /// 4. Register the plugin
-    #[allow(dead_code)]
-    async fn load_wasm_plugin(&mut self, _wasm_path: impl AsRef<std::path::Path>) -> Result<()> {
-        // TODO: Implement WASM plugin loading
-        Err(PluginError::Other(anyhow::anyhow!(
-            "WASM plugin loading not yet implemented"
-        )))
+    /// This method:
+    /// 1. Validates and loads the WASM file
+    /// 2. Extracts metadata from sidecar JSON or WASM custom section
+    /// 3. Creates a WASM plugin wrapper
+    /// 4. Registers the plugin in the registry
+    ///
+    /// # Arguments
+    ///
+    /// * `wasm_path` - Path to the `.wasm` file (or directory containing plugin)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use edge_ai_core::plugin::PluginRegistry;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut registry = PluginRegistry::new("1.0.0");
+    /// registry.load_wasm_plugin("./plugins/my-plugin.wasm").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn load_wasm_plugin(&mut self, wasm_path: impl AsRef<std::path::Path>) -> Result<()> {
+        use std::sync::Mutex as StdMutex;
+
+        let path = wasm_path.as_ref();
+
+        // If path is a directory, look for .wasm file inside
+        let wasm_file = if path.is_dir() {
+            let dir_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or_else(|| PluginError::InvalidPlugin("Invalid directory path".into()))?;
+
+            let wasm_path = path.join(format!("{}.wasm", dir_name));
+            if !wasm_path.exists() {
+                // Try to find any .wasm file in the directory
+                let entries = std::fs::read_dir(path)
+                    .map_err(|e| PluginError::LoadFailed(format!("Cannot read directory: {}", e)))?;
+
+                let wasm_entry = entries
+                    .filter_map(|e| e.ok())
+                    .find(|e| e.path().extension().is_some_and(|ext| ext == "wasm"));
+
+                let wasm_entry = wasm_entry.ok_or_else(|| {
+                    PluginError::LoadFailed(format!(
+                        "No .wasm file found in directory: {}",
+                        path.display()
+                    ))
+                })?;
+
+                wasm_entry.path()
+            } else {
+                wasm_path
+            }
+        } else {
+            path.to_path_buf()
+        };
+
+        tracing::info!("Loading WASM plugin from: {}", wasm_file.display());
+
+        // Use the WasmPluginLoader to load and validate the plugin
+        let loader = wasm::WasmPluginLoader::new();
+
+        // First validate the plugin
+        let validation = loader.validate_plugin(&wasm_file);
+        if !validation.is_valid {
+            let error_msg = loader.format_load_error(&wasm_file, &PluginError::InvalidPlugin(
+                validation.errors.join("; ")
+            ));
+            tracing::error!("{}", error_msg);
+            return Err(PluginError::WasmLoadFailed(format!(
+                "Validation failed: {}",
+                validation.errors.join("; ")
+            )));
+        }
+
+        // Load the plugin metadata
+        let loaded = loader
+            .load_metadata(&wasm_file)
+            .map_err(|e| PluginError::WasmLoadFailed(e.to_string()))?;
+
+        // Instantiate the plugin
+        let wasm_plugin = loader
+            .instantiate(loaded)
+            .await
+            .map_err(|e| PluginError::InitializationFailed(e.to_string()))?;
+
+        // Create a wrapper that implements the Plugin trait
+        let plugin_id = wasm_plugin.metadata().base.id.clone();
+        let wrapper = WasmPluginWrapper::new(wasm_plugin);
+
+        // Register the plugin
+        self.plugins
+            .insert(plugin_id.clone(), Arc::new(StdMutex::new(wrapper)));
+
+        tracing::info!("Successfully loaded WASM plugin: {}", plugin_id);
+
+        Ok(())
     }
 }
 
 impl Default for PluginRegistry {
     fn default() -> Self {
         Self::new(env!("CARGO_PKG_VERSION"))
+    }
+}
+
+/// Wrapper that adapts `WasmPlugin` to implement the `Plugin` trait.
+///
+/// This allows WASM plugins to be registered in the `PluginRegistry`
+/// alongside native Rust plugins.
+pub struct WasmPluginWrapper {
+    /// The wrapped WASM plugin
+    plugin: Arc<tokio::sync::RwLock<wasm::WasmPlugin>>,
+    /// Cached metadata for quick access
+    metadata: PluginMetadata,
+    /// Whether the plugin has been initialized
+    initialized: bool,
+}
+
+impl WasmPluginWrapper {
+    /// Create a new wrapper around a WASM plugin.
+    pub fn new(plugin: wasm::WasmPlugin) -> Self {
+        // Extract the metadata we need before moving plugin
+        let plugin_id = plugin.metadata().base.id.clone();
+        let plugin_name = plugin.metadata().base.name.clone();
+        let plugin_version = plugin.metadata().base.version.clone();
+        let plugin_required_version = plugin.metadata().base.required_neotalk_version.clone();
+        let plugin_description = plugin.metadata().base.description.clone();
+        let plugin_author = plugin.metadata().base.author.clone();
+        let plugin_types = plugin.metadata().base.types.clone();
+
+        let metadata = PluginMetadata::new(
+            &plugin_id,
+            &plugin_name,
+            &plugin_version,
+            &plugin_required_version,
+        )
+        .with_description(&plugin_description)
+        .with_author(plugin_author.unwrap_or_else(|| "Unknown".to_string()));
+
+        // Create wrapper with collected types
+        let mut wrapper = Self {
+            plugin: Arc::new(tokio::sync::RwLock::new(plugin)),
+            metadata,
+            initialized: false,
+        };
+
+        // Add all plugin types from the extended metadata
+        for plugin_type_str in &plugin_types {
+            wrapper.metadata.types.push(plugin_type_str.clone());
+        }
+
+        wrapper
+    }
+
+    /// Get a reference to the underlying WASM plugin.
+    pub async fn plugin(&self) -> Arc<tokio::sync::RwLock<wasm::WasmPlugin>> {
+        self.plugin.clone()
+    }
+}
+
+impl Plugin for WasmPluginWrapper {
+    fn metadata(&self) -> &PluginMetadata {
+        &self.metadata
+    }
+
+    fn initialize(&mut self, config: &Value) -> Result<()> {
+        // For async initialization, we need to use a runtime
+        let rt = tokio::runtime::Handle::try_current();
+        let plugin = self.plugin.clone();
+
+        let init_result = if let Ok(handle) = rt {
+            handle.block_on(async move {
+                let p = plugin.read().await;
+                p.initialize(config).await
+            })
+        } else {
+            // Create a new runtime if none exists
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| PluginError::InitializationFailed(format!("Failed to create runtime: {}", e)))?;
+            rt.block_on(async move {
+                let p = plugin.read().await;
+                p.initialize(config).await
+            })
+        };
+
+        match init_result {
+            Ok(()) => {
+                self.initialized = true;
+                Ok(())
+            }
+            Err(e) => Err(PluginError::InitializationFailed(format!(
+                "WASM plugin initialization failed: {}",
+                e
+            ))),
+        }
+    }
+
+    fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    fn shutdown(&mut self) -> Result<()> {
+        let rt = tokio::runtime::Handle::try_current();
+        let plugin = self.plugin.clone();
+
+        let shutdown_result = if let Ok(handle) = rt {
+            handle.block_on(async move {
+                let p = plugin.read().await;
+                p.shutdown().await
+            })
+        } else {
+            let rt = tokio::runtime::Runtime::new()
+                .map_err(|e| PluginError::InitializationFailed(format!("Failed to create runtime: {}", e)))?;
+            rt.block_on(async move {
+                let p = plugin.read().await;
+                p.shutdown().await
+            })
+        };
+
+        shutdown_result.map_err(|e| PluginError::ExecutionFailed(format!("Shutdown failed: {}", e)))
     }
 }
 

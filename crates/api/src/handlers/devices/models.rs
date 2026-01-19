@@ -126,7 +126,7 @@ impl PaginationMeta {
         let total_pages = if total == 0 {
             0
         } else {
-            (total + limit - 1) / limit
+            total.div_ceil(limit)
         };
         Self {
             page,

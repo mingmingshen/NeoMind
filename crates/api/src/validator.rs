@@ -459,10 +459,10 @@ pub fn validation_middleware(
     move |req: Request, next: Next| {
         Box::pin(async move {
             // Check Content-Length header
-            if let Some(content_length) = req.headers().get("content-length") {
-                if let Ok(length_str) = content_length.to_str() {
-                    if let Ok(length) = length_str.parse::<usize>() {
-                        if length > max_size {
+            if let Some(content_length) = req.headers().get("content-length")
+                && let Ok(length_str) = content_length.to_str()
+                    && let Ok(length) = length_str.parse::<usize>()
+                        && length > max_size {
                             let error = ErrorResponse {
                                 code: ErrorCode::BadRequest.as_str().to_string(),
                                 message: format!("Request body too large (max {} bytes)", max_size),
@@ -471,9 +471,6 @@ pub fn validation_middleware(
                             };
                             return error.into_response();
                         }
-                    }
-                }
-            }
 
             next.run(req).await
         })

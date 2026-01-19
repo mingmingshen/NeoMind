@@ -69,12 +69,12 @@ impl WorkflowEngine {
 
     /// Get a workflow
     pub async fn get_workflow(&self, id: &str) -> Result<Option<Workflow>> {
-        Ok(self.workflow_store.load(id)?)
+        self.workflow_store.load(id)
     }
 
     /// List all workflows
     pub async fn list_workflows(&self) -> Result<Vec<Workflow>> {
-        Ok(self.workflow_store.load_all()?)
+        self.workflow_store.load_all()
     }
 
     /// Execute a workflow
@@ -196,17 +196,17 @@ impl WorkflowEngine {
 
     /// Get execution record
     pub async fn get_execution(&self, id: &str) -> Result<Option<ExecutionRecord>> {
-        Ok(self.execution_store.load(id)?)
+        self.execution_store.load(id)
     }
 
     /// Get executions for a workflow
     pub async fn get_workflow_executions(&self, workflow_id: &str) -> Result<Vec<ExecutionRecord>> {
-        Ok(self.execution_store.get_workflow_executions(workflow_id)?)
+        self.execution_store.get_workflow_executions(workflow_id)
     }
 
     /// Get recent executions
     pub async fn get_recent_executions(&self, limit: usize) -> Result<Vec<ExecutionRecord>> {
-        Ok(self.execution_store.get_recent(limit)?)
+        self.execution_store.get_recent(limit)
     }
 
     /// Set device manager for the executor

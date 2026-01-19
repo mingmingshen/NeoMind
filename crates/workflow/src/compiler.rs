@@ -178,7 +178,7 @@ impl MultiLanguageCompiler {
     async fn compile_wat(&self, source: &str) -> Result<CompilationResult> {
         #[cfg(feature = "wat")]
         {
-            let mut warnings = vec![];
+            let warnings = vec![];
 
             // Parse and compile Wat using wat::parse_str
             let result = wat::parse_str(source).map_err(|e| {

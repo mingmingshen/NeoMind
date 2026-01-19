@@ -4,7 +4,7 @@ use axum::{Json, extract::State};
 use serde::Serialize;
 use serde_json::json;
 
-use super::{ServerState, common::ok};
+use super::ServerState;
 
 /// Health check response.
 #[derive(Debug, Clone, Serialize)]

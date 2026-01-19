@@ -6,7 +6,7 @@ use crate::trigger::TriggerManager;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio_cron_scheduler::{Job, JobScheduler};
+use tokio_cron_scheduler::JobScheduler;
 
 /// Scheduled task
 #[derive(Debug, Clone)]

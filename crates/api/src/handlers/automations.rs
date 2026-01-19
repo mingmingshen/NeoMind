@@ -10,13 +10,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use edge_ai_automation::{
     Automation, AutomationConverter, AutomationType, IntentResult,
-    RuleAutomation, WorkflowAutomation, TransformAutomation,
-    store::SharedAutomationStore,
-    intent::IntentAnalyzer,
 };
 
 use super::{
@@ -224,11 +220,10 @@ pub async fn list_automations_handler(
             }
 
             // Filter by enabled status
-            if let Some(enabled) = filter.enabled {
-                if a.is_enabled() != enabled {
+            if let Some(enabled) = filter.enabled
+                && a.is_enabled() != enabled {
                     return false;
                 }
-            }
 
             // Search in name/description
             if let Some(search) = &filter.search {
@@ -282,7 +277,7 @@ pub async fn get_automation_handler(
         }
         Err(e) => {
             tracing::error!("Error getting automation: {}", e);
-            Err(ErrorResponse::internal(&format!("Failed to get automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)))
         }
     }
 }
@@ -308,7 +303,7 @@ pub async fn create_automation_handler(
             match serde_json::from_value(req.definition) {
                 Ok(transform) => Automation::Transform(transform),
                 Err(e) => {
-                    return Err(ErrorResponse::bad_request(&format!("Invalid transform definition: {}", e)));
+                    return Err(ErrorResponse::bad_request(format!("Invalid transform definition: {}", e)));
                 }
             }
         }
@@ -317,7 +312,7 @@ pub async fn create_automation_handler(
             match serde_json::from_value(req.definition) {
                 Ok(rule) => Automation::Rule(rule),
                 Err(e) => {
-                    return Err(ErrorResponse::bad_request(&format!("Invalid rule definition: {}", e)));
+                    return Err(ErrorResponse::bad_request(format!("Invalid rule definition: {}", e)));
                 }
             }
         }
@@ -326,7 +321,7 @@ pub async fn create_automation_handler(
             match serde_json::from_value(req.definition) {
                 Ok(workflow) => Automation::Workflow(workflow),
                 Err(e) => {
-                    return Err(ErrorResponse::bad_request(&format!("Invalid workflow definition: {}", e)));
+                    return Err(ErrorResponse::bad_request(format!("Invalid workflow definition: {}", e)));
                 }
             }
         }
@@ -343,7 +338,7 @@ pub async fn create_automation_handler(
         }
         Err(e) => {
             tracing::error!("Error creating automation: {}", e);
-            Err(ErrorResponse::internal(&format!("Failed to create automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to create automation: {}", e)))
         }
     }
 }
@@ -367,7 +362,7 @@ pub async fn update_automation_handler(
             return Err(ErrorResponse::not_found("Automation not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(&format!("Failed to get automation: {}", e)));
+            return Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)));
         }
     };
 
@@ -422,7 +417,7 @@ pub async fn update_automation_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to update automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to update automation: {}", e)))
         }
     }
 }
@@ -448,7 +443,7 @@ pub async fn delete_automation_handler(
             Err(ErrorResponse::not_found("Automation not found"))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to delete automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to delete automation: {}", e)))
         }
     }
 }
@@ -472,7 +467,7 @@ pub async fn set_automation_status_handler(
             return Err(ErrorResponse::not_found("Automation not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(&format!("Failed to get automation: {}", e)));
+            return Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)));
         }
     };
 
@@ -498,7 +493,7 @@ pub async fn set_automation_status_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to update automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to update automation: {}", e)))
         }
     }
 }
@@ -667,7 +662,7 @@ pub async fn get_conversion_info_handler(
             Err(ErrorResponse::not_found("Automation not found"))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to get automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)))
         }
     }
 }
@@ -691,7 +686,7 @@ pub async fn convert_automation_handler(
             return Err(ErrorResponse::not_found("Automation not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(&format!("Failed to get automation: {}", e)));
+            return Err(ErrorResponse::internal(format!("Failed to get automation: {}", e)));
         }
     };
 
@@ -703,13 +698,13 @@ pub async fn convert_automation_handler(
         (Automation::Transform(_), AutomationType::Workflow) => {
             return Err(ErrorResponse::bad_request("Transform to Workflow conversion is not directly supported. Create a new Workflow that uses the Transform's output metrics."));
         }
-        (Automation::Rule(rule), AutomationType::Transform) => {
+        (Automation::Rule(_rule), AutomationType::Transform) => {
             return Err(ErrorResponse::bad_request("Rule to Transform conversion is not supported. Transforms are for data processing, not reactive automation."));
         }
         (Automation::Rule(rule), AutomationType::Workflow) => {
             Automation::Workflow(AutomationConverter::rule_to_workflow(rule))
         }
-        (Automation::Workflow(workflow), AutomationType::Transform) => {
+        (Automation::Workflow(_workflow), AutomationType::Transform) => {
             return Err(ErrorResponse::bad_request("Workflow to Transform conversion is not supported. Transforms are for data processing, not complex automation."));
         }
         (Automation::Workflow(workflow), AutomationType::Rule) => {
@@ -721,7 +716,7 @@ pub async fn convert_automation_handler(
             }
         }
         (automation, _) => {
-            return Err(ErrorResponse::bad_request(&format!(
+            return Err(ErrorResponse::bad_request(format!(
                 "Cannot convert to the same type (current: {:?})",
                 automation.automation_type()
             )));
@@ -759,7 +754,7 @@ pub async fn convert_automation_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to save converted automation: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to save converted automation: {}", e)))
         }
     }
 }
@@ -790,7 +785,7 @@ pub async fn get_automations_executions_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to get executions: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to get executions: {}", e)))
         }
     }
 }
@@ -816,7 +811,7 @@ pub async fn list_templates_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to list templates: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to list templates: {}", e)))
         }
     }
 }
@@ -843,7 +838,7 @@ pub async fn export_automations_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to export automations: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to export automations: {}", e)))
         }
     }
 }
@@ -862,7 +857,7 @@ pub async fn import_automations_handler(
     let automations: Vec<Automation> = match serde_json::from_value(data["automations"].clone()) {
         Ok(a) => a,
         Err(e) => {
-            return Err(ErrorResponse::bad_request(&format!("Invalid automations data: {}", e)));
+            return Err(ErrorResponse::bad_request(format!("Invalid automations data: {}", e)));
         }
     };
 
@@ -956,7 +951,7 @@ pub async fn process_data_handler(
                 for metric in &transform_result.metrics {
                     // Publish as a device metric event
                     use edge_ai_core::NeoTalkEvent;
-                    if let Ok(event_json) = serde_json::to_value(metric) {
+                    if let Ok(_event_json) = serde_json::to_value(metric) {
                         let _ = event_bus.publish(NeoTalkEvent::DeviceMetric {
                             device_id: metric.device_id.clone(),
                             metric: metric.metric.clone(),
@@ -977,7 +972,7 @@ pub async fn process_data_handler(
         }
         Err(e) => {
             tracing::error!("Transform processing error: {}", e);
-            Err(ErrorResponse::internal(&format!("Transform processing failed: {}", e)))
+            Err(ErrorResponse::internal(format!("Transform processing failed: {}", e)))
         }
     }
 }
@@ -1005,7 +1000,7 @@ pub async fn test_transform_handler(
             return Err(ErrorResponse::not_found("Transform not found"));
         }
         Err(e) => {
-            return Err(ErrorResponse::internal(&format!("Failed to load transform: {}", e)));
+            return Err(ErrorResponse::internal(format!("Failed to load transform: {}", e)));
         }
     };
 
@@ -1036,7 +1031,7 @@ pub async fn test_transform_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Transform test failed: {}", e)))
+            Err(ErrorResponse::internal(format!("Transform test failed: {}", e)))
         }
     }
 }
@@ -1070,7 +1065,7 @@ pub async fn list_transforms_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to list transforms: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to list transforms: {}", e)))
         }
     }
 }
@@ -1100,7 +1095,7 @@ pub async fn list_virtual_metrics_handler(
                     if transform.js_code.is_some() && !transform.output_prefix.is_empty() {
                         metrics_map
                             .entry(transform.output_prefix.clone())
-                            .or_insert_with(Vec::new)
+                            .or_default()
                             .push(format!("{}:{}", transform.metadata.id, transform.metadata.name));
                     }
                     // Check for legacy operation-based transforms
@@ -1110,7 +1105,7 @@ pub async fn list_virtual_metrics_handler(
                             for metric in output_metrics {
                                 metrics_map
                                     .entry(metric.clone())
-                                    .or_insert_with(Vec::new)
+                                    .or_default()
                                     .push(format!("{}:{}", transform.metadata.id, transform.metadata.name));
                             }
                         }
@@ -1124,7 +1119,7 @@ pub async fn list_virtual_metrics_handler(
             }))
         }
         Err(e) => {
-            Err(ErrorResponse::internal(&format!("Failed to list virtual metrics: {}", e)))
+            Err(ErrorResponse::internal(format!("Failed to list virtual metrics: {}", e)))
         }
     }
 }
@@ -1159,7 +1154,7 @@ pub struct GenerateTransformCodeResponse {
 ///
 /// POST /api/automations/generate-code
 pub async fn generate_transform_code_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
     Json(req): Json<GenerateTransformCodeRequest>,
 ) -> HandlerResult<GenerateTransformCodeResponse> {
     let language = req.language.as_deref().unwrap_or("en");

@@ -286,15 +286,14 @@ impl DeviceWorkflowIntegration {
                 .query_device(&state.device_id, &state.metric, None)
                 .await?;
 
-            if let Some(value) = result.value {
-                if state.matches(value) {
+            if let Some(value) = result.value
+                && state.matches(value) {
                     info!(
                         "Device {} reached expected state: {} = {}",
                         state.device_id, state.metric, value
                     );
                     return Ok(state.clone());
                 }
-            }
 
             debug!(
                 "Waiting for state: device={}, metric={}, expected={}, current={:?}",

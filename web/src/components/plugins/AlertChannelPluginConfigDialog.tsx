@@ -207,7 +207,7 @@ export function AlertChannelPluginConfigDialog({
             {pluginName}
           </DialogTitle>
           <DialogDescription>
-            {t('alerts:activeChannelsDesc', { defaultValue: 'Configure alert notification channels' })}
+            {t('alerts:channelsDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -215,7 +215,7 @@ export function AlertChannelPluginConfigDialog({
           {/* Existing Channels */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium">{t('alerts:activeChannels', { defaultValue: 'Active Channels' })}</h3>
+              <h3 className="font-medium">{t('alerts:activeChannels')}</h3>
               <Button
                 size="sm"
                 variant="outline"
@@ -229,7 +229,7 @@ export function AlertChannelPluginConfigDialog({
             {channels.length === 0 ? (
               <div className="text-center py-8 border rounded-lg bg-muted/30">
                 <p className="text-sm text-muted-foreground">
-                  {t('alerts:noChannels', { defaultValue: 'No channels configured' })}
+                  {t('alerts:noChannels')}
                 </p>
               </div>
             ) : (

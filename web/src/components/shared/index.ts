@@ -12,6 +12,7 @@ export * from './SearchResultsDialog'
 export * from './PageTabs'
 export * from './BulkActionBar'
 export * from './MonitorStatsGrid'
+export * from './FullScreenEditor'
 
 // Event components
 export { EventHistory } from '../events/EventHistory'

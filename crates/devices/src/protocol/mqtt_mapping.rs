@@ -4,11 +4,10 @@
 
 use crate::mdl::{MetricDataType, MetricValue};
 use crate::protocol::mapping::{
-    Address, CommandMappingConfig, MappingConfig, MappingError, MappingResult, MetricMappingConfig,
+    Address, MappingConfig, MappingError, MappingResult,
     ProtocolMapping,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// MQTT protocol mapping configuration.
 #[derive(Debug, Clone)]
@@ -31,8 +30,10 @@ pub struct MqttMappingConfig {
 
 /// How to extract values from MQTT payloads.
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum MqttValueParser {
     /// Direct value (payload IS the value)
+    #[default]
     Direct,
     /// JSON path extraction
     JsonPath(String),
@@ -57,6 +58,10 @@ pub enum BinaryFormat {
     Float32Be,
     /// Big-endian float64
     Float64Be,
+    /// Hex string (e.g., "1A2B" → [26, 43])
+    HexString,
+    /// Base64 encoded hex string
+    Base64Hex,
 }
 
 impl MqttValueParser {
@@ -71,11 +76,6 @@ impl MqttValueParser {
     }
 }
 
-impl Default for MqttValueParser {
-    fn default() -> Self {
-        Self::Direct
-    }
-}
 
 /// MQTT protocol mapping implementation.
 pub struct MqttMapping {
@@ -88,9 +88,7 @@ impl MqttMapping {
     /// Create a new MQTT mapping from configuration.
     pub fn new(config: MqttMappingConfig) -> Self {
         let capabilities = config
-            .metric_topics
-            .iter()
-            .map(|(k, _)| (k.clone(), MetricDataType::Float))
+            .metric_topics.keys().map(|k| (k.clone(), MetricDataType::Float))
             .collect();
 
         Self {
@@ -297,6 +295,40 @@ impl MqttMapping {
                 ];
                 let value = f64::from_be_bytes(bytes);
                 Ok(MetricValue::Float(value))
+            }
+            BinaryFormat::HexString => {
+                // Parse hex string (e.g., "1A2B" → [26, 43])
+                let hex_str = std::str::from_utf8(data)
+                    .map_err(|_| MappingError::ParseError("Invalid UTF-8 in hex string".into()))?;
+
+                // Remove optional "0x" prefix and whitespace
+                let hex_clean = hex_str.trim().trim_start_matches("0x").replace([' ', '\n', '\r', '\t'], "");
+
+                if hex_clean.len() % 2 != 0 {
+                    return Err(MappingError::ParseError(
+                        "Hex string must have even length".to_string()
+                    ));
+                }
+
+                let bytes = (0..hex_clean.len())
+                    .step_by(2)
+                    .map(|i| {
+                        u8::from_str_radix(&hex_clean[i..i+2], 16)
+                            .map_err(|_| MappingError::ParseError(
+                                format!("Invalid hex characters at position {}", i)
+                            ))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                Ok(MetricValue::Binary(bytes))
+            }
+            BinaryFormat::Base64Hex => {
+                // First base64 decode, then parse as hex string
+                let decoded = base64::decode(data)
+                    .map_err(|_| MappingError::ParseError("Invalid base64 encoding".into()))?;
+
+                // Recursively parse as hex string
+                Self::parse_binary_data(&decoded, &BinaryFormat::HexString)
             }
         }
     }

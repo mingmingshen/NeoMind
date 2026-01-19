@@ -63,11 +63,10 @@ pub struct SessionPermit {
 impl Drop for SessionPermit {
     fn drop(&mut self) {
         // Release from session tracking
-        if let Ok(mut sessions) = self.limiter.session_usage.try_write() {
-            if let Some(usage) = sessions.get(&self.session_id) {
+        if let Ok(sessions) = self.limiter.session_usage.try_write()
+            && let Some(usage) = sessions.get(&self.session_id) {
                 usage.current.fetch_sub(1, Ordering::Relaxed);
             }
-        }
 
         // Release from global tracking
         self.limiter.global_current.fetch_sub(1, Ordering::Relaxed);

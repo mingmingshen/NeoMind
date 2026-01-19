@@ -12,8 +12,7 @@ use crate::command::{
     CommandId, CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus,
     DeviceId, RetryPolicy,
 };
-use crate::queue::{CommandQueue, QueueError};
-use crate::state::{CommandManager, CommandStateStore, StateError, StoreStats};
+use crate::state::CommandManager;
 
 /// API request for submitting a command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,7 +213,7 @@ impl CommandApi {
             .state
             .get(command_id)
             .await
-            .map_err(|e| ApiError::NotFound(command_id.clone()))?;
+            .map_err(|_e| ApiError::NotFound(command_id.clone()))?;
 
         let ack_status = self.ack_handler.get_status(command_id).await;
 

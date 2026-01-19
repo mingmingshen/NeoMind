@@ -4,7 +4,7 @@
 //! and executes actions when rules are triggered.
 
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::RwLock as StdRwLock;
 use std::time::{Duration, Instant};
@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+use super::dependencies::DependencyManager;
 use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 
 /// Unique identifier for a rule.
@@ -190,6 +191,8 @@ pub struct RuleEngine {
     history: Arc<RwLock<Vec<RuleExecutionResult>>>,
     /// Maximum history size.
     max_history_size: usize,
+    /// Dependency manager for execution ordering.
+    dependency_manager: Arc<StdRwLock<DependencyManager>>,
 }
 
 impl RuleEngine {
@@ -200,6 +203,7 @@ impl RuleEngine {
             value_provider,
             history: Arc::new(RwLock::new(Vec::new())),
             max_history_size: 1000,
+            dependency_manager: Arc::new(StdRwLock::new(DependencyManager::new())),
         }
     }
 
@@ -227,8 +231,83 @@ impl RuleEngine {
 
     /// Remove a rule.
     pub async fn remove_rule(&self, id: &RuleId) -> Result<bool, RuleError> {
+        // Remove from dependency manager first
+        {
+            let mut dep_manager = self.dependency_manager.write().unwrap();
+            dep_manager.remove_rule(id);
+        }
+
+        // Then remove the rule itself
         let mut rules = self.rules.write().await;
         Ok(rules.remove(id).is_some())
+    }
+
+    /// Add a dependency between rules.
+    ///
+    /// After calling this, `dependent` will only execute after `dependency` has completed.
+    pub fn add_dependency(&self, dependent: RuleId, dependency: RuleId) -> Result<(), RuleError> {
+        let mut dep_manager = self.dependency_manager.write().unwrap();
+        dep_manager.add_dependency(dependent, dependency);
+        Ok(())
+    }
+
+    /// Remove a dependency between rules.
+    pub fn remove_dependency(&self, dependent: &RuleId, dependency: &RuleId) -> Result<(), RuleError> {
+        let mut dep_manager = self.dependency_manager.write().unwrap();
+        dep_manager.remove_dependency(dependent, dependency);
+        Ok(())
+    }
+
+    /// Get all dependencies for a rule.
+    pub fn get_dependencies(&self, rule_id: &RuleId) -> Vec<RuleId> {
+        let dep_manager = self.dependency_manager.read().unwrap();
+        dep_manager.get_dependencies(rule_id)
+    }
+
+    /// Get all rules that depend on this rule.
+    pub fn get_dependents(&self, rule_id: &RuleId) -> Vec<RuleId> {
+        let dep_manager = self.dependency_manager.read().unwrap();
+        dep_manager.get_dependents(rule_id)
+    }
+
+    /// Validate dependencies and get execution order.
+    ///
+    /// Returns the order in which rules should be executed based on their dependencies.
+    /// Also detects circular dependencies and missing dependencies.
+    pub fn validate_dependencies(&self) -> Result<Vec<RuleId>, RuleError> {
+        let existing_rules: std::collections::HashSet<RuleId> = {
+            let rules = self
+                .rules
+                .try_read()
+                .map_err(|e| RuleError::Validation(format!("Failed to acquire lock: {}", e)))?;
+            rules.keys().cloned().collect()
+        };
+
+        let dep_manager = self.dependency_manager.read().unwrap();
+        let result = dep_manager.validate_and_order(&existing_rules);
+
+        if result.is_valid {
+            Ok(result.execution_order)
+        } else {
+            Err(RuleError::Validation(result.format_message()))
+        }
+    }
+
+    /// Get rules ready to execute based on dependencies.
+    ///
+    /// Returns rules whose dependencies have all been satisfied.
+    pub async fn get_ready_rules(&self, completed: &HashSet<RuleId>) -> Vec<RuleId> {
+        let rules = self.rules.read().await;
+        let existing_rules: std::collections::HashSet<RuleId> = rules.keys().cloned().collect();
+        drop(rules);
+
+        let dep_manager = self.dependency_manager.read().unwrap();
+        dep_manager.get_ready_rules(&existing_rules, completed)
+    }
+
+    /// Get a reference to the dependency manager.
+    pub fn dependency_manager(&self) -> Arc<StdRwLock<DependencyManager>> {
+        Arc::clone(&self.dependency_manager)
     }
 
     /// Get a rule by ID.
@@ -261,11 +340,9 @@ impl RuleEngine {
             if let Some(value) = self
                 .value_provider
                 .get_value(&rule.condition.device_id, &rule.condition.metric)
-            {
-                if rule.should_trigger(value) {
+                && rule.should_trigger(value) {
                     triggered.push(id.clone());
                 }
-            }
         }
 
         triggered

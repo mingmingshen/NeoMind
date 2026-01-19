@@ -18,7 +18,7 @@
 //! 3. **Raw-only**: Store only `_raw` for debugging/replay
 
 use crate::mdl::MetricValue;
-use crate::registry::{DeviceRegistry, DeviceTypeTemplate};
+use crate::registry::DeviceRegistry;
 use serde_json::Value;
 use std::sync::Arc;
 use tracing::{debug, trace, warn};
@@ -289,8 +289,8 @@ impl UnifiedExtractor {
             }
 
             // Handle array notation [index]
-            if let Some(bracket_start) = part.find('[') {
-                if let Some(bracket_end) = part.find(']') {
+            if let Some(bracket_start) = part.find('[')
+                && let Some(bracket_end) = part.find(']') {
                     let key = &part[0..bracket_start];
                     let index_str = &part[bracket_start + 1..bracket_end];
 
@@ -323,7 +323,6 @@ impl UnifiedExtractor {
                     }
                     continue;
                 }
-            }
 
             // Regular object key access
             match current {
@@ -335,15 +334,17 @@ impl UnifiedExtractor {
                     if let Ok(index) = part.parse::<usize>() {
                         current = arr.get(index).unwrap_or(&Value::Null);
                     } else {
-                        return Ok(None);
+                        current = &Value::Null;
                     }
                 }
-                _ => return Ok(None),
+                // If current is not an object/array (e.g., we're already at null or a primitive value),
+                // we can't navigate further, so set to null
+                _ => {
+                    current = &Value::Null;
+                }
             }
 
-            if current.is_null() {
-                return Ok(None);
-            }
+            // Note: We continue even if current is null, as null values are valid metrics
         }
 
         Ok(Some(current.clone()))
@@ -352,7 +353,32 @@ impl UnifiedExtractor {
     /// Auto-extract metrics from top-level JSON fields.
     ///
     /// Used when no template is defined for the device type.
+    /// Now supports recursive extraction of nested objects (e.g., values.battery).
     fn auto_extract(&self, data: &Value, device_id: &str, metrics: &mut Vec<ExtractedMetric>) {
+        self.auto_extract_recursive(data, device_id, metrics, "", 0);
+    }
+
+    /// Recursive helper for auto-extract.
+    ///
+    /// Expands nested objects to create dot-notation metric names.
+    fn auto_extract_recursive(
+        &self,
+        data: &Value,
+        device_id: &str,
+        metrics: &mut Vec<ExtractedMetric>,
+        parent_path: &str,
+        depth: usize,
+    ) {
+        // Check depth limit
+        if depth > self.config.max_depth {
+            trace!(
+                "Max depth {} reached for device '{}' in auto-extract",
+                self.config.max_depth,
+                device_id
+            );
+            return;
+        }
+
         if let Some(obj) = data.as_object() {
             for (key, value) in obj {
                 // Skip _raw as it's already stored
@@ -360,23 +386,71 @@ impl UnifiedExtractor {
                     continue;
                 }
 
-                let metric_value = self.value_to_metric_value(value);
+                let current_path = if parent_path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{}.{}", parent_path, key)
+                };
 
-                // Skip complex objects unless arrays are included
-                if matches!(value, Value::Object(_)) && !self.config.include_arrays {
-                    trace!(
-                        "Skipping nested object '{}' for device '{}' (auto-extract)",
-                        key,
-                        device_id
-                    );
-                    continue;
+                // Check if value is a nested object
+                if let Value::Object(nested_obj) = value {
+                    // Check if the nested object is empty or only contains primitive values
+                    let has_only_primitives = nested_obj.iter().all(|(_, v)| {
+                        matches!(v, Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
+                    });
+
+                    if has_only_primitives && !nested_obj.is_empty() {
+                        // This looks like a metrics object - expand it
+                        trace!(
+                            "Expanding nested object '{}' for device '{}' (auto-extract)",
+                            current_path,
+                            device_id
+                        );
+                        self.auto_extract_recursive(value, device_id, metrics, &current_path, depth + 1);
+                    } else if nested_obj.is_empty() {
+                        // Empty object - skip
+                        trace!(
+                            "Skipping empty object '{}' for device '{}' (auto-extract)",
+                            current_path,
+                            device_id
+                        );
+                    } else {
+                        // Complex nested object - store as JSON string
+                        let metric_value = self.value_to_metric_value(value);
+                        metrics.push(ExtractedMetric {
+                            name: current_path.clone(),
+                            value: metric_value,
+                            source_path: format!("$.{}", current_path),
+                        });
+                    }
+                } else if let Value::Array(arr) = value {
+                    // Handle arrays based on config
+                    if self.config.include_arrays && arr.len() <= 10 {
+                        // Small array - expand as JSON string
+                        let metric_value = self.value_to_metric_value(value);
+                        metrics.push(ExtractedMetric {
+                            name: current_path.clone(),
+                            value: metric_value,
+                            source_path: format!("$.{}", current_path),
+                        });
+                    } else {
+                        // Large array or arrays not included - store as JSON string
+                        let metric_value = self.value_to_metric_value(value);
+                        metrics.push(ExtractedMetric {
+                            name: current_path.clone(),
+                            value: metric_value,
+                            source_path: format!("$.{}", current_path),
+                        });
+                    }
+                } else {
+                    // Primitive value - add as metric
+                    let metric_value = self.value_to_metric_value(value);
+                    metrics.push(ExtractedMetric {
+                        name: current_path.clone(),
+                        value: metric_value,
+                        source_path: format!("$.{}", current_path),
+                    });
                 }
-
-                metrics.push(ExtractedMetric {
-                    name: key.clone(),
-                    value: metric_value,
-                    source_path: format!("$.{}", key),
-                });
             }
         }
     }

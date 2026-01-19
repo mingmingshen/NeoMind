@@ -10,7 +10,7 @@ use async_trait::async_trait;
 
 use edge_ai_core::alerts::{Alert, AlertChannel, AlertError, Result as CoreResult};
 
-use super::error::{Error, Result};
+use super::error::Error;
 
 /// Convert core AlertError to local Error
 impl From<AlertError> for Error {
@@ -309,15 +309,14 @@ impl edge_ai_core::alerts::ChannelFactory for WebhookChannelFactory {
             url.to_string(),
         );
 
-        if let Some(headers) = config.get("headers") {
-            if let Some(obj) = headers.as_object() {
+        if let Some(headers) = config.get("headers")
+            && let Some(obj) = headers.as_object() {
                 for (key, value) in obj {
                     if let Some(str_val) = value.as_str() {
                         channel = channel.with_header(key.clone(), str_val.to_string());
                     }
                 }
             }
-        }
 
         if config
             .get("enabled")
@@ -604,15 +603,14 @@ impl edge_ai_core::alerts::ChannelFactory for EmailChannelFactory {
         );
 
         // Add recipients
-        if let Some(recipients) = config.get("recipients") {
-            if let Some(arr) = recipients.as_array() {
+        if let Some(recipients) = config.get("recipients")
+            && let Some(arr) = recipients.as_array() {
                 for addr in arr {
                     if let Some(str_addr) = addr.as_str() {
                         channel = channel.add_recipient(str_addr.to_string());
                     }
                 }
             }
-        }
 
         // Configure TLS
         if config.get("use_tls").and_then(|v| v.as_bool()).unwrap_or(true) {

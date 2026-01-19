@@ -35,8 +35,10 @@ impl std::fmt::Display for AlertId {
 
 /// Alert severity levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum AlertSeverity {
     /// Informational - no action required
+    #[default]
     Info = 0,
     /// Warning - potential issue
     Warning = 1,
@@ -85,16 +87,13 @@ impl std::fmt::Display for AlertSeverity {
     }
 }
 
-impl Default for AlertSeverity {
-    fn default() -> Self {
-        Self::Info
-    }
-}
 
 /// Alert status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum AlertStatus {
     /// Alert is active
+    #[default]
     Active,
     /// Alert has been acknowledged
     Acknowledged,
@@ -132,11 +131,6 @@ impl std::fmt::Display for AlertStatus {
     }
 }
 
-impl Default for AlertStatus {
-    fn default() -> Self {
-        Self::Active
-    }
-}
 
 /// An alert representing a notification about a system event.
 #[derive(Debug, Clone, Serialize, Deserialize)]

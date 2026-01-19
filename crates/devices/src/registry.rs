@@ -31,8 +31,6 @@ use super::mdl_format::{CommandDefinition, MetricDefinition, ParameterDefinition
 // Storage types conversion
 use edge_ai_storage::device_registry::{
     CommandDefinition as StorageCommandDefinition,
-    CommandHistoryRecord as StorageCommandRecord,
-    CommandStatus as StorageCommandStatus,
     DeviceConfig as StorageConfig,
     DeviceRegistryStore,
     DeviceTypeTemplate as StorageTemplate,
@@ -130,7 +128,7 @@ pub struct DeviceConfig {
     pub name: String,
     /// Device type template reference
     pub device_type: String,
-    /// Adapter type (mqtt, modbus, hass, etc.)
+    /// Adapter type (mqtt, hass, etc.)
     pub adapter_type: String,
     /// Connection configuration (protocol-specific)
     pub connection_config: ConnectionConfig,
@@ -150,16 +148,6 @@ pub struct ConnectionConfig {
     pub command_topic: Option<String>,
     /// JSON path for extracting values (optional)
     pub json_path: Option<String>,
-
-    // Modbus-specific
-    /// Modbus host address
-    pub host: Option<String>,
-    /// Modbus port
-    pub port: Option<u16>,
-    /// Modbus slave ID
-    pub slave_id: Option<u8>,
-    /// Register map (register_name -> address)
-    pub register_map: Option<HashMap<String, u16>>,
 
     // HASS-specific
     /// Home Assistant entity ID
@@ -185,16 +173,6 @@ impl ConnectionConfig {
         Self {
             telemetry_topic: Some(telemetry_topic.into()),
             command_topic: command_topic.map(|t| t.into()),
-            ..Default::default()
-        }
-    }
-
-    /// Create Modbus connection config
-    pub fn modbus(host: impl Into<String>, port: u16, slave_id: u8) -> Self {
-        Self {
-            host: Some(host.into()),
-            port: Some(port),
-            slave_id: Some(slave_id),
             ..Default::default()
         }
     }
@@ -265,10 +243,6 @@ fn convert_connection_config(
         telemetry_topic: storage_config.telemetry_topic,
         command_topic: storage_config.command_topic,
         json_path: storage_config.json_path,
-        host: storage_config.host,
-        port: storage_config.port,
-        slave_id: storage_config.slave_id,
-        register_map: storage_config.register_map,
         entity_id: storage_config.entity_id,
         extra: storage_config.extra,
     }
@@ -282,10 +256,10 @@ fn convert_connection_config_to_storage(
         telemetry_topic: local_config.telemetry_topic,
         command_topic: local_config.command_topic,
         json_path: local_config.json_path,
-        host: local_config.host,
-        port: local_config.port,
-        slave_id: local_config.slave_id,
-        register_map: local_config.register_map,
+        host: None,
+        port: None,
+        slave_id: None,
+        register_map: None,
         entity_id: local_config.entity_id,
         extra: local_config.extra,
     }
@@ -646,13 +620,11 @@ impl DeviceRegistry {
 
         // Save to storage if enabled
         drop(templates);
-        if self.storage.is_some() && *self.auto_save.read().await {
-            if let Some(store) = &self.storage {
-                if let Err(e) = store.save_template(&storage_template) {
+        if self.storage.is_some() && *self.auto_save.read().await
+            && let Some(store) = &self.storage
+                && let Err(e) = store.save_template(&storage_template) {
                     tracing::warn!("Failed to save template to storage: {}", e);
                 }
-            }
-        }
 
         Ok(())
     }
@@ -673,15 +645,14 @@ impl DeviceRegistry {
     pub async fn unregister_template(&self, device_type: &str) -> Result<(), DeviceError> {
         // Check if any devices are using this template
         let type_index = self.type_index.read().await;
-        if let Some(device_ids) = type_index.get(device_type) {
-            if !device_ids.is_empty() {
+        if let Some(device_ids) = type_index.get(device_type)
+            && !device_ids.is_empty() {
                 return Err(DeviceError::InvalidParameter(format!(
                     "Cannot unregister template '{}': {} devices still use it",
                     device_type,
                     device_ids.len()
                 )));
             }
-        }
         drop(type_index);
 
         let mut templates = self.templates.write().await;
@@ -689,13 +660,11 @@ impl DeviceRegistry {
         drop(templates);
 
         // Delete from storage if enabled
-        if self.storage.is_some() && *self.auto_save.read().await {
-            if let Some(store) = &self.storage {
-                if let Err(e) = store.delete_template(device_type) {
+        if self.storage.is_some() && *self.auto_save.read().await
+            && let Some(store) = &self.storage
+                && let Err(e) = store.delete_template(device_type) {
                     tracing::warn!("Failed to delete template from storage: {}", e);
                 }
-            }
-        }
 
         Ok(())
     }
@@ -745,7 +714,7 @@ impl DeviceRegistry {
     /// Register a device configuration
     pub async fn register_device(&self, config: DeviceConfig) -> Result<(), DeviceError> {
         // Validate that the template exists
-        let template = self
+        let _template = self
             .get_template(&config.device_type)
             .await
             .ok_or_else(|| {
@@ -791,13 +760,12 @@ impl DeviceRegistry {
 
         // Save to storage FIRST (before modifying memory)
         // This ensures atomicity - if storage fails, nothing is modified in memory
-        if let Some(storage_config) = &storage_config {
-            if let Some(store) = &self.storage {
+        if let Some(storage_config) = &storage_config
+            && let Some(store) = &self.storage {
                 store.save_device(storage_config).map_err(|e| {
                     DeviceError::Storage(format!("Failed to save device to storage: {}", e))
                 })?;
             }
-        }
 
         // Store device configuration in memory
         {
@@ -874,13 +842,11 @@ impl DeviceRegistry {
         }
 
         // Delete from storage if enabled
-        if self.storage.is_some() && *self.auto_save.read().await {
-            if let Some(store) = &self.storage {
-                if let Err(e) = store.delete_device(device_id) {
+        if self.storage.is_some() && *self.auto_save.read().await
+            && let Some(store) = &self.storage
+                && let Err(e) = store.delete_device(device_id) {
                     tracing::warn!("Failed to delete device from storage: {}", e);
                 }
-            }
-        }
 
         Ok(())
     }
@@ -937,8 +903,8 @@ impl DeviceRegistry {
         }
 
         // Update type index if type changed
-        if let Some(old_type) = old_device_type {
-            if old_type != new_device_type {
+        if let Some(old_type) = old_device_type
+            && old_type != new_device_type {
                 // Remove from old type index
                 {
                     let mut type_index = self.type_index.write().await;
@@ -959,16 +925,13 @@ impl DeviceRegistry {
                         .push(device_id.to_string());
                 }
             }
-        }
 
         // Update storage if enabled
-        if let Some(storage_config) = storage_config {
-            if let Some(store) = &self.storage {
-                if let Err(e) = store.update_device(device_id, &storage_config) {
+        if let Some(storage_config) = storage_config
+            && let Some(store) = &self.storage
+                && let Err(e) = store.update_device(device_id, &storage_config) {
                     tracing::warn!("Failed to update device in storage: {}", e);
                 }
-            }
-        }
 
         Ok(())
     }

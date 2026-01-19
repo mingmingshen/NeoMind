@@ -11,6 +11,7 @@ import en_automation from './locales/en/automation.json';
 import en_commands from './locales/en/commands.json';
 import en_decisions from './locales/en/decisions.json';
 import en_plugins from './locales/en/plugins.json';
+import en_extensions from './locales/en/extensions.json';
 import en_settings from './locales/en/settings.json';
 import en_auth from './locales/en/auth.json';
 import en_validation from './locales/en/validation.json';
@@ -25,6 +26,7 @@ import zh_automation from './locales/zh/automation.json';
 import zh_commands from './locales/zh/commands.json';
 import zh_decisions from './locales/zh/decisions.json';
 import zh_plugins from './locales/zh/plugins.json';
+import zh_extensions from './locales/zh/extensions.json';
 import zh_settings from './locales/zh/settings.json';
 import zh_auth from './locales/zh/auth.json';
 import zh_validation from './locales/zh/validation.json';
@@ -41,6 +43,7 @@ const resources = {
     commands: en_commands,
     decisions: en_decisions,
     plugins: en_plugins,
+    extensions: en_extensions,
     settings: en_settings,
     auth: en_auth,
     validation: en_validation,
@@ -56,6 +59,7 @@ const resources = {
     commands: zh_commands,
     decisions: zh_decisions,
     plugins: zh_plugins,
+    extensions: zh_extensions,
     settings: zh_settings,
     auth: zh_auth,
     validation: zh_validation,
@@ -73,7 +77,7 @@ i18n
     fallbackLng: 'en',
     defaultNS: 'common',
     ns: ['common', 'navigation', 'devices', 'alerts', 'automation',
-         'commands', 'decisions', 'plugins', 'settings', 'auth',
+         'commands', 'decisions', 'plugins', 'extensions', 'settings', 'auth',
          'validation', 'messages', 'dashboard'],
     interpolation: {
       escapeValue: false,

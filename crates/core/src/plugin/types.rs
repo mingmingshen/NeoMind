@@ -2,16 +2,30 @@
 //!
 //! This module defines the core types for the unified plugin system,
 //! including plugin categories, states, and metadata.
+//!
+//! # Deprecation Notice
+//!
+//! The `PluginType` and `PluginCategory` types in this module are being phased out.
+//! For new code, use the [`crate::extension`] module which provides:
+//! - [`crate::extension::ExtensionType`] - for dynamically loaded extensions (.so/.wasm)
+//! - Business-specific configurations (LLM backends, device connections) should be
+//!   managed through their dedicated managers, not wrapped as plugins.
 
 use crate::plugin::{PluginError, PluginMetadata};
 use chrono::{DateTime, Utc};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::sync::RwLock as StdRwLock;
 use tokio::sync::RwLock;
 
 /// Unified plugin type enumeration.
+///
+/// # Deprecation Notice
+///
+/// Many of these variants represent **user configurations** (LLM backends, device adapters),
+/// not actual plugins. New code should:
+/// - Use [`crate::extension::ExtensionType`] for dynamically loaded extensions
+/// - Use domain-specific managers for configurations (e.g., `LlmBackendInstanceManager`)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginType {
@@ -25,10 +39,6 @@ pub enum PluginType {
     InternalMqttBroker,
     /// External MQTT Broker plugin (remote broker connection)
     ExternalMqttBroker,
-    /// Home Assistant Discovery plugin
-    HassDiscovery,
-    /// Modbus adapter plugin
-    ModbusAdapter,
     /// Tool plugin (function calling tools)
     Tool,
     /// Integration plugin (n8n, WhatsApp, external systems)
@@ -52,8 +62,6 @@ impl PluginType {
             PluginType::DeviceAdapter => "device_adapter",
             PluginType::InternalMqttBroker => "internal_mqtt_broker",
             PluginType::ExternalMqttBroker => "external_mqtt_broker",
-            PluginType::HassDiscovery => "hass_discovery",
-            PluginType::ModbusAdapter => "modbus_adapter",
             PluginType::Tool => "tool",
             PluginType::Integration => "integration",
             PluginType::AlertChannel => "alert_channel",
@@ -71,8 +79,6 @@ impl PluginType {
             "device_adapter" => PluginType::DeviceAdapter,
             "internal_mqtt_broker" => PluginType::InternalMqttBroker,
             "external_mqtt_broker" => PluginType::ExternalMqttBroker,
-            "hass_discovery" => PluginType::HassDiscovery,
-            "modbus_adapter" => PluginType::ModbusAdapter,
             "tool" => PluginType::Tool,
             "integration" => PluginType::Integration,
             "alert_channel" => PluginType::AlertChannel,
@@ -90,8 +96,6 @@ impl PluginType {
             PluginType::DeviceAdapter => "Device Adapter".to_string(),
             PluginType::InternalMqttBroker => "Internal MQTT Broker".to_string(),
             PluginType::ExternalMqttBroker => "External MQTT Broker".to_string(),
-            PluginType::HassDiscovery => "Home Assistant Discovery".to_string(),
-            PluginType::ModbusAdapter => "Modbus Adapter".to_string(),
             PluginType::Tool => "Tool".to_string(),
             PluginType::Integration => "Integration".to_string(),
             PluginType::AlertChannel => "Alert Channel".to_string(),
@@ -108,8 +112,6 @@ impl PluginType {
             PluginType::DeviceAdapter
                 | PluginType::InternalMqttBroker
                 | PluginType::ExternalMqttBroker
-                | PluginType::HassDiscovery
-                | PluginType::ModbusAdapter
         )
     }
 
@@ -134,6 +136,13 @@ impl std::fmt::Display for PluginType {
 /// These categories group plugins by their function/purpose rather than
 /// technical implementation details, making it easier for users to
 /// understand what each plugin does.
+///
+/// # Deprecation Notice
+///
+/// This enum is deprecated. Categorization logic should be handled by the frontend
+/// based on the type of configuration or extension being displayed.
+#[deprecated(since = "0.2.0", note = "Use frontend categorization instead")]
+#[allow(deprecated)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginCategory {
@@ -145,6 +154,7 @@ pub enum PluginCategory {
     Notify,
 }
 
+#[allow(deprecated)]
 impl PluginCategory {
     /// Convert to string representation.
     pub fn as_str(&self) -> &str {
@@ -178,10 +188,7 @@ impl PluginCategory {
         match plugin_type {
             PluginType::LlmBackend => PluginCategory::Ai,
 
-            PluginType::ExternalMqttBroker
-            | PluginType::HassDiscovery
-            | PluginType::ModbusAdapter
-            | PluginType::DeviceAdapter => PluginCategory::Devices,
+            PluginType::ExternalMqttBroker | PluginType::DeviceAdapter => PluginCategory::Devices,
 
             PluginType::AlertChannel | PluginType::Integration => PluginCategory::Notify,
 
@@ -206,6 +213,7 @@ impl PluginCategory {
     }
 }
 
+#[allow(deprecated)]
 impl std::fmt::Display for PluginCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
@@ -341,6 +349,7 @@ fn default_required() -> bool {
 
 /// Resource limits for a plugin.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ResourceLimits {
     /// Maximum memory usage in MB
     pub max_memory_mb: Option<usize>,
@@ -358,17 +367,6 @@ pub struct ResourceLimits {
     pub max_network_mbps: Option<f32>,
 }
 
-impl Default for ResourceLimits {
-    fn default() -> Self {
-        Self {
-            max_memory_mb: None,
-            max_cpu_percent: None,
-            max_execution_time_secs: None,
-            max_concurrency: None,
-            max_network_mbps: None,
-        }
-    }
-}
 
 /// Plugin permission types.
 #[derive(Debug, Clone, Serialize, Deserialize)]

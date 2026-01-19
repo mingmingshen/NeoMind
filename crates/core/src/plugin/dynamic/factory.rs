@@ -329,7 +329,7 @@ impl DynamicPluginFactory {
                 .ok_or_else(|| PluginError::NotFound(plugin_id.to_string()))?;
 
             // Get current config from metadata
-            let wrapper = entry.wrapper.read().await;
+            let _wrapper = entry.wrapper.read().await;
             let config = serde_json::json!({}); // Plugins use empty config on reload
 
             (entry.path.clone(), config)

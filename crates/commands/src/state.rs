@@ -6,8 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::command::{
-    CommandId, CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus,
-    RetryPolicy,
+    CommandId, CommandRequest, CommandResult, CommandStatus,
 };
 use crate::queue::{CommandQueue, QueueError};
 
@@ -72,7 +71,7 @@ impl CommandStateStore {
         id: &CommandId,
         status: CommandStatus,
     ) -> Result<(), StateError> {
-        let mut cache = self.cache.write().await;
+        let cache = self.cache.write().await;
         let mut cmd = cache
             .get_mut(id)
             .ok_or_else(|| StateError::NotFound(id.clone()))?;
@@ -87,7 +86,7 @@ impl CommandStateStore {
         id: &CommandId,
         result: CommandResult,
     ) -> Result<(), StateError> {
-        let mut cache = self.cache.write().await;
+        let cache = self.cache.write().await;
         let mut cmd = cache
             .get_mut(id)
             .ok_or_else(|| StateError::NotFound(id.clone()))?;
@@ -98,7 +97,7 @@ impl CommandStateStore {
 
     /// Increment command attempt counter.
     pub async fn increment_attempt(&self, id: &CommandId) -> Result<u32, StateError> {
-        let mut cache = self.cache.write().await;
+        let cache = self.cache.write().await;
         let mut cmd = cache
             .get_mut(id)
             .ok_or_else(|| StateError::NotFound(id.clone()))?;
@@ -109,7 +108,7 @@ impl CommandStateStore {
 
     /// Delete a command.
     pub async fn delete(&self, id: &CommandId) -> Result<bool, StateError> {
-        let mut cache = self.cache.write().await;
+        let cache = self.cache.write().await;
         Ok(cache.remove(id).is_some())
     }
 

@@ -3,7 +3,7 @@
 //! This module defines the foundational traits for external system integrations.
 //!
 //! Integrations are responsible for connecting NeoTalk to external systems
-//! (Home Assistant, MQTT brokers, Modbus networks, etc.) and translating
+//! (MQTT brokers, HTTP APIs, etc.) and translating
 //! data bidirectionally between external formats and NeoTalk's internal format.
 //!
 //! ## Architecture
@@ -12,7 +12,7 @@
 //! External System          Integration Framework          NeoTalk
 //! ┌─────────────┐          ┌─────────────────────┐          ┌──────────┐
 //! │             │  Ingest  │                     │  Event   │          │
-//! │   HASS/MQTT │──────────▶│  Integration        │──────────▶│ EventBus │
+//! │   MQTT/HTTP │──────────▶│  Integration        │──────────▶│ EventBus │
 //! │             │          │  - Connector         │          │          │
 //! │             │  Egress  │  - Transformer      │  Command │          │
 //! │             │◀─────────│  - Protocol Adapter  │◀─────────│  Agent   │
@@ -73,14 +73,8 @@ pub enum IntegrationError {
 /// Integration type identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum IntegrationType {
-    /// Home Assistant integration
-    Hass,
-
     /// MQTT broker integration
     Mqtt,
-
-    /// Modbus TCP integration
-    Modbus,
 
     /// HTTP/REST API integration
     Http,
@@ -102,9 +96,7 @@ impl IntegrationType {
     /// Get the integration type as a string.
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Hass => "hass",
             Self::Mqtt => "mqtt",
-            Self::Modbus => "modbus",
             Self::Http => "http",
             Self::WebSocket => "websocket",
             Self::Tasmota => "tasmota",
@@ -116,9 +108,7 @@ impl IntegrationType {
     /// Parse a string into an IntegrationType.
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "hass" => Some(Self::Hass),
             "mqtt" => Some(Self::Mqtt),
-            "modbus" => Some(Self::Modbus),
             "http" => Some(Self::Http),
             "websocket" | "ws" => Some(Self::WebSocket),
             "tasmota" => Some(Self::Tasmota),
@@ -515,7 +505,6 @@ mod tests {
 
     #[test]
     fn test_integration_type() {
-        assert_eq!(IntegrationType::Hass.as_str(), "hass");
         assert_eq!(IntegrationType::Mqtt.as_str(), "mqtt");
         assert_eq!(
             IntegrationType::from_str("mqtt"),

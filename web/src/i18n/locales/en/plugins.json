@@ -196,5 +196,9 @@
     "defaultModel": "Default model",
     "manageBackends": "Manage multiple LLM backends with runtime switching",
     "running": "Running"
-  }
+  },
+  "noBackends": "No LLM backends available",
+  "noBackendsDesc": "Unable to load LLM backend types from the server",
+  "noAdapters": "No adapter types available",
+  "noAdaptersDesc": "Unable to load device adapter types from the server"
 }

@@ -16,7 +16,7 @@ interface SearchBarProps {
   placeholder?: string
 }
 
-export function SearchBar({ placeholder = "搜索设备、规则、场景..." }: SearchBarProps) {
+export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBarProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -101,9 +101,6 @@ export function SearchBar({ placeholder = "搜索设备、规则、场景..." }:
       case "rule":
         navigate("/automation")
         break
-      case "scenario":
-        navigate("/automation")
-        break
       case "workflow":
         navigate("/automation")
         break
@@ -117,7 +114,6 @@ export function SearchBar({ placeholder = "搜索设备、规则、场景..." }:
     const labels = {
       device: "设备",
       rule: "规则",
-      scenario: "场景",
       workflow: "工作流",
       alert: "告警",
     }
@@ -128,7 +124,6 @@ export function SearchBar({ placeholder = "搜索设备、规则、场景..." }:
     const colors = {
       device: "bg-blue-500",
       rule: "bg-purple-500",
-      scenario: "bg-green-500",
       workflow: "bg-orange-500",
       alert: "bg-red-500",
     }

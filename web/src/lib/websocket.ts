@@ -3,6 +3,15 @@ import type { ServerMessage, ClientChatMessage } from '@/types'
 
 type MessageHandler = (message: ServerMessage) => void
 type ConnectionHandler = (connected: boolean) => void
+type StateChangeHandler = (state: ConnectionState) => void
+
+// Connection state for UI display
+export interface ConnectionState {
+  status: 'connected' | 'disconnected' | 'reconnecting' | 'error'
+  retryCount?: number
+  nextRetryIn?: number  // seconds
+  errorMessage?: string
+}
 
 // Get authentication token (JWT)
 function getAuthToken(): string | null {
@@ -13,14 +22,18 @@ function getAuthToken(): string | null {
 export class ChatWebSocket {
   private ws: WebSocket | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private countdownTimer: ReturnType<typeof setInterval> | null = null
   private tokenCheckTimer: ReturnType<typeof setInterval> | null = null
   private reconnectAttempts = 0
   private maxReconnectAttempts = Infinity  // 无限重连，直到用户手动刷新
   private messageHandlers: Set<MessageHandler> = new Set()
   private connectionHandlers: Set<ConnectionHandler> = new Set()
+  private stateChangeHandlers: Set<StateChangeHandler> = new Set()
   private sessionId: string | null = null
+  private activeBackendId: string | null = null
   private pendingMessages: ClientChatMessage[] = []
   private lastToken: string | null = null
+  private currentState: ConnectionState = { status: 'disconnected' }
 
   connect(initialSessionId?: string) {
     // Clear any existing timers
@@ -75,6 +88,7 @@ export class ChatWebSocket {
     this.ws.onopen = () => {
       this.reconnectAttempts = 0
       this.notifyConnection(true)
+      this.setState({ status: 'connected' })
 
       // Send pending messages
       while (this.pendingMessages.length > 0) {
@@ -88,11 +102,13 @@ export class ChatWebSocket {
       // Don't reconnect if the server rejected us (auth error)
       if (event.code !== 1000 && event.code !== 4001) {
         this.scheduleReconnect()
+      } else {
+        this.setState({ status: 'disconnected' })
       }
     }
 
     this.ws.onerror = () => {
-      // Silent error handling
+      this.setState({ status: 'error', errorMessage: 'Connection error' })
     }
 
     this.ws.onmessage = (event) => {
@@ -116,6 +132,11 @@ export class ChatWebSocket {
   }
 
   disconnect() {
+    // Clear countdown timer
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer)
+      this.countdownTimer = null
+    }
     // Clear token check timer
     if (this.tokenCheckTimer) {
       clearInterval(this.tokenCheckTimer)
@@ -131,6 +152,7 @@ export class ChatWebSocket {
       this.ws.close()
       this.ws = null
     }
+    this.setState({ status: 'disconnected' })
   }
 
   sendRequest(request: ClientChatMessage) {
@@ -146,7 +168,12 @@ export class ChatWebSocket {
     this.sendRequest({
       message: content,
       sessionId: this.sessionId || undefined,
+      backendId: this.activeBackendId || undefined,
     })
+  }
+
+  setActiveBackend(backendId: string | null) {
+    this.activeBackendId = backendId
   }
 
   setSessionId(sessionId: string) {
@@ -160,6 +187,10 @@ export class ChatWebSocket {
   private scheduleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.log('Max reconnect attempts reached')
+      this.setState({
+        status: 'error',
+        errorMessage: '无法连接到服务器，请刷新页面重试'
+      })
       return
     }
 
@@ -168,7 +199,38 @@ export class ChatWebSocket {
 
     console.log(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts})`)
 
+    // Set reconnecting state
+    this.setState({
+      status: 'reconnecting',
+      retryCount: this.reconnectAttempts,
+      nextRetryIn: Math.ceil(delay / 1000)
+    })
+
+    // Start countdown
+    let countdown = Math.ceil(delay / 1000)
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer)
+    }
+    this.countdownTimer = setInterval(() => {
+      countdown--
+      this.setState({
+        status: 'reconnecting',
+        retryCount: this.reconnectAttempts,
+        nextRetryIn: countdown
+      })
+      if (countdown <= 0) {
+        if (this.countdownTimer) {
+          clearInterval(this.countdownTimer)
+          this.countdownTimer = null
+        }
+      }
+    }, 1000)
+
     this.reconnectTimer = setTimeout(() => {
+      if (this.countdownTimer) {
+        clearInterval(this.countdownTimer)
+        this.countdownTimer = null
+      }
       this.connect(this.sessionId || undefined)
     }, delay)
   }
@@ -190,6 +252,22 @@ export class ChatWebSocket {
 
   private notifyConnection(connected: boolean) {
     this.connectionHandlers.forEach(handler => handler(connected))
+  }
+
+  private setState(state: ConnectionState) {
+    this.currentState = state
+    this.stateChangeHandlers.forEach(handler => handler(state))
+  }
+
+  // Public API for connection state
+  getState(): ConnectionState {
+    return this.currentState
+  }
+
+  onStateChange(handler: StateChangeHandler): () => void {
+    this.stateChangeHandlers.add(handler)
+    handler(this.currentState) // Immediately call with current state
+    return () => this.stateChangeHandlers.delete(handler)
   }
 
   isConnected() {

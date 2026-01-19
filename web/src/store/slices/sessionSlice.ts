@@ -9,95 +9,13 @@ import type { StateCreator } from 'zustand'
 import type { Message } from '@/types'
 
 /**
- * Merge fragmented assistant messages from backend storage.
- *
- * Backend stores messages as separate parts:
- * - [assistant_msg1] with thinking + tool_calls (but empty/minimal content)
- * - [tool_result_msgs] with role="tool"
- * - [assistant_msg2] with content only (no thinking/tool_calls)
- *
- * This function merges them into the format expected by frontend:
- * - [assistant_msg] with thinking + tool_calls + content
+ * Filter messages for display.
+ * Backend now saves complete messages with all fields (thinking, tool_calls, content).
+ * Simply filter out internal tool role messages.
  */
 function mergeAssistantMessages(messages: Message[]): Message[] {
-  const result: Message[] = []
-  let pendingAssistantMessage: Message | null = null
-
-  console.log('[mergeAssistantMessages] Input messages:', messages.map(m => ({
-    role: m.role,
-    content: m.content?.substring(0, 50),
-    hasThinking: !!m.thinking,
-    hasToolCalls: !!m.tool_calls?.length,
-    toolCallsCount: m.tool_calls?.length || 0,
-  })))
-
-  for (const msg of messages) {
-    // Skip tool role messages - they're just for LLM context
-    // Use type assertion since backend sends 'tool' role but frontend type doesn't include it
-    if ((msg as any).role === 'tool') {
-      continue
-    }
-
-    if (msg.role === 'assistant') {
-      // Check if this message has content but no thinking/tool_calls
-      const hasOnlyContent = msg.content &&
-        msg.content.trim().length > 0 &&
-        !msg.thinking &&
-        (!msg.tool_calls || msg.tool_calls.length === 0)
-
-      // Check if this message has thinking/tool_calls but minimal content
-      const hasStructureOnly = (msg.thinking || (msg.tool_calls && msg.tool_calls.length > 0)) &&
-        (!msg.content || msg.content.trim().length === 0)
-
-      console.log('[mergeAssistantMessages] Processing assistant message:', {
-        hasOnlyContent,
-        hasStructureOnly,
-        contentLength: msg.content?.length || 0,
-        hasThinking: !!msg.thinking,
-        hasToolCalls: !!msg.tool_calls?.length,
-      })
-
-      if (hasOnlyContent && pendingAssistantMessage) {
-        // This is the content part - merge with pending message
-        pendingAssistantMessage.content = msg.content
-        pendingAssistantMessage.timestamp = msg.timestamp // Use the timestamp of when content was generated
-        result.push(pendingAssistantMessage)
-        pendingAssistantMessage = null
-      } else if (hasStructureOnly) {
-        // This is the structure part (thinking + tools) - hold for next content message
-        pendingAssistantMessage = { ...msg }
-      } else {
-        // Complete standalone message - just add it
-        if (pendingAssistantMessage) {
-          result.push(pendingAssistantMessage)
-          pendingAssistantMessage = null
-        }
-        result.push(msg)
-      }
-    } else {
-      // User or system message
-      if (pendingAssistantMessage) {
-        result.push(pendingAssistantMessage)
-        pendingAssistantMessage = null
-      }
-      result.push(msg)
-    }
-  }
-
-  // Don't forget any pending message
-  if (pendingAssistantMessage) {
-    result.push(pendingAssistantMessage)
-  }
-
-  console.log('[mergeAssistantMessages] Output messages:', result.map(m => ({
-    role: m.role,
-    content: m.content?.substring(0, 50),
-    hasThinking: !!m.thinking,
-    hasToolCalls: !!m.tool_calls?.length,
-    toolCallsCount: m.tool_calls?.length || 0,
-  })))
-
-  return result
+  // Filter out tool role messages (internal LLM context, not for display)
+  return messages.filter(m => (m as any).role !== 'tool')
 }
 
 import type { SessionState } from '../types'
@@ -135,9 +53,21 @@ export const createSessionSlice: StateCreator<
   },
 
   addMessage: (message: Message) => {
-    set((state) => ({
-      messages: [...state.messages, message],
-    }))
+    set((state) => {
+      // If message with same ID exists, update it (especially important for partial->final transition)
+      const existingIndex = state.messages.findIndex(m => m.id === message.id)
+
+      if (existingIndex !== -1) {
+        // Update existing message in place
+        // This handles both: partial->partial updates AND partial->final transition
+        const updatedMessages = [...state.messages]
+        updatedMessages[existingIndex] = message
+        return { messages: updatedMessages }
+      }
+
+      // Otherwise append new message
+      return { messages: [...state.messages, message] }
+    })
   },
 
   clearMessages: () => {
@@ -327,18 +257,23 @@ export const createSessionSlice: StateCreator<
   },
 
   clearAllSessions: async () => {
-    // First get sessions from current state before clearing
-    let sessionIds: string[] = []
-    set((state) => {
-      sessionIds = state.sessions.map(s => s.sessionId).filter((id): id is string => id != null)
-      return state // Just reading, no change yet
-    })
-
-    if (sessionIds.length === 0) {
-      return
-    }
-
     try {
+      // IMPORTANT: Fetch ALL sessions from backend, not just from local state
+      // This ensures we delete all sessions including those not currently loaded
+      // (e.g., from tests, other browser windows, or previous runs)
+      const allSessions = await api.listSessions(1, 1000) // Get up to 1000 sessions
+
+      if (!Array.isArray(allSessions) || allSessions.length === 0) {
+        console.log('[clearAllSessions] No sessions to delete')
+        return
+      }
+
+      const sessionIds = allSessions
+        .map((s: any) => s.sessionId || s.id)
+        .filter((id: string): id is string => id != null)
+
+      console.log(`[clearAllSessions] Deleting ${sessionIds.length} sessions from backend`)
+
       // Bulk delete all sessions
       await api.bulkDeleteSessions(sessionIds)
     } catch (error) {

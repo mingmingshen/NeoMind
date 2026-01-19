@@ -2,7 +2,7 @@
  * Settings Slice
  *
  * Handles general system settings (config import/export, etc.).
- * LLM/MQTT/Device/HASS settings are now managed via the Plugin system.
+ * LLM/MQTT/Device settings are now managed via the Plugin system.
  */
 
 import type { StateCreator } from 'zustand'

@@ -65,8 +65,10 @@ impl VectorDocument {
 
 /// Similarity metric for vector comparison.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum SimilarityMetric {
     /// Cosine similarity (default).
+    #[default]
     Cosine,
     /// Euclidean distance (converted to similarity).
     Euclidean,
@@ -74,11 +76,6 @@ pub enum SimilarityMetric {
     DotProduct,
 }
 
-impl Default for SimilarityMetric {
-    fn default() -> Self {
-        Self::Cosine
-    }
-}
 
 /// In-memory vector store.
 pub struct VectorStore {
@@ -115,14 +112,13 @@ impl VectorStore {
     /// Insert a document into the store.
     pub async fn insert(&self, doc: VectorDocument) -> Result<(), Error> {
         // Validate dimension if set
-        if let Some(expected_dim) = self.dimension {
-            if doc.embedding.len() != expected_dim {
+        if let Some(expected_dim) = self.dimension
+            && doc.embedding.len() != expected_dim {
                 return Err(Error::InvalidDimension {
                     expected: expected_dim,
                     found: doc.embedding.len(),
                 });
             }
-        }
 
         let mut docs = self.documents.write().await;
         docs.insert(doc.id.clone(), doc);
@@ -146,14 +142,13 @@ impl VectorStore {
         let docs = self.documents.read().await;
 
         // Validate query dimension
-        if let Some(expected_dim) = self.dimension {
-            if query.len() != expected_dim {
+        if let Some(expected_dim) = self.dimension
+            && query.len() != expected_dim {
                 return Err(Error::InvalidDimension {
                     expected: expected_dim,
                     found: query.len(),
                 });
             }
-        }
 
         let mut results: Vec<(String, f32, serde_json::Value)> = docs
             .values()
@@ -281,11 +276,10 @@ impl PersistentVectorStore {
         // Check if we already have a store for this path
         {
             let singleton = VECTOR_STORE_SINGLETON.lock().unwrap();
-            if let Some(store) = singleton.as_ref() {
-                if store.path == path_str {
+            if let Some(store) = singleton.as_ref()
+                && store.path == path_str {
                     return Ok(store.clone());
                 }
-            }
         }
 
         // Create new store and save to singleton

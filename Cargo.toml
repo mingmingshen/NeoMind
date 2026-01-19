@@ -8,7 +8,6 @@ members = [
     "crates/devices",
     "crates/storage",
     "crates/rules",
-    "crates/scenarios",
     "crates/alerts",
     "crates/memory",
     "crates/tools",
@@ -17,6 +16,7 @@ members = [
     "crates/commands",
     "crates/integrations",
     "crates/plugin-sdk",
+    "crates/automation",
 ]
 resolver = "2"
 

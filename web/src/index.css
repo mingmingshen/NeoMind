@@ -78,6 +78,93 @@
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4);
     --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4);
     --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.5);
+
+    /* Chat-specific colors - dark mode */
+    --msg-user-bg: 217 91% 55%;
+    --msg-user-text: 0 0% 100%;
+    --msg-ai-bg: 0 0% 12%;
+    --msg-ai-text: 0 0% 92%;
+    --msg-system-bg: 0 0% 15%;
+    --msg-system-text: 0 0% 65%;
+
+    --tool-bg: 217 35% 20%;
+    --tool-border: 217 91% 55%;
+    --tool-header-bg: 217 35% 25%;
+
+    --thinking-bg: 220 20% 15%;
+    --thinking-border: 220 15% 30%;
+    --thinking-text: 0 0% 70%;
+
+    --card-hover-bg: 0 0% 18%;
+    --input-focus-bg: 0 0% 12%;
+
+    --session-drawer-bg: 0 0% 8%;
+    --session-drawer-border: 0 0% 18%;
+    --session-item-hover: 0 0% 14%;
+    --session-item-active: 0 0% 16%;
+  }
+
+  /* Light theme (data-theme="light" attribute) */
+  [data-theme="light"] {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 0 0% 9%;
+
+    /* Light mode semantic colors */
+    --color-success: 142 76% 36%;
+    --color-success-bg: 142 76% 96%;
+    --color-warning: 38 92% 50%;
+    --color-warning-bg: 38 92% 96%;
+    --color-error: 0 72% 51%;
+    --color-error-bg: 0 72% 96%;
+    --color-info: 217 91% 60%;
+    --color-info-bg: 217 91% 96%;
+
+    /* Light mode shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+
+    /* Chat-specific colors - light mode */
+    --msg-user-bg: 217 91% 60%;
+    --msg-user-text: 0 0% 100%;
+    --msg-ai-bg: 0 0% 96%;
+    --msg-ai-text: 0 0% 9%;
+    --msg-system-bg: 0 0% 94%;
+    --msg-system-text: 0 0% 45%;
+
+    --tool-bg: 217 91% 95%;
+    --tool-border: 217 91% 70%;
+    --tool-header-bg: 217 91% 90%;
+
+    --thinking-bg: 38 92% 95%;
+    --thinking-border: 38 92% 75%;
+    --thinking-text: 0 0% 40%;
+
+    --card-hover-bg: 0 0% 96%;
+    --input-focus-bg: 0 0% 100%;
+
+    --session-drawer-bg: 0 0% 98%;
+    --session-drawer-border: 0 0% 88%;
+    --session-item-hover: 0 0% 94%;
+    --session-item-active: 0 0% 92%;
   }
 }
 

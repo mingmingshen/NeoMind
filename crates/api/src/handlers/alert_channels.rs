@@ -10,8 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use edge_ai_alerts::{
-    ChannelInfo, ChannelPluginRegistry, ChannelStats, ChannelTypeInfo,
-    ConsoleChannel, DynAlertChannel, MemoryChannel, TestResult,
+    ChannelInfo, ChannelPluginRegistry, ChannelStats, ChannelTypeInfo, DynAlertChannel,
 };
 use edge_ai_core::alerts::ChannelFactory;
 
@@ -177,12 +176,12 @@ pub async fn create_channel_handler(
         "console" => {
             let factory = edge_ai_alerts::ConsoleChannelFactory;
             factory.create(&req.config)
-                .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
         }
         "memory" => {
             let factory = edge_ai_alerts::MemoryChannelFactory;
             factory.create(&req.config)
-                .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
+                .map_err(|e| ErrorResponse::bad_request(format!("Invalid config: {}", e)))?
         }
         #[cfg(feature = "webhook")]
         "webhook" => {
@@ -197,7 +196,7 @@ pub async fn create_channel_handler(
                 .map_err(|e| ErrorResponse::bad_request(&format!("Invalid config: {}", e)))?
         }
         _ => {
-            return Err(ErrorResponse::bad_request(&format!(
+            return Err(ErrorResponse::bad_request(format!(
                 "Unknown channel type: {}",
                 req.channel_type
             )));
@@ -206,7 +205,7 @@ pub async fn create_channel_handler(
 
     // Register channel with its configuration
     {
-        let mut registry_guard = registry.write().await;
+        let registry_guard = registry.write().await;
         registry_guard.register_channel_with_config(req.name.clone(), channel, config_value).await;
     }
 
@@ -230,7 +229,7 @@ pub async fn delete_channel_handler(
     Path(name): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
     let registry = state.alert_manager.channel_registry().await;
-    let mut registry_guard = registry.write().await;
+    let registry_guard = registry.write().await;
 
     let removed = registry_guard
         .unregister_channel(&name)
@@ -259,7 +258,7 @@ pub async fn test_channel_handler(
     let result = registry_guard
         .test_channel(&name)
         .await
-        .map_err(|e: edge_ai_alerts::Error| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e: edge_ai_alerts::Error| ErrorResponse::internal(e.to_string()))?;
 
     ok(json!(result))
 }

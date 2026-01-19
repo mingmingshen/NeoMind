@@ -255,14 +255,13 @@ impl SemanticInference {
 
         if let Ok(output) = self.llm.generate(input).await {
             let response = output.text.trim().trim_start_matches("```json").trim_start_matches("```").trim();
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response) {
-                if let Some(obj) = parsed.as_object() {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response)
+                && let Some(obj) = parsed.as_object() {
                     for (field_name, semantic_data) in obj {
                         let semantic = Self::parse_llm_semantic_result(field_name, semantic_data.clone());
                         results.insert(field_name.clone(), semantic);
                     }
                 }
-            }
         }
 
         results

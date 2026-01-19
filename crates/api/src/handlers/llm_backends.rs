@@ -132,7 +132,7 @@ impl From<LlmBackendInstance> for BackendInstanceDto {
             endpoint: instance.endpoint,
             model: instance.model,
             api_key_configured: instance.api_key.is_some()
-                && !instance.api_key.as_ref().map_or(false, |k| k.is_empty()),
+                && !instance.api_key.as_ref().is_some_and(|k| k.is_empty()),
             is_active: instance.is_active,
             temperature: instance.temperature,
             top_p: instance.top_p,
@@ -341,7 +341,7 @@ pub async fn create_backend_handler(
     // Validate
     instance
         .validate()
-        .map_err(|e| ErrorResponse::bad_request(e))?;
+        .map_err(ErrorResponse::bad_request)?;
 
     // Save
     manager
@@ -397,7 +397,7 @@ pub async fn update_backend_handler(
     // Validate
     instance
         .validate()
-        .map_err(|e| ErrorResponse::bad_request(e))?;
+        .map_err(ErrorResponse::bad_request)?;
 
     // Save
     manager

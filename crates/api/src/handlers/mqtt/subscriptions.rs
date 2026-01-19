@@ -6,7 +6,6 @@ use axum::{
 };
 use serde_json::json;
 
-use edge_ai_devices::ConnectionStatus;
 
 use super::models::{MqttSubscriptionDto, SubscribeRequest};
 use crate::handlers::{
@@ -83,7 +82,7 @@ pub async fn subscribe_handler(
     Json(_req): Json<SubscribeRequest>,
 ) -> HandlerResult<serde_json::Value> {
     // Check MQTT connection status from adapter
-    use edge_ai_devices::adapter::ConnectionStatus;
+    
     // For now, just return a message - custom topic subscription not implemented
     ok(json!({
         "success": false,
@@ -114,24 +113,19 @@ pub async fn subscribe_device_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Validate the device exists using DeviceService
     let device_opt = state.device_service.get_device(&device_id).await;
-    if device_opt.is_none() {
-        return Err(ErrorResponse::not_found(format!(
-            "Device not found: {}",
-            device_id
-        )));
-    }
-    let device = device_opt.unwrap();
+    let device = device_opt.ok_or_else(|| {
+        ErrorResponse::not_found(format!("Device not found: {}", device_id))
+    })?;
 
     // Get the adapter for this device and subscribe
-    if let Some(ref adapter_id) = device.adapter_id {
-        if let Some(adapter) = state.device_service.get_adapter(adapter_id).await {
+    if let Some(ref adapter_id) = device.adapter_id
+        && let Some(adapter) = state.device_service.get_adapter(adapter_id).await {
             use edge_ai_devices::adapter::DeviceAdapter;
             adapter
                 .subscribe_device(&device_id)
                 .await
                 .map_err(|e| ErrorResponse::internal(format!("Failed to subscribe: {}", e)))?;
         }
-    }
 
     ok(json!({
         "message": format!("Subscribed to device: {}", device_id),

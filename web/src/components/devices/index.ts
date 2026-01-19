@@ -1,6 +1,7 @@
 // Device Components
 export { DeviceRealtime, DeviceMetricCard } from "./DeviceRealtime"
 export { DeviceControl } from "./DeviceControl"
+export { DeviceTypeGeneratorDialog } from "./DeviceTypeGeneratorDialog"
 export type {
   DeviceRealtimeProps,
   DeviceMetric,
@@ -12,3 +13,6 @@ export type {
   CommandParameter,
   CommandExecution,
 } from "./DeviceControl"
+export type {
+  DeviceTypeGeneratorDialogProps,
+} from "./DeviceTypeGeneratorDialog"

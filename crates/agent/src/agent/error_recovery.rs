@@ -154,7 +154,7 @@ impl ErrorRecoveryManager {
     }
 
     /// 分析错误并生成恢复信息
-    pub async fn analyze_error(&self, error: &str, context: Option<&str>) -> ErrorInfo {
+    pub async fn analyze_error(&self, error: &str, _context: Option<&str>) -> ErrorInfo {
         let category = self.classify_error(error);
         let friendly_message = self.generate_friendly_message(&category, error);
         let recovery_action = self.determine_recovery_action(&category, error);

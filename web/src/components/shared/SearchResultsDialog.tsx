@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Search, Loader2, FileText, Wrench, Activity, Workflow, AlertTriangle } from "lucide-react"
+import { Search, Loader2, FileText, Wrench, Workflow, AlertTriangle } from "lucide-react"
 import { api } from "@/lib/api"
 import type { SearchResult } from "@/types"
 import { useNavigate } from "react-router-dom"
@@ -64,9 +64,6 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
       case "rule":
         navigate("/automation")
         break
-      case "scenario":
-        navigate("/automation")
-        break
       case "workflow":
         navigate("/automation")
         break
@@ -90,7 +87,6 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
     const icons = {
       device: <Wrench className="h-4 w-4" />,
       rule: <FileText className="h-4 w-4" />,
-      scenario: <Activity className="h-4 w-4" />,
       workflow: <Workflow className="h-4 w-4" />,
       alert: <AlertTriangle className="h-4 w-4" />,
     }
@@ -101,7 +97,6 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
     const labels = {
       device: "设备",
       rule: "规则",
-      scenario: "场景",
       workflow: "工作流",
       alert: "告警",
     }
@@ -112,7 +107,6 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
     const colors = {
       device: "bg-blue-500/10 text-blue-500 border-blue-500/20",
       rule: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-      scenario: "bg-green-500/10 text-green-500 border-green-500/20",
       workflow: "bg-orange-500/10 text-orange-500 border-orange-500/20",
       alert: "bg-red-500/10 text-red-500 border-red-500/20",
     }
@@ -137,7 +131,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
             全局搜索
           </DialogTitle>
           <DialogDescription>
-            搜索设备、规则、场景、工作流和告警
+            搜索设备、规则、工作流和告警
           </DialogDescription>
         </DialogHeader>
 

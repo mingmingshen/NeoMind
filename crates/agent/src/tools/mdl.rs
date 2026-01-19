@@ -13,7 +13,7 @@ use edge_ai_devices::{builtin_types, mdl_format::DeviceTypeDefinition};
 use edge_ai_tools::{
     Tool, ToolError, ToolOutput,
     error::Result as ToolResult,
-    tool::{array_property, object_schema, string_property},
+    tool::{object_schema, string_property},
 };
 
 /// ListDeviceTypes tool - queries all available device types.
@@ -46,7 +46,7 @@ impl ListDeviceTypesTool {
                     .iter()
                     .any(|c| c.eq_ignore_ascii_case(category))
             })
-            .map(|dt| DeviceTypeSummary::from_definition(dt))
+            .map(DeviceTypeSummary::from_definition)
             .collect()
     }
 
@@ -54,7 +54,7 @@ impl ListDeviceTypesTool {
     fn get_all_summaries(&self) -> Vec<DeviceTypeSummary> {
         self.device_types
             .iter()
-            .map(|dt| DeviceTypeSummary::from_definition(dt))
+            .map(DeviceTypeSummary::from_definition)
             .collect()
     }
 }

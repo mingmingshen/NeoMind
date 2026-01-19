@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use edge_ai_core::event::{NeoTalkEvent, ProposedAction};
@@ -18,7 +17,7 @@ use edge_ai_tools::{
 };
 
 use crate::autonomous::{
-    Decision, DecisionAction, DecisionEngine, DecisionEngineConfig, DecisionPriority, DecisionType,
+    Decision, DecisionAction, DecisionPriority, DecisionType,
 };
 
 /// Tool for proposing decisions based on analysis.

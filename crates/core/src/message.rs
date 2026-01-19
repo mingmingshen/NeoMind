@@ -97,20 +97,17 @@ pub enum ContentPart {
 /// Image detail level for multimodal inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum ImageDetail {
     /// Low detail (faster, less accurate)
     Low,
     /// High detail (slower, more accurate)
     High,
     /// Auto (default)
+    #[default]
     Auto,
 }
 
-impl Default for ImageDetail {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
 
 impl ContentPart {
     /// Create a text part.

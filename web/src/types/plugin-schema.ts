@@ -294,8 +294,6 @@ export const PLUGIN_ICONS: Record<string, string> = {
   // Device Adapters
   builtin_mqtt: 'Server',
   external_mqtt: 'Network',
-  hass: 'Home',
-  modbus: 'Wifi',
   zigbee: 'Radio',
 
   // Storage

@@ -281,7 +281,7 @@ impl ChannelPluginRegistry {
     }
 
     /// Enable or disable a channel.
-    pub async fn set_channel_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+    pub async fn set_channel_enabled(&self, _name: &str, _enabled: bool) -> Result<()> {
         // Note: This requires the channel to be mutable in practice.
         // For now, we need to remove and re-add the channel with updated state.
         // This is a limitation of the current trait-based design.

@@ -3,8 +3,7 @@
 //! This module provides shared utilities for API handlers including
 //! unified error handling, response builders, and common patterns.
 
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Json, Response};
+use axum::response::Json;
 use serde::Deserialize;
 
 use crate::models::{common::ApiResponse, error::ErrorResponse, pagination::PaginationMeta};
@@ -65,7 +64,7 @@ impl PaginationQuery {
 
     /// Convert to PaginationMeta for API responses.
     pub fn to_meta(&self, total: u32) -> PaginationMeta {
-        let total_pages = (total as usize + self.page_size - 1) / self.page_size;
+        let total_pages = (total as usize).div_ceil(self.page_size);
         PaginationMeta {
             page: self.page as u32,
             page_size: self.page_size as u32,

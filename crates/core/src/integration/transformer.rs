@@ -54,7 +54,7 @@
 //! }
 //! ```
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 
 /// Result type for transformer operations.

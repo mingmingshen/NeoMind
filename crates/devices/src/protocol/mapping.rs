@@ -4,7 +4,6 @@
 //! protocol-specific addresses and data formats.
 
 use crate::mdl::{MetricDataType, MetricValue};
-use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -111,13 +110,6 @@ pub enum Address {
         qos: Option<u8>,
         retain: Option<bool>,
     },
-    /// Modbus register address
-    Modbus {
-        slave: u8,
-        register: u16,
-        register_type: ModbusRegisterType,
-        count: Option<u16>,
-    },
     /// Home Assistant entity ID
     Hass {
         entity_id: String,
@@ -137,19 +129,6 @@ pub enum Address {
     },
 }
 
-/// Modbus register types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModbusRegisterType {
-    /// Coil (read-write, 1 bit)
-    Coil,
-    /// Discrete input (read-only, 1 bit)
-    DiscreteInput,
-    /// Holding register (read-write, 16 bits)
-    HoldingRegister,
-    /// Input register (read-only, 16 bits)
-    InputRegister,
-}
-
 impl Address {
     /// Create an MQTT address.
     pub fn mqtt(topic: impl Into<String>) -> Self {
@@ -157,16 +136,6 @@ impl Address {
             topic: topic.into(),
             qos: None,
             retain: None,
-        }
-    }
-
-    /// Create a Modbus address.
-    pub fn modbus(slave: u8, register: u16, register_type: ModbusRegisterType) -> Self {
-        Self::Modbus {
-            slave,
-            register,
-            register_type,
-            count: None,
         }
     }
 
@@ -245,7 +214,7 @@ pub trait PayloadSerializer: Send + Sync {
 
 /// Protocol mapping trait - bridges device capabilities with protocol implementations.
 ///
-/// Each protocol (MQTT, Modbus, HASS, etc.) implements this trait to provide:
+/// Each protocol (MQTT, HASS, etc.) implements this trait to provide:
 /// 1. Address resolution for capabilities and commands
 /// 2. Data parsing from protocol format to MetricValue
 /// 3. Command serialization from MetricValue to protocol format
@@ -300,7 +269,7 @@ pub trait ProtocolMapping: Send + Sync {
 /// Configuration for creating a protocol mapping.
 #[derive(Debug, Clone)]
 pub struct MappingConfig {
-    /// Protocol type (mqtt, modbus, hass, etc.)
+    /// Protocol type (mqtt, hass, etc.)
     pub protocol: String,
     /// Device type this mapping is for
     pub device_type: String,
@@ -434,12 +403,6 @@ mod tests {
     fn test_address_mqtt() {
         let addr = Address::mqtt("sensor/${device_id}/temperature");
         assert!(matches!(addr, Address::MQTT { .. }));
-    }
-
-    #[test]
-    fn test_address_modbus() {
-        let addr = Address::modbus(1, 0x0102, ModbusRegisterType::HoldingRegister);
-        assert!(matches!(addr, Address::Modbus { .. }));
     }
 
     #[test]

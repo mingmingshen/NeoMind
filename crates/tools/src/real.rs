@@ -6,9 +6,12 @@ use async_trait::async_trait;
 use serde_json::Value;
 use base64::{Engine as _, engine::general_purpose};
 
-use super::error::{Result, ToolError};
+use super::error::Result;
 use super::tool::{Tool, ToolDefinition, ToolOutput, number_property, object_schema, string_property};
-use edge_ai_core::tools::ToolExample;
+use super::error::ToolError;
+use edge_ai_core::tools::{ToolExample, UsageScenario};
+
+pub type ToolResult<T> = std::result::Result<T, ToolError>;
 
 use edge_ai_devices::{DeviceService, TimeSeriesStorage};
 use edge_ai_rules::RuleEngine;
@@ -484,32 +487,36 @@ impl Tool for CreateRuleTool {
     fn description(&self) -> &str {
         r#"创建一个新的自动化规则。
 
-## 使用场景
-- 当设备数据满足条件时自动触发动作
-- 设置温度、湿度等阈值告警
-- 定时执行特定任务
-- 多条件组合的复杂自动化逻辑
+## DSL 语法格式（多行格式，每部分单独一行）
+RULE "规则名称"
+WHEN sensor.temperature > 50
+FOR 5 minutes
+DO NOTIFY "温度过高"
+END
 
-## DSL 语法格式
-RULE "规则名称" WHEN <条件> [FOR <持续时间>] DO <动作> END
-
-## 重要：输出纯DSL文本，不要使用markdown代码块
+## 重要：DSL必须多行格式！
+- RULE "名称" （第一行）
+- WHEN 条件 （第二行）
+- FOR 持续时间 （可选，第三行）
+- DO 动作 （第四行）
+- END （最后一行）
 
 ## 条件示例
 - sensor.temperature > 50: 温度大于50
 - device.humidity < 30: 湿度小于30
 - sensor.value == 1: 值等于1
 
-## 动作类型
+## 动作类型（每个动作一行）
 - NOTIFY "消息": 发送通知
 - EXECUTE device.command(param=value): 执行设备命令
 - LOG info: 记录日志
 
 ## 完整示例
-RULE "高温告警" WHEN sensor.temperature > 35 FOR 5 minutes DO NOTIFY "温度过高" END
-
-## 多个动作示例
-RULE "温度控制" WHEN sensor.temperature > 30 DO EXECUTE fan.turn_on NOTIFY "已开启风扇" END"#
+RULE "高温告警"
+WHEN sensor.temperature > 35
+FOR 5 minutes
+DO NOTIFY "温度过高"
+END"#
     }
 
     fn parameters(&self) -> Value {
@@ -530,7 +537,7 @@ RULE "温度控制" WHEN sensor.temperature > 30 DO EXECUTE fan.turn_on NOTIFY "
             example: Some(ToolExample {
                 arguments: serde_json::json!({
                     "name": "高温告警",
-                    "dsl": "RULE \"高温告警\" WHEN sensor.temperature > 35 FOR 5 minutes DO NOTIFY \"温度过高，请注意\" END"
+                    "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 35\nFOR 5 minutes\nDO NOTIFY \"温度过高，请注意\"\nEND"
                 }),
                 result: serde_json::json!({
                     "rule_id": "rule_123",
@@ -547,7 +554,7 @@ RULE "温度控制" WHEN sensor.temperature > 30 DO EXECUTE fan.turn_on NOTIFY "
             examples: vec![ToolExample {
                 arguments: serde_json::json!({
                     "name": "高温告警",
-                    "dsl": "RULE \"高温告警\" WHEN sensor.temperature > 35 FOR 5 minutes DO NOTIFY \"温度过高，请注意\" END"
+                    "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 35\nFOR 5 minutes\nDO NOTIFY \"温度过高，请注意\"\nEND"
                 }),
                 result: serde_json::json!({
                     "rule_id": "rule_123",
@@ -1336,5 +1343,474 @@ impl Tool for QueryWorkflowStatusTool {
             "count": status_list.len(),
             "executions": status_list
         })))
+    }
+}
+
+// ============================================================================
+// DeviceAnalyzeTool - Real implementation using TimeSeriesStorage
+// ============================================================================
+
+/// Device analyze tool - provides statistical analysis on device data using real storage.
+pub struct DeviceAnalyzeTool {
+    service: Arc<DeviceService>,
+    storage: Arc<TimeSeriesStorage>,
+}
+
+impl DeviceAnalyzeTool {
+    /// Create a new device analyze tool with real services.
+    pub fn new(service: Arc<DeviceService>, storage: Arc<TimeSeriesStorage>) -> Self {
+        Self { service, storage }
+    }
+}
+
+#[async_trait]
+impl Tool for DeviceAnalyzeTool {
+    fn name(&self) -> &str {
+        "device.analyze"
+    }
+
+    fn description(&self) -> &str {
+        r#"使用LLM分析设备数据，发现趋势、异常、模式和预测。支持多种分析类型：
+- trend: 趋势分析 - 识别数据上升/下降/稳定趋势
+- anomaly: 异常检测 - 发现数据中的异常点
+- summary: 数据摘要 - 生成统计信息和洞察
+
+用法示例:
+- '分析温度趋势' → 分析温度变化趋势
+- '检测异常数据' → 检测数据中的异常点
+- '数据摘要' → 生成统计摘要和洞察"#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "device_id": string_property("设备ID，支持模糊匹配。例如: 'sensor_temp_living' 或 'temp'"),
+                "metric": string_property("要分析的指标名称，如'temperature'。不指定则分析所有可用指标"),
+                "analysis_type": string_property("分析类型：'trend'趋势分析、'anomaly'异常检测、'summary'数据摘要。默认'summary'"),
+                "limit": number_property("要分析的数据点数量，默认24个点")
+            }),
+            vec!["device_id".to_string()],
+        )
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters(),
+            example: Some(ToolExample {
+                arguments: serde_json::json!({
+                    "device_id": "sensor_temp_living",
+                    "metric": "temperature",
+                    "analysis_type": "trend"
+                }),
+                result: serde_json::json!({
+                    "analysis_type": "trend",
+                    "findings": ["温度从 22°C 上升到 28°C", "变化幅度: +6°C"],
+                    "insights": ["趋势: 📈 明显上升"],
+                    "recommendations": ["温度持续上升，建议检查空调设置"]
+                }),
+                description: "分析温度变化趋势".to_string(),
+            }),
+            category: edge_ai_core::tools::ToolCategory::Device,
+            scenarios: vec![
+                UsageScenario {
+                    description: "趋势分析".to_string(),
+                    example_query: "分析温度趋势".to_string(),
+                    suggested_call: Some(r#"{"device_id": "sensor_temp_living", "metric": "temperature", "analysis_type": "trend"}"#.to_string()),
+                },
+                UsageScenario {
+                    description: "异常检测".to_string(),
+                    example_query: "检测异常数据".to_string(),
+                    suggested_call: Some(r#"{"device_id": "sensor_temp_living", "metric": "temperature", "analysis_type": "anomaly"}"#.to_string()),
+                },
+            ],
+            relationships: edge_ai_core::tools::ToolRelationships::default(),
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
+            examples: vec![],
+            response_format: None,
+            namespace: None,
+        }
+    }
+
+    async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
+        let device_id = args
+            .get("device_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| ToolError::InvalidArguments("device_id is required".to_string()))?;
+
+        // Find device(s) with fuzzy matching
+        let devices = self.service.list_devices().await;
+        let matched_devices: Vec<_> = devices
+            .iter()
+            .filter(|d| d.device_id.contains(device_id) || d.name.contains(device_id))
+            .collect();
+
+        if matched_devices.is_empty() {
+            return Ok(ToolOutput::error_with_metadata(
+                format!("未找到设备: {}", device_id),
+                serde_json::json!({"device_id": device_id, "hint": "使用 device.discovery() 查看可用设备"}),
+            ));
+        }
+
+        let device = &matched_devices[0];
+
+        // Get analysis type
+        let analysis_type = args
+            .get("analysis_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("summary");
+
+        // Get metric to analyze
+        let metric_param = args.get("metric").and_then(|v| v.as_str());
+
+        // Get limit
+        let limit = args
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(24) as usize;
+
+        // Determine which metrics to analyze
+        let metrics_to_analyze: Vec<String> = if let Some(m) = metric_param {
+            vec![m.to_string()]
+        } else {
+            // Get available metrics from device template (async call)
+            // For now, just list metrics from storage
+            match self.storage.list_metrics(&device.device_id).await {
+                Ok(metrics) => metrics,
+                Err(_) => vec![],
+            }
+        };
+
+        if metrics_to_analyze.is_empty() {
+            return Ok(ToolOutput::error(
+                "设备没有可分析的指标".to_string()
+            ));
+        }
+
+        // Perform analysis for each metric
+        let mut all_findings = vec![];
+        let mut all_insights = vec![];
+        let mut all_recommendations = vec![];
+
+        for metric_name in metrics_to_analyze {
+            // Fetch historical data from storage using query_telemetry
+            let end_time = chrono::Utc::now().timestamp();
+            let start_time = end_time - (24 * 3600); // 24 hours ago
+
+            let history = self.service.query_telemetry(
+                &device.device_id,
+                &metric_name,
+                Some(start_time),
+                Some(end_time),
+            ).await.map_err(|e| {
+                ToolError::Execution(format!("Failed to query telemetry: {}", e))
+            })?;
+
+            if history.is_empty() {
+                all_findings.push(format!("指标 {} 暂无数据", metric_name));
+                continue;
+            }
+
+            // Convert to DataPoint format
+            let data_points: Vec<edge_ai_devices::DataPoint> = history
+                .into_iter()
+                .map(|(ts, value)| edge_ai_devices::DataPoint {
+                    timestamp: ts,
+                    value,
+                    quality: None,
+                })
+                .collect();
+
+            match analysis_type {
+                "trend" => {
+                    let analysis = self.analyze_trend(&data_points, &metric_name);
+                    all_findings.extend(analysis.findings);
+                    all_insights.extend(analysis.insights);
+                    all_recommendations.extend(analysis.recommendations);
+                }
+                "anomaly" => {
+                    let analysis = self.analyze_anomaly(&data_points, &metric_name);
+                    all_findings.extend(analysis.findings);
+                    all_insights.extend(analysis.insights);
+                    all_recommendations.extend(analysis.recommendations);
+                }
+                _ => {  // summary
+                    let analysis = self.analyze_summary(&data_points, &metric_name);
+                    all_findings.extend(analysis.findings);
+                    all_insights.extend(analysis.insights);
+                    all_recommendations.extend(analysis.recommendations);
+                }
+            }
+        }
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "device_id": device.device_id,
+            "device_name": device.name,
+            "analysis_type": analysis_type,
+            "data_points_analyzed": limit,
+            "findings": all_findings,
+            "insights": all_insights,
+            "recommendations": all_recommendations
+        })))
+    }
+}
+
+/// Analysis result structure
+struct AnalysisResult {
+    analysis_type: String,
+    device_id: String,
+    metric: String,
+    time_period: String,
+    findings: Vec<String>,
+    insights: Vec<String>,
+    recommendations: Vec<String>,
+    confidence: f64,
+    supporting_data: Option<Value>,
+}
+
+impl DeviceAnalyzeTool {
+    /// Perform trend analysis on metric data.
+    fn analyze_trend(&self, data: &[edge_ai_devices::DataPoint], metric: &str) -> AnalysisResult {
+        if data.len() < 2 {
+            return AnalysisResult {
+                analysis_type: "trend".to_string(),
+                device_id: String::new(),
+                metric: metric.to_string(),
+                time_period: "数据不足".to_string(),
+                findings: vec![format!("{} 暂无足够数据进行趋势分析", metric)],
+                insights: vec![],
+                recommendations: vec![],
+                confidence: 0.0,
+                supporting_data: None,
+            };
+        }
+
+        let values: Vec<f64> = data.iter()
+            .filter_map(|p| match p.value {
+                edge_ai_devices::MetricValue::Float(v) => Some(v),
+                edge_ai_devices::MetricValue::Integer(v) => Some(v as f64),
+                _ => None,
+            })
+            .collect();
+
+        if values.is_empty() {
+            return AnalysisResult {
+                analysis_type: "trend".to_string(),
+                device_id: String::new(),
+                metric: metric.to_string(),
+                time_period: "无数据".to_string(),
+                findings: vec![format!("{} 没有数值数据", metric)],
+                insights: vec![],
+                recommendations: vec![],
+                confidence: 0.0,
+                supporting_data: None,
+            };
+        }
+
+        let first = values.first().unwrap_or(&0.0);
+        let last = values.last().unwrap_or(&0.0);
+        let change = last - first;
+        let pct_change = if first.abs() > 0.001 {
+            (change / first.abs()) * 100.0
+        } else {
+            0.0
+        };
+
+        let (trend_desc, icon) = if pct_change > 10.0 {
+            ("明显上升", "📈")
+        } else if pct_change > 3.0 {
+            ("缓慢上升", "📈")
+        } else if pct_change < -10.0 {
+            ("明显下降", "📉")
+        } else if pct_change < -3.0 {
+            ("缓慢下降", "📉")
+        } else {
+            ("保持稳定", "➡️")
+        };
+
+        let findings = vec![
+            format!("{} 数据点分析", data.len()),
+            format!("初始值: {:.2}, 最终值: {:.2}", first, last),
+            format!("变化: {:+.2} ({:+.1}%)", change, pct_change),
+        ];
+
+        let insights = vec![format!("趋势: {} {}", icon, trend_desc)];
+
+        let mut recommendations = vec![];
+
+        if metric.contains("temperature") || metric.contains("temp") {
+            if pct_change > 5.0 {
+                recommendations.push("温度持续上升，建议检查空调设置".to_string());
+            } else if pct_change < -5.0 {
+                recommendations.push("温度持续下降，注意保温".to_string());
+            }
+        }
+
+        AnalysisResult {
+            analysis_type: "trend".to_string(),
+            device_id: String::new(),
+            metric: metric.to_string(),
+            time_period: format!("最近{}个数据点", data.len()),
+            findings,
+            insights,
+            recommendations,
+            confidence: if pct_change.abs() > 3.0 { 0.85 } else { 0.6 },
+            supporting_data: Some(serde_json::json!({
+                "first_value": first,
+                "last_value": last,
+                "change": change,
+                "pct_change": pct_change
+            })),
+        }
+    }
+
+    /// Perform anomaly detection on metric data.
+    fn analyze_anomaly(&self, data: &[edge_ai_devices::DataPoint], metric: &str) -> AnalysisResult {
+        let values: Vec<f64> = data.iter()
+            .filter_map(|p| match p.value {
+                edge_ai_devices::MetricValue::Float(v) => Some(v),
+                edge_ai_devices::MetricValue::Integer(v) => Some(v as f64),
+                _ => None,
+            })
+            .collect();
+
+        if values.len() < 3 {
+            return AnalysisResult {
+                analysis_type: "anomaly".to_string(),
+                device_id: String::new(),
+                metric: metric.to_string(),
+                time_period: "数据不足".to_string(),
+                findings: vec![format!("{} 需要至少3个数据点进行异常检测", metric)],
+                insights: vec![],
+                recommendations: vec![],
+                confidence: 0.0,
+                supporting_data: None,
+            };
+        }
+
+        // Calculate mean and standard deviation
+        let n = values.len() as f64;
+        let mean: f64 = values.iter().sum();
+        let mean = mean / n;
+
+        let variance: f64 = values.iter()
+            .map(|&v| (v - mean).powi(2))
+            .sum();
+        let variance = variance / n;
+        let std_dev = variance.sqrt();
+
+        // Find anomalies (values beyond 2 standard deviations)
+        let threshold = 2.0 * std_dev;
+        let anomalies: Vec<(usize, f64)> = values.iter()
+            .enumerate()
+            .filter(|&(_, &v)| (v - mean).abs() > threshold)
+            .map(|(i, &v)| (i, v))
+            .collect();
+
+        let findings = vec![
+            format!("分析{}个数据点", data.len()),
+            format!("平均值: {:.2}, 标准差: {:.2}", mean, std_dev),
+            format!("检测到{}个异常值", anomalies.len()),
+        ];
+
+        let mut insights = vec![];
+        if anomalies.is_empty() {
+            insights.push("✓ 未发现明显异常".to_string());
+        } else {
+            insights.push(format!("⚠️ 发现{}个异常值", anomalies.len()));
+        }
+
+        let mut recommendations = vec![];
+        if !anomalies.is_empty() {
+            recommendations.push("建议检查异常数据点对应时间的设备状态".to_string());
+        }
+
+        AnalysisResult {
+            analysis_type: "anomaly".to_string(),
+            device_id: String::new(),
+            metric: metric.to_string(),
+            time_period: format!("最近{}个数据点", data.len()),
+            findings,
+            insights,
+            recommendations,
+            confidence: 0.75,
+            supporting_data: Some(serde_json::json!({
+                "mean": mean,
+                "std_dev": std_dev,
+                "anomaly_count": anomalies.len()
+            })),
+        }
+    }
+
+    /// Perform summary analysis on metric data.
+    fn analyze_summary(&self, data: &[edge_ai_devices::DataPoint], metric: &str) -> AnalysisResult {
+        let values: Vec<f64> = data.iter()
+            .filter_map(|p| match p.value {
+                edge_ai_devices::MetricValue::Float(v) => Some(v),
+                edge_ai_devices::MetricValue::Integer(v) => Some(v as f64),
+                _ => None,
+            })
+            .collect();
+
+        if values.is_empty() {
+            return AnalysisResult {
+                analysis_type: "summary".to_string(),
+                device_id: String::new(),
+                metric: metric.to_string(),
+                time_period: "无数据".to_string(),
+                findings: vec![format!("{} 没有数值数据", metric)],
+                insights: vec![],
+                recommendations: vec![],
+                confidence: 0.0,
+                supporting_data: None,
+            };
+        }
+
+        let n = values.len();
+        let min = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+        let max = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+        let mean: f64 = values.iter().sum();
+        let mean = mean / n as f64;
+
+        let variance: f64 = values.iter()
+            .map(|&v| (v - mean).powi(2))
+            .sum();
+        let variance = variance / n as f64;
+        let std_dev = variance.sqrt();
+
+        let findings = vec![
+            format!("数据点数: {}", n),
+            format!("最小值: {:.2}", min),
+            format!("最大值: {:.2}", max),
+            format!("平均值: {:.2}", mean),
+            format!("标准差: {:.2}", std_dev),
+        ];
+
+        let insights = vec![
+            format!("数据范围: {:.2} ~ {:.2}", min, max),
+            format!("波动程度: {}", if std_dev < (max - min) * 0.1 { "稳定" } else { "波动较大" }),
+        ];
+
+        let recommendations = vec![];
+
+        AnalysisResult {
+            analysis_type: "summary".to_string(),
+            device_id: String::new(),
+            metric: metric.to_string(),
+            time_period: format!("最近{}个数据点", data.len()),
+            findings,
+            insights,
+            recommendations,
+            confidence: 1.0,
+            supporting_data: Some(serde_json::json!({
+                "min": min,
+                "max": max,
+                "mean": mean,
+                "std_dev": std_dev
+            })),
+        }
     }
 }

@@ -58,5 +58,8 @@
   "failureCount": "Failure",
   "error": "Error",
   "decisionType": "Decision Type",
-  "required": "Required"
+  "required": "Required",
+  "createAutomation": "Create Automation",
+  "createAutomationDesc": "Convert this decision into an automation",
+  "automationCreated": "Automation created successfully"
 }

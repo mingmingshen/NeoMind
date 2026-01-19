@@ -12,7 +12,7 @@ use tokio::time::timeout;
 
 use edge_ai_devices::adapter::DeviceAdapter;
 use edge_ai_devices::adapters::{create_adapter, mqtt::MqttAdapterConfig};
-use edge_ai_storage::{ExternalBroker, SecurityLevel, SecurityWarning};
+use edge_ai_storage::{ExternalBroker, SecurityLevel};
 
 use crate::config;
 use crate::handlers::common::{HandlerResult, ok};
@@ -150,7 +150,7 @@ pub async fn create_broker_handler(
         .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
 
     // Generate ID if not provided
-    let id = req.id.unwrap_or_else(|| ExternalBroker::generate_id());
+    let id = req.id.unwrap_or_else(ExternalBroker::generate_id);
 
     // Check if broker already exists
     if store.load_external_broker(&id).is_ok_and(|b| b.is_some()) {
@@ -238,12 +238,14 @@ pub async fn create_broker_handler(
         };
 
         // Create the MQTT adapter
+        let event_bus = state.event_bus.as_ref()
+            .ok_or_else(|| ErrorResponse::internal("EventBus not initialized".to_string()))?;
+
+        let mqtt_config_value = serde_json::to_value(mqtt_config)
+            .map_err(|e| ErrorResponse::internal(format!("Failed to serialize MQTT config: {}", e)))?;
+
         let adapter_result: edge_ai_devices::adapter::AdapterResult<Arc<dyn DeviceAdapter>> =
-            create_adapter(
-                "mqtt",
-                &serde_json::to_value(mqtt_config).unwrap(),
-                state.event_bus.as_ref().unwrap(),
-            );
+            create_adapter("mqtt", &mqtt_config_value, event_bus);
 
         match adapter_result {
             Ok(adapter) => {
@@ -338,11 +340,10 @@ pub async fn update_broker_handler(
     broker.tls = req.tls;
     broker.username = req.username;
     // Only update password if provided (non-empty)
-    if let Some(pwd) = req.password {
-        if !pwd.is_empty() {
+    if let Some(pwd) = req.password
+        && !pwd.is_empty() {
             broker.password = Some(pwd);
         }
-    }
     // Update certificates
     broker.ca_cert = req.ca_cert;
     broker.client_cert = req.client_cert;
@@ -538,7 +539,7 @@ pub async fn test_broker_handler(Path(id): Path<String>) -> HandlerResult<serde_
         }
         Err(_) => {
             // Timeout
-            let error_msg = format!("Connection timeout after 5 seconds");
+            let error_msg = "Connection timeout after 5 seconds".to_string();
 
             // Update broker status to disconnected with error
             if let Err(err) =

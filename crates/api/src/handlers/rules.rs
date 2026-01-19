@@ -7,7 +7,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-use edge_ai_rules::{CompiledRule, RuleId, RuleStatus};
+use edge_ai_rules::{CompiledRule, RuleId, RuleStatus, MetricDataType as RulesMetricDataType};
+use edge_ai_devices::MetricDataType as DeviceMetricDataType;
 
 use super::{
     ServerState,
@@ -430,79 +431,75 @@ pub async fn import_rules_handler(
 }
 
 /// Get available resources for rule validation.
+/// Now uses DeviceTypeTemplate for actual device capabilities instead of hardcoded mappings.
 ///
 /// GET /api/rules/resources
 pub async fn get_resources_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    use edge_ai_rules::{DeviceInfo, MetricInfo, MetricDataType, CommandInfo};
+    
+    use edge_ai_rules::{DeviceInfo, MetricInfo, CommandInfo, ParameterInfo};
+    use edge_ai_devices::ConnectionStatus;
 
     let mut devices = Vec::new();
 
-    // Get devices from device service
+    // Get all devices with their templates
     let all_devices = state.device_service.list_devices().await;
     for device in all_devices {
-        // Convert device to DeviceInfo format
-        let mut metrics = Vec::new();
+        // Try to get the template for this device type
+        let template = state.device_service.get_template(&device.device_type).await;
 
-        // Add common metrics based on device type
-        match device.device_type.as_str() {
-            "sensor" | "temperature_sensor" => {
-                metrics.push(MetricInfo {
-                    name: "temperature".to_string(),
-                    data_type: MetricDataType::Number,
-                    unit: Some("°C".to_string()),
-                    min_value: Some(-50.0),
-                    max_value: Some(150.0),
-                });
-                metrics.push(MetricInfo {
-                    name: "humidity".to_string(),
-                    data_type: MetricDataType::Number,
-                    unit: Some("%".to_string()),
-                    min_value: Some(0.0),
-                    max_value: Some(100.0),
-                });
-            }
-            "switch" | "light" => {
-                metrics.push(MetricInfo {
-                    name: "state".to_string(),
-                    data_type: MetricDataType::Boolean,
-                    unit: None,
-                    min_value: None,
-                    max_value: None,
-                });
-                metrics.push(MetricInfo {
-                    name: "power".to_string(),
-                    data_type: MetricDataType::Number,
-                    unit: Some("W".to_string()),
-                    min_value: Some(0.0),
-                    max_value: Some(5000.0),
-                });
-            }
-            _ => {
-                // Generic metrics
-                metrics.push(MetricInfo {
-                    name: "value".to_string(),
-                    data_type: MetricDataType::Number,
-                    unit: None,
-                    min_value: None,
-                    max_value: None,
-                });
-            }
-        }
+        let (metrics, commands) = if let Some(tpl) = template {
+            // Convert from DeviceTypeTemplate (MDL definition)
+            let metrics: Vec<MetricInfo> = tpl.metrics.into_iter().map(|m| MetricInfo {
+                name: m.name,
+                data_type: convert_metric_data_type(m.data_type),
+                unit: if m.unit.is_empty() { None } else { Some(m.unit) },
+                min_value: m.min,
+                max_value: m.max,
+            }).collect();
 
-        let commands = vec![
-            CommandInfo {
-                name: "on".to_string(),
-                description: "Turn on".to_string(),
-                parameters: vec![],
-            },
-            CommandInfo {
-                name: "off".to_string(),
-                description: "Turn off".to_string(),
-                parameters: vec![],
-            },
-        ];
+            let commands: Vec<CommandInfo> = tpl.commands.into_iter().map(|c| CommandInfo {
+                name: c.name,
+                description: if c.display_name.is_empty() {
+                    c.llm_hints.clone()
+                } else {
+                    c.display_name
+                },
+                parameters: c.parameters.into_iter().map(|p| ParameterInfo {
+                    name: p.name,
+                    param_type: format!("{:?}", p.data_type),
+                    required: true, // MDL doesn't have required flag, assume required
+                    default_value: p.default_value.and_then(|v| serde_json::to_value(v).ok()),
+                }).collect(),
+            }).collect();
+
+            (metrics, commands)
+        } else {
+            // Fallback to generic metrics if no template found
+            (vec![MetricInfo {
+                name: "value".to_string(),
+                data_type: RulesMetricDataType::Number,
+                unit: None,
+                min_value: None,
+                max_value: None,
+            }], vec![
+                CommandInfo {
+                    name: "on".to_string(),
+                    description: "Turn on".to_string(),
+                    parameters: vec![],
+                },
+                CommandInfo {
+                    name: "off".to_string(),
+                    description: "Turn off".to_string(),
+                    parameters: vec![],
+                },
+            ])
+        };
+
+        // Check device online status
+        let status = state.device_service.get_device_connection_status(&device.device_id).await;
+        let online = matches!(status, ConnectionStatus::Connected);
 
         devices.push(DeviceInfo {
             id: device.device_id.clone(),
@@ -510,20 +507,19 @@ pub async fn get_resources_handler(
             device_type: device.device_type.clone(),
             metrics,
             commands,
-            online: true, // Device is considered online if in the registry
+            online,
         });
     }
 
-    // Get alert channels
+    // Get alert channels from alert manager
     let mut alert_channels = Vec::new();
-    // Get alert channel names from alert manager
     let channel_names = state.alert_manager.list_channels().await;
     for name in channel_names {
         alert_channels.push(edge_ai_rules::AlertChannelInfo {
             id: name.clone(),
             name: name.clone(),
-            channel_type: "unknown".to_string(), // Type info not directly available
-            enabled: true, // Assume enabled if in the list
+            channel_type: "notification".to_string(),
+            enabled: true,
         });
     }
 
@@ -531,6 +527,18 @@ pub async fn get_resources_handler(
         "devices": devices,
         "alert_channels": alert_channels,
     }))
+}
+
+/// Convert DeviceTypeTemplate MetricDataType to Rules Engine MetricDataType
+fn convert_metric_data_type(dt: DeviceMetricDataType) -> RulesMetricDataType {
+    match dt {
+        DeviceMetricDataType::Integer => RulesMetricDataType::Number,
+        DeviceMetricDataType::Float => RulesMetricDataType::Number,
+        DeviceMetricDataType::String => RulesMetricDataType::String,
+        DeviceMetricDataType::Boolean => RulesMetricDataType::Boolean,
+        DeviceMetricDataType::Binary => RulesMetricDataType::String, // Binary as base64 string
+        DeviceMetricDataType::Enum { .. } => RulesMetricDataType::Enum(vec![]),
+    }
 }
 
 /// Validate a rule against available resources.

@@ -8,11 +8,10 @@
 //! | Feature | Description |
 //! |---------|-------------|
 //! | `mqtt` | MQTT protocol support (default) |
-//! | `modbus` | Modbus TCP protocol support (default) |
-//! | `hass` | Home Assistant integration |
+//! | `http` | HTTP polling adapter (default) |
+//! | `webhook` | Webhook adapter (default) |
 //! | `discovery` | mDNS device discovery |
 //! | `embedded-broker` | Embedded MQTT broker |
-//! | `all` | All adapters |
 
 // Specialized adapter plugins
 pub mod plugins;
@@ -23,23 +22,19 @@ pub mod mqtt;
 #[cfg(feature = "mqtt")]
 pub use mqtt::{MqttAdapter, MqttAdapterConfig, create_mqtt_adapter};
 
-// Modbus adapter (feature-gated)
-#[cfg(feature = "modbus")]
-pub mod modbus;
-#[cfg(feature = "modbus")]
-pub use modbus::{
-    ModbusAdapter, ModbusAdapterConfig, ModbusDataType, ModbusDeviceConfig, RegisterDefinition,
-    RegisterType, create_modbus_adapter,
-};
+// HTTP adapter (feature-gated)
+#[cfg(feature = "http")]
+pub mod http;
+#[cfg(feature = "http")]
+pub use http::{HttpAdapter, HttpAdapterConfig, HttpDeviceConfig, create_http_adapter};
 
-// Home Assistant adapter (feature-gated)
-#[cfg(feature = "hass")]
-pub mod hass;
-#[cfg(feature = "hass")]
-pub use hass::{
-    HassAdapter, HassAdapterConfig, HassDeviceInfo, HassDiscoveryMessage, create_hass_adapter,
-    map_hass_component_to_device_type,
-};
+// Webhook adapter (always available)
+pub mod webhook;
+pub use webhook::{WebhookAdapter, WebhookAdapterConfig, WebhookPayload, create_webhook_adapter};
+
+// HTTP plugin exports (feature-gated)
+#[cfg(feature = "http")]
+pub use plugins::{UnifiedAdapterPluginFactory, http_adapter_config_schema};
 
 use crate::adapter::{AdapterResult, DeviceAdapter};
 use edge_ai_core::EventBus;
@@ -60,12 +55,26 @@ use std::sync::Arc;
 /// # #[tokio::main]
 /// # async fn main() -> anyhow::Result<()> {
 /// let event_bus = EventBus::new();
-/// let config = json!({
+///
+/// // MQTT adapter
+/// let mqtt_config = json!({
 ///     "name": "main_mqtt",
 ///     "broker": "localhost:1883",
 ///     "topics": ["sensors/#"]
 /// });
-/// let adapter = create_adapter("mqtt", &config, &event_bus)?;
+/// let adapter = create_adapter("mqtt", &mqtt_config, &event_bus)?;
+///
+/// // HTTP adapter
+/// let http_config = json!({
+///     "name": "http_poller",
+///     "devices": [{
+///         "id": "sensor1",
+///         "name": "Temperature Sensor",
+///         "url": "http://192.168.1.100/api/telemetry",
+///         "poll_interval": 30
+///     }]
+/// });
+/// let adapter = create_adapter("http", &http_config, &event_bus)?;
 /// # Ok(())
 /// # }
 /// ```
@@ -84,23 +93,21 @@ pub fn create_adapter(
             let device_registry = Arc::new(crate::registry::DeviceRegistry::new());
             Ok(create_mqtt_adapter(cfg, event_bus, device_registry))
         }
-
-        #[cfg(feature = "modbus")]
-        "modbus" => {
-            let cfg: ModbusAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
-                crate::adapter::AdapterError::Configuration(format!("Invalid Modbus config: {}", e))
+        #[cfg(feature = "http")]
+        "http" => {
+            let cfg: HttpAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                crate::adapter::AdapterError::Configuration(format!("Invalid HTTP config: {}", e))
             })?;
-            Ok(create_modbus_adapter(cfg, event_bus))
+            let device_registry = Arc::new(crate::registry::DeviceRegistry::new());
+            Ok(create_http_adapter(cfg, event_bus, device_registry))
         }
-
-        #[cfg(feature = "hass")]
-        "hass" => {
-            let cfg: HassAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
-                crate::adapter::AdapterError::Configuration(format!("Invalid HASS config: {}", e))
+        "webhook" => {
+            let cfg: WebhookAdapterConfig = serde_json::from_value(config.clone()).map_err(|e| {
+                crate::adapter::AdapterError::Configuration(format!("Invalid Webhook config: {}", e))
             })?;
-            Ok(create_hass_adapter(cfg, event_bus))
+            let device_registry = Arc::new(crate::registry::DeviceRegistry::new());
+            Ok(create_webhook_adapter(cfg, event_bus, device_registry))
         }
-
         _ => Err(crate::adapter::AdapterError::Configuration(format!(
             "Unknown adapter type: {}. Available adapters: {}",
             adapter_type,
@@ -124,11 +131,10 @@ pub fn available_adapters() -> Vec<&'static str> {
     #[cfg(feature = "mqtt")]
     adapters.push("mqtt");
 
-    #[cfg(feature = "modbus")]
-    adapters.push("modbus");
+    #[cfg(feature = "http")]
+    adapters.push("http");
 
-    #[cfg(feature = "hass")]
-    adapters.push("hass");
+    adapters.push("webhook");
 
     adapters
 }
@@ -136,11 +142,12 @@ pub fn available_adapters() -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_available_adapters() {
         let adapters = available_adapters();
-        // At least mqtt should be available (default feature)
+        // At least one adapter should be available (default features)
         assert!(!adapters.is_empty());
     }
 
@@ -149,5 +156,17 @@ mod tests {
         let event_bus = EventBus::new();
         let result = create_adapter("unknown", &serde_json::json!({}), &event_bus);
         assert!(result.is_err());
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn test_create_adapter_http() {
+        let event_bus = EventBus::new();
+        let config = json!({
+            "name": "test_http",
+            "devices": []
+        });
+        let result = create_adapter("http", &config, &event_bus);
+        assert!(result.is_ok());
     }
 }

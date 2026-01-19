@@ -2,11 +2,10 @@
 //!
 //! Provides conversion between technical formats and human-readable descriptions.
 
-use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use edge_ai_devices::mdl_format::{CommandDefinition, DeviceTypeDefinition, MetricDefinition};
+use edge_ai_devices::mdl_format::DeviceTypeDefinition;
 use edge_ai_rules::dsl::{ComparisonOperator, ParsedRule, RuleAction};
 
 /// Supported languages for translation.
@@ -104,7 +103,7 @@ impl MdlTranslator {
             ));
             for (i, metric) in device.uplink.metrics.iter().enumerate() {
                 if i > 0 {
-                    desc.push_str("、");
+                    desc.push('、');
                 }
                 desc.push_str(&metric.display_name);
             }
@@ -118,7 +117,7 @@ impl MdlTranslator {
             ));
             for (i, cmd) in device.downlink.commands.iter().enumerate() {
                 if i > 0 {
-                    desc.push_str("、");
+                    desc.push('、');
                 }
                 desc.push_str(&cmd.display_name);
             }
@@ -541,7 +540,7 @@ impl NlToDslConverter {
         if let Some(start) = desc_lower.find("规则名为") {
             let start = start + "规则名为".len();
             if let Some(end) =
-                description[start..].find(|c: char| c == '，' || c == '。' || c == ',')
+                description[start..].find(['，', '。', ','])
             {
                 return Some(description[start..start + end].trim().to_string());
             }
@@ -550,7 +549,7 @@ impl NlToDslConverter {
         if let Some(start) = desc_lower.find("名为") {
             let start = start + "名为".len();
             if let Some(end) =
-                description[start..].find(|c: char| c == ' ' || c == '，' || c == '。' || c == ',')
+                description[start..].find([' ', '，', '。', ','])
             {
                 return Some(description[start..start + end].trim().to_string());
             }
@@ -654,7 +653,7 @@ impl NlToDslConverter {
             let message = if let Some(start) = text.find("通知") {
                 // Extract message content
                 let after = &text[start + "通知".len()..];
-                if let Some(end) = after.find(|c: char| c == '，' || c == '。' || c == ',') {
+                if let Some(end) = after.find(['，', '。', ',']) {
                     after[..end].trim().to_string()
                 } else {
                     "规则触发".to_string()
@@ -822,6 +821,8 @@ pub enum ConversionError {
 mod tests {
     use super::*;
     use edge_ai_rules::dsl::RuleDslParser;
+    use edge_ai_devices::mdl_format::MetricDefinition;
+    use edge_ai_devices::MetricDataType;
     use std::collections::HashMap;
 
     #[test]

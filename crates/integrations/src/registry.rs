@@ -169,12 +169,11 @@ impl IntegrationRegistry {
         // Stop the integration first if running
         {
             let integrations = self.integrations.read();
-            if let Some(state) = integrations.get(id) {
-                if state.running.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Some(state) = integrations.get(id)
+                && state.running.load(std::sync::atomic::Ordering::Relaxed) {
                     drop(integrations);
                     self.stop(id).await?;
                 }
-            }
         }
 
         let mut integrations = self.integrations.write();
@@ -231,15 +230,12 @@ impl IntegrationRegistry {
             let mut stream = integration.subscribe();
 
             while let Some(event) = stream.next().await {
-                match &event {
-                    IntegrationEvent::Error { message, .. } => {
-                        let _ = registry_sender.send(RegistryEvent::Error {
-                            id: id_for_task.clone(),
-                            error: message.clone(),
-                            timestamp: chrono::Utc::now().timestamp(),
-                        });
-                    }
-                    _ => {}
+                if let IntegrationEvent::Error { message, .. } = &event {
+                    let _ = registry_sender.send(RegistryEvent::Error {
+                        id: id_for_task.clone(),
+                        error: message.clone(),
+                        timestamp: chrono::Utc::now().timestamp(),
+                    });
                 }
 
                 // Convert integration event to NeoTalk event and publish
@@ -460,7 +456,7 @@ impl IntegrationRegistry {
             },
             IntegrationEvent::StateChanged { .. } => NeoTalkEvent::LlmResponse {
                 session_id: source_id.to_string(),
-                content: format!("Integration state changed"),
+                content: "Integration state changed".to_string(),
                 tools_used: vec![],
                 processing_time_ms: 0,
                 timestamp,
@@ -532,7 +528,7 @@ impl IntegrationRegistryBuilder {
 
     /// Build the registry.
     pub fn build(self) -> IntegrationRegistry {
-        let event_bus = self.event_bus.unwrap_or_else(EventBus::new);
+        let event_bus = self.event_bus.unwrap_or_default();
         IntegrationRegistry::new(event_bus)
     }
 }

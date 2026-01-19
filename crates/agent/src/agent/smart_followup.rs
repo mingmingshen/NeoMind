@@ -289,8 +289,8 @@ impl SmartFollowUpManager {
         }
 
         // 温度设置类
-        if lower.contains("设置") && lower.contains("温度") {
-            if !lower.contains(|c: char| c.is_ascii_digit()) {
+        if lower.contains("设置") && lower.contains("温度")
+            && !lower.contains(|c: char| c.is_ascii_digit()) {
                 followups.push(FollowUpItem {
                     followup_type: FollowUpType::MissingValue,
                     priority: FollowUpPriority::High,
@@ -299,7 +299,6 @@ impl SmartFollowUpManager {
                     can_proceed_degraded: false,
                 });
             }
-        }
 
         // 查询温湿度
         if (lower == "温度" || lower == "湿度" || lower == "温湿度")
@@ -399,15 +398,14 @@ impl SmartFollowUpManager {
         }
 
         // 创建规则意图
-        if lower.contains("创建") || lower.contains("添加") || lower.contains("新建") {
-            if lower.contains("规则") || lower.contains("自动化") {
+        if (lower.contains("创建") || lower.contains("添加") || lower.contains("新建"))
+            && (lower.contains("规则") || lower.contains("自动化")) {
                 intents.push(DetectedIntent {
                     description: "创建自动化规则".to_string(),
                     confidence: 0.95,
                     entities: vec![],
                 });
             }
-        }
 
         intents
     }
@@ -445,7 +443,7 @@ impl SmartFollowUpManager {
     fn generate_fallback_suggestion(
         &self,
         followups: &[FollowUpItem],
-        original_input: &str,
+        _original_input: &str,
         context: &ConversationContext,
     ) -> Option<String> {
         if followups.is_empty() {
@@ -453,18 +451,16 @@ impl SmartFollowUpManager {
         }
 
         // 如果只是缺少位置，但有上下文位置
-        if followups.iter().any(|f| f.followup_type == FollowUpType::MissingLocation) {
-            if let Some(loc) = &context.current_location {
+        if followups.iter().any(|f| f.followup_type == FollowUpType::MissingLocation)
+            && let Some(loc) = &context.current_location {
                 return Some(format!("我理解您可能是指「{}」，是否继续？", loc));
             }
-        }
 
         // 如果是模糊意图
-        if followups.iter().any(|f| f.followup_type == FollowUpType::AmbiguousIntent) {
-            if context.topic == ConversationTopic::DataQuery {
+        if followups.iter().any(|f| f.followup_type == FollowUpType::AmbiguousIntent)
+            && context.topic == ConversationTopic::DataQuery {
                 return Some("我可以先为您查询当前状态".to_string());
             }
-        }
 
         None
     }

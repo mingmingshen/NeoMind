@@ -18,7 +18,7 @@ use crate::handlers::{
 use crate::models::ErrorResponse;
 use edge_ai_devices::{
     adapter::ConnectionStatus as AdapterConnectionStatus,
-    mdl::ConnectionStatus as MdlConnectionStatus, service::DeviceStatus,
+    mdl::ConnectionStatus as MdlConnectionStatus,
 };
 
 /// Convert AdapterConnectionStatus to MdlConnectionStatus
@@ -63,17 +63,16 @@ pub async fn list_devices_handler(
 
     // Get all devices
     let configs = state.device_service.list_devices().await;
-    let total = configs.len();
+    let _total = configs.len();
 
     // Apply filters if provided
     let mut filtered_configs = Vec::new();
     for config in configs {
         // Filter by device_type
-        if let Some(ref filter_type) = pagination.device_type {
-            if &config.device_type != filter_type {
+        if let Some(ref filter_type) = pagination.device_type
+            && &config.device_type != filter_type {
                 continue;
             }
-        }
 
         // Filter by status
         if let Some(ref filter_status) = pagination.status {
@@ -117,7 +116,7 @@ pub async fn list_devices_handler(
             .await;
         let status = convert_status(device_status.status);
         let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
-            .unwrap_or_else(|| chrono::Utc::now());
+            .unwrap_or_else(chrono::Utc::now);
         let online = matches!(device_status.status, AdapterConnectionStatus::Connected);
 
         let instance = config_to_device_instance(&config, status, last_seen);
@@ -190,7 +189,7 @@ pub async fn get_device_handler(
     let device_status = state.device_service.get_device_status(&device_id).await;
     let status = convert_status(device_status.status);
     let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
-        .unwrap_or_else(|| chrono::Utc::now());
+        .unwrap_or_else(chrono::Utc::now);
     let instance = config_to_device_instance(&config, status, last_seen);
 
     // Get plugin info for display
@@ -229,7 +228,7 @@ pub async fn delete_device_handler(
         .device_service
         .unregister_device(&device_id)
         .await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to delete device: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to delete device: {}", e)))?;
     ok(json!({
         "device_id": device_id,
         "deleted": true,
@@ -259,7 +258,7 @@ pub async fn add_device_handler(
     // Parse connection_config JSON into ConnectionConfig
     let connection_config: edge_ai_devices::ConnectionConfig =
         serde_json::from_value(req.connection_config).map_err(|e| {
-            ErrorResponse::bad_request(&format!("Invalid connection_config: {}", e))
+            ErrorResponse::bad_request(format!("Invalid connection_config: {}", e))
         })?;
 
     // Create DeviceConfig
@@ -277,7 +276,7 @@ pub async fn add_device_handler(
         .device_service
         .register_device(config)
         .await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to add device: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to add device: {}", e)))?;
 
     ok(json!({
         "device_id": device_id,
@@ -302,7 +301,7 @@ pub async fn update_device_handler(
     // Parse connection_config if provided
     let connection_config = if let Some(config_json) = req.connection_config {
         serde_json::from_value(config_json)
-            .map_err(|e| ErrorResponse::bad_request(&format!("Invalid connection_config: {}", e)))?
+            .map_err(|e| ErrorResponse::bad_request(format!("Invalid connection_config: {}", e)))?
     } else {
         existing.connection_config
     };
@@ -322,7 +321,7 @@ pub async fn update_device_handler(
         .device_service
         .update_device(&device_id, config)
         .await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to update device: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to update device: {}", e)))?;
 
     ok(json!({
         "device_id": device_id,

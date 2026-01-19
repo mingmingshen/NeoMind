@@ -5,7 +5,6 @@
 pub mod audit;
 pub mod auth;
 pub mod auth_users;
-pub mod builtin_plugins;
 pub mod cache;
 pub mod config;
 pub mod crypto;

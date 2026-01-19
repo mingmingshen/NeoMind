@@ -139,7 +139,7 @@ impl SmartConversationManager {
     }
 
     /// 检测信息是否不足
-    fn detect_missing_info(&self, original: &str, lower: &str) -> Option<String> {
+    fn detect_missing_info(&self, _original: &str, lower: &str) -> Option<String> {
         // 设备控制相关
         if lower.contains("打开") || lower.contains("关闭") || lower.contains("开启") {
             // 检查是否指定了位置或具体设备

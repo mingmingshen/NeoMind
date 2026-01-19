@@ -84,6 +84,7 @@
 pub mod alert;
 pub mod channel_schema;
 pub mod channels;
+pub mod escalation;
 pub mod error;
 pub mod manager;
 pub mod plugin;
@@ -91,6 +92,9 @@ pub mod plugin_adapter;
 
 pub use alert::{Alert, AlertId, AlertSeverity, AlertStatus};
 pub use channels::{ConsoleChannel, ConsoleChannelFactory, MemoryChannel, MemoryChannelFactory};
+pub use escalation::{
+    EscalationConfig, EscalationManager, EscalationRecord, EscalationRule,
+};
 #[cfg(feature = "email")]
 pub use channels::EmailChannelFactory;
 #[cfg(feature = "webhook")]

@@ -57,64 +57,6 @@ impl From<&str> for BackendId {
     }
 }
 
-impl From<BackendType> for BackendId {
-    fn from(backend_type: BackendType) -> Self {
-        match backend_type {
-            BackendType::Hailo => Self(BackendId::HAILO.to_string()),
-            BackendType::Candle => Self(BackendId::CANDLE.to_string()),
-            BackendType::Cloud => Self(BackendId::OPENAI.to_string()),
-            BackendType::Remote => Self("remote".to_string()),
-            BackendType::Mock => Self(BackendId::MOCK.to_string()),
-        }
-    }
-}
-
-impl From<&BackendType> for BackendId {
-    fn from(backend_type: &BackendType) -> Self {
-        match backend_type {
-            BackendType::Hailo => Self(BackendId::HAILO.to_string()),
-            BackendType::Candle => Self(BackendId::CANDLE.to_string()),
-            BackendType::Cloud => Self(BackendId::OPENAI.to_string()),
-            BackendType::Remote => Self("remote".to_string()),
-            BackendType::Mock => Self(BackendId::MOCK.to_string()),
-        }
-    }
-}
-
-/// Legacy backend type enum for compatibility.
-#[deprecated(note = "Use BackendId instead for dynamic backends")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BackendType {
-    /// Hailo-10H NPU accelerator (production)
-    Hailo,
-
-    /// Candle CPU/GPU inference (development)
-    Candle,
-
-    /// Cloud LLM (OpenAI, Qwen, etc.)
-    Cloud,
-
-    /// Remote inference server (mistral.rs, vLLM, etc.)
-    Remote,
-
-    /// Mock backend for testing
-    Mock,
-}
-
-impl BackendType {
-    /// Parse from string.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "hailo" => Some(Self::Hailo),
-            "candle" => Some(Self::Candle),
-            "cloud" | "openai" | "qwen" => Some(Self::Cloud),
-            "remote" | "mistral" => Some(Self::Remote),
-            "mock" => Some(Self::Mock),
-            _ => None,
-        }
-    }
-}
-
 /// Generation parameters.
 #[derive(Debug, Clone)]
 pub struct GenerationParams {
@@ -238,8 +180,8 @@ impl LlmInput {
 
     /// Add multimodal content to user message.
     pub fn with_image(mut self, _image: ImageContent) -> Self {
-        if let Some(msg) = self.messages.last_mut() {
-            if msg.role == MessageRole::User {
+        if let Some(msg) = self.messages.last_mut()
+            && msg.role == MessageRole::User {
                 // Convert to multimodal content
                 let text = msg.text();
                 msg.content = crate::message::Content::text(format!(
@@ -251,7 +193,6 @@ impl LlmInput {
                     }
                 ));
             }
-        }
         self
     }
 }
@@ -467,13 +408,11 @@ impl BackendRegistry {
             if req.function_calling && !caps.function_calling {
                 return Ok(false);
             }
-            if let Some(min_context) = req.min_context {
-                if let Some(max_context) = caps.max_context {
-                    if max_context < min_context {
+            if let Some(min_context) = req.min_context
+                && let Some(max_context) = caps.max_context
+                    && max_context < min_context {
                         return Ok(false);
                     }
-                }
-            }
 
             Ok(true)
         } else {
@@ -798,7 +737,7 @@ impl DynamicLlmRuntime {
 
     /// Get the first available backend.
     pub fn first_available(&self) -> Option<(&str, &dyn LlmRuntime)> {
-        for (backend_id, backend) in &self.backends {
+        if let Some((backend_id, backend)) = self.backends.iter().next() {
             return Some((backend_id.as_str(), backend.as_ref()));
         }
         None
@@ -864,15 +803,6 @@ impl LlmRuntime for DynamicLlmRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_backend_type_from_str() {
-        assert_eq!(BackendType::from_str("hailo"), Some(BackendType::Hailo));
-        assert_eq!(BackendType::from_str("candle"), Some(BackendType::Candle));
-        assert_eq!(BackendType::from_str("cloud"), Some(BackendType::Cloud));
-        assert_eq!(BackendType::from_str("openai"), Some(BackendType::Cloud));
-        assert_eq!(BackendType::from_str("unknown"), None);
-    }
 
     #[test]
     fn test_llm_input_builder() {

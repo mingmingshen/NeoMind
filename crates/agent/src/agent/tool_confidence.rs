@@ -315,8 +315,8 @@ impl ToolConfidenceManager {
 
     /// 评估结果一致性（与历史记录比较）
     fn evaluate_consistency(&mut self, tool_name: &str, content: &str) -> f32 {
-        if let Some(history) = self.tool_history.get(tool_name) {
-            if !history.is_empty() {
+        if let Some(history) = self.tool_history.get(tool_name)
+            && !history.is_empty() {
                 let last_result = &history[history.len() - 1];
 
                 // 如果结果完全相同，认为是稳定的
@@ -330,14 +330,13 @@ impl ToolConfidenceManager {
                     return -0.1;
                 }
             }
-        }
         0.0
     }
 
     /// 记录工具执行结果到历史
     pub fn record_result(&mut self, result: ToolExecutionResult) {
         let tool_name = result.tool_name.clone();
-        let history = self.tool_history.entry(tool_name).or_insert_with(Vec::new);
+        let history = self.tool_history.entry(tool_name).or_default();
 
         history.push(result);
         // 限制历史记录大小

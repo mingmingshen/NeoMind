@@ -6,7 +6,6 @@
 use crate::plugin::PluginError;
 use notify::{Event, EventKind, RecommendedWatcher, Watcher};
 use serde_json::Value;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -350,7 +349,7 @@ impl ConfigReloadManager {
 impl Default for ConfigReloadManager {
     fn default() -> Self {
         // Use a blocking spawn for Default since we can't be async in Default
-        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let (tx, _rx) = std::sync::mpsc::channel::<()>();
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().unwrap();

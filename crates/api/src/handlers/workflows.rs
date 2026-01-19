@@ -107,7 +107,7 @@ async fn get_workflow_engine(
     let engine_opt = state.workflow_engine.read().await;
     engine_opt
         .as_ref()
-        .map(|arc| Arc::clone(arc))
+        .map(Arc::clone)
         .ok_or_else(|| ErrorResponse::service_unavailable("Workflow engine not initialized"))
 }
 
@@ -516,7 +516,7 @@ pub async fn import_workflows_handler(
     .map_err(|e| ErrorResponse::bad_request(format!("Invalid workflows data: {}", e)))?;
 
     let mut imported = 0usize;
-    let mut skipped = 0usize;
+    let skipped = 0usize;
     let mut errors = Vec::new();
 
     for mut workflow in workflows_to_import {
@@ -552,44 +552,115 @@ pub async fn import_workflows_handler(
 }
 
 /// Get available resources for workflow building.
+/// Now uses DeviceTypeTemplate for actual device capabilities instead of generic metrics.
 ///
 /// GET /api/workflows/resources
 pub async fn get_workflow_resources_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    // Get devices from device registry
+    
+
+    // Get devices with their templates
+    let all_devices = state.device_service.list_devices().await;
+
+    // Build detailed device list with actual metrics and commands
     let devices: Vec<serde_json::Value> = {
-        let device_configs = state.device_registry.list_devices().await;
-        device_configs.into_iter().map(|d| {
-            json!({
-                "id": d.device_id,
-                "name": d.name,
-                "type": d.device_type,
-            })
-        }).collect()
+        let mut result = Vec::new();
+        for device in all_devices {
+            // Get the template for this device type
+            let template = state.device_service.get_template(&device.device_type).await;
+
+            let device_json = if let Some(tpl) = template {
+                // Use actual template metrics and commands
+                let metrics: Vec<serde_json::Value> = tpl.metrics.iter().map(|m| {
+                    json!({
+                        "name": m.name,
+                        "display_name": m.display_name,
+                        "data_type": format!("{:?}", m.data_type),
+                        "unit": m.unit,
+                        "min": m.min,
+                        "max": m.max,
+                    })
+                }).collect();
+
+                let commands: Vec<serde_json::Value> = tpl.commands.iter().map(|c| {
+                    json!({
+                        "name": c.name,
+                        "display_name": c.display_name,
+                        "description": c.llm_hints,
+                        "parameters": c.parameters.iter().map(|p| {
+                            json!({
+                                "name": p.name,
+                                "display_name": p.display_name,
+                                "data_type": format!("{:?}", p.data_type),
+                                "default": p.default_value,
+                                "min": p.min,
+                                "max": p.max,
+                                "unit": p.unit,
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                }).collect();
+
+                json!({
+                    "id": device.device_id,
+                    "name": device.name,
+                    "type": device.device_type,
+                    "description": tpl.description,
+                    "categories": tpl.categories,
+                    "mode": format!("{:?}", tpl.mode),
+                    "metrics": metrics,
+                    "commands": commands,
+                })
+            } else {
+                // Fallback for devices without template
+                json!({
+                    "id": device.device_id,
+                    "name": device.name,
+                    "type": device.device_type,
+                    "metrics": [{"name": "value", "display_name": "Value", "data_type": "Number"}],
+                    "commands": [
+                        {"name": "on", "display_name": "On"},
+                        {"name": "off", "display_name": "Off"}
+                    ],
+                })
+            };
+
+            result.push(device_json);
+        }
+        result
     };
 
-    // Common metrics
-    let metrics = vec![
-        "temperature".to_string(),
-        "humidity".to_string(),
-        "pressure".to_string(),
-        "value".to_string(),
-        "state".to_string(),
-        "status".to_string(),
-        "battery".to_string(),
-        "signal".to_string(),
-    ];
+    // Collect all unique metric names across all device types
+    let mut metric_names = std::collections::HashSet::new();
+    let templates = state.device_service.list_templates().await;
+    for tpl in &templates {
+        for metric in &tpl.metrics {
+            metric_names.insert(metric.name.clone());
+        }
+    }
+    // Add some common metrics as fallback
+    if metric_names.is_empty() {
+        for name in &["temperature", "humidity", "pressure", "value", "state", "status", "battery", "signal"] {
+            metric_names.insert(name.to_string());
+        }
+    }
+    let metrics: Vec<String> = metric_names.into_iter().collect();
 
     // Alert channels
-    let channels = state
-        .alert_manager
-        .list_channels()
-        .await;
+    let channels = state.alert_manager.list_channels().await;
 
     ok(json!({
         "devices": devices,
         "metrics": metrics,
         "alert_channels": channels,
+        "device_types": templates.iter().map(|t| json!({
+            "device_type": t.device_type,
+            "name": t.name,
+            "description": t.description,
+            "categories": t.categories,
+            "metric_count": t.metrics.len(),
+            "command_count": t.commands.len(),
+        })).collect::<Vec<_>>(),
     }))
 }

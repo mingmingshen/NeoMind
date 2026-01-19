@@ -41,18 +41,15 @@ pub enum EmbeddedBrokerError {
 /// connections are managed via the data sources page (ExternalBroker).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum BrokerMode {
     /// Use external MQTT broker (deprecated)
     External,
     /// Use embedded broker (default)
+    #[default]
     Embedded,
 }
 
-impl Default for BrokerMode {
-    fn default() -> Self {
-        Self::Embedded
-    }
-}
 
 /// Configuration for the embedded broker
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -306,10 +303,7 @@ impl EmbeddedBroker {
 pub fn is_port_available(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
-    match TcpListener::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port)) {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    TcpListener::bind((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port)).is_ok()
 }
 
 /// Helper function to check if MQTT broker is already running on the specified port

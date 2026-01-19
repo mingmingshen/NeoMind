@@ -426,41 +426,35 @@ impl DecisionStore {
 
     /// Check if a decision matches the given filter.
     fn matches_filter(&self, decision: &StoredDecision, filter: &DecisionFilter) -> bool {
-        if let Some(decision_type) = filter.decision_type {
-            if decision.decision_type != decision_type {
+        if let Some(decision_type) = filter.decision_type
+            && decision.decision_type != decision_type {
                 return false;
             }
-        }
 
-        if let Some(priority) = filter.priority {
-            if decision.priority != priority {
+        if let Some(priority) = filter.priority
+            && decision.priority != priority {
                 return false;
             }
-        }
 
-        if let Some(status) = filter.status {
-            if decision.status != status {
+        if let Some(status) = filter.status
+            && decision.status != status {
                 return false;
             }
-        }
 
-        if let Some(min_confidence) = filter.min_confidence {
-            if decision.confidence < min_confidence {
+        if let Some(min_confidence) = filter.min_confidence
+            && decision.confidence < min_confidence {
                 return false;
             }
-        }
 
-        if let Some(start_time) = filter.start_time {
-            if decision.created_at < start_time {
+        if let Some(start_time) = filter.start_time
+            && decision.created_at < start_time {
                 return false;
             }
-        }
 
-        if let Some(end_time) = filter.end_time {
-            if decision.created_at > end_time {
+        if let Some(end_time) = filter.end_time
+            && decision.created_at > end_time {
                 return false;
             }
-        }
 
         true
     }

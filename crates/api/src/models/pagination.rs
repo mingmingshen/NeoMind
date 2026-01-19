@@ -53,7 +53,7 @@ impl PaginationParams {
 
     /// Calculate total pages.
     pub fn total_pages(&self, total_count: u32) -> u32 {
-        (total_count + self.page_size - 1) / self.page_size
+        total_count.div_ceil(self.page_size)
     }
 }
 
@@ -87,7 +87,7 @@ impl PaginationMeta {
     /// Create pagination metadata.
     pub fn new(page: u32, page_size: u32, total_count: u32) -> Self {
         let total_pages = if page_size > 0 {
-            (total_count + page_size - 1) / page_size
+            total_count.div_ceil(page_size)
         } else {
             0
         };

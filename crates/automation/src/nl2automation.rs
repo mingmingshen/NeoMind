@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use crate::types::*;
 use crate::error::{AutomationError, Result};
 use edge_ai_core::{LlmRuntime, Message, GenerationParams};
 use edge_ai_core::llm::backend::LlmInput;

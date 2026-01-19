@@ -15,10 +15,6 @@ import type {
   DiscoveredDevice,
   AdapterPluginDto,
   AddDeviceRequest,
-  HassDiscoveryStatus,
-  HassDiscoveredDevice,
-  HassDiscoveryRequest,
-  HassDiscoveryResponse,
 } from '@/types'
 import { api } from '@/lib/api'
 
@@ -26,11 +22,6 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   // Device Adapter State
   deviceAdapters: AdapterPluginDto[]
   deviceAdaptersLoading: boolean
-
-  // HASS Discovery State
-  hassDiscoveryStatus: HassDiscoveryStatus | null
-  hassDiscoveredDevices: HassDiscoveredDevice[]
-  hassDiscovering: boolean
 
   // Actions
   setSelectedDevice: (device: Device | null) => void
@@ -62,15 +53,6 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
 
   // Device Adapter Actions
   fetchDeviceAdapters: () => Promise<void>
-
-  // HASS Discovery Actions
-  fetchHassDiscoveryStatus: () => Promise<void>
-  fetchHassDiscoveredDevices: () => Promise<void>
-  startHassDiscovery: (req: HassDiscoveryRequest) => Promise<HassDiscoveryResponse>
-  stopHassDiscovery: () => Promise<void>
-  registerHassDevice: (deviceId: string) => Promise<boolean>
-  unregisterHassDevice: (deviceId: string) => Promise<boolean>
-  clearHassDiscoveredDevices: () => void
 }
 
 export const createDeviceSlice: StateCreator<
@@ -97,11 +79,6 @@ export const createDeviceSlice: StateCreator<
   // Device Adapters state
   deviceAdapters: [],
   deviceAdaptersLoading: false,
-
-  // HASS Discovery state
-  hassDiscoveryStatus: null,
-  hassDiscoveredDevices: [],
-  hassDiscovering: false,
 
   // Telemetry state
   telemetryData: null,
@@ -335,76 +312,5 @@ export const createDeviceSlice: StateCreator<
     } finally {
       set({ deviceAdaptersLoading: false })
     }
-  },
-
-  // HASS Discovery
-  fetchHassDiscoveryStatus: async () => {
-    try {
-      const status = await api.getHassDiscoveryStatus()
-      set({ hassDiscoveryStatus: status })
-    } catch (error) {
-      console.error('Failed to fetch HASS discovery status:', error)
-      set({ hassDiscoveryStatus: null })
-    }
-  },
-
-  fetchHassDiscoveredDevices: async () => {
-    try {
-      const data = await api.getHassDiscoveredDevices()
-      set({ hassDiscoveredDevices: data.devices || [] })
-    } catch (error) {
-      console.error('Failed to fetch HASS discovered devices:', error)
-      set({ hassDiscoveredDevices: [] })
-    }
-  },
-
-  startHassDiscovery: async (req) => {
-    set({ hassDiscovering: true })
-    try {
-      const result = await api.startHassDiscovery(req)
-      return result
-    } catch (error) {
-      console.error('Failed to start HASS discovery:', error)
-      throw error
-    } finally {
-      set({ hassDiscovering: false })
-    }
-  },
-
-  stopHassDiscovery: async () => {
-    try {
-      await api.stopHassDiscovery()
-      set({ hassDiscovering: false })
-    } catch (error) {
-      console.error('Failed to stop HASS discovery:', error)
-    }
-  },
-
-  registerHassDevice: async (deviceId) => {
-    try {
-      await api.registerAggregatedHassDevice(deviceId)
-      // Refresh discovered devices after registration
-      await get().fetchHassDiscoveredDevices()
-      return true
-    } catch (error) {
-      console.error('Failed to register HASS device:', error)
-      return false
-    }
-  },
-
-  unregisterHassDevice: async (deviceId) => {
-    try {
-      await api.unregisterHassDevice(deviceId)
-      // Refresh discovered devices after unregistration
-      await get().fetchHassDiscoveredDevices()
-      return true
-    } catch (error) {
-      console.error('Failed to unregister HASS device:', error)
-      return false
-    }
-  },
-
-  clearHassDiscoveredDevices: () => {
-    set({ hassDiscoveredDevices: [] })
   },
 })

@@ -81,11 +81,10 @@ impl RedbBackend {
             (db, Some(temp_path))
         } else {
             let path_ref = Path::new(path);
-            if config.create_dirs {
-                if let Some(parent) = path_ref.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| StorageError::Io(e))?;
+            if config.create_dirs
+                && let Some(parent) = path_ref.parent() {
+                    std::fs::create_dir_all(parent).map_err(StorageError::Io)?;
                 }
-            }
 
             let db = if path_ref.exists() {
                 Database::open(path_ref).map_err(|e| StorageError::Backend(e.to_string()))?

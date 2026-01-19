@@ -254,5 +254,9 @@
     "defaultModel": "默认模型",
     "manageBackends": "管理多个 LLM 后端，支持运行时切换",
     "running": "运行中"
-  }
+  },
+  "noBackends": "暂无 LLM 后端",
+  "noBackendsDesc": "无法从服务器加载 LLM 后端类型",
+  "noAdapters": "暂无适配器类型",
+  "noAdaptersDesc": "无法从服务器加载设备适配器类型"
 }

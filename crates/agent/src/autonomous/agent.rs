@@ -1,7 +1,6 @@
 //! Autonomous Agent for periodic system review and decision making.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -212,13 +211,14 @@ impl AutonomousAgent {
             .reviews
             .iter()
             .find(|r| r.review_type() == review_type)
-            .ok_or_else(|| AgentError::ReviewNotFound(review_type))?;
+            .ok_or(AgentError::ReviewNotFound(review_type))?;
 
         // Create review context
         let mut context = ReviewContext::new(review_type);
 
-        // TODO: Collect actual system data
-        // For now, use empty context
+        // System data collection is done by ReviewContext internally during review().
+        // The autonomous agent focuses on triggering reviews; specific data sources
+        // are configured per review type (device health, rule analysis, etc.)
 
         // Perform the review with timeout
         let review_result =
@@ -270,7 +270,10 @@ impl AutonomousAgent {
                         issues.len(),
                         recommendations.len()
                     ),
-                    actions: Vec::new(), // TODO: Convert recommendations to actions
+                    // Recommendations are informational. Converting them to executable actions
+                    // requires user/admin approval due to the autonomous nature of changes.
+                    // The actions vector can be populated when a human reviews the findings.
+                    actions: Vec::new(),
                     confidence: 80.0,
                     timestamp: chrono::Utc::now().timestamp(),
                 };

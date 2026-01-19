@@ -37,11 +37,15 @@
 pub mod agent;
 pub mod autonomous;
 pub mod concurrency;
+pub mod context;
 pub mod context_selector;
 pub mod error;
 pub mod llm;
 pub mod prompts;
 pub mod session;
+pub mod session_sync;
+pub mod smart_conversation;
+pub mod task_orchestrator;
 pub mod tools;
 pub mod translation;
 
@@ -60,6 +64,11 @@ pub use concurrency::{
 };
 pub use error::{AgentError, NeoTalkError, Result};
 pub use session::SessionManager;
+pub use session_sync::{
+    ConflictResolution, SerializableMessage, SessionStateUpdate, SessionSyncAdapter,
+    SessionSyncConfig, SessionSyncManager,
+    merge_messages,
+};
 pub use tools::{
     EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
 };

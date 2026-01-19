@@ -3,15 +3,17 @@
 //! This module analyzes user queries and selects relevant context
 //! (device types, rules, metrics) for efficient LLM processing.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_devices::mdl_format::DeviceTypeDefinition;
-use edge_ai_rules::{CompiledRule, RuleEngine};
+use edge_ai_rules::RuleEngine;
+
+// Import configuration for default max_tokens
+use edge_ai_core::config::agent_env_vars;
 
 /// Intent analysis result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,8 +281,8 @@ impl IntentAnalyzer {
                 if num_start.is_none() {
                     num_start = Some(i);
                 }
-            } else if let Some(start) = num_start {
-                if c.is_whitespace() || !c.is_ascii_digit() {
+            } else if let Some(start) = num_start
+                && (c.is_whitespace() || !c.is_ascii_digit()) {
                     entities.push(Entity {
                         entity_type: EntityType::Threshold,
                         value: query[start..i].to_string(),
@@ -288,7 +290,6 @@ impl IntentAnalyzer {
                     });
                     num_start = None;
                 }
-            }
         }
         if let Some(start) = num_start {
             entities.push(Entity {
@@ -416,7 +417,7 @@ impl ContextSelector {
             analyzer: IntentAnalyzer::new(),
             device_types: Arc::new(RwLock::new(Vec::new())),
             rule_engine: Arc::new(RwLock::new(None)),
-            max_tokens: 4000,
+            max_tokens: agent_env_vars::context_selector_tokens(),
         }
     }
 
@@ -442,7 +443,7 @@ impl ContextSelector {
     pub async fn register_with_analyzer(&self) {
         let device_types = self.device_types.read().await;
 
-        let device_ids: Vec<String> = device_types
+        let _device_ids: Vec<String> = device_types
             .iter()
             .flat_map(|dt| {
                 let ids = vec![dt.device_type.clone()];

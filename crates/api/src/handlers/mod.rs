@@ -2,6 +2,7 @@
 
 pub mod alerts;
 pub mod alert_channels;
+pub mod automations;
 pub mod auth;
 pub mod auth_users;
 pub mod basic;
@@ -12,17 +13,17 @@ pub mod config;
 pub mod decisions;
 pub mod devices;
 pub mod events;
-pub mod hass;
+pub mod extensions;
 pub mod llm_backends;
 pub mod memory;
 pub mod mqtt;
 pub mod plugins;
 pub mod rules;
-pub mod scenarios;
 pub mod search;
 pub mod sessions;
 pub mod settings;
 pub mod stats;
+pub mod test_data;
 pub mod tools;
 pub mod workflows;
 
@@ -40,15 +41,15 @@ pub use alert_channels::{
 };
 pub use basic::health_handler;
 pub use devices::{
-    add_device_handler, aggregate_metric_handler, clear_hass_discovered_devices_handler,
+    add_device_handler, aggregate_metric_handler,
     delete_device_handler, delete_device_type_handler, discover_devices_handler,
-    discover_hass_devices_handler, discovery_info_handler, generate_mdl_handler,
+    discovery_info_handler, generate_mdl_handler,
     get_device_command_history_handler, get_device_handler, get_device_telemetry_handler,
     get_device_telemetry_summary_handler, get_device_type_handler,
-    get_hass_discovered_devices_handler, hass_discovery_status_handler, list_device_metrics_debug_handler,
-    list_device_types_handler, list_devices_handler, process_hass_discovery_handler, query_metric_handler,
-    read_metric_handler, register_aggregated_hass_device_handler, register_device_type_handler,
-    send_command_handler, stop_hass_discovery_handler, validate_device_type_handler,
+    list_device_metrics_debug_handler,
+    list_device_types_handler, list_devices_handler, query_metric_handler,
+    read_metric_handler, register_device_type_handler,
+    send_command_handler, validate_device_type_handler,
 };
 pub use events::{
     event_history_handler, event_stats_handler, event_stream_handler, event_websocket_handler,
@@ -74,13 +75,20 @@ pub use decisions::{
 };
 // Stats API
 pub use stats::{get_device_stats_handler, get_rule_stats_handler, get_system_stats_handler};
-// Plugins API
+// Plugins API (deprecated, use Extensions API for dynamic extensions)
 pub use plugins::{
     disable_plugin_handler, discover_plugins_handler, enable_plugin_handler,
     execute_plugin_command_handler, get_plugin_config_handler, get_plugin_handler,
     get_plugin_stats_handler, get_plugin_types_handler, list_plugins_by_type_handler,
     list_plugins_handler, plugin_health_handler, register_plugin_handler, start_plugin_handler,
     stop_plugin_handler, unregister_plugin_handler, update_plugin_config_handler,
+};
+// Extensions API (new)
+pub use extensions::{
+    discover_extensions_handler, execute_extension_command_handler, extension_health_handler,
+    get_extension_handler, get_extension_stats_handler, list_extension_types_handler,
+    list_extensions_handler, register_extension_handler, start_extension_handler,
+    stop_extension_handler, unregister_extension_handler,
 };
 // LLM Backends API
 pub use llm_backends::{

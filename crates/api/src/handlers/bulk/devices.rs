@@ -4,7 +4,7 @@ use axum::{Json, extract::State};
 use serde_json::json;
 use std::collections::HashMap;
 
-use edge_ai_devices::{DeviceError, MetricValue};
+use edge_ai_devices::MetricValue;
 
 use super::models::{BulkDeleteDeviceTypesRequest, BulkOperationResult};
 use crate::handlers::common::HandlerResult;

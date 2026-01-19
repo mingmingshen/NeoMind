@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use edge_ai_core::{Message, SessionId};
+use edge_ai_core::{Message, config::agent_env_vars};
 
 /// Agent event emitted during streaming processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,17 +221,43 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             name: "NeoTalk Agent".to_string(),
-            // IMPORTANT: Keep system prompt SHORT to prevent excessive thinking
-            // Long prompts can trigger infinite thinking loops in reasoning models
-            system_prompt: r#"你是NeoTalk物联网助手。帮助用户管理设备、查询数据和配置规则。
+            system_prompt: r#"你是NeoTalk智能物联网助手。
 
-回复要求：简洁明了，直接回答问题。"#
+## 重要原则：信息不足时先询问，危险操作前先确认
+
+### 1. 信息追问（重要！）
+当用户请求信息不足时，**必须先询问**，不要猜测或假设：
+- 用户说"打开灯" → 回复"请问要打开哪个位置的灯？客厅、卧室还是厨房？"
+- 用户说"查看温度" → 回复"请问要查看哪个房间的温度？"
+- 用户说"创建规则" → 回复"请告诉我规则的触发条件和执行动作"
+
+### 2. 二次确认（重要！）
+执行以下操作前**必须确认**：
+- 删除规则/设备 → "确认要删除吗？此操作不可恢复。回复'确认'继续。"
+- 关闭所有设备 → "确认要关闭所有设备吗？回复'确认'继续。"
+- 批量操作 → "这会影响多个设备，确认执行吗？"
+
+### 3. 上下文对话
+记住对话历史：
+- 用户说"查看温度"后说"那湿度呢" → 理解为查看同一设备的湿度
+- 用"它"指代之前提到的设备或规则
+
+### 4. 意图澄清
+用户意图模糊时主动询问：
+- "温度" → "您是想查询当前温度，还是设置温度阈值？"
+
+## 工作流程
+1. 信息不足 → 询问用户
+2. 危险操作 → 要求确认
+3. 信息充足且安全 → 执行工具"#
                 .to_string(),
-            max_context_tokens: 8000,
-            temperature: 0.4,
+            // Load from environment variables with fallback to defaults
+            max_context_tokens: agent_env_vars::max_context_tokens(),
+            temperature: agent_env_vars::temperature(),
             enable_tools: true,
             enable_memory: true,
-            model: "qwen3-vl:2b".to_string(),
+            // Use qwen2.5:3b for native tool calling support (qwen2:1.5b doesn't support tools)
+            model: "qwen2.5:3b".to_string(),
             api_endpoint: std::env::var("OLLAMA_ENDPOINT")
                 .ok()
                 .or_else(|| std::env::var("OPENAI_ENDPOINT").ok())
@@ -368,29 +394,10 @@ impl AgentMessage {
         match self.role.as_str() {
             "user" => Message::user(&self.content),
             "assistant" => {
-                // If this message has tool calls, include them in the content
-                // so the LLM knows what tools were called in the conversation
-                if let Some(ref calls) = self.tool_calls {
-                    if !calls.is_empty() {
-                        let mut full_content = self.content.clone();
-                        // Don't append tool calls if content already ends with them (from streaming)
-                        if !full_content.contains("<tool_calls>") {
-                            full_content.push_str("\n\n[Tools called: ");
-                            for (i, call) in calls.iter().enumerate() {
-                                if i > 0 {
-                                    full_content.push_str(", ");
-                                }
-                                full_content.push_str(&call.name);
-                            }
-                            full_content.push(']');
-                        }
-                        Message::assistant(&full_content)
-                    } else {
-                        Message::assistant(&self.content)
-                    }
-                } else {
-                    Message::assistant(&self.content)
-                }
+                // Tool call information is already stored in the tool_calls field
+                // and rendered by the frontend's ToolCallVisualization component.
+                // No need to add placeholder text to the content.
+                Message::assistant(&self.content)
             }
             "system" => Message::system(&self.content),
             "tool" => {
@@ -604,7 +611,7 @@ mod tests {
     fn test_agent_config_default() {
         let config = AgentConfig::default();
         assert_eq!(config.name, "NeoTalk Agent");
-        assert_eq!(config.model, "qwen3-vl:2b");
+        assert_eq!(config.model, "qwen2.5:3b");
         assert!(config.enable_tools);
         assert!(config.enable_memory);
     }

@@ -115,7 +115,7 @@ impl AuthState {
                 // Load the metadata from the hashes table
                 let info = if let Ok(hash_table) = read_txn.open_table(API_KEY_HASHES_TABLE) {
                     if let Ok(Some(value)) = hash_table.get(hash_str) {
-                        bincode::deserialize(&value.value())?
+                        bincode::deserialize(value.value())?
                     } else {
                         // Fallback for old format
                         ApiKeyInfo {
@@ -241,11 +241,10 @@ impl AuthState {
     /// Validate an API key.
     pub fn validate_key(&self, key: &str) -> bool {
         let hash = self.crypto.hash_api_key(key);
-        if let Ok(keys) = self.api_keys.try_read() {
-            if let Some((_, info)) = keys.get(&hash) {
+        if let Ok(keys) = self.api_keys.try_read()
+            && let Some((_, info)) = keys.get(&hash) {
                 return info.active;
             }
-        }
         false
     }
 
@@ -318,18 +317,16 @@ impl AuthState {
         // Try to load from database, or save current keys
         if Self::load_from_db(self.db_path, &self.crypto).is_ok() {
             info!(category = "auth", "API keys loaded from persistent storage");
-        } else {
-            if let Err(e) = self.save_to_db(self.db_path) {
-                error!(category = "auth", error = %e, "Failed to initialize API key storage");
-            }
+        } else if let Err(e) = self.save_to_db(self.db_path) {
+            error!(category = "auth", error = %e, "Failed to initialize API key storage");
         }
     }
 
     /// Check if a key has a specific permission.
     pub fn check_permission(&self, key: &str, permission: &str) -> bool {
         let hash = self.crypto.hash_api_key(key);
-        if let Ok(keys) = self.api_keys.try_read() {
-            if let Some((_, info)) = keys.get(&hash) {
+        if let Ok(keys) = self.api_keys.try_read()
+            && let Some((_, info)) = keys.get(&hash) {
                 if !info.active {
                     return false;
                 }
@@ -340,7 +337,6 @@ impl AuthState {
                 // Check specific permission
                 return info.permissions.contains(&permission.to_string());
             }
-        }
         false
     }
 }
@@ -446,12 +442,10 @@ pub async fn optional_auth_middleware(
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.strip_prefix("Bearer "))
         })
-    {
-        if auth.validate_key(api_key) {
+        && auth.validate_key(api_key) {
             req.extensions_mut()
                 .insert(ValidatedApiKey(api_key.to_string()));
         }
-    }
 
     next.run(req).await
 }
@@ -466,11 +460,11 @@ pub async fn hybrid_auth_middleware(
     mut req: axum::extract::Request,
     next: Next,
 ) -> Result<Response, AuthError> {
-    use crate::auth_users::SessionInfo;
+    
 
     // First, try to extract and validate JWT token from Authorization header
-    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
-        if let Some(token) = auth_header.strip_prefix("Bearer ") {
+    if let Some(auth_header) = headers.get("authorization").and_then(|v| v.to_str().ok())
+        && let Some(token) = auth_header.strip_prefix("Bearer ") {
             // Try JWT authentication first
             match state.auth_user_state.validate_token(token) {
                 Ok(session_info) => {
@@ -484,7 +478,6 @@ pub async fn hybrid_auth_middleware(
                 }
             }
         }
-    }
 
     // If JWT didn't work, try API key authentication
     let api_key = headers
@@ -497,13 +490,12 @@ pub async fn hybrid_auth_middleware(
                 .and_then(|v| v.strip_prefix("Bearer "))
         });
 
-    if let Some(key) = api_key {
-        if state.auth_state.validate_key(key) {
+    if let Some(key) = api_key
+        && state.auth_state.validate_key(key) {
             req.extensions_mut()
                 .insert(ValidatedApiKey(key.to_string()));
             return Ok(next.run(req).await);
         }
-    }
 
     // Neither JWT nor API key was provided/valid
     Err(AuthError::unauthorized(

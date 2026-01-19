@@ -53,6 +53,7 @@
   "upload": "Upload",
   "export": "Export",
   "import": "Import",
+  "importing": "Importing...",
   "filter": "Filter",
   "clear": "Clear",
   "reset": "Reset",

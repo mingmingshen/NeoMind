@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_rules::{
-    CompiledRule, RuleEngine, RuleId,
+    RuleEngine,
     dsl::{ParsedRule, RuleDslParser, RuleError},
 };
 use edge_ai_tools::{
@@ -229,8 +229,7 @@ impl ValidateRuleDslTool {
                 if let Some(device) = device_types
                     .iter()
                     .find(|d| d.device_id == rule.condition.device_id)
-                {
-                    if !device.metrics.contains(&rule.condition.metric) {
+                    && !device.metrics.contains(&rule.condition.metric) {
                         warnings.push(format!(
                             "Metric '{}' is not available for device '{}'. Available metrics: {}",
                             rule.condition.metric,
@@ -238,34 +237,30 @@ impl ValidateRuleDslTool {
                             device.metrics.join(", ")
                         ));
                     }
-                }
 
                 // Validate actions
                 for (i, action) in rule.actions.iter().enumerate() {
-                    match action {
-                        edge_ai_rules::RuleAction::Execute {
+                    if let edge_ai_rules::RuleAction::Execute {
                             device_id, command, ..
-                        } => {
-                            if let Some(device) =
-                                device_types.iter().find(|d| d.device_id == *device_id)
-                            {
-                                if !device.commands.contains(command) {
-                                    warnings.push(format!(
-                                        "Command '{}' is not available for device '{}'. Available commands: {}",
-                                        command,
-                                        device_id,
-                                        device.commands.join(", ")
-                                    ));
-                                }
-                            } else {
+                        } = action {
+                        if let Some(device) =
+                            device_types.iter().find(|d| d.device_id == *device_id)
+                        {
+                            if !device.commands.contains(command) {
                                 warnings.push(format!(
-                                    "Action {}: Device '{}' is not registered",
-                                    i + 1,
-                                    device_id
+                                    "Command '{}' is not available for device '{}'. Available commands: {}",
+                                    command,
+                                    device_id,
+                                    device.commands.join(", ")
                                 ));
                             }
+                        } else {
+                            warnings.push(format!(
+                                "Action {}: Device '{}' is not registered",
+                                i + 1,
+                                device_id
+                            ));
                         }
-                        _ => {}
                     }
                 }
 

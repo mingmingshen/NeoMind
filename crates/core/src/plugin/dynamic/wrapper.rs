@@ -50,7 +50,7 @@ unsafe impl Sync for DynamicPluginWrapper {}
 
 impl DynamicPluginWrapper {
     /// Create a new wrapper from a parsed descriptor.
-    pub fn new(mut descriptor: ParsedPluginDescriptor) -> Result<Self> {
+    pub fn new(descriptor: ParsedPluginDescriptor) -> Result<Self> {
         // Create base metadata
         let base = PluginMetadata::new(
             &descriptor.id,

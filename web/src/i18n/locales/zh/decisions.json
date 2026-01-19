@@ -58,5 +58,8 @@
   "failureCount": "失败",
   "error": "错误",
   "decisionType": "决策类型",
-  "required": "必需"
+  "required": "必需",
+  "createAutomation": "创建自动化",
+  "createAutomationDesc": "将此决策转换为自动化",
+  "automationCreated": "自动化创建成功"
 }

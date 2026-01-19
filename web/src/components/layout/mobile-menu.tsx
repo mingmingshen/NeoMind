@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useMemo, ReactNode } from "react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
-import { MessageSquare, Cpu, Workflow, Brain, Puzzle, Settings, Bot, Menu } from "lucide-react"
+import { MessageSquare, Cpu, Workflow, Brain, Puzzle, Settings, Bot, Menu, Activity } from "lucide-react"
 import { useStore } from "@/store"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +15,7 @@ const navItemIcons = {
   dashboard: MessageSquare,
   devices: Cpu,
   automation: Workflow,
+  events: Activity,
   decisions: Brain,
   plugins: Puzzle,
   settings: Settings,
@@ -66,6 +67,7 @@ export function MobileMenuSheet() {
     { id: "dashboard" as const, icon: navItemIcons.dashboard },
     { id: "devices" as const, icon: navItemIcons.devices },
     { id: "automation" as const, icon: navItemIcons.automation },
+    { id: "events" as const, icon: navItemIcons.events },
     { id: "decisions" as const, icon: navItemIcons.decisions },
     { id: "plugins" as const, icon: navItemIcons.plugins },
     { id: "settings" as const, icon: navItemIcons.settings },

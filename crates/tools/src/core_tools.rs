@@ -693,31 +693,26 @@ pub struct DeviceFilter {
 
 impl DeviceFilter {
     pub fn matches(&self, device: &DeviceInfo) -> bool {
-        if let Some(ref t) = self.r#type {
-            if device.device_type != *t {
+        if let Some(ref t) = self.r#type
+            && device.device_type != *t {
                 return false;
             }
-        }
-        if let Some(ref loc) = self.location {
-            if device.location.as_ref() != Some(loc) {
+        if let Some(ref loc) = self.location
+            && device.location.as_ref() != Some(loc) {
                 return false;
             }
-        }
-        if let Some(ref status) = self.status {
-            if device.status != *status {
+        if let Some(ref status) = self.status
+            && device.status != *status {
                 return false;
             }
-        }
-        if let Some(ref tags) = self.tags {
-            if !tags.iter().all(|t| device.tags.contains(t)) {
+        if let Some(ref tags) = self.tags
+            && !tags.iter().all(|t| device.tags.contains(t)) {
                 return false;
             }
-        }
-        if let Some(ref name) = self.name_contains {
-            if !device.name.contains(name) && !device.id.contains(name) {
+        if let Some(ref name) = self.name_contains
+            && !device.name.contains(name) && !device.id.contains(name) {
                 return false;
             }
-        }
         true
     }
 }
@@ -1481,7 +1476,7 @@ impl DeviceControlTool {
             .collect();
 
         if device_names.is_empty() {
-            return format!("❌ 控制失败，没有成功执行任何设备",);
+            return "❌ 控制失败，没有成功执行任何设备".to_string();
         }
 
         if result.total_targets == 1 {
@@ -1608,12 +1603,12 @@ impl Tool for DeviceControlTool {
         let parameters = args
             .get("parameters")
             .and_then(|v| v.as_object())
-            .and_then(|obj| {
+            .map(|obj| {
                 let mut map = HashMap::new();
                 for (k, v) in obj {
                     map.insert(k.clone(), v.clone());
                 }
-                Some(map)
+                map
             });
 
         // Execute command on all targets
@@ -1947,12 +1942,12 @@ impl DeviceAnalyzeTool {
             ("保持稳定", "➡️")
         };
 
-        let mut findings = vec![
+        let findings = vec![
             format!("{} 从 {:.1}{} 变化到 {:.1}{}", metric.display_name, first, metric.unit, last, metric.unit),
             format!("变化幅度: {:+.1}{} ({:+.1}%)", change, metric.unit, pct_change),
         ];
 
-        let mut insights = vec![format!("趋势: {} {}", color, trend_desc)];
+        let insights = vec![format!("趋势: {} {}", color, trend_desc)];
 
         let mut recommendations = vec![];
 

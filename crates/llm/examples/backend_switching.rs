@@ -108,10 +108,7 @@ mod tests {
             backend: LlmBackendConfig::Ollama(OllamaConfig::default()),
             generation: edge_ai_llm::config::GenerationParams::default(),
         };
-        assert_eq!(
-            config.backend_type(),
-            edge_ai_core::llm::backend::BackendType::Cloud
-        );
+        assert_eq!(config.backend_id().as_str(), "ollama");
     }
 
     #[test]

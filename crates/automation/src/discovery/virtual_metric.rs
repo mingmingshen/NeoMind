@@ -26,7 +26,7 @@ impl VirtualMetricGenerator {
     /// Generate virtual metrics from device samples
     pub async fn generate_metrics(
         &self,
-        device_id: &str,
+        _device_id: &str,
         samples: &[DeviceSample],
         context: &InferenceContext,
     ) -> Result<Vec<DiscoveredMetric>> {

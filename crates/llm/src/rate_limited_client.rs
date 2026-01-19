@@ -7,7 +7,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use reqwest::{Client, Response, StatusCode};
@@ -117,13 +116,12 @@ impl GlobalRateLimiter {
         let limiters = self.limiters.read().await;
         let limiter = limiters.get(key)?;
         let timestamps = limiter.timestamps.read().await;
-        if timestamps.len() >= limiter.max_requests {
-            if let Some(oldest) = timestamps.first() {
+        if timestamps.len() >= limiter.max_requests
+            && let Some(oldest) = timestamps.first() {
                 let now = Instant::now();
                 let wait = limiter.window_duration.saturating_sub(now - *oldest);
                 return Some(wait);
             }
-        }
         None
     }
 }
@@ -224,26 +222,22 @@ impl RateLimitedClient {
     /// Parse Retry-After header from response.
     fn parse_retry_after(&self, response: &Response) -> Option<Duration> {
         // Try Retry-After header (seconds)
-        if let Some(retry_after) = response.headers().get("Retry-After") {
-            if let Ok(seconds) = retry_after.to_str() {
-                if let Ok(secs) = seconds.parse::<u64>() {
+        if let Some(retry_after) = response.headers().get("Retry-After")
+            && let Ok(seconds) = retry_after.to_str()
+                && let Ok(secs) = seconds.parse::<u64>() {
                     return Some(Duration::from_secs(secs));
                 }
-            }
-        }
 
         // Try Retry-After from HTTP date
-        if let Some(retry_after) = response.headers().get("Retry-After") {
-            if let Ok(date_str) = retry_after.to_str() {
-                if let Ok(date) = parse_http_date(date_str) {
+        if let Some(retry_after) = response.headers().get("Retry-After")
+            && let Ok(date_str) = retry_after.to_str()
+                && let Ok(date) = parse_http_date(date_str) {
                     let now = Instant::now();
                     let wait = date.saturating_duration_since(now);
                     if wait > Duration::ZERO {
                         return Some(wait);
                     }
                 }
-            }
-        }
 
         None
     }

@@ -85,8 +85,8 @@ impl SandboxModule {
         // Check if it's a rule evaluation function
         if function_name == "evaluate" || function_name == "check" {
             // Mock rule evaluation - call host API for device read
-            if let Some(device_id) = args.get("device_id").and_then(|v| v.as_str()) {
-                if let Some(metric) = args.get("metric").and_then(|v| v.as_str()) {
+            if let Some(device_id) = args.get("device_id").and_then(|v| v.as_str())
+                && let Some(metric) = args.get("metric").and_then(|v| v.as_str()) {
                     let result = self.host_api.device_read(device_id, metric).await;
                     return Ok(serde_json::json!({
                         "result": if result.success { 1 } else { 0 },
@@ -94,7 +94,6 @@ impl SandboxModule {
                         "data": result.data
                     }));
                 }
-            }
 
             Ok(serde_json::json!({
                 "result": 1,

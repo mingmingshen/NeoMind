@@ -5,8 +5,8 @@
 //! with support for dynamic loading, lifecycle management, and state tracking.
 
 use super::{
-    DynUnifiedPlugin, ExtendedPluginMetadata, PluginError, PluginRegistryEvent, PluginState,
-    PluginStats, PluginType, Result, StateMachine, UnifiedPlugin,
+    DynUnifiedPlugin, ExtendedPluginMetadata, PluginError, PluginState,
+    PluginStats, PluginType, Result, StateMachine,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -188,7 +188,7 @@ impl UnifiedPluginRegistry {
     pub async fn unregister(&self, id: &str) -> Result<()> {
         let mut plugins = self.plugins.write().await;
 
-        if let Some(mut instance) = plugins.remove(id) {
+        if let Some(instance) = plugins.remove(id) {
             // Shutdown the plugin
             let mut plugin = instance.plugin.write().await;
             if let Err(e) = plugin.shutdown().await {
@@ -405,7 +405,7 @@ impl UnifiedPluginRegistry {
     /// Discover and load native plugins from search paths.
     pub async fn discover_native_plugins(&self) -> Result<usize> {
         let paths = self.search_paths.read().await;
-        let loader = self.native_loader.lock().await;
+        let _loader = self.native_loader.lock().await;
 
         let mut loaded = 0;
 

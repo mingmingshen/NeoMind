@@ -3,18 +3,6 @@
 //! This module provides concrete implementations of the `Integration` trait
 //! for various external systems and protocols.
 
-#[cfg(feature = "http")]
-pub mod hass;
-
-pub mod modbus;
-
-// Re-exports
-#[cfg(feature = "hass")]
-pub use hass::{HassConfig, HassIntegration, create_hass_integration};
-
-#[cfg(feature = "modbus")]
-pub use modbus::{ModbusConfig, ModbusIntegration, create_modbus_integration};
-
 use crate::{IntegrationMetadata, IntegrationState, IntegrationType};
 use edge_ai_core::integration::IntegrationEvent;
 use futures::Stream;

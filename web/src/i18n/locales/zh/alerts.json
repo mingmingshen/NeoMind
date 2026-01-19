@@ -36,7 +36,8 @@
   "alertsOverview": "告警概览",
   "filterBySeverity": "按严重程度筛选",
   "channels": "通知通道",
-  "channelsDesc": "配置告警通知通道",
+  "channelsDesc": "管理告警通知通道，实时推送告警消息",
+  "activeChannels": "活动通道",
   "addChannel": "添加通道",
   "addChannelDesc": "创建新的告警通知通道",
   "channelName": "通道名称",
@@ -51,5 +52,7 @@
   "totalChannels": "总通道数",
   "channelTypes": "通道类型",
   "testChannel": "测试",
-  "testing": "测试中..."
+  "testing": "测试中...",
+  "noChannelTypes": "暂无通道类型",
+  "noChannelTypesDesc": "无法从服务器加载告警通道类型"
 }

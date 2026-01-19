@@ -168,7 +168,7 @@ pub type ApiResult<T> = Result<T, ErrorResponse>;
 #[macro_export]
 macro_rules! validation_error {
     ($msg:expr) => {
-        Err(crate::models::error::ErrorResponse::validation($msg))
+        Err($crate::models::error::ErrorResponse::validation($msg))
     };
     ($fmt:expr, $($arg:tt)*) => {
         Err(crate::models::error::ErrorResponse::validation(format!($fmt, $($arg)*)))
@@ -179,7 +179,7 @@ macro_rules! validation_error {
 #[macro_export]
 macro_rules! not_found_error {
     ($resource:expr) => {
-        Err(crate::models::error::ErrorResponse::not_found($resource))
+        Err($crate::models::error::ErrorResponse::not_found($resource))
     };
 }
 
@@ -187,7 +187,7 @@ macro_rules! not_found_error {
 #[macro_export]
 macro_rules! bad_request_error {
     ($msg:expr) => {
-        Err(crate::models::error::ErrorResponse::bad_request($msg))
+        Err($crate::models::error::ErrorResponse::bad_request($msg))
     };
     ($fmt:expr, $($arg:tt)*) => {
         Err(crate::models::error::ErrorResponse::bad_request(format!($fmt, $($arg)*)))

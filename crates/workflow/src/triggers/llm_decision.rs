@@ -5,7 +5,7 @@
 
 use crate::engine::WorkflowEngine;
 use crate::error::Result as WorkflowResult;
-use edge_ai_core::{EventBus, EventMetadata, NeoTalkEvent};
+use edge_ai_core::{EventBus, NeoTalkEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -164,8 +164,7 @@ impl LlmDecisionTrigger {
                     confidence,
                     timestamp: _,
                 } = event
-                {
-                    if Self::matches_config(
+                    && Self::matches_config(
                         &decision_id,
                         &title,
                         &description,
@@ -212,7 +211,6 @@ impl LlmDecisionTrigger {
                             }
                         }
                     }
-                }
             }
 
             info!("LLM decision trigger stopped for workflow: {}", workflow_id);
@@ -238,11 +236,10 @@ impl LlmDecisionTrigger {
         config: &LlmDecisionTriggerConfig,
     ) -> bool {
         // Check confidence threshold
-        if let Some(min_conf) = config.min_confidence {
-            if (confidence * 100.0) < min_conf {
+        if let Some(min_conf) = config.min_confidence
+            && (confidence * 100.0) < min_conf {
                 return false;
             }
-        }
 
         // Check action types
         if !config.action_types.is_empty() {

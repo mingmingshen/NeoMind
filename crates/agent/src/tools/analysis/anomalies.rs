@@ -10,7 +10,7 @@ use edge_ai_storage::TimeSeriesStore;
 use edge_ai_tools::{
     Tool, ToolError, ToolOutput,
     error::Result as ToolResult,
-    tool::{array_property, number_property, object_schema, string_property},
+    tool::{number_property, object_schema, string_property},
 };
 
 /// Anomaly detection result.
@@ -129,7 +129,7 @@ impl DetectAnomaliesTool {
 
         let mut anomalies = Vec::new();
 
-        for (i, (&value, &timestamp)) in values.iter().zip(timestamps.iter()).enumerate() {
+        for (&value, &timestamp) in values.iter().zip(timestamps.iter()) {
             let z_score = (value - mean) / std_dev;
 
             if z_score.abs() > threshold {

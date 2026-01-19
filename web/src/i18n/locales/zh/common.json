@@ -53,6 +53,7 @@
   "upload": "上传",
   "export": "导出",
   "import": "导入",
+  "importing": "导入中...",
   "filter": "筛选",
   "clear": "清除",
   "reset": "重置",

@@ -328,33 +328,29 @@ fn matches_filters(event: &NeoTalkEvent, filters: &EventFilters) -> bool {
         NeoTalkEvent::DeviceMetric {
             device_id, metric, ..
         } => {
-            if let Some(ref filter_device) = filters.device_id {
-                if device_id != filter_device {
+            if let Some(ref filter_device) = filters.device_id
+                && device_id != filter_device {
                     return false;
                 }
-            }
-            if let Some(ref filter_metric) = filters.metric {
-                if metric != filter_metric {
+            if let Some(ref filter_metric) = filters.metric
+                && metric != filter_metric {
                     return false;
                 }
-            }
             true
         }
         NeoTalkEvent::RuleTriggered { rule_id, .. } => {
-            if let Some(ref filter_rule) = filters.rule_id {
-                if rule_id != filter_rule {
+            if let Some(ref filter_rule) = filters.rule_id
+                && rule_id != filter_rule {
                     return false;
                 }
-            }
             true
         }
         NeoTalkEvent::DeviceOnline { device_id, .. }
         | NeoTalkEvent::DeviceOffline { device_id, .. } => {
-            if let Some(ref filter_device) = filters.device_id {
-                if device_id != filter_device {
+            if let Some(ref filter_device) = filters.device_id
+                && device_id != filter_device {
                     return false;
                 }
-            }
             true
         }
         _ => true,
