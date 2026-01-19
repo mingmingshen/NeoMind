@@ -165,11 +165,11 @@ impl RuleStore {
     }
 
     fn open_db(path_str: &str) -> Result<(Database, Option<PathBuf>)> {
-        if path_str == ":memory:" {
+        let (db, temp_path) = if path_str == ":memory:" {
             // Use temp file for in-memory mode
             let temp_path = std::env::temp_dir().join(format!("rules_store_{}.redb", uuid::Uuid::new_v4()));
             let db = Database::create(&temp_path)?;
-            Ok((db, Some(temp_path)))
+            (db, Some(temp_path))
         } else {
             let path_ref = Path::new(path_str);
             if let Some(parent) = path_ref.parent() {
@@ -181,8 +181,10 @@ impl RuleStore {
             } else {
                 Database::create(path_ref)?
             };
-            Ok((db, None))
-        }
+            (db, None)
+        };
+
+        Ok((db, temp_path))
     }
 
     /// Save a rule.
@@ -233,7 +235,10 @@ impl RuleStore {
         let mut rules = Vec::new();
 
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(RULES_TABLE)?;
+        let table = match read_txn.open_table(RULES_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(rules), // Table doesn't exist yet
+        };
 
         let mut iter = table.iter()?;
         for result in iter {
@@ -250,7 +255,10 @@ impl RuleStore {
         let mut ids = Vec::new();
 
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(RULES_TABLE)?;
+        let table = match read_txn.open_table(RULES_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(ids), // Table doesn't exist yet
+        };
 
         let mut iter = table.iter()?;
         for result in iter {
@@ -267,7 +275,12 @@ impl RuleStore {
     /// Get the count of rules.
     pub fn count(&self) -> Result<usize> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(RULES_TABLE)?;
+
+        // Try to open the table - if it doesn't exist, count is 0
+        let table = match read_txn.open_table(RULES_TABLE) {
+            Ok(t) => t,
+            Err(_) => return Ok(0), // Table doesn't exist yet
+        };
 
         // Count manually since len() might not be available
         let mut count = 0;

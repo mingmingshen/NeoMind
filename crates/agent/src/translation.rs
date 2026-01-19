@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use edge_ai_devices::mdl_format::DeviceTypeDefinition;
-use edge_ai_rules::dsl::{ComparisonOperator, ParsedRule, RuleAction};
+use edge_ai_rules::dsl::{ComparisonOperator, ParsedRule, RuleAction, RuleCondition};
 
 /// Supported languages for translation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -271,44 +271,45 @@ impl DslTranslator {
         let actions = Self::describe_actions(&rule.actions, language);
         let summary = Self::summarize_rule(rule, language);
 
+        // Extract trigger condition info for raw format
+        let trigger_condition = match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                format!(
+                    "{}.{} {} {}",
+                    device_id,
+                    metric,
+                    operator.as_str(),
+                    threshold
+                )
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                format!(
+                    "{}.{} BETWEEN {} AND {}",
+                    device_id,
+                    metric,
+                    min,
+                    max
+                )
+            }
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+                format!("(complex condition with {} sub-conditions)", conditions.len())
+            }
+            RuleCondition::Not(_) => "(NOT condition)".to_string(),
+        };
+
         RuleDescription {
             name: rule.name.clone(),
             language: language.code().to_string(),
             condition_description: condition,
             actions_description: actions,
             summary,
-            trigger_condition: format!(
-                "{}.{} {} {}",
-                rule.condition.device_id,
-                rule.condition.metric,
-                rule.condition.operator.as_str(),
-                rule.condition.threshold
-            ),
+            trigger_condition,
             has_duration: rule.for_duration.is_some(),
             duration_seconds: rule.for_duration.map(|d| d.as_secs()),
         }
     }
 
     fn describe_condition(rule: &ParsedRule, language: Language) -> String {
-        let operator_text = match language {
-            Language::Chinese => match rule.condition.operator {
-                ComparisonOperator::GreaterThan => "大于",
-                ComparisonOperator::LessThan => "小于",
-                ComparisonOperator::GreaterEqual => "大于等于",
-                ComparisonOperator::LessEqual => "小于等于",
-                ComparisonOperator::Equal => "等于",
-                ComparisonOperator::NotEqual => "不等于",
-            },
-            Language::English => match rule.condition.operator {
-                ComparisonOperator::GreaterThan => "greater than",
-                ComparisonOperator::LessThan => "less than",
-                ComparisonOperator::GreaterEqual => "greater than or equal to",
-                ComparisonOperator::LessEqual => "less than or equal to",
-                ComparisonOperator::Equal => "equal to",
-                ComparisonOperator::NotEqual => "not equal to",
-            },
-        };
-
         let duration_text = if let Some(duration) = rule.for_duration {
             let secs = duration.as_secs();
             let time_str = if secs % 3600 == 0 {
@@ -352,26 +353,115 @@ impl DslTranslator {
             String::new()
         };
 
-        match language {
-            Language::Chinese => {
-                format!(
-                    "当设备 '{}' 的指标 '{}' {} {} 时{}",
-                    rule.condition.device_id,
-                    rule.condition.metric,
-                    operator_text,
-                    rule.condition.threshold,
-                    duration_text
-                )
+        match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                let operator_text = match language {
+                    Language::Chinese => match operator {
+                        ComparisonOperator::GreaterThan => "大于",
+                        ComparisonOperator::LessThan => "小于",
+                        ComparisonOperator::GreaterEqual => "大于等于",
+                        ComparisonOperator::LessEqual => "小于等于",
+                        ComparisonOperator::Equal => "等于",
+                        ComparisonOperator::NotEqual => "不等于",
+                    },
+                    Language::English => match operator {
+                        ComparisonOperator::GreaterThan => "greater than",
+                        ComparisonOperator::LessThan => "less than",
+                        ComparisonOperator::GreaterEqual => "greater than or equal to",
+                        ComparisonOperator::LessEqual => "less than or equal to",
+                        ComparisonOperator::Equal => "equal to",
+                        ComparisonOperator::NotEqual => "not equal to",
+                    },
+                };
+
+                match language {
+                    Language::Chinese => {
+                        format!(
+                            "当设备 '{}' 的指标 '{}' {} {} 时{}",
+                            device_id,
+                            metric,
+                            operator_text,
+                            threshold,
+                            duration_text
+                        )
+                    }
+                    Language::English => {
+                        format!(
+                            "When metric '{}' on device '{}' is {} {}{}",
+                            metric,
+                            device_id,
+                            operator_text,
+                            threshold,
+                            duration_text
+                        )
+                    }
+                }
             }
-            Language::English => {
-                format!(
-                    "When metric '{}' on device '{}' is {} {}{}",
-                    rule.condition.metric,
-                    rule.condition.device_id,
-                    operator_text,
-                    rule.condition.threshold,
-                    duration_text
-                )
+            RuleCondition::Range { device_id, metric, min, max } => {
+                match language {
+                    Language::Chinese => {
+                        format!(
+                            "当设备 '{}' 的指标 '{}' 在 {} 到 {} 之间时{}",
+                            device_id,
+                            metric,
+                            min,
+                            max,
+                            duration_text
+                        )
+                    }
+                    Language::English => {
+                        format!(
+                            "When metric '{}' on device '{}' is between {} and {}{}",
+                            metric,
+                            device_id,
+                            min,
+                            max,
+                            duration_text
+                        )
+                    }
+                }
+            }
+            RuleCondition::And(conditions) => {
+                match language {
+                    Language::Chinese => {
+                        format!(
+                            "当{}个条件同时满足时{}",
+                            conditions.len(),
+                            duration_text
+                        )
+                    }
+                    Language::English => {
+                        format!(
+                            "When all {} conditions are met{}",
+                            conditions.len(),
+                            duration_text
+                        )
+                    }
+                }
+            }
+            RuleCondition::Or(conditions) => {
+                match language {
+                    Language::Chinese => {
+                        format!(
+                            "当{}个条件中任一满足时{}",
+                            conditions.len(),
+                            duration_text
+                        )
+                    }
+                    Language::English => {
+                        format!(
+                            "When any of {} conditions is met{}",
+                            conditions.len(),
+                            duration_text
+                        )
+                    }
+                }
+            }
+            RuleCondition::Not(_) => {
+                match language {
+                    Language::Chinese => format!("当条件不满足时{}", duration_text),
+                    Language::English => format!("When condition is NOT met{}", duration_text),
+                }
             }
         }
     }
@@ -381,7 +471,7 @@ impl DslTranslator {
             .iter()
             .enumerate()
             .map(|(i, action)| match action {
-                RuleAction::Notify { message } => {
+                RuleAction::Notify { message, .. } => {
                     if language == Language::Chinese {
                         format!("{}. 发送通知：{}", i + 1, message)
                     } else {
@@ -423,18 +513,38 @@ impl DslTranslator {
                         format!("{}. Log: [{}] {}", i + 1, level, message)
                     }
                 }
+                // Handle other RuleAction variants
+                _ => {
+                    if language == Language::Chinese {
+                        format!("{}. 其他动作", i + 1)
+                    } else {
+                        format!("{}. Other action", i + 1)
+                    }
+                }
             })
             .collect()
     }
 
     fn summarize_rule(rule: &ParsedRule, language: Language) -> String {
+        // Extract device_id and metric from condition
+        let (device_id, metric) = match &rule.condition {
+            RuleCondition::Simple { device_id, metric, .. } |
+            RuleCondition::Range { device_id, metric, .. } => {
+                (device_id.clone(), metric.clone())
+            }
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+                (format!("({} devices)", conditions.len()), "(complex)".to_string())
+            }
+            RuleCondition::Not(_) => ("(not)".to_string(), "(complex)".to_string()),
+        };
+
         match language {
             Language::Chinese => {
                 format!(
                     "规则 '{}'：监控设备 '{}' 的 '{}' 指标，包含 {} 个执行动作",
                     rule.name,
-                    rule.condition.device_id,
-                    rule.condition.metric,
+                    device_id,
+                    metric,
                     rule.actions.len()
                 )
             }
@@ -442,8 +552,8 @@ impl DslTranslator {
                 format!(
                     "Rule '{}': Monitors metric '{}' on device '{}' with {} action(s)",
                     rule.name,
-                    rule.condition.metric,
-                    rule.condition.device_id,
+                    metric,
+                    device_id,
                     rule.actions.len()
                 )
             }
@@ -661,7 +771,7 @@ impl NlToDslConverter {
             } else {
                 "规则触发".to_string()
             };
-            actions.push(RuleAction::Notify { message });
+            actions.push(RuleAction::Notify { message, channels: None });
         }
 
         // Check for logging intent
@@ -680,6 +790,7 @@ impl NlToDslConverter {
                     "规则 '{}' 已触发",
                     context.default_rule_name.as_deref().unwrap_or("规则")
                 ),
+                channels: None,
             });
         }
 
@@ -718,7 +829,7 @@ impl NlToDslConverter {
         dsl.push_str("DO\n");
         for action in actions {
             match action {
-                RuleAction::Notify { message } => {
+                RuleAction::Notify { message, .. } => {
                     dsl.push_str(&format!("    NOTIFY \"{}\"\n", message));
                 }
                 RuleAction::Log { level, .. } => {

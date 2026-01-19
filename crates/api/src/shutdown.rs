@@ -45,7 +45,6 @@ pub async fn cleanup_resources(state: &ServerState) {
     // 1. Stop MQTT adapter through DeviceService (with timeout)
     let device_service = state.device_service.clone();
     let mqtt_task = tokio::spawn(async move {
-        use edge_ai_devices::adapter::DeviceAdapter;
         if let Some(adapter) = device_service.get_adapter("internal-mqtt").await
             && let Err(e) = adapter.stop().await {
                 tracing::warn!("MQTT adapter stop error: {}", e);

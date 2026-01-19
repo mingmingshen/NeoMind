@@ -4,6 +4,7 @@ use axum::{Json, extract::State};
 use serde_json::json;
 
 use edge_ai_alerts::{Alert, AlertId, AlertSeverity};
+use edge_ai_core::{eventbus::EventBus, event::NeoTalkEvent};
 
 use super::models::{
     BulkAcknowledgeAlertsRequest, BulkCreateAlertsRequest, BulkDeleteAlertsRequest,
@@ -140,6 +141,20 @@ pub async fn bulk_acknowledge_alerts_handler(
         match AlertId::from_string(&id_str) {
             Ok(alert_id) => match state.alert_manager.acknowledge(&alert_id).await {
                 Ok(_) => {
+                    // Publish AlertAcknowledged event
+                    if let Some(event_bus) = &state.event_bus {
+                        let _ = event_bus
+                            .publish_with_source(
+                                NeoTalkEvent::AlertAcknowledged {
+                                    alert_id: id_str.clone(),
+                                    acknowledged_by: "api:bulk".to_string(),
+                                    timestamp: chrono::Utc::now().timestamp(),
+                                },
+                                "api:bulk_alert",
+                            )
+                            .await;
+                    }
+
                     results.push(BulkOperationResult {
                         index,
                         success: true,

@@ -254,15 +254,6 @@ impl SessionManager {
 
     /// Save message history for a session to persistent storage.
     fn save_history(&self, session_id: &str, messages: &[AgentMessage]) -> Result<()> {
-        // Debug: Log messages with tool_calls before saving
-        for (i, msg) in messages.iter().enumerate() {
-            if msg.role == "assistant" {
-                eprintln!("[save_history] Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
-                    i, msg.role, msg.content.len(), msg.thinking.is_some(),
-                    msg.tool_calls.as_ref().map_or(0, |c| c.len()));
-            }
-        }
-
         // Convert AgentMessage to SessionMessage
         let session_messages: Vec<edge_ai_storage::SessionMessage> = messages
             .iter()
@@ -388,7 +379,7 @@ impl SessionManager {
     /// Configure LLM using the LlmBackendInstanceManager.
     /// This fetches the active backend from the instance manager and configures it for all sessions.
     pub async fn configure_llm_from_instance_manager(&self) -> Result<()> {
-        use edge_ai_storage::LlmBackendType;
+        
 
         // Get the instance manager
         let manager = get_instance_manager()

@@ -41,6 +41,7 @@ redb = "2.1"
 tracing = { workspace = true }
 
 # Async utilities
+async-trait = "0.1"
 futures = { workspace = true }
 
 # Image processing (optional)

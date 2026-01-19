@@ -1,3 +1,5 @@
+import { useState, useEffect } from "react"
+import { useTranslation } from "react-i18next"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -11,12 +13,68 @@ import {
   Heart,
   Book,
   Workflow,
-  Layers
+  Layers,
+  Monitor,
+  HardDrive,
+  Globe,
+  Clock,
+  Server,
 } from "lucide-react"
+import { api } from "@/lib/api"
+
+interface SystemInfo {
+  version: string
+  uptime: number
+  platform: string
+  arch: string
+  cpu_count: number
+  total_memory: number
+  used_memory: number
+  free_memory: number
+  available_memory: number
+}
 
 export function AboutTab() {
+  const { t } = useTranslation(["common", "settings"])
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadSystemInfo()
+  }, [])
+
+  const loadSystemInfo = async () => {
+    try {
+      const response = await api.getSystemStats()
+      setSystemInfo(response)
+    } catch (e) {
+      console.error("Failed to load system info:", e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatBytes = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024)
+    return gb.toFixed(2) + " GB"
+  }
+
+  const formatUptime = (seconds: number) => {
+    const days = Math.floor(seconds / 86400)
+    const hours = Math.floor((seconds % 86400) / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`
+    }
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    }
+    return `${minutes}m`
+  }
+
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="text-center space-y-2">
         <div className="flex items-center justify-center gap-3">
@@ -28,26 +86,102 @@ export function AboutTab() {
           </h1>
         </div>
         <p className="text-muted-foreground">
-          智能边缘 AI Agent 平台
+          {t("settings:aboutDesc")}
         </p>
-        <Badge variant="outline" className="mx-auto">v0.1.0</Badge>
+        <Badge variant="outline" className="mx-auto">
+          {systemInfo?.version || "v0.1.0"}
+        </Badge>
       </div>
+
+      {/* System Info */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Monitor className="h-5 w-5 text-blue-500" />
+            {t("settings:systemInfo")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              {t("common:loading")}
+            </div>
+          ) : systemInfo ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <Server className="h-3 w-3" />
+                  {t("settings:platform")}
+                </div>
+                <div className="text-sm font-medium">
+                  {systemInfo.platform} {systemInfo.arch}
+                </div>
+              </div>
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <Clock className="h-3 w-3" />
+                  {t("settings:uptime")}
+                </div>
+                <div className="text-sm font-medium">
+                  {formatUptime(systemInfo.uptime)}
+                </div>
+              </div>
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <Cpu className="h-3 w-3" />
+                  {t("settings:cpuCores")}
+                </div>
+                <div className="text-sm font-medium">
+                  {systemInfo.cpu_count} {t("settings:cores")}
+                </div>
+              </div>
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <HardDrive className="h-3 w-3" />
+                  {t("settings:totalMemory")}
+                </div>
+                <div className="text-sm font-medium">
+                  {formatBytes(systemInfo.total_memory)}
+                </div>
+              </div>
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <Database className="h-3 w-3" />
+                  {t("settings:usedMemory")}
+                </div>
+                <div className="text-sm font-medium">
+                  {formatBytes(systemInfo.used_memory)}
+                </div>
+              </div>
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                  <Layers className="h-3 w-3" />
+                  {t("settings:freeMemory")}
+                </div>
+                <div className="text-sm font-medium">
+                  {formatBytes(systemInfo.available_memory)}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              {t("settings:systemInfoUnavailable")}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Overview */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Heart className="h-5 w-5 text-red-500" />
-            项目简介
+            {t("settings:projectIntro")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <p>
-            NeoTalk 是一个运行在边缘设备上的智能 AI Agent 平台，支持多模型 LLM、事件驱动架构、设备管理、规则引擎和工作流编排。
-          </p>
-          <p>
-            通过插件化架构，NeoTalk 可以灵活扩展功能，支持 MQTT、Modbus、Home Assistant 等多种设备适配器，实现真正的智能化边缘计算。
-          </p>
+          <p>{t("settings:aboutDesc1")}</p>
+          <p>{t("settings:aboutDesc2")}</p>
         </CardContent>
       </Card>
 
@@ -56,7 +190,7 @@ export function AboutTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Layers className="h-5 w-5 text-blue-500" />
-            技术栈
+            {t("settings:techStack")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -64,25 +198,25 @@ export function AboutTab() {
             <div>
               <h4 className="font-medium mb-2 flex items-center gap-2">
                 <Cpu className="h-4 w-4 text-orange-500" />
-                后端
+                {t("settings:backend")}
               </h4>
               <div className="text-sm text-muted-foreground space-y-1">
-                <div>• Rust - 系统核心</div>
-                <div>• Axum - Web 框架</div>
-                <div>• Tokio - 异步运行时</div>
-                <div>• redb - 嵌入式数据库</div>
+                <div>• Rust - {t("settings:systemCore")}</div>
+                <div>• Axum - Web {t("settings:frameWork")}</div>
+                <div>• Tokio - {t("settings:asyncRuntime")}</div>
+                <div>• redb - {t("settings:embeddedDB")}</div>
               </div>
             </div>
             <div>
               <h4 className="font-medium mb-2 flex items-center gap-2">
                 <Code className="h-4 w-4 text-blue-500" />
-                前端
+                {t("settings:frontend")}
               </h4>
               <div className="text-sm text-muted-foreground space-y-1">
-                <div>• React 18 - UI 框架</div>
-                <div>• TypeScript - 类型安全</div>
-                <div>• Vite - 构建工具</div>
-                <div>• Tailwind CSS - 样式</div>
+                <div>• React 18 - UI {t("settings:frameWork")}</div>
+                <div>• TypeScript - {t("settings:typeSafe")}</div>
+                <div>• Vite - {t("settings:buildTool")}</div>
+                <div>• Tailwind CSS - {t("settings:styling")}</div>
               </div>
             </div>
           </div>
@@ -94,40 +228,40 @@ export function AboutTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-warning" />
-            核心功能
+            {t("settings:coreFeatures")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FeatureItem
               icon={<Bot className="h-4 w-4" />}
-              title="多模型 LLM 支持"
+              title={t("settings:multiModelLLM")}
               description="Ollama、OpenAI、Anthropic、Google、xAI"
             />
             <FeatureItem
               icon={<Workflow className="h-4 w-4" />}
-              title="事件驱动架构"
-              description="EventBus 实时消息分发"
+              title={t("settings:eventDriven")}
+              description={`EventBus ${t("settings:realtimeMessaging")}`}
             />
             <FeatureItem
               icon={<Network className="h-4 w-4" />}
-              title="设备管理"
-              description="MQTT、Modbus、Home Assistant 集成"
+              title={t("settings:deviceManagement")}
+              description={`MQTT、Modbus、Home Assistant ${t("settings:integration")}`}
             />
             <FeatureItem
               icon={<Database className="h-4 w-4" />}
-              title="数据持久化"
-              description="时序数据、向量搜索、决策存储"
+              title={t("settings:dataPersistence")}
+              description={t("settings:dataPersistenceDesc")}
             />
             <FeatureItem
               icon={<Shield className="h-4 w-4" />}
-              title="规则引擎"
-              description="Pest DSL 解析、实时评估"
+              title={t("settings:ruleEngine")}
+              description={`Pest DSL ${t("settings:parsing")}、${t("settings:realtimeEval")}`}
             />
             <FeatureItem
               icon={<Layers className="h-4 w-4" />}
-              title="插件系统"
-              description="动态加载、Schema 驱动配置"
+              title={t("settings:pluginSystem")}
+              description={t("settings:pluginSystemDesc")}
             />
           </div>
         </CardContent>
@@ -138,28 +272,40 @@ export function AboutTab() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Book className="h-5 w-5 text-green-500" />
-            项目信息
+            {t("settings:projectInfo")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <div className="flex items-center justify-between border-b pb-2">
-            <span className="text-muted-foreground">版本</span>
-            <Badge variant="secondary">v0.1.0</Badge>
+            <span className="text-muted-foreground">{t("settings:version")}</span>
+            <Badge variant="secondary">{systemInfo?.version || "v0.1.0"}</Badge>
           </div>
           <div className="flex items-center justify-between border-b pb-2">
-            <span className="text-muted-foreground">许可证</span>
+            <span className="text-muted-foreground">{t("settings:license")}</span>
             <span>MIT</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">架构</span>
+          <div className="flex items-center justify-between border-b pb-2">
+            <span className="text-muted-foreground">{t("settings:architecture")}</span>
             <span>Workspace (Cargo)</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">{t("settings:repository")}</span>
+            <a
+              href="https://github.com/shenmingming/NeoTalk"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-500 hover:underline flex items-center gap-1"
+            >
+              <Globe className="h-3 w-3" />
+              github.com/shenmingming/NeoTalk
+            </a>
           </div>
         </CardContent>
       </Card>
 
       {/* Footer */}
       <div className="text-center text-sm text-muted-foreground">
-        <p>© 2025 NeoTalk. Built with ❤️ for edge intelligence.</p>
+        <p>© 2025 NeoTalk. {t("settings:builtWith")} ❤️ {t("settings:forIntelligence")}.</p>
       </div>
     </div>
   )

@@ -1,10 +1,19 @@
 import { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { PageHeader } from '@/components/layout/PageHeader'
 
 export interface PageLayoutProps {
   children: ReactNode
+  /** Optional page title, rendered via PageHeader */
+  title?: string
+  /** Optional secondary description text below the title */
+  subtitle?: string
+  /** Optional actions area rendered on the right of the header (buttons, filters, etc.) */
+  actions?: ReactNode
   maxWidth?: 'md' | 'lg' | 'xl' | '2xl' | 'full'
   className?: string
+  /** Whether to render a subtle bottom border under the header */
+  borderedHeader?: boolean
 }
 
 const maxWidthClass = {
@@ -18,17 +27,37 @@ const maxWidthClass = {
 /**
  * Standard page layout container
  *
- * Provides consistent padding and max-width across all pages.
+ * Provides consistent padding, max-width, and optional header across all pages.
  *
  * @example
- * <PageLayout maxWidth="xl">
- *   <PageHeader title="My Page" />
+ * <PageLayout
+ *   title="Devices"
+ *   subtitle="Manage all connected devices"
+ *   actions={<Button size="sm">Refresh</Button>}
+ *   maxWidth="xl"
+ * >
  *   <div>Content here</div>
  * </PageLayout>
  */
-export function PageLayout({ children, maxWidth = 'full', className }: PageLayoutProps) {
+export function PageLayout({
+  children,
+  title,
+  subtitle,
+  actions,
+  maxWidth = 'full',
+  className,
+  borderedHeader = false,
+}: PageLayoutProps) {
   return (
-    <div className={cn('mx-auto p-4 md:p-6 pb-20 space-y-6', maxWidthClass[maxWidth], className)}>
+    <div className={cn('mx-auto p-6 md:p-8 pb-24 space-y-6', maxWidthClass[maxWidth], className)}>
+      {title && (
+        <PageHeader
+          title={title}
+          description={subtitle}
+          actions={actions}
+          variant={borderedHeader ? 'bordered' : 'default'}
+        />
+      )}
       {children}
     </div>
   )

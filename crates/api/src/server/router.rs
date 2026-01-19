@@ -237,6 +237,27 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/devices/:id/webhook-url",
             get(devices::get_webhook_url_handler),
         )
+        // Draft Devices API - auto-onboarding
+        .route("/api/devices/drafts", get(devices::list_draft_devices))
+        .route("/api/devices/drafts/:device_id", get(devices::get_draft_device))
+        .route("/api/devices/drafts/:device_id", put(devices::update_draft_device))
+        .route(
+            "/api/devices/drafts/:device_id/approve",
+            post(devices::approve_draft_device),
+        )
+        .route(
+            "/api/devices/drafts/:device_id/reject",
+            post(devices::reject_draft_device),
+        )
+        .route(
+            "/api/devices/drafts/:device_id/analyze",
+            post(devices::trigger_draft_analysis),
+        )
+        .route("/api/devices/drafts/cleanup", post(devices::cleanup_draft_devices))
+        .route(
+            "/api/devices/drafts/type-signatures",
+            get(devices::get_type_signatures),
+        )
         // Rules API - specific routes first, then parameterized routes
         .route("/api/rules", get(rules::list_rules_handler))
         .route("/api/rules", post(rules::create_rule_handler))
@@ -579,11 +600,34 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     // IMPORTANT: More specific routes must come before catch-all routes.
     // Also, routes with their own middleware must be merged BEFORE routes
     // with wildcard middleware to avoid route masking.
-    public_routes
-        .merge(websocket_routes) // WebSocket routes with custom auth
+
+    // Add debug-only routes
+    #[cfg(debug_assertions)]
+    let debug_routes = Router::new()
+        .route("/api/events/test/generate", post(events::generate_test_events_handler))
+        .layer(tower_http::compression::CompressionLayer::new())
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            MAX_REQUEST_BODY_SIZE,
+        ))
+        .layer(
+            tower_http::cors::CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any),
+        );
+
+    let router = public_routes
+        .merge(websocket_routes); // WebSocket routes with custom auth
+
+    #[cfg(debug_assertions)]
+    let router = router.merge(debug_routes);
+
+    let router = router
         .merge(jwt_routes)
         .merge(admin_routes)
-        .merge(protected_routes)
+        .merge(protected_routes);
+
+    router
         // Apply middleware layers
         .layer(tower_http::compression::CompressionLayer::new())
         .layer(tower_http::limit::RequestBodyLimitLayer::new(

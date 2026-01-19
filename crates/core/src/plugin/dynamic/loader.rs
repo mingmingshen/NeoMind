@@ -107,7 +107,7 @@ impl DynamicPluginLoader {
                 .map_err(|e| PluginError::LoadFailed(format!("Missing plugin descriptor: {}", e)))?
         };
 
-        let descriptor = unsafe { &*descriptor };
+        let descriptor = &*descriptor;
 
         // Validate the descriptor
         self.security.validate_descriptor(descriptor).map_err(|e| {
@@ -218,7 +218,7 @@ impl DynamicPluginLoader {
                 .map_err(|e| PluginError::LoadFailed(format!("Missing descriptor: {}", e)))?
         };
 
-        let descriptor = unsafe { &*descriptor };
+        let descriptor = &*descriptor;
 
         // Validate and parse
         self.security.validate_descriptor(descriptor).map_err(|e| {

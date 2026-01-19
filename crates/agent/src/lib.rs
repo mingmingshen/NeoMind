@@ -43,7 +43,7 @@ pub mod error;
 pub mod llm;
 pub mod prompts;
 pub mod session;
-pub mod session_sync;
+// pub mod session_sync; // TODO: Implement session_sync module
 pub mod smart_conversation;
 pub mod task_orchestrator;
 pub mod tools;
@@ -64,11 +64,12 @@ pub use concurrency::{
 };
 pub use error::{AgentError, NeoTalkError, Result};
 pub use session::SessionManager;
-pub use session_sync::{
-    ConflictResolution, SerializableMessage, SessionStateUpdate, SessionSyncAdapter,
-    SessionSyncConfig, SessionSyncManager,
-    merge_messages,
-};
+// TODO: Uncomment when session_sync module is implemented
+// pub use session_sync::{
+//     ConflictResolution, SerializableMessage, SessionStateUpdate, SessionSyncAdapter,
+//     SessionSyncConfig, SessionSyncManager,
+//     merge_messages,
+// };
 pub use tools::{
     EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
 };

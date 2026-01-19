@@ -139,11 +139,12 @@ export function RuleBuilder({ rule, onSave, onCancel, resources }: RuleBuilderPr
     if (actions.length > 0) {
       const actionParts = actions.map((action) => {
         switch (action.type) {
-          case 'Execute':
+          case 'Execute': {
             const params = Object.keys(action.params || {}).length > 0
               ? `{${Object.entries(action.params || {}).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}}`
               : ''
             return `device.${action.device_id}.${action.command}(${params})`
+          }
           case 'Notify':
             return `notify(${JSON.stringify(action.message)})`
           case 'Log':

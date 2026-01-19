@@ -20,16 +20,15 @@ export function ThinkingBlock({
 
   return (
     <div className={cn(
-      "thinking-block rounded-lg border overflow-hidden transition-colors",
-      isExpanded ? "border-blue-200 bg-blue-50/50" : "border-muted bg-muted/30"
+      "thinking-block rounded-lg border border-border bg-muted/40 overflow-hidden transition-colors"
     )}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 dark:hover:bg-muted/30 transition-colors"
       >
         <Brain className={cn(
           "h-4 w-4",
-          isStreaming ? "animate-pulse text-blue-500" : "text-muted-foreground"
+          isStreaming ? "animate-pulse text-blue-500 dark:text-blue-400" : "text-muted-foreground"
         )} />
         <span className="text-sm font-medium text-muted-foreground">
           思考过程
@@ -53,7 +52,7 @@ export function ThinkingBlock({
         <div className="px-3 pb-3">
           <div className="prose prose-sm max-w-none text-sm">
             <div className={cn(
-              "thinking-content whitespace-pre-wrap break-words",
+              "thinking-content whitespace-pre-wrap break-words text-sm leading-relaxed",
               "text-gray-700 dark:text-gray-300"
             )}>
               {thinking}

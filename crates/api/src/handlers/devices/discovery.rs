@@ -83,7 +83,7 @@ pub async fn discover_devices_handler(
 /// Get discovery status/info.
 pub async fn discovery_info_handler() -> HandlerResult<serde_json::Value> {
     ok(json!({
-        "methods": ["mqtt", "hass_discovery", "http", "modbus", "coap"],
+        "methods": ["mqtt", "http", "modbus", "coap"],
         "common_ports": {
             "mqtt": 1883,
             "mqtts": 8883,
@@ -91,11 +91,6 @@ pub async fn discovery_info_handler() -> HandlerResult<serde_json::Value> {
             "http": 80,
             "https": 443,
             "coap": 5683,
-        },
-        "hass_discovery": {
-            "topic": "homeassistant/+/config",
-            "description": "HASS MQTT Discovery protocol for Tasmota, Shelly, ESPHome devices",
-            "supported_components": DeviceDiscovery::hass_supported_components(),
         },
     }))
 }

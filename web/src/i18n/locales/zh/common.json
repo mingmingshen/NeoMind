@@ -1,4 +1,31 @@
 {
+  "connection": {
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "connecting": "连接中",
+    "wsConnected": "WebSocket 连接正常",
+    "wsDisconnected": "WebSocket 已断开"
+  },
+  "nav": {
+    "dashboard": "对话",
+    "devices": "设备",
+    "automation": "自动化",
+    "events": "事件",
+    "alerts": "告警",
+    "plugins": "插件",
+    "settings": "设置"
+  },
+  "session": {
+    "history": "会话历史",
+    "sessions": "会话",
+    "newChat": "新建对话",
+    "search": "搜索...",
+    "noSessions": "暂无会话",
+    "noMatch": "没有找到匹配的会话",
+    "totalSessions": "{{count}} 个会话",
+    "messages": "{{count}} 条消息",
+    "defaultTitle": "新对话"
+  },
   "add": "添加",
   "edit": "编辑",
   "delete": "删除",

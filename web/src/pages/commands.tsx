@@ -5,8 +5,7 @@ import type { CommandDto } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { LoadingState, EmptyState } from '@/components/shared'
+import { LoadingState, EmptyState, PageTabs, PageTabsContent } from '@/components/shared'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { useApiData } from '@/hooks/useApiData'
 import { formatTimestamp } from '@/lib/utils/format'
@@ -50,6 +49,14 @@ export function CommandsPage() {
       toast({ title: t('commands:cancelFailed'), description: (error as Error).message || t('commands:cancelFailedDesc'), variant: 'destructive' })
     }
   }
+
+  // Tab配置
+  const tabs = [
+    { value: 'all' as CommandFilter, label: t('commands:all') },
+    { value: 'pending' as CommandFilter, label: t('commands:pending') },
+    { value: 'completed' as CommandFilter, label: t('commands:completed') },
+    { value: 'failed' as CommandFilter, label: t('commands:failed') },
+  ]
 
   const getStatusBadge = (status: string) => {
     const variantMap: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -102,22 +109,24 @@ export function CommandsPage() {
   }
 
   return (
-    <PageLayout>
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as CommandFilter)}>
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="all">{t('commands:all')}</TabsTrigger>
-            <TabsTrigger value="pending">{t('commands:pending')}</TabsTrigger>
-            <TabsTrigger value="completed">{t('commands:completed')}</TabsTrigger>
-            <TabsTrigger value="failed">{t('commands:failed')}</TabsTrigger>
-          </TabsList>
-          <Button onClick={refetch} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            {t('common:refresh')}
-          </Button>
-        </div>
-
-        <TabsContent value={filter} className="mt-4">
+    <PageLayout
+      title={t('commands:title')}
+      subtitle={t('commands:description')}
+    >
+      <PageTabs
+        tabs={tabs}
+        activeTab={filter}
+        onTabChange={(v) => setFilter(v as CommandFilter)}
+        actions={[
+          {
+            label: t('common:refresh'),
+            icon: <RefreshCw className="h-4 w-4" />,
+            variant: 'outline',
+            onClick: refetch,
+          },
+        ]}
+      >
+        <PageTabsContent value={filter} activeTab={filter}>
           {loading ? (
             <LoadingState text={t('commands:loading')} />
           ) : !commands || commands.length === 0 ? (
@@ -224,8 +233,8 @@ export function CommandsPage() {
               ))}
             </div>
           )}
-        </TabsContent>
-      </Tabs>
+        </PageTabsContent>
+      </PageTabs>
     </PageLayout>
   )
 }

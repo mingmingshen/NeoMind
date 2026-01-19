@@ -296,6 +296,9 @@ impl LongTermMemoryStore {
                 id: memory.id.clone(),
                 embedding: embedding.clone(),
                 metadata: serde_json::to_value(memory).unwrap_or(serde_json::Value::Null),
+                category: None,
+                tags: Vec::new(),
+                created_at: chrono::Utc::now().timestamp(),
             };
             vs.insert(doc).await?;
         }

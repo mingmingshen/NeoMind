@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use edge_ai_alerts::{Alert, AlertId, AlertSeverity, AlertStatus};
+use edge_ai_core::{eventbus::EventBus, event::NeoTalkEvent};
 
 use super::{
     ServerState,
@@ -236,6 +237,20 @@ pub async fn acknowledge_alert_handler(
         .acknowledge(&alert_id)
         .await
         .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+    // Publish AlertAcknowledged event
+    if let Some(event_bus) = &state.event_bus {
+        let _ = event_bus
+            .publish_with_source(
+                NeoTalkEvent::AlertAcknowledged {
+                    alert_id: id.clone(),
+                    acknowledged_by: "api".to_string(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                },
+                "api:alert",
+            )
+            .await;
+    }
 
     ok(json!({
         "id": id,

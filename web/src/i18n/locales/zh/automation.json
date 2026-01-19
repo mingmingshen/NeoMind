@@ -503,5 +503,13 @@
   "transformDescriptionPlaceholder": "描述此数据处理的功能...",
   "selectPlaceholder": "选择一个选项...",
   "any": "任意",
-  "or": "或"
+  "or": "或",
+  "ruleSaved": "规则保存成功",
+  "workflowSaved": "工作流保存成功",
+  "transformSaved": "数据处理保存成功",
+  "itemDeleted": "项目删除成功",
+  "executeSuccess": "执行启动成功",
+  "editWorkflow": "编辑工作流",
+  "createWorkflow": "创建工作流",
+  "workflowBuilderDesc": "使用可视化编辑器设计您的工作流"
 }

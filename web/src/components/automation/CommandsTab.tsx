@@ -13,11 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { EmptyStateInline, ActionBar } from '@/components/shared'
+import { EmptyStateInline } from '@/components/shared'
 import { useApiData } from '@/hooks/useApiData'
 import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
-import { Terminal, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
+import { RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 
 const fetchCommands = async (): Promise<CommandDto[]> => {
   const response = await api.listCommands({ limit: 100 })
@@ -120,14 +120,6 @@ export function CommandsTab() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <ActionBar
-        title={t('automation:commands')}
-        titleIcon={<Terminal className="h-5 w-5" />}
-        description={t('automation:commandsDesc')}
-        onRefresh={refetch}
-      />
-
       {/* Table */}
       <Card>
         <Table>

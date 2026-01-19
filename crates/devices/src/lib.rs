@@ -23,7 +23,6 @@
 //! Protocol adapters are registered as plugins for unified management.
 
 pub mod builtin_types;
-pub mod command_retry;
 pub mod discovery;
 pub mod mdl;
 pub mod mdl_format;
@@ -41,9 +40,13 @@ pub mod protocol;
 // Adapter interface for event-driven architecture
 pub mod adapter;
 
-// Device adapter plugin integration
-pub mod plugin_adapter;
-pub mod plugin_registry;
+// Device adapter plugin integration - DEPRECATED
+// The plugin system has been migrated to the Extension system.
+// Device adapters are now managed directly through DeviceService.
+// See: edge_ai_core::extension
+//
+// pub mod plugin_adapter;
+// pub mod plugin_registry;
 
 // Protocol mapping re-exports
 pub use protocol::{
@@ -78,9 +81,6 @@ pub use mdl_format::{
 };
 
 // New architecture exports
-pub use command_retry::{
-    CommandRetryConfig, CommandResult, CommandRetryManager, CommandStatus as RetryCommandStatus, PendingCommand,
-};
 pub use discovery::{DeviceDiscovery, DiscoveredDevice, DiscoveryResult};
 pub use registry::{ConnectionConfig, DeviceConfig, DeviceRegistry, DeviceTypeTemplate};
 pub use service::{AdapterInfo, AdapterStats, CommandHistoryRecord, CommandStatus, DeviceHealth, DeviceService, DeviceStatus, HeartbeatConfig};
@@ -89,19 +89,6 @@ pub use telemetry::{AggregatedData, DataPoint, MetricCache, TimeSeriesStorage};
 // Unified data extraction re-exports
 pub use unified_extractor::{
     ExtractionConfig, ExtractionMode, ExtractionResult, ExtractedMetric, UnifiedExtractor,
-};
-
-// HASS Discovery re-exports
-pub use hass_discovery::{
-    HassDeviceInfo, HassDiscoveryConfig, HassDiscoveryError, HassDiscoveryMessage,
-    HassDiscoveryResult, HassTopicParts, component_to_device_type, discovery_subscription_pattern,
-    is_discovery_topic, is_supported_component, parse_discovery_message,
-};
-pub use hass_discovery_listener::{
-    HassDiscoveryConfig as HassDiscoveryListenerConfig, HassDiscoveryListener,
-};
-pub use hass_discovery_mapper::{
-    generate_uplink_config, map_hass_to_mdl, register_hass_device_type,
 };
 
 #[cfg(feature = "embedded-broker")]
@@ -136,18 +123,19 @@ pub use adapter::{
 // Adapter creation utilities
 pub use adapters::{available_adapters, create_adapter};
 
-// Specialized adapter plugins
-pub use adapters::plugins::{
-    ExternalBrokerConfig, ExternalMqttBrokerPlugin,
-    UnifiedAdapterPluginFactory,
-};
-
-#[cfg(feature = "embedded-broker")]
-pub use adapters::plugins::InternalMqttBrokerPlugin;
-
-// Device adapter plugin integration
-pub use plugin_adapter::{
-    AdapterDeviceInfo, AdapterPluginInfo, DeviceAdapterPlugin, DeviceAdapterPluginFactory,
-    DeviceAdapterStats,
-};
-pub use plugin_registry::{AdapterPluginConfig, DeviceAdapterPluginRegistry};
+// Specialized adapter plugins - DEPRECATED
+// These have been migrated to use the Extension system.
+// pub use adapters::plugins::{
+//     ExternalBrokerConfig, ExternalMqttBrokerPlugin,
+//     UnifiedAdapterPluginFactory,
+// };
+//
+// #[cfg(feature = "embedded-broker")]
+// pub use adapters::plugins::InternalMqttBrokerPlugin;
+//
+// // Device adapter plugin integration
+// pub use plugin_adapter::{
+//     AdapterDeviceInfo, AdapterPluginInfo, DeviceAdapterPlugin, DeviceAdapterPluginFactory,
+//     DeviceAdapterStats,
+// };
+// pub use plugin_registry::{AdapterPluginConfig, DeviceAdapterPluginRegistry};

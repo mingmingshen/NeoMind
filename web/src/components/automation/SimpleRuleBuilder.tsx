@@ -283,31 +283,33 @@ export function SimpleRuleBuilder({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="pb-4">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 pb-4 pt-6 border-t-0 border-x-0 border-b shrink-0 pr-12">
           <DialogTitle>{rule ? '编辑规则' : '创建自动化规则'}</DialogTitle>
           <DialogDescription>
             当条件满足时，自动执行设定的动作
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="visual" className="gap-1.5">
-              <Eye className="h-3.5 w-3.5" />
-              <span>可视化</span>
-            </TabsTrigger>
-            <TabsTrigger value="code" className="gap-1.5">
-              <Code className="h-3.5 w-3.5" />
-              <span>代码</span>
-            </TabsTrigger>
-            <TabsTrigger value="ai" className="gap-1.5">
-              <Wand2 className="h-3.5 w-3.5" />
-              <span>AI 生成</span>
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <div className="px-6 pt-4 pb-2 shrink-0">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="visual" className="gap-1.5">
+                <Eye className="h-3.5 w-3.5" />
+                <span>可视化</span>
+              </TabsTrigger>
+              <TabsTrigger value="code" className="gap-1.5">
+                <Code className="h-3.5 w-3.5" />
+                <span>代码</span>
+              </TabsTrigger>
+              <TabsTrigger value="ai" className="gap-1.5">
+                <Wand2 className="h-3.5 w-3.5" />
+                <span>AI 生成</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          <div className="flex-1 overflow-y-auto py-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-4">
             {/* Name Input - Always visible */}
             <div className="space-y-3 mb-4">
               <Label htmlFor="rule-name">规则名称</Label>
@@ -549,7 +551,7 @@ export function SimpleRuleBuilder({
           </div>
         </Tabs>
 
-        <DialogFooter className="border-t pt-4">
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2">
               <Switch checked={enabled} onCheckedChange={setEnabled} />

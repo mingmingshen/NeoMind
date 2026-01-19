@@ -4,6 +4,8 @@ import { useStore } from "@/store"
 import { useToast } from "@/hooks/use-toast"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent } from "@/components/shared"
+import { Upload, Download, Sparkles, Trash2 } from "lucide-react"
+import { api } from "@/lib/api"
 import type { Device, DiscoveredDevice, DeviceType } from "@/types"
 import {
   DeviceList,
@@ -15,8 +17,10 @@ import {
   ViewDeviceTypeDialog,
   EditDeviceTypeDialog,
 } from "./devices/index"
+import { DeviceTypeGeneratorDialog } from "@/components/devices/DeviceTypeGeneratorDialog"
+import { DraftDevicesList } from "./devices/DraftDevicesList"
 
-type DeviceTabValue = "devices" | "types"
+type DeviceTabValue = "devices" | "types" | "drafts"
 
 export function DevicesPage() {
   const { t } = useTranslation(['common', 'devices'])
@@ -42,10 +46,8 @@ export function DevicesPage() {
     deviceTypeDetails,
     deviceDetails,
     telemetryData,
-    commandHistory,
     telemetryLoading,
     fetchTelemetryData,
-    fetchCommandHistory,
     discoverDevices,
     discovering,
     discoveredDevices,
@@ -60,7 +62,7 @@ export function DevicesPage() {
   const deviceTypesPerPage = 10
 
   // Active tab state
-  const [activeTab, setActiveTab] = useState<"devices" | "types">("devices")
+  const [activeTab, setActiveTab] = useState<DeviceTabValue>("devices")
 
   // Reset device type pagination when data changes
   useEffect(() => {
@@ -150,7 +152,6 @@ export function DevicesPage() {
     const end = Math.floor(Date.now() / 1000)
     const start = end - 86400 // 24 hours
     await fetchTelemetryData(device.id, undefined, start, end, 100)
-    await fetchCommandHistory(device.id, 50)
   }
 
   const handleCloseDeviceDetail = () => {
@@ -169,7 +170,6 @@ export function DevicesPage() {
         const start = end - 86400
         await fetchTelemetryData(deviceDetailView, undefined, start, end, 100)
       }
-      await fetchCommandHistory(deviceDetailView, 50)
     }
   }
 
@@ -196,8 +196,7 @@ export function DevicesPage() {
       }
       const success = await sendCommand(deviceDetailView, commandName, params)
       if (success) {
-        await fetchCommandHistory(deviceDetailView, 50)
-      } else {
+        } else {
         alert(t('devices:sendCommandFailed'))
       }
     } catch {
@@ -234,6 +233,9 @@ export function DevicesPage() {
   const [addDeviceTypeOpen, setAddDeviceTypeOpen] = useState(false)
   const [viewDeviceTypeOpen, setViewDeviceTypeOpen] = useState(false)
   const [editDeviceTypeOpen, setEditDeviceTypeOpen] = useState(false)
+  const [generatorOpen, setGeneratorOpen] = useState(false)
+  const [importingDeviceType, setImportingDeviceType] = useState(false)
+  const deviceTypeImportRef = useRef<HTMLInputElement>(null)
   const [selectedDeviceType, setSelectedDeviceType] = useState<DeviceType | null>(null)
   const [editingDeviceType, setEditingDeviceType] = useState<DeviceType | null>(null)
   const [addingType, setAddingType] = useState(false)
@@ -330,15 +332,114 @@ export function DevicesPage() {
     return await handleAddDeviceType(data)
   }
 
+  // Device Type import/export/generator handlers
+  const handleDeviceTypeImportClick = () => {
+    deviceTypeImportRef.current?.click()
+  }
+
+  const handleDeviceTypeImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setImportingDeviceType(true)
+    try {
+      const text = await file.text()
+      const imported = JSON.parse(text)
+      const typesToImport = Array.isArray(imported) ? imported : [imported]
+
+      let successCount = 0
+      let errorCount = 0
+
+      for (const type of typesToImport) {
+        try {
+          await addDeviceType(type)
+          successCount++
+        } catch (err) {
+          errorCount++
+          console.error(`Failed to import ${type.device_type}:`, err)
+        }
+      }
+
+      if (successCount > 0) {
+        toast({
+          title: t('common:success'),
+          description: `Imported ${successCount} device type${successCount > 1 ? 's' : ''}${errorCount > 0 ? ` (${errorCount} failed)` : ''}`
+        })
+        fetchDeviceTypes()
+      } else {
+        toast({
+          title: t('common:failed'),
+          description: 'No device types were imported',
+          variant: 'destructive'
+        })
+      }
+    } catch (error) {
+      toast({
+        title: t('common:failed'),
+        description: 'Failed to parse JSON file',
+        variant: 'destructive'
+      })
+    } finally {
+      setImportingDeviceType(false)
+      if (deviceTypeImportRef.current) {
+        deviceTypeImportRef.current.value = ''
+      }
+    }
+  }
+
+  const handleDeviceTypeExportAll = async () => {
+    try {
+      const fullTypes = await Promise.all(
+        deviceTypes.map(t => api.getDeviceType(t.device_type))
+      )
+      const data = JSON.stringify(fullTypes, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `all-device-types.json`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      toast({ title: t('common:success'), description: `Exported ${deviceTypes.length} device types` })
+    } catch (error) {
+      toast({
+        title: t('common:failed'),
+        description: 'Failed to export device types',
+        variant: 'destructive'
+      })
+    }
+  }
+
+  // Draft cleanup handler
+  const handleDraftsCleanup = async () => {
+    try {
+      const result = await api.cleanupDraftDevices()
+      toast({
+        title: t('common:success'),
+        description: t('devices:drafts.cleaned', { count: result.cleaned }),
+      })
+    } catch (error) {
+      toast({
+        title: t('common:failed'),
+        description: t('devices:drafts.cleanupFailed'),
+        variant: 'destructive'
+      })
+    }
+  }
+
   return (
-    <PageLayout>
+    <PageLayout
+      title={t('devices:title')}
+      subtitle={t('devices:subtitle')}
+    >
       {deviceDetailView && deviceDetails ? (
         // Device Detail View
         <DeviceDetail
           device={deviceDetails}
           deviceType={deviceTypeDetails}
           telemetryData={telemetryData}
-          commandHistory={commandHistory}
           telemetryLoading={telemetryLoading}
           selectedMetric={selectedMetric}
           onBack={handleCloseDeviceDetail}
@@ -353,9 +454,62 @@ export function DevicesPage() {
           tabs={[
             { value: 'devices', label: t('devices:deviceList') },
             { value: 'types', label: t('devices:deviceTypes') },
+            { value: 'drafts', label: t('devices:drafts.tab') },
           ]}
           activeTab={activeTab}
           onTabChange={(v) => setActiveTab(v as DeviceTabValue)}
+          actions={
+            activeTab === 'devices'
+              ? [
+                  {
+                    label: t('devices:addDevice'),
+                    onClick: () => setAddDeviceDialogOpen(true),
+                  },
+                  {
+                    label: t('devices:localNetworkScan'),
+                    variant: 'outline',
+                    onClick: () => setDiscoveryOpen(true),
+                  },
+                ]
+              : activeTab === 'types'
+              ? [
+                  {
+                    label: t('common:import'),
+                    icon: <Upload className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: handleDeviceTypeImportClick,
+                    disabled: importingDeviceType,
+                  },
+                  {
+                    label: t('common:export') + ' All',
+                    icon: <Download className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: handleDeviceTypeExportAll,
+                    disabled: deviceTypes.length === 0,
+                  },
+                  {
+                    label: t('devices:types.generator.button'),
+                    icon: <Sparkles className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: () => setGeneratorOpen(true),
+                  },
+                  {
+                    label: t('devices:addDeviceType'),
+                    onClick: () => setAddDeviceTypeOpen(true),
+                  },
+                ]
+              : activeTab === 'drafts'
+              ? [
+                  {
+                    label: t('devices:drafts.cleanup'),
+                    icon: <Trash2 className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: handleDraftsCleanup,
+                    disabled: false,
+                  },
+                ]
+              : []
+          }
         >
           {/* Devices Tab */}
           <PageTabsContent value="devices" activeTab={activeTab}>
@@ -408,7 +562,6 @@ export function DevicesPage() {
               onEdit={handleEditDeviceType}
               onDelete={handleDeleteDeviceType}
               onPageChange={setDeviceTypePage}
-              onAddType={() => setAddDeviceTypeOpen(true)}
               addTypeDialog={
                 <AddDeviceTypeDialog
                   open={addDeviceTypeOpen}
@@ -422,6 +575,11 @@ export function DevicesPage() {
                 />
               }
             />
+          </PageTabsContent>
+
+          {/* Draft Devices Tab (Auto-onboarding) */}
+          <PageTabsContent value="drafts" activeTab={activeTab}>
+            <DraftDevicesList onRefresh={fetchDeviceTypes} />
           </PageTabsContent>
         </PageTabs>
       )}
@@ -440,6 +598,25 @@ export function DevicesPage() {
         onEdit={handleEditDeviceTypeSubmit}
         editing={addingType}
         onGenerateMDL={handleGenerateMDL}
+      />
+
+      {/* Hidden file input for device type import */}
+      <input
+        ref={deviceTypeImportRef}
+        type="file"
+        accept=".json"
+        className="hidden"
+        onChange={handleDeviceTypeImport}
+      />
+
+      {/* Device Type Generator Dialog */}
+      <DeviceTypeGeneratorDialog
+        open={generatorOpen}
+        onOpenChange={setGeneratorOpen}
+        onDeviceTypeCreated={() => {
+          fetchDeviceTypes()
+          setGeneratorOpen(false)
+        }}
       />
     </PageLayout>
   )

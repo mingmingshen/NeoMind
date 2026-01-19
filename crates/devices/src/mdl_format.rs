@@ -659,7 +659,11 @@ impl MdlStorage {
 
         // Check if we already have a storage for this path
         {
-            let singleton = MDL_STORAGE_SINGLETON.lock().unwrap();
+            let Ok(singleton) = MDL_STORAGE_SINGLETON.lock() else {
+                return Err(DeviceError::Io(std::io::Error::other(
+                    "Failed to acquire MDL storage lock".to_string(),
+                )));
+            };
             if let Some(storage) = singleton.as_ref()
                 && storage.path == path_str {
                     return Ok(storage.clone());
@@ -687,7 +691,14 @@ impl MdlStorage {
         // Ensure tables exist
         storage.ensure_tables()?;
 
-        *MDL_STORAGE_SINGLETON.lock().unwrap() = Some(storage.clone());
+        {
+            let Ok(mut singleton) = MDL_STORAGE_SINGLETON.lock() else {
+                return Err(DeviceError::Io(std::io::Error::other(
+                    "Failed to acquire MDL storage lock".to_string(),
+                )));
+            };
+            *singleton = Some(storage.clone());
+        }
         Ok(storage)
     }
 

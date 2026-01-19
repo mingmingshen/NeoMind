@@ -84,8 +84,18 @@ pub struct DeviceInfo {
     pub metrics: Vec<MetricInfo>,
     /// Supported commands for this device.
     pub commands: Vec<CommandInfo>,
+    /// Writable properties for this device.
+    pub properties: Vec<PropertyInfo>,
     /// Whether the device is currently online.
     pub online: bool,
+}
+
+/// Information about a device property.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PropertyInfo {
+    pub name: String,
+    pub property_type: String,
+    pub writable: bool,
 }
 
 /// Information about a device metric.
@@ -134,6 +144,14 @@ pub struct AlertChannelInfo {
     pub enabled: bool,
 }
 
+/// Information about available workflows.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowInfo {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+}
+
 /// Context for validation - contains available resources.
 #[derive(Debug, Clone, Default)]
 pub struct ValidationContext {
@@ -141,6 +159,8 @@ pub struct ValidationContext {
     pub devices: HashMap<String, DeviceInfo>,
     /// Available alert channels indexed by ID.
     pub alert_channels: HashMap<String, AlertChannelInfo>,
+    /// Available workflows indexed by ID.
+    pub workflows: Vec<WorkflowInfo>,
 }
 
 impl ValidationContext {
@@ -235,11 +255,79 @@ impl RuleValidator {
     ) -> ValidationResult<Vec<ValidationIssue>> {
         let mut issues = Vec::new();
 
+        match condition {
+            RuleCondition::Simple {
+                device_id,
+                metric,
+                operator,
+                threshold,
+            } => {
+                issues.extend(Self::validate_simple_condition(device_id, metric, operator, threshold, context)?);
+            }
+            RuleCondition::Range {
+                device_id,
+                metric,
+                min,
+                max,
+            } => {
+                // Check device exists
+                let device = context
+                    .get_device(device_id)
+                    .ok_or_else(|| ValidationError::DeviceNotFound {
+                        device_id: device_id.clone(),
+                    })?;
+
+                // Check device is online (warning only)
+                if !device.online {
+                    issues.push(ValidationIssue {
+                        code: "DEVICE_OFFLINE".to_string(),
+                        message: format!("Device '{}' is currently offline", device.name),
+                        field: Some("condition.device_id".to_string()),
+                        severity: ValidationSeverity::Warning,
+                    });
+                }
+
+                // Check metric is supported
+                let _metric_info = device
+                    .metrics
+                    .iter()
+                    .find(|m| m.name == *metric)
+                    .ok_or_else(|| ValidationError::MetricNotSupported {
+                        device_id: device_id.clone(),
+                        metric: metric.clone(),
+                    })?;
+            }
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+                // Recursively validate each sub-condition
+                for cond in conditions {
+                    let sub_issues = Self::validate_condition(cond, context)?;
+                    issues.extend(sub_issues);
+                }
+            }
+            RuleCondition::Not(cond) => {
+                let sub_issues = Self::validate_condition(cond, context)?;
+                issues.extend(sub_issues);
+            }
+        }
+
+        Ok(issues)
+    }
+
+    /// Validate a simple condition.
+    fn validate_simple_condition(
+        device_id: &str,
+        metric: &str,
+        operator: &ComparisonOperator,
+        threshold: &f64,
+        context: &ValidationContext,
+    ) -> ValidationResult<Vec<ValidationIssue>> {
+        let mut issues = Vec::new();
+
         // Check device exists
         let device = context
-            .get_device(&condition.device_id)
+            .get_device(device_id)
             .ok_or_else(|| ValidationError::DeviceNotFound {
-                device_id: condition.device_id.clone(),
+                device_id: device_id.to_string(),
             })?;
 
         // Check device is online (warning only)
@@ -253,34 +341,34 @@ impl RuleValidator {
         }
 
         // Check metric is supported
-        let metric = device
+        let metric_info = device
             .metrics
             .iter()
-            .find(|m| m.name == condition.metric)
+            .find(|m| m.name == *metric)
             .ok_or_else(|| ValidationError::MetricNotSupported {
-                device_id: condition.device_id.clone(),
-                metric: condition.metric.clone(),
+                device_id: device_id.to_string(),
+                metric: metric.to_string(),
             })?;
 
         // Validate threshold against metric constraints
-        if let (Some(min), Some(max)) = (metric.min_value, metric.max_value)
-            && (condition.threshold < min || condition.threshold > max) {
+        if let (Some(min), Some(max)) = (metric_info.min_value, metric_info.max_value)
+            && (*threshold < min || *threshold > max) {
                 issues.push(ValidationIssue {
                     code: "THRESHOLD_OUT_OF_RANGE".to_string(),
                     message: format!(
                         "Threshold {} is outside valid range [{}, {}]",
-                        condition.threshold, min, max
+                        threshold, min, max
                     ),
                     field: Some("condition.threshold".to_string()),
                     severity: ValidationSeverity::Warning,
                 });
-            }
+        }
 
         // Check if operator is compatible with metric type
-        match metric.data_type {
+        match metric_info.data_type {
             MetricDataType::Boolean => {
                 if !matches!(
-                    condition.operator,
+                    operator,
                     ComparisonOperator::Equal | ComparisonOperator::NotEqual
                 ) {
                     issues.push(ValidationIssue {
@@ -290,7 +378,7 @@ impl RuleValidator {
                         severity: ValidationSeverity::Error,
                     });
                 }
-                if condition.threshold != 0.0 && condition.threshold != 1.0 {
+                if *threshold != 0.0 && *threshold != 1.0 {
                     issues.push(ValidationIssue {
                         code: "INVALID_BOOLEAN_THRESHOLD".to_string(),
                         message: "Boolean thresholds should be 0 (false) or 1 (true)".to_string(),
@@ -300,13 +388,13 @@ impl RuleValidator {
                 }
             }
             MetricDataType::Enum(ref values) => {
-                let idx = condition.threshold as usize;
+                let idx = *threshold as usize;
                 if idx >= values.len() {
                     issues.push(ValidationIssue {
                         code: "INVALID_ENUM_VALUE".to_string(),
                         message: format!(
                             "Threshold {} is not a valid enum value (max: {})",
-                            condition.threshold,
+                            threshold,
                             values.len() - 1
                         ),
                         field: Some("condition.threshold".to_string()),
@@ -380,6 +468,52 @@ impl RuleValidator {
             }
             RuleAction::Log { .. } => {
                 // Log actions don't require specific resources
+            }
+            RuleAction::Set { device_id, property, .. } => {
+                // Check device exists
+                let device = context
+                    .get_device(device_id)
+                    .ok_or_else(|| ValidationError::DeviceNotFound {
+                        device_id: device_id.clone(),
+                    })?;
+
+                // Check if property is a valid writable property
+                if !device.properties.iter().any(|p| p.name == *property && p.writable) {
+                    issues.push(ValidationIssue {
+                        code: "PROPERTY_NOT_WRITABLE".to_string(),
+                        message: format!("Property '{}' is not writable or doesn't exist", property),
+                        field: Some("actions.set.property".to_string()),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
+            }
+            RuleAction::Delay { .. } => {
+                // Delay actions don't require specific resources
+            }
+            RuleAction::TriggerWorkflow { workflow_id, .. } => {
+                // Check if workflow exists
+                if !context.workflows.iter().any(|w| w.id == *workflow_id) {
+                    issues.push(ValidationIssue {
+                        code: "WORKFLOW_NOT_FOUND".to_string(),
+                        message: format!("Workflow '{}' not found", workflow_id),
+                        field: Some("actions.trigger_workflow.workflow_id".to_string()),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
+            }
+            RuleAction::CreateAlert { .. } => {
+                // Alert creation doesn't require specific resources
+            }
+            RuleAction::HttpRequest { url, .. } => {
+                // Validate URL format
+                if let Err(_) = url::Url::parse(url) {
+                    issues.push(ValidationIssue {
+                        code: "INVALID_URL".to_string(),
+                        message: format!("Invalid URL: {}", url),
+                        field: Some("actions.http.url".to_string()),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
             }
         }
 
@@ -483,7 +617,7 @@ mod tests {
     #[test]
     fn test_validate_device_not_found() {
         let context = ValidationContext::new();
-        let condition = RuleCondition {
+        let condition = RuleCondition::Simple {
             device_id: "nonexistent".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -505,10 +639,11 @@ mod tests {
             device_type: "sensor".to_string(),
             metrics: vec![],
             commands: vec![],
+            properties: vec![],
             online: true,
         });
 
-        let condition = RuleCondition {
+        let condition = RuleCondition::Simple {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -536,10 +671,11 @@ mod tests {
                 max_value: Some(150.0),
             }],
             commands: vec![],
+            properties: vec![],
             online: true,
         });
 
-        let condition = RuleCondition {
+        let condition = RuleCondition::Simple {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -566,10 +702,11 @@ mod tests {
                 max_value: Some(100.0),
             }],
             commands: vec![],
+            properties: vec![],
             online: true,
         });
 
-        let condition = RuleCondition {
+        let condition = RuleCondition::Simple {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,

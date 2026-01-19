@@ -24,6 +24,7 @@ bincode = "1.3"
 uuid = { workspace = true, features = ["v4", "serde"] }
 chrono = { workspace = true, features = ["serde"] }
 async-trait = "0.1"
+rand = "0.8"
 
 [features]
 default = ["redb"]
@@ -35,5 +36,8 @@ memory = []
 # Vector search
 hnsw = ["dep:hnsw"]
 
+# Settings migration support
+settings = []
+
 # All features
-all = ["redb", "memory", "hnsw"]
+all = ["redb", "memory", "hnsw", "settings"]

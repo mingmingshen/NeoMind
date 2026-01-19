@@ -225,10 +225,20 @@ impl DataPathExtractor {
             value_range,
             is_array,
             is_object,
+            is_array_pattern: false,
+            array_name: None,
+            inferred_array_length: None,
         })
     }
 
     /// Extract value from JSON using dot/bracket notation path
+    ///
+    /// Supports:
+    /// - "field" - direct field access
+    /// - "field.nested" - nested field access
+    /// - "field[0]" - array index (bracket notation)
+    /// - "field[]" - array wildcard (returns first element or all elements as array)
+    /// - "field.0" - array index (dot notation)
     fn extract_by_path(
         &self,
         value: &serde_json::Value,
@@ -242,7 +252,7 @@ impl DataPathExtractor {
         let mut current = value;
 
         for part in parts {
-            // Handle array indexing: sensors[0]
+            // Handle array indexing: sensors[0] or sensors[] for wildcard
             if let Some(bracket_start) = part.find('[') {
                 let key = &part[..bracket_start];
                 let bracket_part = &part[bracket_start..];
@@ -254,7 +264,7 @@ impl DataPathExtractor {
                     return None;
                 }
 
-                // Then handle array indices
+                // Then handle array indices or wildcards
                 let mut bracket_iter = bracket_part.chars().peekable();
                 while bracket_iter.peek() == Some(&'[') {
                     bracket_iter.next(); // consume '['
@@ -265,7 +275,20 @@ impl DataPathExtractor {
                         .collect();
                     bracket_iter.next(); // consume ']'
 
-                    if let Ok(index) = index_str.parse::<usize>() {
+                    if index_str.is_empty() {
+                        // Wildcard "[]" - return array or first element
+                        if let Some(arr) = current.as_array() {
+                            if arr.len() == 1 {
+                                // Single element: unwrap it
+                                current = &arr[0];
+                            } else {
+                                // Multiple elements: keep as array
+                                // Keep current as the array itself
+                                break;
+                            }
+                        }
+                        // If not an array, keep current as-is
+                    } else if let Ok(index) = index_str.parse::<usize>() {
                         if let Some(arr) = current.as_array() {
                             if index < arr.len() {
                                 current = &arr[index];
@@ -425,6 +448,9 @@ If the data appears to be:
                         value_range: None,
                         is_array: false,
                         is_object: false,
+                        is_array_pattern: false,
+                        array_name: None,
+                        inferred_array_length: None,
                     });
                 }
             }
@@ -814,6 +840,9 @@ mod tests {
                 value_range: None,
                 is_array: false,
                 is_object: false,
+                is_array_pattern: false,
+                array_name: None,
+                inferred_array_length: None,
             },
             DiscoveredPath {
                 path: "data.temperature".to_string(),
@@ -824,6 +853,9 @@ mod tests {
                 value_range: None,
                 is_array: false,
                 is_object: false,
+                is_array_pattern: false,
+                array_name: None,
+                inferred_array_length: None,
             },
         ];
 

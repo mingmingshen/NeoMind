@@ -129,8 +129,8 @@ export function DeviceRealtime({
   const { isConnected, events, clearEvents, reconnect } = useDeviceEvents({
     enabled: autoRefresh,
     onEvent: handleDeviceEvent,
-    onConnected: (connected) => {
-      console.log(`[DeviceRealtime] Event stream ${connected ? "connected" : "disconnected"}`)
+    onConnected: () => {
+      // Connection state changed
     },
     onError: (error) => {
       console.error("[DeviceRealtime] Event stream error:", error)

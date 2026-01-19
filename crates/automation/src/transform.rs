@@ -1148,7 +1148,9 @@ impl TransformEngine {
     /// - "$" - root
     /// - "$.field" - direct field access
     /// - "$.field.nested" - nested field access
-    /// - "$.field[0]" - array access
+    /// - "$.field[0]" - array access with index
+    /// - "$.field[]" - array wildcard (returns first element or all elements as array)
+    /// - "$.field[0]" or "$.field.0" - dot notation for array index
     fn extract_value_by_path(&self, data: &Value, path: &str) -> Result<Value> {
         let path = path.trim();
         let mut current = data;
@@ -1169,58 +1171,82 @@ impl TransformEngine {
 
         // Split by "." and traverse
         for part in path_parts.split('.') {
-            current = match part {
-                "" => current,
-                _ => {
-                    // Handle array indexing: "field[0]"
-                    if let Some(bracket_pos) = part.find('[') {
-                        let field = &part[..bracket_pos];
-                        let index_part = &part[bracket_pos..];
+            if part.is_empty() {
+                continue;
+            }
 
-                        // Get the field first
-                        current = current
-                            .get(field)
-                            .ok_or_else(|| AutomationError::TransformError {
-                                operation: "PathExtract".to_string(),
-                                message: format!("Field '{}' not found", field),
-                            })?;
+            // Handle array indexing: "field[0]" or "field[]" for wildcard
+            if let Some(bracket_pos) = part.find('[') {
+                let field = &part[..bracket_pos];
+                let index_part = &part[bracket_pos..];
 
-                        // Parse array index
-                        if let Some(end_bracket) = index_part.find(']') {
-                            let index_str = &index_part[1..end_bracket];
-                            let index: usize = index_str.parse().map_err(|_| AutomationError::TransformError {
-                                operation: "PathExtract".to_string(),
-                                message: format!("Invalid array index: {}", index_str),
-                            })?;
+                // Get the field first
+                current = current
+                    .get(field)
+                    .ok_or_else(|| AutomationError::TransformError {
+                        operation: "PathExtract".to_string(),
+                        message: format!("Field '{}' not found", field),
+                    })?;
 
-                            if let Value::Array(arr) = current {
-                                // Return a reference to the array element, handling errors properly
-                                arr.get(index)
-                                    .ok_or_else(|| AutomationError::TransformError {
-                                        operation: "PathExtract".to_string(),
-                                        message: format!("Array index {} out of bounds", index),
-                                    })?
+                // Parse array index or wildcard
+                if let Some(end_bracket) = index_part.find(']') {
+                    let index_str = &index_part[1..end_bracket];
+
+                    if index_str.is_empty() {
+                        // Wildcard "[]" - return the array as-is, or first element
+                        if let Value::Array(arr) = current {
+                            current = if arr.len() == 1 {
+                                &arr[0]
                             } else {
-                                return Err(AutomationError::TransformError {
-                                    operation: "PathExtract".to_string(),
-                                    message: format!("Field '{}' is not an array", field),
-                                });
-                            }
+                                current
+                            };
+                        }
+                        // If not an array, keep current as-is
+                    } else {
+                        // Numeric index
+                        let index: usize = index_str.parse().map_err(|_| AutomationError::TransformError {
+                            operation: "PathExtract".to_string(),
+                            message: format!("Invalid array index: {}", index_str),
+                        })?;
+
+                        if let Value::Array(arr) = current {
+                            current = arr.get(index).ok_or_else(|| AutomationError::TransformError {
+                                operation: "PathExtract".to_string(),
+                                message: format!("Array index {} out of bounds (len: {})", index, arr.len()),
+                            })?;
                         } else {
                             return Err(AutomationError::TransformError {
                                 operation: "PathExtract".to_string(),
-                                message: format!("Unclosed bracket in path part: {}", part),
+                                message: format!("Field '{}' is not an array", field),
                             });
                         }
-                    } else {
-                        // Return the value directly, not an assignment
-                        current.get(part).ok_or_else(|| AutomationError::TransformError {
-                            operation: "PathExtract".to_string(),
-                            message: format!("Field '{}' not found", part),
-                        })?
                     }
+                } else {
+                    return Err(AutomationError::TransformError {
+                        operation: "PathExtract".to_string(),
+                        message: format!("Unclosed bracket in path part: {}", part),
+                    });
                 }
-            };
+            } else if let Ok(index) = part.parse::<usize>() {
+                // Handle numeric array index in dot notation: "field.0"
+                if let Value::Array(arr) = current {
+                    current = arr.get(index).ok_or_else(|| AutomationError::TransformError {
+                        operation: "PathExtract".to_string(),
+                        message: format!("Array index {} out of bounds (len: {})", index, arr.len()),
+                    })?;
+                } else {
+                    return Err(AutomationError::TransformError {
+                        operation: "PathExtract".to_string(),
+                        message: format!("Cannot index non-array with {}", index),
+                    });
+                }
+            } else {
+                // Regular field access
+                current = current.get(part).ok_or_else(|| AutomationError::TransformError {
+                    operation: "PathExtract".to_string(),
+                    message: format!("Field '{}' not found", part),
+                })?;
+            }
         }
 
         Ok(current.clone())

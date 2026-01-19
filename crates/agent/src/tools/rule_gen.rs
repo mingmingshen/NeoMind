@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 use edge_ai_rules::{
     RuleEngine,
-    dsl::{ParsedRule, RuleDslParser, RuleError},
+    dsl::{ParsedRule, RuleCondition, RuleDslParser, RuleError},
 };
 use edge_ai_tools::{
     Tool, ToolError, ToolOutput,
@@ -214,29 +214,57 @@ impl ValidateRuleDslTool {
                 // Step 2: Semantic validation
                 let device_types = self.device_types.read().await;
 
-                // Check if device exists
-                let device_exists = device_types
-                    .iter()
-                    .any(|d| d.device_id == rule.condition.device_id);
-                if !device_exists {
-                    warnings.push(format!(
-                        "Device '{}' is not registered in the system",
-                        rule.condition.device_id
-                    ));
-                }
+                // Extract device info from condition for validation
+                let (device_id, metric) = match &rule.condition {
+                    RuleCondition::Simple { device_id, metric, .. } |
+                    RuleCondition::Range { device_id, metric, .. } => {
+                        (Some(device_id.clone()), Some(metric.clone()))
+                    }
+                    RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+                        // For complex conditions, check all sub-conditions
+                        let mut devices = Vec::new();
+                        for c in conditions {
+                            if let RuleCondition::Simple { device_id, metric, .. } |
+                               RuleCondition::Range { device_id, metric, .. } = c {
+                                devices.push((device_id.clone(), metric.clone()));
+                            }
+                        }
+                        if devices.len() == 1 {
+                            (Some(devices[0].0.clone()), Some(devices[0].1.clone()))
+                        } else {
+                            (None, None)
+                        }
+                    }
+                    RuleCondition::Not(_) => (None, None),
+                };
 
-                // Check if metric exists for device
-                if let Some(device) = device_types
-                    .iter()
-                    .find(|d| d.device_id == rule.condition.device_id)
-                    && !device.metrics.contains(&rule.condition.metric) {
+                // Check if device exists
+                if let Some(ref device_id) = device_id {
+                    let device_exists = device_types
+                        .iter()
+                        .any(|d| d.device_id == *device_id);
+                    if !device_exists {
                         warnings.push(format!(
-                            "Metric '{}' is not available for device '{}'. Available metrics: {}",
-                            rule.condition.metric,
-                            rule.condition.device_id,
-                            device.metrics.join(", ")
+                            "Device '{}' is not registered in the system",
+                            device_id
                         ));
                     }
+
+                    // Check if metric exists for device
+                    if let (Some(metric), Some(device)) = (&metric, device_types
+                        .iter()
+                        .find(|d| d.device_id == *device_id))
+                    {
+                        if !device.metrics.contains(metric) {
+                            warnings.push(format!(
+                                "Metric '{}' is not available for device '{}'. Available metrics: {}",
+                                metric,
+                                device_id,
+                                device.metrics.join(", ")
+                            ));
+                        }
+                    }
+                }
 
                 // Validate actions
                 for (i, action) in rule.actions.iter().enumerate() {
@@ -288,14 +316,44 @@ impl ValidateRuleDslTool {
             is_valid,
             errors,
             warnings,
-            parsed_rule_summary: parsed_rule.map(|r| RuleSummary {
-                name: r.name,
-                device_id: r.condition.device_id,
-                metric: r.condition.metric,
-                operator: r.condition.operator.as_str().to_string(),
-                threshold: r.condition.threshold,
-                has_duration: r.for_duration.is_some(),
-                actions_count: r.actions.len(),
+            parsed_rule_summary: parsed_rule.map(|r| {
+                // Extract info from condition for summary
+                let (device_id, metric, operator, threshold) = match &r.condition {
+                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                        (
+                            device_id.clone(),
+                            metric.clone(),
+                            operator.as_str().to_string(),
+                            *threshold
+                        )
+                    }
+                    RuleCondition::Range { device_id, metric, min, max } => {
+                        (
+                            device_id.clone(),
+                            metric.clone(),
+                            format!("{}-{}", min, max),
+                            *max // Use max as threshold for display
+                        )
+                    }
+                    RuleCondition::And(_) | RuleCondition::Or(_) | RuleCondition::Not(_) => {
+                        (
+                            "(complex)".to_string(),
+                            "(complex)".to_string(),
+                            "complex".to_string(),
+                            0.0
+                        )
+                    }
+                };
+
+                RuleSummary {
+                    name: r.name,
+                    device_id,
+                    metric,
+                    operator,
+                    threshold,
+                    has_duration: r.for_duration.is_some(),
+                    actions_count: r.actions.len(),
+                }
             }),
         }
     }
@@ -383,21 +441,38 @@ impl CreateRuleTool {
                     });
                 }
 
-                // Check for duplicate condition
-                if existing.condition.device_id == parsed.condition.device_id
-                    && existing.condition.metric == parsed.condition.metric
-                    && existing.condition.operator == parsed.condition.operator
-                    && (existing.condition.threshold - parsed.condition.threshold).abs() < 0.0001
-                {
-                    return Ok(CreateResult {
-                        success: false,
-                        rule_id: None,
-                        message: format!(
-                            "Similar rule already exists: '{}' (ID: {}). Consider modifying the condition.",
-                            existing.name, existing.id
-                        ),
-                        duplicate_name: None,
-                    });
+                // Check for duplicate condition (only for Simple conditions)
+                // Extract key info from both conditions for comparison
+                let existing_key = match &existing.condition {
+                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                        Some((device_id.clone(), metric.clone(), format!("{:?}", operator), *threshold))
+                    }
+                    _ => None,
+                };
+
+                let parsed_key = match &parsed.condition {
+                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                        Some((device_id.clone(), metric.clone(), format!("{:?}", operator), *threshold))
+                    }
+                    _ => None,
+                };
+
+                if let (Some(_existing_key), Some(_parsed_key)) = (existing_key, parsed_key) {
+                    if _existing_key.0 == _parsed_key.0
+                        && _existing_key.1 == _parsed_key.1
+                        && _existing_key.2 == _parsed_key.2
+                        && (_existing_key.3 - _parsed_key.3).abs() < 0.0001
+                    {
+                        return Ok(CreateResult {
+                            success: false,
+                            rule_id: None,
+                            message: format!(
+                                "Similar rule already exists: '{}' (ID: {}). Consider modifying the condition.",
+                                existing.name, existing.id
+                            ),
+                            duplicate_name: None,
+                        });
+                    }
                 }
             }
         }

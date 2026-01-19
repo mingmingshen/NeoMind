@@ -459,26 +459,48 @@ async fn run_server(host: String, port: u16) -> Result<()> {
 
 /// Run plugin management commands.
 async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
-    use edge_ai_core::plugin::WasmPluginLoader;
+    use edge_ai_core::extension::WasmExtensionLoader;
 
     match cmd {
         PluginCommand::Validate { path, verbose } => {
-            let loader = WasmPluginLoader::new();
-            let result = loader.validate_plugin(&path);
+            let loader = WasmExtensionLoader::new();
 
-            println!("{}", result.format_report());
+            // Try to load the extension
+            let result = loader.load(&path).await;
 
-            if verbose {
-                println!("\n--- Verbose Details ---\n");
-                println!("Plugin path: {}", path.display());
-                println!("Current directory: {}", std::env::current_dir()?.display());
-                println!("Search paths:");
-                for sp in &loader.search_paths {
-                    println!("  - {}", sp.display());
+            match result {
+                Ok(metadata) => {
+                    println!("Extension Validation: PASSED");
+                    println!();
+                    println!("ID:              {}", metadata.id);
+                    println!("Name:            {}", metadata.name);
+                    println!("Version:         {}", metadata.version);
+                    println!("Type:            {:?}", metadata.extension_type);
+
+                    if verbose {
+                        println!("\n--- Verbose Details ---\n");
+                        println!("Extension path: {}", path.display());
+                        println!("Current directory: {}", std::env::current_dir()?.display());
+                        if let Some(file_path) = &metadata.file_path {
+                            println!("File path:       {}", file_path.display());
+                        }
+                    }
+
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    println!("Extension Validation: FAILED");
+                    println!();
+                    println!("Error: {}", e);
+                    println!();
+                    println!("Make sure:");
+                    println!("  1. The extension file exists");
+                    println!("  2. The file has .wasm extension");
+                    println!("  3. A sidecar .json file exists with metadata (optional)");
+
+                    std::process::exit(1);
                 }
             }
-
-            std::process::exit(result.exit_code());
         }
 
         PluginCommand::Create {
@@ -623,72 +645,65 @@ async fn list_plugins(dir: Option<PathBuf>, ty: Option<String>) -> Result<()> {
     Ok(())
 }
 
-/// Show plugin metadata.
+/// Show extension metadata.
 async fn show_plugin_info(path: &PathBuf) -> Result<()> {
-    use edge_ai_core::plugin::WasmPluginLoader;
+    use edge_ai_core::extension::WasmExtensionLoader;
 
     if !path.exists() {
-        anyhow::bail!("Plugin file not found: {}", path.display());
+        anyhow::bail!("Extension file not found: {}", path.display());
     }
 
     let is_wasm = path.extension().is_some_and(|e| e == "wasm");
 
     if is_wasm {
-        let loader = WasmPluginLoader::new();
+        let loader = WasmExtensionLoader::new();
 
-        match loader.load_metadata(path) {
-            Ok(loaded) => {
-                let meta = loaded.metadata;
+        match loader.load(path).await {
+            Ok(metadata) => {
+                println!("Extension Information");
+                println!("======================\n");
+                println!("ID:              {}", metadata.id);
+                println!("Name:            {}", metadata.name);
+                println!("Version:         {}", metadata.version);
+                println!("Type:            {:?}", metadata.extension_type);
+                if let Some(description) = &metadata.description {
+                    println!("Description:     {}", description);
+                }
+                if let Some(author) = &metadata.author {
+                    println!("Author:          {}", author);
+                }
 
-                println!("Plugin Information");
-                println!("==================\n");
-                println!("ID:              {}", meta.base.id);
-                println!("Name:            {}", meta.base.name);
-                println!("Version:         {}", meta.version);
-                println!("Type:            {:?}", meta.plugin_type);
-                println!("Description:     {}", meta.base.description);
-                println!(
-                    "Author:          {}",
-                    meta.base.author.as_ref().unwrap_or(&"Unknown".to_string())
-                );
+                if let Some(file_path) = &metadata.file_path {
+                    println!("\nModule:          {}", file_path.display());
+                }
 
-                if let Some(homepage) = &meta.homepage {
+                if let Some(homepage) = &metadata.homepage {
                     println!("Homepage:        {}", homepage);
                 }
-                if let Some(repository) = &meta.repository {
-                    println!("Repository:      {}", repository);
-                }
-                if let Some(license) = &meta.license {
+                if let Some(license) = &metadata.license {
                     println!("License:         {}", license);
                 }
 
-                println!("\nRequirements:");
-                println!("  NeoTalk:        {}", meta.required_neotalk_version);
-
-                if let Some(schema) = &meta.config_schema {
-                    println!("\nConfig Schema:");
-                    println!("{}", serde_json::to_string_pretty(schema)?);
+                if let Some(req_version) = &metadata.required_neotalk_version {
+                    println!("Required:        NeoTalk {}", req_version);
                 }
-
-                println!("\nModule:          {}", path.display());
-                println!("Memory Size:     {} MB", loaded.memory_size / (1024 * 1024));
             }
             Err(e) => {
-                eprintln!("Error loading plugin metadata: {}", e);
+                eprintln!("Error loading extension metadata: {}", e);
                 eprintln!();
                 eprintln!("Make sure:");
-                println!("  1. The plugin file is valid");
-                println!("  2. A sidecar .json file exists with plugin metadata");
+                println!("  1. The extension file is valid");
+                println!("  2. A sidecar .json file exists with extension metadata");
                 println!("  3. Run: edge-ai plugin validate {}", path.display());
             }
         }
     } else {
-        println!("Native Plugin");
-        println!("==============\n");
+        println!("Native Extension");
+        println!("==================\n");
         println!("Path: {}", path.display());
         println!();
-        println!("Note: Detailed metadata extraction for native plugins");
-        println!("      requires loading the plugin library.");
+        println!("Note: Detailed metadata extraction for native extensions");
+        println!("      requires loading the extension library.");
         println!("      Use: edge-ai plugin validate {}", path.display());
     }
 

@@ -146,8 +146,8 @@ export function RuleMonitor({
   const { isConnected, events, clearEvents, reconnect } = useRuleEvents({
     enabled: autoRefresh && !isPaused,
     onEvent: handleRuleEvent,
-    onConnected: (connected) => {
-      console.log(`[RuleMonitor] Event stream ${connected ? "connected" : "disconnected"}`)
+    onConnected: () => {
+      // Connection state changed
     },
     onError: (error) => {
       console.error("[RuleMonitor] Event stream error:", error)

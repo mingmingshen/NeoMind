@@ -49,6 +49,7 @@ utoipa = "5"
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
 headers = "0.4"
 atty = "0.2"
+regex = "1.11"
 
 # Encryption
 aes-gcm = "0.10"

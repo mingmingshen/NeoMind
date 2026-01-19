@@ -5,7 +5,9 @@
 //! - Conditional branching (if/then/else)
 //! - Parallel step execution with concurrency limits
 //! - Nested step support with recursion depth limits
+//! - Compensation support for rolling back failed workflows
 
+use crate::compensation::{CompensationExecutor, CompensationRegistry, FailureStrategy};
 use crate::error::{Result, WorkflowError};
 use crate::store::{ExecutionLog, ExecutionStatus, StepResult};
 use crate::wasm_runtime::WasmRuntime;
@@ -13,7 +15,11 @@ use crate::workflow::Step;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
+use tokio::sync::{RwLock, Semaphore};
+
+// Import device and alert types for integration
+pub use edge_ai_devices::service::DeviceService;
+pub use edge_ai_alerts::AlertManager;
 
 /// Execution context for running workflows
 pub struct ExecutionContext {
@@ -29,6 +35,10 @@ pub struct ExecutionContext {
     pub execution_id: String,
     /// Started at
     pub started_at: i64,
+    /// Steps that have completed (in order, for compensation)
+    pub completed_steps: Vec<String>,
+    /// Failure strategy for this execution
+    pub failure_strategy: FailureStrategy,
 }
 
 impl ExecutionContext {
@@ -41,7 +51,33 @@ impl ExecutionContext {
             workflow_id,
             execution_id,
             started_at: Utc::now().timestamp(),
+            completed_steps: Vec::new(),
+            failure_strategy: FailureStrategy::CompensateAll,
         }
+    }
+
+    /// Create a new execution context with a specific failure strategy
+    pub fn with_strategy(workflow_id: String, execution_id: String, strategy: FailureStrategy) -> Self {
+        Self {
+            step_results: HashMap::new(),
+            variables: HashMap::new(),
+            logs: Vec::new(),
+            workflow_id,
+            execution_id,
+            started_at: Utc::now().timestamp(),
+            completed_steps: Vec::new(),
+            failure_strategy: strategy,
+        }
+    }
+
+    /// Mark a step as completed (for compensation tracking)
+    pub fn mark_step_completed(&mut self, step_id: String) {
+        self.completed_steps.push(step_id);
+    }
+
+    /// Get completed steps in reverse order (for compensation)
+    pub fn completed_steps_reverse(&self) -> Vec<String> {
+        self.completed_steps.iter().rev().cloned().collect()
     }
 
     /// Add a log entry
@@ -107,32 +143,74 @@ impl ExecutionContext {
 /// Workflow executor
 pub struct Executor {
     wasm_runtime: tokio::sync::RwLock<Option<WasmRuntime>>,
-    // Device manager can be set later when the API is available
-    device_manager: Option<Arc<()>>,
-    // Alert manager can be set later when the API is available
-    alert_manager: Option<Arc<()>>,
+    /// Compensation registry for handling rollback
+    compensation_registry: Arc<CompensationRegistry>,
+    /// Compensation executor
+    compensation_executor: Arc<CompensationExecutor>,
+    /// Device service for device operations (wrapped in RwLock for runtime updates)
+    device_service: Arc<RwLock<Option<Arc<DeviceService>>>>,
+    /// Alert manager for alert operations (wrapped in RwLock for runtime updates)
+    alert_manager: Arc<RwLock<Option<Arc<AlertManager>>>>,
 }
 
 impl Executor {
     /// Create a new executor
     pub fn new() -> Self {
+        let compensation_registry = Arc::new(CompensationRegistry::new());
+        let compensation_executor = Arc::new(CompensationExecutor::new(
+            compensation_registry.clone(),
+        ));
+
         Self {
             wasm_runtime: tokio::sync::RwLock::new(None),
-            device_manager: None,
-            alert_manager: None,
+            compensation_registry,
+            compensation_executor,
+            device_service: Arc::new(RwLock::new(None)),
+            alert_manager: Arc::new(RwLock::new(None)),
         }
     }
 
-    /// Set device manager (placeholder for future integration)
-    pub fn with_device_manager(mut self, _manager: Arc<()>) -> Self {
-        self.device_manager = Some(Arc::new(()));
-        self
+    /// Get the compensation executor
+    pub fn compensation_executor(&self) -> &CompensationExecutor {
+        &self.compensation_executor
     }
 
-    /// Set alert manager (placeholder for future integration)
-    pub fn with_alert_manager(mut self, _manager: Arc<()>) -> Self {
-        self.alert_manager = Some(Arc::new(()));
-        self
+    /// Get the compensation registry
+    pub fn compensation_registry(&self) -> &CompensationRegistry {
+        &self.compensation_registry
+    }
+
+    /// Execute compensation for completed steps
+    pub async fn compensate(
+        &self,
+        steps: Vec<(Step, StepResult)>,
+        context: &mut ExecutionContext,
+    ) -> Result<Vec<StepResult>> {
+        self.compensation_executor
+            .compensate(steps, context)
+            .await
+    }
+
+    /// Set device service for device operations
+    pub async fn set_device_manager(&self, manager: Arc<DeviceService>) {
+        let mut ds = self.device_service.write().await;
+        *ds = Some(manager);
+    }
+
+    /// Set alert manager for alert operations
+    pub async fn set_alert_manager(&self, manager: Arc<AlertManager>) {
+        let mut am = self.alert_manager.write().await;
+        *am = Some(manager);
+    }
+
+    /// Get device service reference
+    pub async fn get_device_service(&self) -> Option<Arc<DeviceService>> {
+        self.device_service.read().await.as_ref().cloned()
+    }
+
+    /// Get alert manager reference
+    pub async fn get_alert_manager(&self) -> Option<Arc<AlertManager>> {
+        self.alert_manager.read().await.as_ref().cloned()
     }
 
     /// Initialize WASM runtime
@@ -226,6 +304,7 @@ impl Executor {
 
                 if steps_to_execute.is_empty() {
                     context.log("info", "No steps to execute for condition branch".to_string());
+                    context.mark_step_completed(id.clone());
                     return Ok(StepResult {
                         step_id: id.clone(),
                         started_at,
@@ -236,6 +315,8 @@ impl Executor {
                             "executed_steps": 0,
                         })),
                         error: None,
+                        compensated: false,
+                        compensation_result: None,
                     });
                 }
 
@@ -269,6 +350,8 @@ impl Executor {
                                 "failed_step": sub_step.id(),
                             })),
                             error: sub_result.error,
+                            compensated: false,
+                            compensation_result: None,
                         });
                     }
 
@@ -295,6 +378,7 @@ impl Executor {
             } => {
                 if steps.is_empty() {
                     context.log("info", "No steps to execute in parallel block");
+                    context.mark_step_completed(step.id().to_string());
                     return Ok(StepResult {
                         step_id: step.id().to_string(),
                         started_at,
@@ -304,6 +388,8 @@ impl Executor {
                             serde_json::json!({"executed": 0, "successful": 0, "failed": 0}),
                         ),
                         error: None,
+                        compensated: false,
+                        compensation_result: None,
                     });
                 }
 
@@ -362,6 +448,8 @@ impl Executor {
                                 status: ExecutionStatus::Failed,
                                 output: None,
                                 error: Some(e.to_string()),
+                                compensated: false,
+                                compensation_result: None,
                             };
                             context
                                 .step_results
@@ -369,6 +457,9 @@ impl Executor {
                             handles.push((sub_step.id().to_string(), failed_result));
                         }
                     }
+
+                    // Mark parallel step as completed if all sub-steps finished
+                    context.mark_step_completed(step.id().to_string());
                 }
 
                 // Count results
@@ -415,14 +506,46 @@ impl Executor {
 
                 context.log("info", format!("Creating alert: [{}] {}", severity, title));
 
-                // For now, just log the alert
-                // In the future, this would integrate with edge_ai_alerts
-                Ok(Some(serde_json::json!({
-                    "id": id,
-                    "severity": severity,
-                    "title": title,
-                    "message": message,
-                })))
+                // Use AlertManager if available
+                if let Some(alert_manager) = self.get_alert_manager().await {
+                    use edge_ai_alerts::{Alert, AlertSeverity};
+
+                    // Parse severity string to AlertSeverity
+                    let alert_severity = match severity.to_lowercase().as_str() {
+                        "info" => AlertSeverity::Info,
+                        "warning" => AlertSeverity::Warning,
+                        "critical" => AlertSeverity::Critical,
+                        "emergency" => AlertSeverity::Emergency,
+                        _ => AlertSeverity::Info,
+                    };
+
+                    let alert = Alert::new(
+                        alert_severity,
+                        title.clone(),
+                        message.clone(),
+                        "workflow".to_string(),
+                    );
+
+                    alert_manager.create_alert(alert).await;
+
+                    Ok(Some(serde_json::json!({
+                        "id": id,
+                        "severity": severity,
+                        "title": title,
+                        "message": message,
+                        "created": true,
+                    })))
+                } else {
+                    // Fallback to logging if alert manager not available
+                    Ok(Some(serde_json::json!({
+                        "id": id,
+                        "severity": severity,
+                        "title": title,
+                        "message": message,
+                        "created": false,
+                        "note": "AlertManager not configured, only logged",
+                    })))
+                }
             }
 
             Step::DeviceQuery {
@@ -431,28 +554,102 @@ impl Executor {
                 metric,
                 aggregation: _,
             } => {
+                let device_id = context.substitute(device_id);
+                let metric = context.substitute(metric);
+
                 context.log(
                     "info",
                     format!("Querying device {} metric {}", device_id, metric),
                 );
 
-                // Placeholder - actual implementation would query the device
-                Ok(Some(serde_json::json!(null)))
+                // Use DeviceService if available
+                if let Some(device_service) = self.get_device_service().await {
+                    match device_service.get_current_metrics(&device_id).await {
+                        Ok(metrics) => {
+                            if let Some(value) = metrics.get(&metric) {
+                                Ok(Some(serde_json::json!({
+                                    "device_id": device_id,
+                                    "metric": metric,
+                                    "value": value,
+                                })))
+                            } else {
+                                Ok(Some(serde_json::json!({
+                                    "device_id": device_id,
+                                    "metric": metric,
+                                    "error": "Metric not found",
+                                })))
+                            }
+                        }
+                        Err(e) => Ok(Some(serde_json::json!({
+                            "device_id": device_id,
+                            "metric": metric,
+                            "error": e.to_string(),
+                        }))),
+                    }
+                } else {
+                    Ok(Some(serde_json::json!({
+                        "device_id": device_id,
+                        "metric": metric,
+                        "error": "DeviceService not configured",
+                    })))
+                }
             }
 
             Step::SendCommand {
                 id: _,
                 device_id,
                 command,
-                parameters: _,
+                parameters,
             } => {
+                let device_id = context.substitute(device_id);
+                let command = context.substitute(command);
+
+                // Convert parameters to HashMap (substitute variable values)
+                // parameters is HashMap<String, serde_json::Value> with #[serde(default)]
+                let params: HashMap<String, serde_json::Value> = parameters
+                    .iter()
+                    .map(|(k, v)| {
+                        let key = context.substitute(k);
+                        // For values, if they're strings, substitute them; otherwise keep as-is
+                        let val = if let Some(s) = v.as_str() {
+                            let substituted = context.substitute(s);
+                            serde_json::json!(substituted)
+                        } else {
+                            v.clone()
+                        };
+                        (key, val)
+                    })
+                    .collect();
+
                 context.log(
                     "info",
                     format!("Sending command {} to device {}", command, device_id),
                 );
 
-                // Placeholder - actual implementation would send the command
-                Ok(Some(serde_json::json!(true)))
+                // Use DeviceService if available
+                if let Some(device_service) = self.get_device_service().await {
+                    match device_service
+                        .send_command(&device_id, &command, params)
+                        .await
+                    {
+                        Ok(result) => Ok(Some(serde_json::json!({
+                            "device_id": device_id,
+                            "command": command,
+                            "result": result,
+                        }))),
+                        Err(e) => Ok(Some(serde_json::json!({
+                            "device_id": device_id,
+                            "command": command,
+                            "error": e.to_string(),
+                        }))),
+                    }
+                } else {
+                    Ok(Some(serde_json::json!({
+                        "device_id": device_id,
+                        "command": command,
+                        "error": "DeviceService not configured",
+                    })))
+                }
             }
 
             Step::WaitForDeviceState {
@@ -597,6 +794,9 @@ impl Executor {
 
         let completed_at = Utc::now().timestamp();
 
+        // Mark step as completed for compensation tracking
+        context.mark_step_completed(step.id().to_string());
+
         Ok(StepResult {
             step_id: step.id().to_string(),
             started_at,
@@ -604,6 +804,8 @@ impl Executor {
             status: ExecutionStatus::Completed,
             output: result.unwrap_or(None),
             error: None,
+            compensated: false,
+            compensation_result: None,
         })
     }
 
@@ -673,6 +875,8 @@ impl Clone for ExecutionContext {
             workflow_id: self.workflow_id.clone(),
             execution_id: self.execution_id.clone(),
             started_at: self.started_at,
+            completed_steps: self.completed_steps.clone(),
+            failure_strategy: self.failure_strategy,
         }
     }
 }

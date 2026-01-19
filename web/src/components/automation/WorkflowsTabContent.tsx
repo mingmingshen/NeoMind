@@ -342,14 +342,14 @@ export function WorkflowsTabContent({ onRefresh }: WorkflowsTabContentProps) {
 
       {/* Workflow Builder Dialog - Fullscreen */}
       <Dialog open={builderOpen} onOpenChange={setBuilderOpen}>
-        <DialogContent className="max-w-[95vw] h-[95vh] max-h-[95vh] p-0 gap-0 flex flex-col">
-          <DialogHeader className="px-6 py-4 border-b">
+        <DialogContent className="max-w-[95vw] h-[85vh] max-h-[85vh] p-0 gap-0 flex flex-col">
+          <DialogHeader className="px-6 py-4 border-t-0 border-x-0 border-b shrink-0 pr-12">
             <DialogTitle className="flex items-center gap-2">
               <Play className="h-5 w-5" />
               {editingWorkflow ? '编辑工作流' : '创建工作流'}
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-hidden">
             <WorkflowVisualEditor
               workflow={editingWorkflow || undefined}
               onSave={handleSaveWorkflow}

@@ -5,13 +5,16 @@
 //! - Inferring semantic meaning of fields
 //! - Auto-generating virtual metrics
 //! - Generating device type definitions
+//! - Zero-config auto-onboarding of unknown devices
 
 pub mod types;
 pub mod path_extractor;
 pub mod semantic_inference;
 pub mod virtual_metric;
+pub mod auto_onboard;
 
 pub use types::*;
 pub use path_extractor::DataPathExtractor;
 pub use semantic_inference::SemanticInference;
 pub use virtual_metric::{VirtualMetricGenerator, AggregationSuggestion, AggregationOperation, DerivedMetric};
+pub use auto_onboard::{AutoOnboardManager, TypeSignature};

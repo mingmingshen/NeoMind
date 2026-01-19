@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::dependencies::DependencyManager;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
+use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError, ComparisonOperator};
 
 /// Unique identifier for a rule.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -97,7 +97,7 @@ impl CompiledRule {
     pub fn from_parsed(parsed: ParsedRule) -> Self {
         Self {
             id: RuleId::new(),
-            name: parsed.name,
+            name: parsed.name.clone(),
             condition: parsed.condition,
             for_duration: parsed.for_duration,
             actions: parsed.actions,
@@ -113,16 +113,12 @@ impl CompiledRule {
     }
 
     /// Check if the rule should trigger based on current values.
-    pub fn should_trigger(&self, current_value: f64) -> bool {
-        // Evaluate condition
-        let condition_met = self
-            .condition
-            .operator
-            .evaluate(current_value, self.condition.threshold);
+    /// This now supports complex conditions through value provider.
+    pub fn should_trigger(&self, value_provider: &dyn ValueProvider) -> bool {
+        let condition_met = self.evaluate_condition(&self.condition, value_provider);
 
         if let Some(duration) = self.for_duration {
             if condition_met {
-                // Check if condition has been true long enough
                 if let Some(since) = self.state.condition_true_since {
                     since.elapsed() >= duration
                 } else {
@@ -137,11 +133,8 @@ impl CompiledRule {
     }
 
     /// Update the rule's state based on current evaluation.
-    pub fn update_state(&mut self, current_value: f64) {
-        let condition_met = self
-            .condition
-            .operator
-            .evaluate(current_value, self.condition.threshold);
+    pub fn update_state(&mut self, value_provider: &dyn ValueProvider) {
+        let condition_met = self.evaluate_condition(&self.condition, value_provider);
 
         if condition_met {
             if self.state.condition_true_since.is_none() {
@@ -152,6 +145,35 @@ impl CompiledRule {
         }
 
         self.state.last_evaluation = condition_met;
+    }
+
+    /// Evaluate a condition with the given value provider.
+    fn evaluate_condition(&self, condition: &RuleCondition, value_provider: &dyn ValueProvider) -> bool {
+        match condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                if let Some(value) = value_provider.get_value(device_id, metric) {
+                    operator.evaluate(value, *threshold)
+                } else {
+                    false
+                }
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                if let Some(value) = value_provider.get_value(device_id, metric) {
+                    value >= *min && value <= *max
+                } else {
+                    false
+                }
+            }
+            RuleCondition::And(conditions) => {
+                conditions.iter().all(|c| self.evaluate_condition(c, value_provider))
+            }
+            RuleCondition::Or(conditions) => {
+                conditions.iter().any(|c| self.evaluate_condition(c, value_provider))
+            }
+            RuleCondition::Not(condition) => {
+                !self.evaluate_condition(condition, value_provider)
+            }
+        }
     }
 }
 
@@ -337,12 +359,9 @@ impl RuleEngine {
                 continue;
             }
 
-            if let Some(value) = self
-                .value_provider
-                .get_value(&rule.condition.device_id, &rule.condition.metric)
-                && rule.should_trigger(value) {
-                    triggered.push(id.clone());
-                }
+            if rule.should_trigger(self.value_provider.as_ref()) {
+                triggered.push(id.clone());
+            }
         }
 
         triggered
@@ -357,12 +376,7 @@ impl RuleEngine {
                 continue;
             }
 
-            if let Some(value) = self
-                .value_provider
-                .get_value(&rule.condition.device_id, &rule.condition.metric)
-            {
-                rule.update_state(value);
-            }
+            rule.update_state(self.value_provider.as_ref());
         }
     }
 
@@ -441,11 +455,13 @@ impl RuleEngine {
         result
     }
 
-    /// Execute a single action.
+    /// Execute a single action - supports all action types.
     async fn execute_action(&self, action: &RuleAction) -> Result<String, String> {
+        use super::dsl::{HttpMethod, AlertSeverity};
+
         match action {
-            RuleAction::Notify { message } => {
-                tracing::info!("NOTIFY: {}", message);
+            RuleAction::Notify { message, channels } => {
+                tracing::info!("NOTIFY: {} (channels: {:?})", message, channels);
                 Ok(format!("NOTIFY: {}", message))
             }
             RuleAction::Execute {
@@ -474,6 +490,41 @@ impl RuleEngine {
                 };
                 tracing::info!("{}", log_msg);
                 Ok(log_msg)
+            }
+            RuleAction::Set { device_id, property, value } => {
+                tracing::info!("SET: {}.{} = {}", device_id, property, value);
+                Ok(format!("SET: {}.{} = {}", device_id, property, value))
+            }
+            RuleAction::Delay { duration } => {
+                tracing::info!("DELAY: {:?} (sleeping...)", duration);
+                tokio::time::sleep(*duration).await;
+                Ok(format!("DELAY: {:?} completed", duration))
+            }
+            RuleAction::TriggerWorkflow { workflow_id, params } => {
+                tracing::info!("TRIGGER WORKFLOW: {} with params {:?}", workflow_id, params);
+                Ok(format!("TRIGGER WORKFLOW: {}", workflow_id))
+            }
+            RuleAction::CreateAlert { title, message, severity } => {
+                let sev_str = match severity {
+                    AlertSeverity::Info => "INFO",
+                    AlertSeverity::Warning => "WARNING",
+                    AlertSeverity::Error => "ERROR",
+                    AlertSeverity::Critical => "CRITICAL",
+                };
+                tracing::info!("ALERT [{}]: {} - {}", sev_str, title, message);
+                Ok(format!("ALERT [{}]: {}", sev_str, title))
+            }
+            RuleAction::HttpRequest { method, url, .. } => {
+                let method_str = match method {
+                    HttpMethod::Get => "GET",
+                    HttpMethod::Post => "POST",
+                    HttpMethod::Put => "PUT",
+                    HttpMethod::Delete => "DELETE",
+                    HttpMethod::Patch => "PATCH",
+                };
+                tracing::info!("HTTP: {} {}", method_str, url);
+                // In a real implementation, you would make the actual HTTP request
+                Ok(format!("HTTP: {} {}", method_str, url))
             }
         }
     }

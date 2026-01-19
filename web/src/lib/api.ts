@@ -33,6 +33,12 @@ import type {
   PluginStatsDto,
   AdapterPluginDto,
   AdapterDeviceDto,
+  Extension,
+  ExtensionStatsDto,
+  ExtensionTypeDto,
+  ExtensionDiscoveryResult,
+  ExtensionRegistrationResponse,
+  ExtensionHealthResponse,
   Tool,
   ToolSchema,
   ToolMetrics,
@@ -324,6 +330,126 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  // ========== Draft Devices API (Auto-onboarding) ==========
+  // List all draft devices discovered through auto-onboarding
+  getDraftDevices: () =>
+    fetchAPI<{ items: Array<{
+      id: string
+      device_id: string
+      source: string
+      status: string
+      sample_count: number
+      max_samples: number
+      generated_type?: {
+        device_type: string
+        name: string
+        description: string
+        category: string
+        metrics: Array<{
+          name: string
+          path: string
+          semantic_type: string
+          display_name: string
+          confidence: number
+        }>
+        confidence: number
+        summary: {
+          samples_analyzed: number
+          fields_discovered: number
+          metrics_generated: number
+          inferred_category: string
+          insights: string[]
+          warnings: string[]
+          recommendations: string[]
+        }
+      }
+      discovered_at: number
+      updated_at: number
+      error_message?: string
+      user_name?: string
+    }>; count: number }>('/devices/drafts'),
+
+  // Get a specific draft device
+  getDraftDevice: (deviceId: string) =>
+    fetchAPI<{
+      id: string
+      device_id: string
+      source: string
+      status: string
+      sample_count: number
+      max_samples: number
+      generated_type?: {
+        device_type: string
+        name: string
+        description: string
+        category: string
+        metrics: Array<{
+          name: string
+          path: string
+          semantic_type: string
+          display_name: string
+          confidence: number
+        }>
+        confidence: number
+        summary: {
+          samples_analyzed: number
+          fields_discovered: number
+          metrics_generated: number
+          inferred_category: string
+          insights: string[]
+          warnings: string[]
+          recommendations: string[]
+        }
+      }
+      discovered_at: number
+      updated_at: number
+      error_message?: string
+      user_name?: string
+    }>(`/devices/drafts/${deviceId}`),
+
+  // Approve a draft device - register it as a real device
+  approveDraftDevice: (deviceId: string) =>
+    fetchAPI<{ device_id: string; device_type: string; registered: boolean }>(`/devices/drafts/${deviceId}/approve`, {
+      method: 'POST',
+    }),
+
+  // Reject a draft device
+  rejectDraftDevice: (deviceId: string, request: { reason: string }) =>
+    fetchAPI<{ device_id: string; rejected: boolean }>(`/devices/drafts/${deviceId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  // Trigger manual analysis of a draft device
+  triggerDraftAnalysis: (deviceId: string) =>
+    fetchAPI<{ device_id: string; analysis_triggered: boolean }>(`/devices/drafts/${deviceId}/analyze`, {
+      method: 'POST',
+    }),
+
+  // Update draft device (user edits)
+  updateDraftDevice: (deviceId: string, request: { name?: string; description?: string }) =>
+    fetchAPI<{ device_id: string; updated: boolean }>(`/devices/drafts/${deviceId}`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    }),
+
+  // Clean up old draft devices
+  cleanupDraftDevices: () =>
+    fetchAPI<{ cleaned: number; message: string }>('/devices/drafts/cleanup', {
+      method: 'POST',
+    }),
+
+  // Get all registered type signatures (for type reuse)
+  getTypeSignatures: () =>
+    fetchAPI<{ signatures: Record<string, string>; count: string }>('/devices/drafts/type-signatures'),
+
+  // Approve draft device with optional existing type assignment
+  approveDraftDeviceWithType: (deviceId: string, existingType?: string) =>
+    fetchAPI<{ device_id: string; device_type: string; registered: boolean }>(`/devices/drafts/${deviceId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(existingType ? { existing_type: existingType } : {}),
+    }),
+
   // Device Discovery
   discoverDevices: (host: string, ports?: number[], timeoutMs?: number) =>
     fetchAPI<{
@@ -564,6 +690,7 @@ export const api = {
     }),
 
   // ========== Stats API ==========
+  getSystemStats: () => fetchAPI<{ version: string; uptime: number; platform: string; arch: string; cpu_count: number; total_memory: number; used_memory: number; free_memory: number; available_memory: number }>('/stats/system'),
   getRuleStats: () => fetchAPI<{ stats: { total_rules: number; enabled_rules: number; disabled_rules: number; by_type: Record<string, number> } }>('/stats/rules'),
 
   // ========== Rules API ==========
@@ -1002,6 +1129,115 @@ export const api = {
 
   getAdapterDevices: (pluginId: string) =>
     fetchAPI<{ plugin_id: string; devices: AdapterDeviceDto[]; count: number }>(`/plugins/${pluginId}/devices`),
+
+  // ========== Extensions API ==========
+  // Matches backend: crates/api/src/handlers/extensions.rs
+  //
+  // Extension system replaces the legacy Plugin system for dynamically loaded code.
+
+  /**
+   * List all registered extensions
+   * GET /api/extensions
+   */
+  listExtensions: (params?: {
+    extension_type?: string  // Filter by extension type (llm_provider, device_protocol, etc.)
+    state?: string           // Filter by state (Loaded, Running, Stopped, etc.)
+  }) =>
+    fetchAPI<Extension[]>(
+      `/extensions${params ? `?${new URLSearchParams(
+        Object.entries(params).reduce((acc, [key, value]) => {
+          if (value !== undefined) acc[key] = String(value)
+          return acc
+        }, {} as Record<string, string>)
+      )}` : ''}`
+    ),
+
+  /**
+   * Get a specific extension
+   * GET /api/extensions/:id
+   */
+  getExtension: (id: string) =>
+    fetchAPI<Extension>(`/extensions/${id}`),
+
+  /**
+   * Get extension statistics
+   * GET /api/extensions/:id/stats
+   */
+  getExtensionStats: (id: string) =>
+    fetchAPI<ExtensionStatsDto>(`/extensions/${id}/stats`),
+
+  /**
+   * List available extension types
+   * GET /api/extensions/types
+   */
+  listExtensionTypes: () =>
+    fetchAPI<ExtensionTypeDto[]>('/extensions/types'),
+
+  /**
+   * Discover extensions in configured directories
+   * POST /api/extensions/discover
+   */
+  discoverExtensions: () =>
+    fetchAPI<ExtensionDiscoveryResult[]>('/extensions/discover', {
+      method: 'POST',
+    }),
+
+  /**
+   * Register a new extension from file path
+   * POST /api/extensions
+   */
+  registerExtension: (extension: {
+    file_path: string
+    auto_start?: boolean
+  }) =>
+    fetchAPI<ExtensionRegistrationResponse>('/extensions', {
+      method: 'POST',
+      body: JSON.stringify(extension),
+    }),
+
+  /**
+   * Unregister an extension
+   * DELETE /api/extensions/:id
+   */
+  unregisterExtension: (id: string) =>
+    fetchAPI<{ message: string; extension_id: string }>(`/extensions/${id}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Start an extension
+   * POST /api/extensions/:id/start
+   */
+  startExtension: (id: string) =>
+    fetchAPI<{ message: string; extension_id: string }>(`/extensions/${id}/start`, {
+      method: 'POST',
+    }),
+
+  /**
+   * Stop an extension
+   * POST /api/extensions/:id/stop
+   */
+  stopExtension: (id: string) =>
+    fetchAPI<{ message: string; extension_id: string }>(`/extensions/${id}/stop`, {
+      method: 'POST',
+    }),
+
+  /**
+   * Check extension health
+   * GET /api/extensions/:id/health
+   */
+  getExtensionHealth: (id: string) =>
+    fetchAPI<ExtensionHealthResponse>(`/extensions/${id}/health`),
+
+  /**
+   * Execute a command on an extension
+   * POST /api/extensions/:id/command
+   */
+  executeExtensionCommand: (id: string, command: string, args?: Record<string, unknown>) =>
+    fetchAPI<Record<string, unknown>>(`/extensions/${id}/command`, {
+      method: 'POST',
+      body: JSON.stringify({ command, args }),
+    }),
 
   // ========== Tools API ==========
   listTools: () =>

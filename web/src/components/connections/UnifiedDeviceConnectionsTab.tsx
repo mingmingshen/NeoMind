@@ -13,7 +13,6 @@ import {
   Copy,
   Check,
   LucideIcon,
-  Cable,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -26,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ActionBar, EmptyState } from '@/components/shared'
+import { EmptyState } from '@/components/shared'
 import { cn } from '@/lib/utils'
 import { api, fetchAPI } from '@/lib/api'
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from '@/components/plugins/UniversalPluginConfigDialog'
@@ -368,21 +367,12 @@ export function UnifiedDeviceConnectionsTab() {
   // Empty state - when no adapter types are available
   if (adapterTypes.length === 0) {
     return (
-      <>
-        <ActionBar
-          title={t('plugins:deviceConnections')}
-          titleIcon={<Cable className="h-5 w-5" />}
-          description={t('devices:connections.description')}
-          onRefresh={loadData}
-          refreshLoading={loading}
-        />
-        <EmptyState
-          icon="device"
-          title={t('plugins:noAdapters')}
-          description={t('plugins:noAdaptersDesc')}
-          action={{ label: t('common:retry'), onClick: loadData, icon: <Loader2 className="h-4 w-4" /> }}
-        />
-      </>
+      <EmptyState
+        icon="device"
+        title={t('plugins:noAdapters')}
+        description={t('plugins:noAdaptersDesc')}
+        action={{ label: t('common:retry'), onClick: loadData, icon: <Loader2 className="h-4 w-4" /> }}
+      />
     )
   }
 
@@ -390,15 +380,6 @@ export function UnifiedDeviceConnectionsTab() {
   if (view === 'list') {
     return (
       <>
-        {/* Header - using ActionBar for consistency */}
-        <ActionBar
-          title={t('plugins:deviceConnections')}
-          titleIcon={<Cable className="h-5 w-5" />}
-          description={t('devices:connections.description')}
-          onRefresh={loadData}
-          refreshLoading={loading}
-        />
-
         {/* Connection Type Cards Grid - Dynamically loaded */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {adapterTypes.map((type) => {

@@ -106,8 +106,8 @@ pub use manager::{
 pub use channel_schema::{list_channel_types as list_channel_types, ChannelTypeInfo};
 pub use plugin::{ChannelInfo, ChannelPluginRegistry, ChannelStats, ChannelWithConfig, DynAlertChannel, IntoDynChannel, TestResult};
 pub use plugin_adapter::{
-    alert_channel_to_unified_plugin, get_builtin_channel_types, AlertChannelPluginFactory,
-    AlertChannelTypeDefinition, AlertChannelUnifiedPlugin, DynAlertChannelPlugin, TestResult as PluginTestResult,
+    get_builtin_channel_types, AlertChannelPluginFactory,
+    AlertChannelTypeDefinition, TestResult as PluginTestResult,
 };
 
 // Re-exports from core (backward compatibility)

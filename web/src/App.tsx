@@ -1,12 +1,9 @@
 import { useEffect, useRef } from "react"
 import { useStore } from "@/store"
-import { Sidebar } from "@/components/layout/sidebar"
-import { Header } from "@/components/layout/header"
-import { MobileMenuProvider, MobileMenuSheet } from "@/components/layout/mobile-menu"
+import { TopNav } from "@/components/layout/TopNav"
 import { LoginPage } from "@/pages/login"
 import { DashboardPage } from "@/pages/dashboard"
 import { DevicesPage } from "@/pages/devices"
-import { AlertsPage } from "@/pages/alerts"
 import { AutomationPage } from "@/pages/automation"
 import { SettingsPage } from "@/pages/settings"
 import { CommandsPage } from "@/pages/commands"
@@ -64,7 +61,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 function App() {
-  const { isAuthenticated, checkAuthStatus } = useStore()
+  const { isAuthenticated, checkAuthStatus, setWsConnected } = useStore()
   const currentPage = useStore((state) => state.currentPage)
   const previousAuthRef = useRef(isAuthenticated)
   const previousPageRef = useRef(currentPage)
@@ -73,6 +70,22 @@ function App() {
   useEffect(() => {
     checkAuthStatus()
   }, [checkAuthStatus])
+
+  // Set up WebSocket connection handler to update store
+  useEffect(() => {
+    if (isAuthenticated) {
+      import('@/lib/websocket').then(({ ws }) => {
+        // Set up connection handler
+        const cleanup = ws.onConnection((connected) => {
+          setWsConnected(connected)
+        })
+        // Check current state
+        setWsConnected(ws.isConnected())
+
+        return cleanup
+      })
+    }
+  }, [isAuthenticated, setWsConnected])
 
   // Clean up portal content when page changes
   // This prevents Radix UI Portal cleanup errors
@@ -113,8 +126,6 @@ function App() {
         return <DashboardPage key="dashboard" />
       case "devices":
         return <DevicesPage key="devices" />
-      case "alerts":
-        return <AlertsPage key="alerts" />
       case "automation":
         return <AutomationPage key="automation" />
       case "settings":
@@ -144,19 +155,13 @@ function App() {
   }
 
   return (
-    <MobileMenuProvider>
-      <div className="flex h-screen bg-background">
-        <Sidebar />
-        <div className="flex flex-1 flex-col min-h-0">
-          <Header />
-          <main className="flex-1 overflow-y-auto">
-            {renderPage()}
-          </main>
-        </div>
-        <MobileMenuSheet />
-        <Toaster />
-      </div>
-    </MobileMenuProvider>
+    <div className="flex flex-col h-screen bg-background">
+      <TopNav />
+      <main className="flex-1 min-h-0 overflow-y-auto">
+        {renderPage()}
+      </main>
+      <Toaster />
+    </div>
   )
 }
 

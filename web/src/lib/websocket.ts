@@ -186,7 +186,6 @@ export class ChatWebSocket {
 
   private scheduleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Max reconnect attempts reached')
       this.setState({
         status: 'error',
         errorMessage: '无法连接到服务器，请刷新页面重试'
@@ -196,8 +195,6 @@ export class ChatWebSocket {
 
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
     this.reconnectAttempts++
-
-    console.log(`Reconnecting in ${delay}ms... (attempt ${this.reconnectAttempts})`)
 
     // Set reconnecting state
     this.setState({

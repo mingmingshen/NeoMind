@@ -182,6 +182,7 @@ pub enum ExecutionStatus {
     Completed,
     Failed,
     Cancelled,
+    Compensating,
 }
 
 /// Step execution result
@@ -199,6 +200,25 @@ pub struct StepResult {
     pub output: Option<serde_json::Value>,
     /// Error message
     pub error: Option<String>,
+    /// Whether this step has been compensated
+    #[serde(default)]
+    pub compensated: bool,
+    /// Compensation result (if compensation was executed)
+    #[serde(default)]
+    pub compensation_result: Option<CompensationResult>,
+}
+
+/// Result of compensating a step
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompensationResult {
+    /// Whether compensation succeeded
+    pub succeeded: bool,
+    /// When compensation was attempted
+    pub compensated_at: i64,
+    /// Error message if compensation failed
+    pub error: Option<String>,
+    /// Additional details about the compensation
+    pub details: Option<serde_json::Value>,
 }
 
 /// Execution log entry

@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 use edge_ai_rules::{
     CompiledRule, HistoryFilter, RuleEngine, RuleHistoryStorage, RuleId, RuleStatus,
-    dsl::{ComparisonOperator, RuleAction},
+    dsl::{ComparisonOperator, RuleAction, RuleCondition},
 };
 use edge_ai_tools::{
     Tool, ToolError, ToolOutput,
@@ -69,10 +69,16 @@ impl ListRulesTool {
                         return false;
                     }
                 }
-                if let Some(d) = device_id
-                    && rule.condition.device_id != d {
+                if let Some(d) = device_id {
+                    let matches = match &rule.condition {
+                        RuleCondition::Simple { device_id, .. } |
+                        RuleCondition::Range { device_id, .. } => device_id == d,
+                        _ => true, // Complex conditions (And/Or/Not) may involve multiple devices
+                    };
+                    if !matches {
                         return false;
                     }
+                }
                 true
             })
             .map(|rule| RuleSummary::from_compiled(&rule))
@@ -153,14 +159,54 @@ impl GetRuleTool {
     fn to_dsl(&self, rule: &CompiledRule) -> String {
         let mut dsl = format!("RULE \"{}\"\n", rule.name);
 
-        // WHEN clause
-        dsl.push_str(&format!(
-            "WHEN {}.{} {} {}\n",
-            rule.condition.device_id,
-            rule.condition.metric,
-            rule.condition.operator.as_str(),
-            rule.condition.threshold
-        ));
+        // WHEN clause - handle different condition types
+        match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                dsl.push_str(&format!(
+                    "WHEN {}.{} {} {}\n",
+                    device_id,
+                    metric,
+                    operator.as_str(),
+                    threshold
+                ));
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                dsl.push_str(&format!(
+                    "WHEN {}.{} BETWEEN {} AND {}\n",
+                    device_id,
+                    metric,
+                    min,
+                    max
+                ));
+            }
+            RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+                let op = if matches!(&rule.condition, RuleCondition::And(_)) { "AND" } else { "OR" };
+                let conditions: Vec<String> = conditions.iter().map(|c| match c {
+                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                        format!("{}.{} {} {}", device_id, metric, operator.as_str(), threshold)
+                    }
+                    RuleCondition::Range { device_id, metric, min, max } => {
+                        format!("{}.{} BETWEEN {} AND {}", device_id, metric, min, max)
+                    }
+                    _ => "(complex)".to_string(),
+                }).collect();
+                dsl.push_str(&format!("WHEN ({})\n", conditions.join(&format!(" {} ", op))));
+            }
+            RuleCondition::Not(inner) => {
+                match inner.as_ref() {
+                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                        dsl.push_str(&format!(
+                            "WHEN NOT {}.{} {} {}\n",
+                            device_id,
+                            metric,
+                            operator.as_str(),
+                            threshold
+                        ));
+                    }
+                    _ => dsl.push_str("WHEN NOT (complex)\n"),
+                }
+            }
+        }
 
         // FOR clause (optional)
         if let Some(duration) = rule.for_duration {
@@ -178,7 +224,7 @@ impl GetRuleTool {
         dsl.push_str("DO\n");
         for action in &rule.actions {
             match action {
-                RuleAction::Notify { message } => {
+                RuleAction::Notify { message, .. } => {
                     dsl.push_str(&format!("    NOTIFY \"{}\"\n", message));
                 }
                 RuleAction::Execute {
@@ -205,6 +251,10 @@ impl GetRuleTool {
                     } else {
                         dsl.push_str(&format!("    LOG {}, \"{}\"\n", level, message));
                     }
+                }
+                // Handle other RuleAction variants (Set, Delay, TriggerWorkflow, etc.)
+                _ => {
+                    // Skip unsupported actions in DSL output
                 }
             }
         }
@@ -251,17 +301,51 @@ impl Tool for GetRuleTool {
 
         let dsl = self.to_dsl(&rule);
 
+        // Extract condition info for JSON response
+        let condition_info = match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                serde_json::json!({
+                    "type": "simple",
+                    "device_id": device_id,
+                    "metric": metric,
+                    "operator": operator.as_str(),
+                    "threshold": threshold
+                })
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                serde_json::json!({
+                    "type": "range",
+                    "device_id": device_id,
+                    "metric": metric,
+                    "min": min,
+                    "max": max
+                })
+            }
+            RuleCondition::And(conditions) => {
+                serde_json::json!({
+                    "type": "and",
+                    "conditions": conditions.len()
+                })
+            }
+            RuleCondition::Or(conditions) => {
+                serde_json::json!({
+                    "type": "or",
+                    "conditions": conditions.len()
+                })
+            }
+            RuleCondition::Not(_) => {
+                serde_json::json!({
+                    "type": "not"
+                })
+            }
+        };
+
         let result = serde_json::json!({
             "rule_id": rule.id.to_string(),
             "name": rule.name,
             "dsl": dsl,
             "status": format!("{:?}", rule.status),
-            "condition": {
-                "device_id": rule.condition.device_id,
-                "metric": rule.condition.metric,
-                "operator": rule.condition.operator.as_str(),
-                "threshold": rule.condition.threshold
-            },
+            "condition": condition_info,
             "for_duration": rule.for_duration.map(|d| d.as_secs()),
             "actions": rule.actions.len(),
             "trigger_count": rule.state.trigger_count,
@@ -353,19 +437,46 @@ impl ExplainRuleTool {
             "立即".to_string()
         };
 
-        let operator_desc = match rule.condition.operator {
-            ComparisonOperator::GreaterThan => format!("大于 {}", rule.condition.threshold),
-            ComparisonOperator::LessThan => format!("小于 {}", rule.condition.threshold),
-            ComparisonOperator::GreaterEqual => format!("大于等于 {}", rule.condition.threshold),
-            ComparisonOperator::LessEqual => format!("小于等于 {}", rule.condition.threshold),
-            ComparisonOperator::Equal => format!("等于 {}", rule.condition.threshold),
-            ComparisonOperator::NotEqual => format!("不等于 {}", rule.condition.threshold),
-        };
+        match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                let operator_desc = match operator {
+                    ComparisonOperator::GreaterThan => format!("大于 {}", threshold),
+                    ComparisonOperator::LessThan => format!("小于 {}", threshold),
+                    ComparisonOperator::GreaterEqual => format!("大于等于 {}", threshold),
+                    ComparisonOperator::LessEqual => format!("小于等于 {}", threshold),
+                    ComparisonOperator::Equal => format!("等于 {}", threshold),
+                    ComparisonOperator::NotEqual => format!("不等于 {}", threshold),
+                };
 
-        format!(
-            "当设备'{}'的指标'{}'{}时，{}触发。",
-            rule.condition.device_id, rule.condition.metric, operator_desc, duration_desc
-        )
+                format!(
+                    "当设备'{}'的指标'{}'{}时，{}触发。",
+                    device_id, metric, operator_desc, duration_desc
+                )
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                format!(
+                    "当设备'{}'的指标'{}'在{}到{}之间时，{}触发。",
+                    device_id, metric, min, max, duration_desc
+                )
+            }
+            RuleCondition::And(conditions) => {
+                format!(
+                    "当{}个条件同时满足时，{}触发。",
+                    conditions.len(),
+                    duration_desc
+                )
+            }
+            RuleCondition::Or(conditions) => {
+                format!(
+                    "当{}个条件中任一满足时，{}触发。",
+                    conditions.len(),
+                    duration_desc
+                )
+            }
+            RuleCondition::Not(_) => {
+                format!("当条件不满足时，{}触发。", duration_desc)
+            }
+        }
     }
 
     fn explain_condition_en(&self, rule: &CompiledRule) -> String {
@@ -383,23 +494,50 @@ impl ExplainRuleTool {
             "immediately".to_string()
         };
 
-        let operator_desc = match rule.condition.operator {
-            ComparisonOperator::GreaterThan => format!("greater than {}", rule.condition.threshold),
-            ComparisonOperator::LessThan => format!("less than {}", rule.condition.threshold),
-            ComparisonOperator::GreaterEqual => {
-                format!("greater than or equal to {}", rule.condition.threshold)
-            }
-            ComparisonOperator::LessEqual => {
-                format!("less than or equal to {}", rule.condition.threshold)
-            }
-            ComparisonOperator::Equal => format!("equal to {}", rule.condition.threshold),
-            ComparisonOperator::NotEqual => format!("not equal to {}", rule.condition.threshold),
-        };
+        match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                let operator_desc = match operator {
+                    ComparisonOperator::GreaterThan => format!("greater than {}", threshold),
+                    ComparisonOperator::LessThan => format!("less than {}", threshold),
+                    ComparisonOperator::GreaterEqual => {
+                        format!("greater than or equal to {}", threshold)
+                    }
+                    ComparisonOperator::LessEqual => {
+                        format!("less than or equal to {}", threshold)
+                    }
+                    ComparisonOperator::Equal => format!("equal to {}", threshold),
+                    ComparisonOperator::NotEqual => format!("not equal to {}", threshold),
+                };
 
-        format!(
-            "When metric '{}' on device '{}' is {}, trigger {}.",
-            rule.condition.metric, rule.condition.device_id, operator_desc, duration_desc
-        )
+                format!(
+                    "When metric '{}' on device '{}' is {}, trigger {}.",
+                    metric, device_id, operator_desc, duration_desc
+                )
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                format!(
+                    "When metric '{}' on device '{}' is between {} and {}, trigger {}.",
+                    metric, device_id, min, max, duration_desc
+                )
+            }
+            RuleCondition::And(conditions) => {
+                format!(
+                    "When {} conditions are all met, trigger {}.",
+                    conditions.len(),
+                    duration_desc
+                )
+            }
+            RuleCondition::Or(conditions) => {
+                format!(
+                    "When any of {} conditions is met, trigger {}.",
+                    conditions.len(),
+                    duration_desc
+                )
+            }
+            RuleCondition::Not(_) => {
+                format!("When condition is not met, trigger {}.", duration_desc)
+            }
+        }
     }
 
     fn explain_actions_zh(&self, rule: &CompiledRule) -> String {
@@ -410,7 +548,7 @@ impl ExplainRuleTool {
         let mut parts = vec![format!("该规则触发时将执行{}个操作：", rule.actions.len())];
         for (i, action) in rule.actions.iter().enumerate() {
             match action {
-                RuleAction::Notify { message } => {
+                RuleAction::Notify { message, .. } => {
                     parts.push(format!("{}. 发送通知：{}", i + 1, message));
                 }
                 RuleAction::Execute {
@@ -434,6 +572,10 @@ impl ExplainRuleTool {
                 RuleAction::Log { level, .. } => {
                     parts.push(format!("{}. 记录日志，级别：{}", i + 1, level));
                 }
+                // Handle other RuleAction variants
+                _ => {
+                    parts.push(format!("{}. 其他动作", i + 1));
+                }
             }
         }
         parts.join("\n")
@@ -450,7 +592,7 @@ impl ExplainRuleTool {
         )];
         for (i, action) in rule.actions.iter().enumerate() {
             match action {
-                RuleAction::Notify { message } => {
+                RuleAction::Notify { message, .. } => {
                     parts.push(format!("{}. Send notification: {}", i + 1, message));
                 }
                 RuleAction::Execute {
@@ -473,6 +615,10 @@ impl ExplainRuleTool {
                 }
                 RuleAction::Log { level, .. } => {
                     parts.push(format!("{}. Log message at level: {}", i + 1, level));
+                }
+                // Handle other RuleAction variants
+                _ => {
+                    parts.push(format!("{}. Other action", i + 1));
                 }
             }
         }
@@ -684,12 +830,24 @@ pub struct RuleSummary {
 
 impl RuleSummary {
     fn from_compiled(rule: &CompiledRule) -> Self {
+        // Extract device_id and metric from condition
+        let (device_id, metric) = match &rule.condition {
+            RuleCondition::Simple { device_id, metric, .. } |
+            RuleCondition::Range { device_id, metric, .. } => {
+                (device_id.clone(), metric.clone())
+            }
+            RuleCondition::And(_) | RuleCondition::Or(_) | RuleCondition::Not(_) => {
+                // For complex conditions, use placeholder
+                ("(complex)".to_string(), "(complex)".to_string())
+            }
+        };
+
         Self {
             rule_id: rule.id.to_string(),
             name: rule.name.clone(),
             status: format!("{:?}", rule.status),
-            device_id: rule.condition.device_id.clone(),
-            metric: rule.condition.metric.clone(),
+            device_id,
+            metric,
             actions_count: rule.actions.len(),
             trigger_count: rule.state.trigger_count,
         }

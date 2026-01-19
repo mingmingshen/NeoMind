@@ -114,10 +114,20 @@ pub async fn list_devices_handler(
             .device_service
             .get_device_status(&config.device_id)
             .await;
-        let status = convert_status(device_status.status);
+
+        // Use is_connected() which checks both status and last_seen时效
+        let online = device_status.is_connected();
+
+        // Determine status string based on actual connectivity
+        let status = if online {
+            MdlConnectionStatus::Connected
+        } else {
+            MdlConnectionStatus::Disconnected
+        };
+        let status = convert_status(status);
+
         let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
             .unwrap_or_else(chrono::Utc::now);
-        let online = matches!(device_status.status, AdapterConnectionStatus::Connected);
 
         let instance = config_to_device_instance(&config, status, last_seen);
 
@@ -187,16 +197,24 @@ pub async fn get_device_handler(
 
     // Get real device status from DeviceService
     let device_status = state.device_service.get_device_status(&device_id).await;
-    let status = convert_status(device_status.status);
+
+    // Use is_connected() which checks both status and last_seen时效
+    let online = device_status.is_connected();
+
+    // Determine status string based on actual connectivity
+    let status = if online {
+        MdlConnectionStatus::Connected
+    } else {
+        MdlConnectionStatus::Disconnected
+    };
+    let status = convert_status(status);
+
     let last_seen = chrono::DateTime::from_timestamp(device_status.last_seen, 0)
         .unwrap_or_else(chrono::Utc::now);
     let instance = config_to_device_instance(&config, status, last_seen);
 
     // Get plugin info for display
     let (plugin_id, plugin_name) = get_plugin_info(&config.adapter_id);
-
-    // Determine online status based on connection status
-    let online = matches!(device_status.status, AdapterConnectionStatus::Connected);
 
     ok(json!({
         "id": config.device_id,
@@ -431,8 +449,6 @@ pub async fn refresh_device_handler(
         .unwrap_or(&"internal-mqtt".to_string())
         .clone();
     if let Some(adapter) = state.device_service.get_adapter(&adapter_id).await {
-        use edge_ai_devices::DeviceAdapter;
-
         // List devices from adapter to refresh state
         let devices = adapter.list_devices();
         let is_online = devices.contains(&device_id);

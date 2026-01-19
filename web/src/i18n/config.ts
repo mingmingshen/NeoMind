@@ -17,6 +17,7 @@ import en_auth from './locales/en/auth.json';
 import en_validation from './locales/en/validation.json';
 import en_messages from './locales/en/messages.json';
 import en_dashboard from './locales/en/dashboard.json';
+import en_events from './locales/en/events.json';
 
 import zh_common from './locales/zh/common.json';
 import zh_navigation from './locales/zh/navigation.json';
@@ -32,6 +33,7 @@ import zh_auth from './locales/zh/auth.json';
 import zh_validation from './locales/zh/validation.json';
 import zh_messages from './locales/zh/messages.json';
 import zh_dashboard from './locales/zh/dashboard.json';
+import zh_events from './locales/zh/events.json';
 
 const resources = {
   en: {
@@ -49,6 +51,7 @@ const resources = {
     validation: en_validation,
     messages: en_messages,
     dashboard: en_dashboard,
+    events: en_events,
   },
   zh: {
     common: zh_common,
@@ -65,6 +68,7 @@ const resources = {
     validation: zh_validation,
     messages: zh_messages,
     dashboard: zh_dashboard,
+    events: zh_events,
   },
 };
 
@@ -78,7 +82,7 @@ i18n
     defaultNS: 'common',
     ns: ['common', 'navigation', 'devices', 'alerts', 'automation',
          'commands', 'decisions', 'plugins', 'extensions', 'settings', 'auth',
-         'validation', 'messages', 'dashboard'],
+         'validation', 'messages', 'dashboard', 'events'],
     interpolation: {
       escapeValue: false,
     },

@@ -55,9 +55,9 @@ export function PageTabs({
 
         {actions.length > 0 && (
           <div className="flex gap-2">
-            {actions.map((action, index) => (
+            {actions.map((action) => (
               <Button
-                key={index}
+                key={action.label}
                 variant={action.variant || 'default'}
                 size="sm"
                 onClick={action.onClick}
@@ -97,7 +97,7 @@ export function PageTabsContent({ value, activeTab, children, className }: PageT
     <TabsContent
       value={value}
       className={cn(
-        'min-h-0 overflow-auto',
+        'min-h-0 overflow-auto mt-6',
         className
       )}
     >
@@ -146,9 +146,9 @@ export function PageTabsGrid({
 
         {actions.length > 0 && (
           <div className="flex gap-2">
-            {actions.map((action, index) => (
+            {actions.map((action) => (
               <Button
-                key={index}
+                key={action.label}
                 variant={action.variant || 'default'}
                 size="sm"
                 onClick={action.onClick}

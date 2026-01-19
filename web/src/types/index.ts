@@ -907,12 +907,13 @@ export interface Event {
 
 // ========== Plugins Types ==========
 //
-// Must match backend PluginDto and PluginStatsDto (crates/api/src/handlers/plugins.rs)
-// and PluginType (crates/core/src/plugin/types.rs)
+// DEPRECATED: Old Plugin system has been migrated to Extension system.
+// See Extension Types below for the new API.
+// Legacy plugin types are kept for backward compatibility with device adapters
+// which still use /api/plugins/device-adapters endpoints.
 
 /**
- * Plugin type enumeration - matches backend PluginType
- * Uses snake_case strings to match Rust serde serialization
+ * Plugin type enumeration - DEPRECATED, kept for device adapter compatibility
  */
 export enum PluginTypeEnum {
   LlmBackend = 'llm_backend',
@@ -929,7 +930,7 @@ export enum PluginTypeEnum {
 }
 
 /**
- * Plugin state enumeration - matches backend PluginState
+ * Plugin state enumeration - DEPRECATED
  */
 export enum PluginStateEnum {
   Loaded = 'Loaded',
@@ -941,35 +942,31 @@ export enum PluginStateEnum {
 }
 
 /**
- * Plugin DTO - matches backend PluginDto exactly
+ * Plugin DTO - DEPRECATED, use Extension instead
  *
- * Backend: crates/api/src/handlers/plugins.rs:68-101
+ * Only device adapters still use this interface.
  */
 export interface Plugin {
   id: string
   name: string
-  plugin_type: string  // PluginType.as_str() - snake_case
-  category: 'ai' | 'devices' | 'notify'  // User-facing category for UI grouping
-  state: string  // PluginState - "Loaded", "Initialized", "Running", "Stopped", "Error(...)", "Paused"
+  plugin_type: string
+  category: 'ai' | 'devices' | 'notify'
+  state: string
   enabled: boolean
   version: string
   description: string
   author?: string
   required_version: string
   stats: PluginStatsDto
-  loaded_at: string  // ISO 8601 DateTime<Utc>
+  loaded_at: string
   path?: string
-  // Device adapter specific fields (when plugin_type === 'device_adapter')
   adapter_type?: 'mqtt' | 'http' | 'custom'
   device_count?: number
-  // Computed/Helper fields (not from backend, derived for UI)
-  running?: boolean  // Derived from state === "Running"
+  running?: boolean
 }
 
 /**
- * Plugin statistics DTO - matches backend PluginStatsDto exactly
- *
- * Backend: crates/api/src/handlers/plugins.rs:99-117
+ * Plugin statistics DTO - DEPRECATED
  */
 export interface PluginStatsDto {
   start_count: number
@@ -980,6 +977,106 @@ export interface PluginStatsDto {
   last_start_time?: string
   last_stop_time?: string
   device_count?: number
+}
+
+// ========== Extension Types ==========
+//
+// Matches backend ExtensionDto, ExtensionStatsDto, ExtensionTypeDto
+// Backend: crates/api/src/handlers/extensions.rs
+// And ExtensionType in crates/core/src/extension/types.rs
+
+/**
+ * Extension type enumeration - matches backend ExtensionType
+ */
+export enum ExtensionTypeEnum {
+  LlmProvider = 'llm_provider',
+  DeviceProtocol = 'device_protocol',
+  AlertChannelType = 'alert_channel_type',
+  Tool = 'tool',
+  Generic = 'generic',
+}
+
+/**
+ * Extension state enumeration - matches backend ExtensionState
+ */
+export enum ExtensionStateEnum {
+  Discovered = 'Discovered',
+  Loaded = 'Loaded',
+  Initialized = 'Initialized',
+  Running = 'Running',
+  Stopped = 'Stopped',
+  Error = 'Error',
+}
+
+/**
+ * Extension DTO - matches backend ExtensionDto exactly
+ *
+ * Backend: crates/api/src/handlers/extensions.rs:18-39
+ */
+export interface Extension {
+  id: string
+  name: string
+  extension_type: string  // ExtensionType.as_str() - snake_case
+  version: string
+  description?: string
+  author?: string
+  state: string  // ExtensionState - "Discovered", "Loaded", "Initialized", "Running", "Stopped", "Error"
+  file_path?: string
+  loaded_at?: number  // Unix timestamp
+}
+
+/**
+ * Extension statistics DTO - matches backend ExtensionStatsDto exactly
+ *
+ * Backend: crates/api/src/handlers/extensions.rs:42-52
+ */
+export interface ExtensionStatsDto {
+  start_count: number
+  stop_count: number
+  error_count: number
+  last_error?: string
+}
+
+/**
+ * Extension type DTO - matches backend ExtensionTypeDto exactly
+ *
+ * Backend: crates/api/src/handlers/extensions.rs:55-63
+ */
+export interface ExtensionTypeDto {
+  id: string
+  name: string
+  description: string
+}
+
+/**
+ * Extension discovery result - returned by POST /api/extensions/discover
+ */
+export interface ExtensionDiscoveryResult {
+  id: string
+  name: string
+  version: string
+  extension_type: string
+  file_path?: string
+}
+
+/**
+ * Extension registration response - returned by POST /api/extensions
+ */
+export interface ExtensionRegistrationResponse {
+  message: string
+  extension_id: string
+  name: string
+  version: string
+  extension_type: string
+  note?: string
+}
+
+/**
+ * Extension health check response - returned by GET /api/extensions/:id/health
+ */
+export interface ExtensionHealthResponse {
+  extension_id: string
+  healthy: boolean
 }
 
 // ========== Device Adapter Plugin Types ==========

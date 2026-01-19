@@ -93,8 +93,11 @@ pub struct EventWithMetadata {
     pub timestamp: i64,
     /// Event source
     pub source: String,
-    /// Event ID (metadata)
+    /// Event ID (metadata) - renamed to `id` for frontend compatibility
+    #[serde(rename = "id")]
     pub event_id: String,
+    /// Processed status
+    pub processed: bool,
 }
 
 /// Event statistics.
@@ -368,6 +371,7 @@ pub async fn event_history_handler(
             timestamp: log.timestamp,
             source: log.source.unwrap_or_default(),
             event_id: log.id,
+            processed: true,
         })
         .collect();
 
@@ -467,6 +471,162 @@ fn categorize_event(event_type: &str) -> &str {
         "ToolExecutionStart" | "ToolExecutionSuccess" | "ToolExecutionFailure" => "tool",
         _ => "other",
     }
+}
+
+/// Generate test events for development/demo purposes.
+///
+/// This endpoint creates sample events of different types for testing the UI.
+/// Only available in debug builds.
+#[cfg(debug_assertions)]
+pub async fn generate_test_events_handler(
+    State(state): State<ServerState>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let event_bus = state.event_bus.as_ref().ok_or(StatusCode::NOT_FOUND)?;
+
+    use edge_ai_core::{MetricValue, NeoTalkEvent};
+
+    let now = chrono::Utc::now().timestamp();
+
+    // Generate various test events
+    let test_events = vec![
+        // Device events
+        NeoTalkEvent::DeviceOnline {
+            device_id: "sensor-temp-01".to_string(),
+            device_type: "temperature_sensor".to_string(),
+            timestamp: now - 300,
+        },
+        NeoTalkEvent::DeviceMetric {
+            device_id: "sensor-temp-01".to_string(),
+            metric: "temperature".to_string(),
+            value: MetricValue::Float(23.5),
+            timestamp: now - 290,
+            quality: Some(1.0),
+        },
+        NeoTalkEvent::DeviceMetric {
+            device_id: "sensor-temp-01".to_string(),
+            metric: "humidity".to_string(),
+            value: MetricValue::Float(65.0),
+            timestamp: now - 280,
+            quality: Some(1.0),
+        },
+        NeoTalkEvent::DeviceCommandResult {
+            device_id: "switch-living-01".to_string(),
+            command: "turn_on".to_string(),
+            success: true,
+            result: Some(serde_json::json!({"status": "ok"})),
+            timestamp: now - 270,
+        },
+        NeoTalkEvent::DeviceOffline {
+            device_id: "sensor-motion-02".to_string(),
+            reason: Some("Connection lost".to_string()),
+            timestamp: now - 260,
+        },
+        NeoTalkEvent::DeviceOnline {
+            device_id: "sensor-light-03".to_string(),
+            device_type: "light_sensor".to_string(),
+            timestamp: now - 250,
+        },
+        NeoTalkEvent::DeviceMetric {
+            device_id: "sensor-light-03".to_string(),
+            metric: "illuminance".to_string(),
+            value: MetricValue::Integer(450),
+            timestamp: now - 240,
+            quality: Some(1.0),
+        },
+        // Rule events
+        NeoTalkEvent::RuleEvaluated {
+            rule_id: "rule-temp-alert".to_string(),
+            rule_name: "Temperature Alert".to_string(),
+            condition_met: true,
+            timestamp: now - 200,
+        },
+        NeoTalkEvent::RuleTriggered {
+            rule_id: "rule-temp-alert".to_string(),
+            rule_name: "Temperature Alert".to_string(),
+            trigger_value: 28.5,
+            actions: vec!["send_alert".to_string()],
+            timestamp: now - 190,
+        },
+        // Workflow events
+        NeoTalkEvent::WorkflowTriggered {
+            workflow_id: "daily-report".to_string(),
+            trigger_type: "schedule".to_string(),
+            trigger_data: Some(serde_json::json!({"cron": "0 9 * * *"})),
+            execution_id: "exec-001".to_string(),
+            timestamp: now - 180,
+        },
+        NeoTalkEvent::WorkflowStepCompleted {
+            workflow_id: "daily-report".to_string(),
+            step_id: "collect-data".to_string(),
+            execution_id: "exec-001".to_string(),
+            result: serde_json::json!({"status": "completed"}),
+            timestamp: now - 170,
+        },
+        NeoTalkEvent::WorkflowCompleted {
+            workflow_id: "daily-report".to_string(),
+            execution_id: "exec-001".to_string(),
+            success: true,
+            duration_ms: 5000,
+            timestamp: now - 160,
+        },
+        // LLM events
+        NeoTalkEvent::PeriodicReviewTriggered {
+            review_id: "review-001".to_string(),
+            review_type: "daily".to_string(),
+            timestamp: now - 150,
+        },
+        NeoTalkEvent::LlmDecisionProposed {
+            decision_id: "decision-001".to_string(),
+            title: "Adjust temperature setting".to_string(),
+            description: "Temperature is too high, consider lowering".to_string(),
+            reasoning: "Based on current sensor readings".to_string(),
+            actions: vec![],
+            confidence: 0.85,
+            timestamp: now - 140,
+        },
+        NeoTalkEvent::LlmDecisionExecuted {
+            decision_id: "decision-001".to_string(),
+            success: true,
+            result: Some(serde_json::json!({"executed": true})),
+            timestamp: now - 130,
+        },
+        // Alert events
+        NeoTalkEvent::AlertCreated {
+            alert_id: "alert-001".to_string(),
+            title: "Temperature threshold exceeded".to_string(),
+            severity: "warning".to_string(),
+            message: "Temperature is above threshold".to_string(),
+            timestamp: now - 120,
+        },
+        // Tool events
+        NeoTalkEvent::ToolExecutionStart {
+            tool_name: "mqtt-publish".to_string(),
+            arguments: serde_json::json!({"topic": "test", "payload": "on"}),
+            session_id: None,
+            timestamp: now - 110,
+        },
+        NeoTalkEvent::ToolExecutionSuccess {
+            tool_name: "mqtt-publish".to_string(),
+            arguments: serde_json::json!({"topic": "test", "payload": "on"}),
+            result: serde_json::json!({"published": true}),
+            duration_ms: 50,
+            session_id: None,
+            timestamp: now - 100,
+        },
+    ];
+
+    // Publish all test events
+    let mut published = 0;
+    for event in test_events {
+        event_bus.publish(event).await;
+        published += 1;
+    }
+
+    Ok(Json(serde_json::json!({
+        "message": "Generated test events",
+        "count": published,
+        "types": ["device", "rule", "workflow", "llm", "alert", "tool"]
+    })))
 }
 
 #[cfg(test)]

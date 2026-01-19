@@ -21,12 +21,15 @@
 //!
 //! ```rust,no_run
 //! use edge_ai_tools::{ToolRegistry, ToolRegistryBuilder, ToolCall};
+//! use edge_ai_tools::{QueryDataTool, ControlDeviceTool};
+//! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     // Create a registry with standard tools
+//!     // Create a registry with specific tools
 //!     let registry = ToolRegistryBuilder::new()
-//!         .with_standard_tools()
+//!         .with_tool(Arc::new(QueryDataTool::mock()))
+//!         .with_tool(Arc::new(ControlDeviceTool::mock()))
 //!         .build();
 //!
 //!     // List available tools
@@ -34,21 +37,11 @@
 //!
 //!     // Execute a tool
 //!     let result = registry.execute(
-//!         "list_devices",
-//!         serde_json::json!({})
+//!         "query_data",
+//!         serde_json::json!({"device_id": "sensor_1", "metric": "temperature"})
 //!     ).await?;
 //!
 //!     println!("Result: {:?}", result);
-//!
-//!     // Execute multiple tools in parallel
-//!     let calls = vec![
-//!         ToolCall::new("list_devices", serde_json::json!({})),
-//!         ToolCall::new("list_rules", serde_json::json!({})),
-//!     ];
-//!     let results = registry.execute_parallel(calls).await;
-//!     for res in results {
-//!         println!("{}: {:?}", res.name, res.result);
-//!     }
 //!
 //!     Ok(())
 //! }
@@ -59,6 +52,7 @@ pub mod core_tools;
 pub mod error;
 pub mod real;
 pub mod registry;
+pub mod system_tools;
 pub mod tool;
 pub mod simplified;
 
@@ -109,6 +103,16 @@ pub use core_tools::{
     ExtractedRuleDefinition, RuleActionDef,
     // Registry
     MockDeviceRegistry,
+};
+
+// System management and export tools
+pub use system_tools::{
+    // System tools
+    SystemInfoTool, SystemConfigTool, ServiceRestartTool,
+    // Alert tools
+    CreateAlertTool, ListAlertsTool, AcknowledgeAlertTool, AlertInfo, AlertSeverity,
+    // Export tools
+    ExportToCsvTool, ExportToJsonTool, GenerateReportTool,
 };
 
 // Feature-gated real tools

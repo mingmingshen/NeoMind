@@ -2,7 +2,6 @@
 //!
 //! Supports various discovery methods:
 //! - MQTT broker scanning
-//! - HASS MQTT Discovery protocol (Tasmota, Shelly, ESPHome) - [DEPRECATED]
 //! - mDNS/Bonjour service discovery
 //! - IP range scanning
 
@@ -16,16 +15,11 @@ use tokio::net::TcpStream;
 
 use super::mdl::{DeviceId, DeviceType, MetricDefinition};
 
-// HASS discovery modules have been removed - these are now stubs
-// TODO: Re-implement HASS discovery if needed
-
 /// Discovery method type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiscoveryMethodType {
     /// MQTT subscription-based discovery
     Mqtt,
-    /// HASS MQTT Discovery protocol
-    HassDiscovery,
     /// mDNS/Bonjour service discovery
     Mdns,
     /// IP range port scanning
@@ -310,44 +304,6 @@ impl DeviceDiscovery {
         }
 
         Ok(devices)
-    }
-
-    // HASS discovery methods removed - functionality deprecated
-    // TODO: Re-implement if needed
-}
-
-/// HASS Discovery static methods (available without DeviceDiscovery instance)
-impl DeviceDiscovery {
-    /// Get HASS discovery subscription topic
-    pub fn hass_discovery_topic(_components: Option<Vec<String>>) -> String {
-        "homeassistant/+/config".to_string()
-    }
-
-    /// Check if a topic is a HASS discovery topic
-    pub fn is_hass_discovery_topic(topic: &str) -> bool {
-        topic.starts_with("homeassistant/") && topic.contains("/+/config/")
-    }
-
-    /// Get supported HASS components
-    pub fn hass_supported_components() -> Vec<&'static str> {
-        vec![
-            "sensor",
-            "binary_sensor",
-            "switch",
-            "light",
-            "cover",
-            "climate",
-            "fan",
-            "lock",
-            "camera",
-            "vacuum",
-            "media_player",
-        ]
-    }
-
-    /// Get device type for a HASS component
-    pub fn hass_component_to_device_type(_component: &str) -> Option<&'static str> {
-        None
     }
 }
 

@@ -1,4 +1,31 @@
 {
+  "connection": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "connecting": "Connecting",
+    "wsConnected": "WebSocket connected",
+    "wsDisconnected": "WebSocket disconnected"
+  },
+  "nav": {
+    "dashboard": "Chat",
+    "devices": "Devices",
+    "automation": "Automation",
+    "events": "Events",
+    "alerts": "Alerts",
+    "plugins": "Plugins",
+    "settings": "Settings"
+  },
+  "session": {
+    "history": "Session History",
+    "sessions": "Sessions",
+    "newChat": "New Chat",
+    "search": "Search...",
+    "noSessions": "No sessions yet",
+    "noMatch": "No matching sessions",
+    "totalSessions": "{{count}} sessions",
+    "messages": "{{count}} messages",
+    "defaultTitle": "New Chat"
+  },
   "add": "Add",
   "edit": "Edit",
   "delete": "Delete",

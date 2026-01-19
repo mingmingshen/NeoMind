@@ -9,13 +9,84 @@ import type { StateCreator } from 'zustand'
 import type { Message } from '@/types'
 
 /**
- * Filter messages for display.
- * Backend now saves complete messages with all fields (thinking, tool_calls, content).
- * Simply filter out internal tool role messages.
+ * Merge fragmented assistant messages from backend.
+ *
+ * The backend may split assistant responses into multiple messages:
+ * - First message: thinking + tool_calls (without content)
+ * - Second message: content only
+ *
+ * This function merges them back into a single message for display.
+ * Also filters out internal tool role messages.
  */
 function mergeAssistantMessages(messages: Message[]): Message[] {
-  // Filter out tool role messages (internal LLM context, not for display)
-  return messages.filter(m => (m as any).role !== 'tool')
+  const result: Message[] = []
+  // Removed time window constraint - merge based on message structure and position
+  // This handles cases where timestamps might differ due to processing delays
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+
+    // Skip tool role messages (internal LLM context)
+    if ((msg as any).role === 'tool') {
+      continue
+    }
+
+    // Check if this is an assistant message that might need merging with the next one
+    if (msg.role === 'assistant' && i + 1 < messages.length) {
+      const nextMsg = messages[i + 1]
+
+      // Skip if next message is a tool message
+      if ((nextMsg as any).role === 'tool') {
+        result.push(msg)
+        continue
+      }
+
+      // Check if next message is also an assistant message
+      if (nextMsg.role === 'assistant' && shouldMergeMessages(msg, nextMsg)) {
+        // Merge the two messages
+        result.push({
+          ...msg,
+          content: msg.content + (nextMsg.content || ''),
+          // Keep tool_calls, thinking from the first message (it usually has them)
+          tool_calls: msg.tool_calls || nextMsg.tool_calls,
+          thinking: msg.thinking || nextMsg.thinking,
+          // Use the earlier timestamp
+          timestamp: msg.timestamp,
+          id: msg.id, // Keep the first message's ID
+        })
+        // Skip the next message since we merged it
+        i++
+        continue
+      }
+    }
+
+    result.push(msg)
+  }
+
+  return result
+}
+
+/**
+ * Check if two assistant messages should be merged.
+ *
+ * They should be merged if:
+ * - First has thinking/tool_calls (with or without content)
+ * - Second has content but no thinking/tool_calls
+ * - They are consecutive assistant messages (indicating same response)
+ */
+function shouldMergeMessages(first: Message, second: Message): boolean {
+  const firstHasThinking = !!first.thinking && first.thinking.length > 0
+  const firstHasTools = !!first.tool_calls && first.tool_calls.length > 0
+  const secondHasThinking = !!second.thinking && second.thinking.length > 0
+  const secondHasTools = !!second.tool_calls && second.tool_calls.length > 0
+
+  const secondHasContent = !!second.content && second.content.length > 0
+
+  // Merge if:
+  // 1. First has thinking OR tools
+  // 2. Second has content AND no thinking AND no tools (so it's the final response)
+  // This handles the case where backend saves: [thinking+tools] + [content] separately
+  return (firstHasThinking || firstHasTools) && secondHasContent && !secondHasThinking && !secondHasTools
 }
 
 import type { SessionState } from '../types'
@@ -110,34 +181,42 @@ export const createSessionSlice: StateCreator<
   },
 
   switchSession: async (sessionId: string) => {
+    // IMPORTANT: Update WebSocket FIRST before any API calls
+    // This ensures any subsequent messages go to the correct session
+    const { ws } = await import('@/lib/websocket')
+    ws.setSessionId(sessionId)
+
     try {
       // Fetch the session history
       const historyResult = await api.getSessionHistory(sessionId)
 
-      // Debug: Check if backend returns tool call results
-      const assistantMessages = (historyResult.messages || []).filter((m: any) => m.role === 'assistant' && m.tool_calls?.length > 0)
-      if (assistantMessages.length > 0) {
-        const toolsWithResults = assistantMessages[0].tool_calls?.filter((tc: any) => tc.result !== undefined && tc.result !== null).length || 0
-        console.log(`[sessionSlice] Found ${assistantMessages.length} assistant messages with tool calls, ${toolsWithResults} have results`)
-        if (toolsWithResults === 0) {
-          console.warn('[sessionSlice] No tool calls have results! Backend may be using old code.')
-          console.log('[sessionSlice] Tool call data:', assistantMessages[0].tool_calls)
-        }
+      // Validate the response before processing
+      if (!historyResult) {
+        console.warn(`Session ${sessionId} returned empty result from API`)
+        set({ sessionId, messages: [] })
+        return
       }
 
       // Merge fragmented assistant messages from backend
       // Backend stores: [msg1(thinking+tools)] + [tool results] + [msg2(content only)]
       // Frontend expects: [msg1(thinking+tools+content)]
-      const mergedMessages = mergeAssistantMessages(historyResult.messages || [])
+      const messages = historyResult.messages || []
+      console.log(`[session merge] Before merge: ${messages.length} messages`, messages.map((m, i) => ({
+        index: i,
+        role: m.role,
+        hasThinking: !!m.thinking,
+        hasTools: !!m.tool_calls?.length,
+        contentLen: m.content?.length || 0,
+      })))
+      const mergedMessages = mergeAssistantMessages(messages)
+      console.log(`[session merge] After merge: ${mergedMessages.length} messages`)
+
+      console.log(`Switched to session ${sessionId}, loaded ${mergedMessages.length} messages`)
 
       set({
         sessionId,
         messages: mergedMessages,
       })
-
-      // Update WebSocket to use the new session
-      const { ws } = await import('@/lib/websocket')
-      ws.setSessionId(sessionId)
     } catch (error: any) {
       console.error('Failed to switch session:', error)
 
@@ -264,15 +343,12 @@ export const createSessionSlice: StateCreator<
       const allSessions = await api.listSessions(1, 1000) // Get up to 1000 sessions
 
       if (!Array.isArray(allSessions) || allSessions.length === 0) {
-        console.log('[clearAllSessions] No sessions to delete')
         return
       }
 
       const sessionIds = allSessions
         .map((s: any) => s.sessionId || s.id)
         .filter((id: string): id is string => id != null)
-
-      console.log(`[clearAllSessions] Deleting ${sessionIds.length} sessions from backend`)
 
       // Bulk delete all sessions
       await api.bulkDeleteSessions(sessionIds)

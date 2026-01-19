@@ -2,11 +2,6 @@
 //
 // Provides real-time event streaming to React components via custom hooks.
 
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const require: (id: string) => any
-}
-
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { NeoTalkEvent, EventType, EventCategory } from '@/lib/events'
 import { fetchAPI } from '@/lib/api'
@@ -138,44 +133,64 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
       return
     }
 
+    let unsubscribeConnection: (() => void) | undefined
+    let unsubscribeError: (() => void) | undefined
+    let unsubscribeEvent: (() => void) | undefined
+    let isMounted = true
+
     // Dynamically import to avoid SSR issues
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const eventsLib = require('@/lib/events')
-    const getEventsConnection = eventsLib.getEventsConnection || eventsLib.default?.getEventsConnection
+    import('@/lib/events').then((eventsLib) => {
+      if (!isMounted) return
 
-    // Create or get existing connection
-    const connection = getEventsConnection(
-      `events-${category}-${eventTypes?.join('-') || 'all'}`,
-      { category, eventTypes, useSSE }
-    )
-    connectionRef.current = connection
+      const getEventsConnection = eventsLib.getEventsConnection || (eventsLib as any).default?.getEventsConnection
+      if (!getEventsConnection) {
+        console.warn('getEventsConnection not found in events lib')
+        return
+      }
 
-    // Subscribe to connection state
-    const unsubscribeConnection = connection.onConnection((connected: boolean) => {
-      setIsConnected(connected)
-      onConnected?.(connected)
-    })
+      // Create or get existing connection
+      const connection = getEventsConnection(
+        `events-${category}-${eventTypes?.join('-') || 'all'}`,
+        { category, eventTypes, useSSE }
+      )
+      connectionRef.current = connection
 
-    // Subscribe to errors
-    const unsubscribeError = connection.onError((error: unknown) => {
-      onError?.(error instanceof Error ? error : new Error(String(error)))
-    })
-
-    // Subscribe to events
-    const unsubscribeEvent = connection.onEvent((event: NeoTalkEvent) => {
-      setEvents(prev => {
-        const newEvents = [...prev, event]
-        // Keep only the most recent events
-        return newEvents.slice(-maxEvents)
+      // Subscribe to connection state
+      unsubscribeConnection = connection.onConnection((connected: boolean) => {
+        if (isMounted) {
+          setIsConnected(connected)
+          onConnected?.(connected)
+        }
       })
-      onEvent?.(event)
+
+      // Subscribe to errors
+      unsubscribeError = connection.onError((error: unknown) => {
+        if (isMounted) {
+          onError?.(error instanceof Error ? error : new Error(String(error)))
+        }
+      })
+
+      // Subscribe to events
+      unsubscribeEvent = connection.onEvent((event: NeoTalkEvent) => {
+        if (isMounted) {
+          setEvents(prev => {
+            const newEvents = [...prev, event]
+            // Keep only the most recent events
+            return newEvents.slice(-maxEvents)
+          })
+          onEvent?.(event)
+        }
+      })
+    }).catch((err) => {
+      console.error('Failed to load events lib:', err)
     })
 
     // Cleanup on unmount
     return () => {
-      unsubscribeConnection()
-      unsubscribeError()
-      unsubscribeEvent()
+      isMounted = false
+      unsubscribeConnection?.()
+      unsubscribeError?.()
+      unsubscribeEvent?.()
     }
   }, [category, eventTypes, useSSE, enabled, maxEvents, onConnected, onError, onEvent])
 

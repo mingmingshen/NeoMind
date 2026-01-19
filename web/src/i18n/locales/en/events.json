@@ -1,17 +1,18 @@
 {
-  "alerts": "Alerts",
-  "commands": "Commands",
-  "systemEvents": "System Events",
-  "systemEventsDesc": "Real-time system events and activity log",
+  "title": "Event Center",
+  "description": "View all system events",
   "all": "All",
   "device": "Device",
   "rule": "Rule",
   "workflow": "Workflow",
   "alert": "Alert",
-  "automation": "Automation",
+  "llm": "AI",
   "type": "Type",
   "source": "Source",
   "data": "Data",
-  "timestamp": "Timestamp",
-  "noEvents": "No events found"
+  "timestamp": "Time",
+  "processed": "Processed",
+  "pending": "Pending",
+  "noEvents": "No events found",
+  "noFilteredEvents": "No events of this type"
 }

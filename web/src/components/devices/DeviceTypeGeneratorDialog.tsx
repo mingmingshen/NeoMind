@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -395,8 +395,8 @@ export function DeviceTypeGeneratorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-500" />
             {tGen('title')}
@@ -406,405 +406,410 @@ export function DeviceTypeGeneratorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="samples" disabled={analyzing}>
-              1. {tGen('tabs.samples')}
-            </TabsTrigger>
-            <TabsTrigger value="metrics" disabled={!generated || analyzing}>
-              2. {tGen('tabs.metrics')}
-            </TabsTrigger>
-            <TabsTrigger value="commands" disabled={!generated || analyzing}>
-              3. {tGen('tabs.commands')}
-            </TabsTrigger>
-            <TabsTrigger value="preview" disabled={!generated || analyzing}>
-              4. {tGen('tabs.preview')}
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 flex flex-col min-h-0">
+          <div className="px-6 shrink-0">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="samples" disabled={analyzing}>
+                1. {tGen('tabs.samples')}
+              </TabsTrigger>
+              <TabsTrigger value="metrics" disabled={!generated || analyzing}>
+                2. {tGen('tabs.metrics')}
+              </TabsTrigger>
+              <TabsTrigger value="commands" disabled={!generated || analyzing}>
+                3. {tGen('tabs.commands')}
+              </TabsTrigger>
+              <TabsTrigger value="preview" disabled={!generated || analyzing}>
+                4. {tGen('tabs.preview')}
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-          {/* Step 1: Input Samples */}
-          <TabsContent value="samples" className="space-y-4">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Info className="h-4 w-4" />
-                  <span>{tGen('step1.info')}</span>
-                </div>
-                <Button variant="ghost" size="sm" onClick={loadSample}>
-                  {tGen('step1.loadSample')}
-                </Button>
-              </div>
-
-              {/* Filtering Configuration */}
-              <div className="grid grid-cols-2 gap-6 p-4 rounded-lg border bg-muted/30">
-                <div className="space-y-3">
+          {/* Scrollable content area */}
+          <div className="flex-1 overflow-y-auto px-6">
+            <div className="py-4 space-y-4">
+              {/* Step 1: Input Samples */}
+              {activeTab === 'samples' && (
+                <>
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="min-coverage" className="text-sm">
-                      {tGen('step1.minCoverage')}
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {minCoverage}%
-                    </span>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Info className="h-4 w-4" />
+                      <span>{tGen('step1.info')}</span>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={loadSample}>
+                      {tGen('step1.loadSample')}
+                    </Button>
                   </div>
-                  <Slider
-                    id="min-coverage"
-                    value={[minCoverage]}
-                    onValueChange={([v]: number[]) => setMinCoverage(v)}
-                    min={0}
-                    max={100}
-                    step={5}
-                    className="w-full"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {tGen('step1.minCoverageDesc')}
-                  </p>
-                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="min-confidence" className="text-sm">
-                      {tGen('step1.minConfidence')}
-                    </Label>
-                    <span className="text-xs text-muted-foreground">
-                      {minConfidence}%
-                    </span>
+                  {/* Filtering Configuration */}
+                  <div className="grid grid-cols-2 gap-6 p-4 rounded-lg border bg-muted/30">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="min-coverage" className="text-sm">
+                          {tGen('step1.minCoverage')}
+                        </Label>
+                        <span className="text-xs text-muted-foreground">
+                          {minCoverage}%
+                        </span>
+                      </div>
+                      <Slider
+                        id="min-coverage"
+                        value={[minCoverage]}
+                        onValueChange={([v]: number[]) => setMinCoverage(v)}
+                        min={0}
+                        max={100}
+                        step={5}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {tGen('step1.minCoverageDesc')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="min-confidence" className="text-sm">
+                          {tGen('step1.minConfidence')}
+                        </Label>
+                        <span className="text-xs text-muted-foreground">
+                          {minConfidence}%
+                        </span>
+                      </div>
+                      <Slider
+                        id="min-confidence"
+                        value={[minConfidence]}
+                        onValueChange={([v]: number[]) => setMinConfidence(v)}
+                        min={0}
+                        max={100}
+                        step={5}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {tGen('step1.minConfidenceDesc')}
+                      </p>
+                    </div>
                   </div>
-                  <Slider
-                    id="min-confidence"
-                    value={[minConfidence]}
-                    onValueChange={([v]: number[]) => setMinConfidence(v)}
-                    min={0}
-                    max={100}
-                    step={5}
-                    className="w-full"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {tGen('step1.minConfidenceDesc')}
-                  </p>
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="sample-data">{tGen('step1.sampleData')}</Label>
-                <Textarea
-                  id="sample-data"
-                  placeholder={tGen('step1.sampleDataPlaceholder')}
-                  value={sampleData}
-                  onChange={(e) => setSampleData(e.target.value)}
-                  rows={8}
-                  className="font-mono text-sm"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {tGen('step1.validSamples', { count: parseSamples().length })}
-                </p>
-              </div>
-
-              <Button
-                onClick={handleAnalyze}
-                disabled={parseSamples().length === 0 || analyzing}
-                className="w-full"
-                size="lg"
-              >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {tGen('step1.analyzing')}
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    {tGen('step1.generateButton')}
-                  </>
-                )}
-              </Button>
-            </div>
-          </TabsContent>
-
-          {/* Step 2: Generated Metrics */}
-          <TabsContent value="metrics" className="space-y-4">
-            {generated && (
-              <>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold">{tGen('step2.title')}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {tGen('step2.metricsFound', { count: generated.metrics.length })}
+                  <div className="space-y-2">
+                    <Label htmlFor="sample-data">{tGen('step1.sampleData')}</Label>
+                    <Textarea
+                      id="sample-data"
+                      placeholder={tGen('step1.sampleDataPlaceholder')}
+                      value={sampleData}
+                      onChange={(e) => setSampleData(e.target.value)}
+                      rows={8}
+                      className="font-mono text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {tGen('step1.validSamples', { count: parseSamples().length })}
                     </p>
                   </div>
-                  <Badge variant="outline" className={getConfidenceColor(generated.confidence)}>
-                    {getConfidenceLabel(generated.confidence)} {tGen('step2.confidence')}
-                  </Badge>
-                </div>
 
-                <Card>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{tGen('step2.field')}</TableHead>
-                        <TableHead>{tGen('step2.semanticType')}</TableHead>
-                        <TableHead>{tGen('step2.displayName')}</TableHead>
-                        <TableHead>{tGen('step2.unit')}</TableHead>
-                        <TableHead className="text-center">{tGen('step2.readable')}</TableHead>
-                        <TableHead className="text-center">{tGen('step2.writable')}</TableHead>
-                        <TableHead>{tGen('step2.confidence')}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {generated.metrics.map((metric) => (
-                        <TableRow key={metric.name}>
-                          <TableCell className="font-mono text-xs">{metric.path}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{metric.semantic_type}</Badge>
-                          </TableCell>
-                          <TableCell>{metric.display_name}</TableCell>
-                          <TableCell>{metric.unit || '-'}</TableCell>
-                          <TableCell className="text-center">
-                            {metric.readable ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {metric.writable ? (
-                              <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={getConfidenceColor(metric.confidence)}
-                            >
-                              {Math.round(metric.confidence * 100)}%
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </Card>
-
-                <div className="flex justify-between">
-                  <Button variant="outline" onClick={() => setActiveTab('samples')}>
-                    {tGen('step2.back')}
+                  <Button
+                    onClick={handleAnalyze}
+                    disabled={parseSamples().length === 0 || analyzing}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {tGen('step1.analyzing')}
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        {tGen('step1.generateButton')}
+                      </>
+                    )}
                   </Button>
-                  <Button onClick={() => setActiveTab('commands')}>
-                    {tGen('step2.next')}
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </>
-            )}
-          </TabsContent>
+                </>
+              )}
 
-          {/* Step 3: Generated Commands */}
-          <TabsContent value="commands" className="space-y-4">
-            {generated && (
-              <>
-                <div>
-                  <h3 className="text-lg font-semibold">{tGen('step3.title')}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {tGen('step3.commandsFound', { count: generated.commands.length })}
-                  </p>
-                </div>
+              {/* Step 2: Generated Metrics */}
+              {activeTab === 'metrics' && generated && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">{tGen('step2.title')}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {tGen('step2.metricsFound', { count: generated.metrics.length })}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className={getConfidenceColor(generated.confidence)}>
+                      {getConfidenceLabel(generated.confidence)} {tGen('step2.confidence')}
+                    </Badge>
+                  </div>
 
-                {generated.commands.length > 0 ? (
                   <Card>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>{tGen('step3.command')}</TableHead>
-                          <TableHead>{tGen('step2.displayName')}</TableHead>
-                          <TableHead>{tGen('step3.description')}</TableHead>
-                          <TableHead>{tGen('step3.parameters')}</TableHead>
-                          <TableHead>{tGen('step2.confidence')}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {generated.commands.map((cmd) => (
-                          <TableRow key={cmd.name}>
-                            <TableCell className="font-mono text-xs">{cmd.name}</TableCell>
-                            <TableCell>{cmd.display_name}</TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {cmd.description}
-                            </TableCell>
-                            <TableCell>
-                              {cmd.parameters.length > 0 ? (
-                                cmd.parameters.map((p) => p.name).join(', ')
-                              ) : (
-                                '-'
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={getConfidenceColor(cmd.confidence)}
-                              >
-                                {Math.round(cmd.confidence * 100)}%
-                              </Badge>
-                            </TableCell>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>{tGen('step2.field')}</TableHead>
+                            <TableHead>{tGen('step2.semanticType')}</TableHead>
+                            <TableHead>{tGen('step2.displayName')}</TableHead>
+                            <TableHead>{tGen('step2.unit')}</TableHead>
+                            <TableHead className="text-center">{tGen('step2.readable')}</TableHead>
+                            <TableHead className="text-center">{tGen('step2.writable')}</TableHead>
+                            <TableHead>{tGen('step2.confidence')}</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {generated.metrics.map((metric) => (
+                            <TableRow key={metric.name}>
+                              <TableCell className="font-mono text-xs">{metric.path}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{metric.semantic_type}</Badge>
+                              </TableCell>
+                              <TableCell>{metric.display_name}</TableCell>
+                              <TableCell>{metric.unit || '-'}</TableCell>
+                              <TableCell className="text-center">
+                                {metric.readable ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {metric.writable ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="outline"
+                                  className={getConfidenceColor(metric.confidence)}
+                                >
+                                  {Math.round(metric.confidence * 100)}%
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </Card>
-                ) : (
-                  <Card className="p-8 text-center">
-                    <p className="text-muted-foreground">
-                      {tGen('step3.noCommands')}
-                      <br />
-                      {tGen('step3.noCommandsDesc')}
+
+                  <div className="flex justify-between">
+                    <Button variant="outline" onClick={() => setActiveTab('samples')}>
+                      {tGen('step2.back')}
+                    </Button>
+                    <Button onClick={() => setActiveTab('commands')}>
+                      {tGen('step2.next')}
+                      <ChevronRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {/* Step 3: Generated Commands */}
+              {activeTab === 'commands' && generated && (
+                <>
+                  <div>
+                    <h3 className="text-lg font-semibold">{tGen('step3.title')}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {tGen('step3.commandsFound', { count: generated.commands.length })}
                     </p>
-                  </Card>
-                )}
-
-                <div className="flex justify-between">
-                  <Button variant="outline" onClick={() => setActiveTab('metrics')}>
-                    {tGen('step3.back')}
-                  </Button>
-                  <Button onClick={() => setActiveTab('preview')}>
-                    {tGen('step3.next')}
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </>
-            )}
-          </TabsContent>
-
-          {/* Step 4: Preview & Create */}
-          <TabsContent value="preview" className="space-y-4">
-            {generated && (
-              <>
-                <div>
-                  <h3 className="text-lg font-semibold">{tGen('step4.title')}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {tGen('step4.description')}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="type-name">{tGen('step4.typeName')}</Label>
-                    <Input
-                      id="type-name"
-                      placeholder={tGen('step4.typeNamePlaceholder')}
-                      value={deviceTypeName}
-                      onChange={(e) => setDeviceTypeName(e.target.value)}
-                    />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="type-id">{tGen('step4.typeId')}</Label>
-                    <Input
-                      id="type-id"
-                      placeholder={tGen('step4.typeIdPlaceholder')}
-                      value={deviceTypeId}
-                      onChange={(e) => setDeviceTypeId(e.target.value)}
-                    />
-                  </div>
-                </div>
 
-                <Card className="p-4">
-                  <ScrollArea className="h-48">
-                    <pre className="text-xs">
-                      {JSON.stringify(
-                        {
-                          device_type: deviceTypeId || 'example-id',
-                          name: deviceTypeName || 'Example Device',
-                          description: generated.description,
-                          categories: [generated.category],
-                          mode: 'full',
-                          metrics: generated.metrics.map((m) => ({
-                            name: m.name,
-                            display_name: m.display_name,
-                            data_type: convertDataType(m.data_type),
-                            unit: m.unit || undefined,
-                            min: undefined,
-                            max: undefined,
-                            required: false,
-                          })),
-                          commands: generated.commands.map((c) => ({
-                            name: c.name,
-                            display_name: c.display_name,
-                            payload_template: `{"action": "${c.name}"}`,
-                            parameters: c.parameters.map((p) => ({
-                              name: p.name,
-                              display_name: p.name,
-                              data_type: convertDataType(p.type_),
-                              default_value: undefined,
+                  {generated.commands.length > 0 ? (
+                    <Card>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{tGen('step3.command')}</TableHead>
+                              <TableHead>{tGen('step2.displayName')}</TableHead>
+                              <TableHead>{tGen('step3.description')}</TableHead>
+                              <TableHead>{tGen('step3.parameters')}</TableHead>
+                              <TableHead>{tGen('step2.confidence')}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {generated.commands.map((cmd) => (
+                              <TableRow key={cmd.name}>
+                                <TableCell className="font-mono text-xs">{cmd.name}</TableCell>
+                                <TableCell>{cmd.display_name}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {cmd.description}
+                                </TableCell>
+                                <TableCell>
+                                  {cmd.parameters.length > 0 ? (
+                                    cmd.parameters.map((p) => p.name).join(', ')
+                                  ) : (
+                                    '-'
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant="outline"
+                                    className={getConfidenceColor(cmd.confidence)}
+                                  >
+                                    {Math.round(cmd.confidence * 100)}%
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </Card>
+                  ) : (
+                    <Card className="p-8 text-center">
+                      <p className="text-muted-foreground">
+                        {tGen('step3.noCommands')}
+                        <br />
+                        {tGen('step3.noCommandsDesc')}
+                      </p>
+                    </Card>
+                  )}
+
+                  <div className="flex justify-between">
+                    <Button variant="outline" onClick={() => setActiveTab('metrics')}>
+                      {tGen('step3.back')}
+                    </Button>
+                    <Button onClick={() => setActiveTab('preview')}>
+                      {tGen('step3.next')}
+                      <ChevronRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {/* Step 4: Preview & Create */}
+              {activeTab === 'preview' && generated && (
+                <>
+                  <div>
+                    <h3 className="text-lg font-semibold">{tGen('step4.title')}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {tGen('step4.description')}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="type-name">{tGen('step4.typeName')}</Label>
+                      <Input
+                        id="type-name"
+                        placeholder={tGen('step4.typeNamePlaceholder')}
+                        value={deviceTypeName}
+                        onChange={(e) => setDeviceTypeName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="type-id">{tGen('step4.typeId')}</Label>
+                      <Input
+                        id="type-id"
+                        placeholder={tGen('step4.typeIdPlaceholder')}
+                        value={deviceTypeId}
+                        onChange={(e) => setDeviceTypeId(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <Card className="p-4">
+                    <ScrollArea className="h-48">
+                      <pre className="text-xs">
+                        {JSON.stringify(
+                          {
+                            device_type: deviceTypeId || 'example-id',
+                            name: deviceTypeName || 'Example Device',
+                            description: generated.description,
+                            categories: [generated.category],
+                            mode: 'full',
+                            metrics: generated.metrics.map((m) => ({
+                              name: m.name,
+                              display_name: m.display_name,
+                              data_type: convertDataType(m.data_type),
+                              unit: m.unit || undefined,
                               min: undefined,
                               max: undefined,
-                              unit: undefined,
-                              allowed_values: [],
+                              required: false,
                             })),
-                            samples: [],
-                            llm_hints: c.description,
-                          })),
-                        },
-                        null,
-                        2
-                      )}
-                    </pre>
-                  </ScrollArea>
-                </Card>
-
-                {/* Validation Results */}
-                {validation && (
-                  <Card className={cn('p-4', validation.is_valid ? 'border-green-500' : 'border-yellow-500')}>
-                    <h4 className="font-semibold flex items-center gap-2 mb-2">
-                      {validation.is_valid ? (
-                        <>
-                          <CheckCircle2 className="h-4 w-4 text-green-500" />
-                          {tGen('step4.validationPassed')}
-                        </>
-                      ) : (
-                        <>
-                          <AlertTriangle className="h-4 w-4 text-yellow-500" />
-                          {tGen('step4.validationWarnings')}
-                        </>
-                      )}
-                    </h4>
-                    {validation.issues.length > 0 && (
-                      <ul className="list-disc list-inside text-sm text-red-500 mb-2">
-                        {validation.issues.map((issue, i) => (
-                          <li key={i}>{issue}</li>
-                        ))}
-                      </ul>
-                    )}
-                    {validation.warnings.length > 0 && (
-                      <ul className="list-disc list-inside text-sm text-yellow-600">
-                        {validation.warnings.map((warning, i) => (
-                          <li key={i}>{warning}</li>
-                        ))}
-                      </ul>
-                    )}
+                            commands: generated.commands.map((c) => ({
+                              name: c.name,
+                              display_name: c.display_name,
+                              payload_template: `{"action": "${c.name}"}`,
+                              parameters: c.parameters.map((p) => ({
+                                name: p.name,
+                                display_name: p.name,
+                                data_type: convertDataType(p.type_),
+                                default_value: undefined,
+                                min: undefined,
+                                max: undefined,
+                                unit: undefined,
+                                allowed_values: [],
+                              })),
+                              samples: [],
+                              llm_hints: c.description,
+                            })),
+                          },
+                          null,
+                          2
+                        )}
+                      </pre>
+                    </ScrollArea>
                   </Card>
-                )}
 
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id="enable"
-                    checked={enableAfterCreate}
-                    onCheckedChange={setEnableAfterCreate}
-                  />
-                  <Label htmlFor="enable">{tGen('step4.enableImmediately')}</Label>
-                </div>
+                  {/* Validation Results */}
+                  {validation && (
+                    <Card className={cn('p-4', validation.is_valid ? 'border-green-500' : 'border-yellow-500')}>
+                      <h4 className="font-semibold flex items-center gap-2 mb-2">
+                        {validation.is_valid ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            {tGen('step4.validationPassed')}
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                            {tGen('step4.validationWarnings')}
+                          </>
+                        )}
+                      </h4>
+                      {validation.issues.length > 0 && (
+                        <ul className="list-disc list-inside text-sm text-red-500 mb-2">
+                          {validation.issues.map((issue, i) => (
+                            <li key={i}>{issue}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {validation.warnings.length > 0 && (
+                        <ul className="list-disc list-inside text-sm text-yellow-600">
+                          {validation.warnings.map((warning, i) => (
+                            <li key={i}>{warning}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </Card>
+                  )}
 
-                <div className="flex justify-between pt-4">
-                  <Button variant="outline" onClick={() => setActiveTab('commands')}>
-                    {tGen('step4.back')}
-                  </Button>
-                  <Button onClick={handleValidate} disabled={!deviceTypeName || !deviceTypeId}>
-                    {tGen('step4.validate')}
-                  </Button>
-                </div>
-              </>
-            )}
-          </TabsContent>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="enable"
+                      checked={enableAfterCreate}
+                      onCheckedChange={setEnableAfterCreate}
+                    />
+                    <Label htmlFor="enable">{tGen('step4.enableImmediately')}</Label>
+                  </div>
+
+                  <div className="flex justify-between pt-4">
+                    <Button variant="outline" onClick={() => setActiveTab('commands')}>
+                      {tGen('step4.back')}
+                    </Button>
+                    <Button onClick={handleValidate} disabled={!deviceTypeName || !deviceTypeId}>
+                      {tGen('step4.validate')}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </Tabs>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 pt-4 pb-6 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={creating}>
             {t('common:cancel')}
           </Button>
@@ -818,7 +823,7 @@ export function DeviceTypeGeneratorDialog({
               ) : (
                 <>
                   <CheckCircle2 className="mr-2 h-4 w-4" />
-                  {tGen('step4.validate')}
+                  {tGen('step4.create')}
                 </>
               )}
             </Button>

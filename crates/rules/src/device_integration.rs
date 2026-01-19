@@ -326,7 +326,7 @@ impl DeviceActionExecutor {
                     info!("Executed command '{}' on device '{}'", command, target);
                 }
             }
-            RuleAction::Notify { message } => {
+            RuleAction::Notify { message, channels: _ } => {
                 actions_executed.push(format!("notify:{}", message));
 
                 // Publish alert event
@@ -356,6 +356,31 @@ impl DeviceActionExecutor {
                     crate::dsl::LogLevel::Info => info!("{}", message),
                     crate::dsl::LogLevel::Alert => warn!("ALERT: {}", message),
                 }
+            }
+            // Handle new action types
+            RuleAction::Set { device_id: target_device, property, value } => {
+                let target = device_id.unwrap_or(target_device);
+                actions_executed.push(format!("set:{}.{}={}", target, property, value));
+                info!("Set property '{}.{}' to {:?}", target, property, value);
+            }
+            RuleAction::Delay { duration } => {
+                actions_executed.push(format!("delay:{:?}", duration));
+                tokio::time::sleep(*duration).await;
+                info!("Delayed for {:?}", duration);
+            }
+            RuleAction::TriggerWorkflow { workflow_id, params } => {
+                actions_executed.push(format!("trigger_workflow:{}", workflow_id));
+                info!("Triggered workflow '{}' with params {:?}", workflow_id, params);
+            }
+            RuleAction::CreateAlert { title, message, severity } => {
+                let sev_str = format!("{:?}", severity);
+                actions_executed.push(format!("alert:{}:{}", sev_str, title));
+                info!("Created alert [{}]: {} - {}", sev_str, title, message);
+            }
+            RuleAction::HttpRequest { method, url, .. } => {
+                let method_str = format!("{:?}", method);
+                actions_executed.push(format!("http:{}{}", method_str, url));
+                info!("HTTP request: {} {}", method_str, url);
             }
         }
 
@@ -528,9 +553,10 @@ mod tests {
         // Test execute_action
         let action = RuleAction::Notify {
             message: "Test notification".to_string(),
+            channels: None,
         };
 
-        let result = executor.execute_action(&action, None).await.unwrap();
+        let result = executor.execute_action(&action, None, None).await.unwrap();
         assert!(result.success);
         assert_eq!(result.actions_executed, vec!["notify:Test notification"]);
     }
@@ -560,7 +586,7 @@ mod tests {
             params: std::collections::HashMap::new(),
         };
 
-        executor.execute_action(&action, None).await.unwrap();
+        executor.execute_action(&action, None, None).await.unwrap();
 
         // Check that command result event was published
         let event = rx.recv().await;

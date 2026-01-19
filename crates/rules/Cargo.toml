@@ -24,6 +24,7 @@ pest_derive = "2.7"
 uuid = { workspace = true, features = ["v4", "serde"] }
 chrono = { workspace = true, features = ["serde"] }
 async-trait = "0.1"
+url = "2.5"
 
 # Expression evaluation
 evalexpr = "11"

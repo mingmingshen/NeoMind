@@ -67,18 +67,20 @@ pub async fn webhook_handler(
     Path(device_id): Path<String>,
     Json(payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
-    // Verify device exists
+    // Check if device exists
     let device_opt = state.device_service.get_device(&device_id).await;
 
-    if device_opt.is_none() {
-        warn!(device_id = %device_id, "Webhook from unknown device");
-        return Err(ErrorResponse::bad_request(format!(
-            "Unknown device: {}",
-            device_id
-        )));
-    }
-
-    let device = device_opt.unwrap();
+    let device = match device_opt {
+        Some(d) => d,
+        None => {
+            // Device not registered - return error
+            // TODO: Implement auto-onboarding
+            return Err(ErrorResponse::not_found(&format!(
+                "Device '{}' not found. Register the device first.",
+                device_id
+            )));
+        }
+    };
 
     // Only allow webhook for devices with webhook adapter type
     if device.adapter_type != "webhook" {

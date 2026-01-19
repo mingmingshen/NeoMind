@@ -52,7 +52,7 @@ pub use error::{AutomationError, Result};
 pub use conversion::AutomationConverter;
 pub use nl2automation::{Nl2Automation, ExtractedEntities, TriggerEntity, ConditionEntity, ActionEntity, TriggerTypeEntity, ActionTypeEntity, TimeConstraints};
 pub use threshold_recommender::{ThresholdRecommender, ThresholdRequest, ThresholdRecommendation, ThresholdIntent, ThresholdValidation, Statistics};
-pub use device_type_generator::{DeviceTypeGenerator, GeneratedDeviceType, DeviceCapabilities, ValidationResult};
+pub use device_type_generator::{DeviceTypeGenerator, DeviceCapabilities, ValidationResult, GenerationConfig};
 
 // Re-export discovery module
 pub use discovery::{
@@ -65,6 +65,12 @@ pub use discovery::{
     FieldSemantic,
     InferenceContext,
     VirtualMetricGenerator,
+    AutoOnboardManager,
+    TypeSignature,
+    DraftDevice,
+    GeneratedDeviceType,
+    ProcessingSummary,
+    DeviceCategory,
 };
 
 // Re-export transform-specific types

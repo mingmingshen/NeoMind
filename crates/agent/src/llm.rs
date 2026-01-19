@@ -933,11 +933,13 @@ impl LlmInterface {
             self.build_system_prompt_with_tools(Some(&user_message))
                 .await
         } else {
-            // Phase 2 system prompt - still include tool calling instructions
-            // because follow-up questions may need tools
-            "你是NeoTalk物联网助手。根据对话历史和用户问题，如果需要查询信息，用JSON格式调用工具：[{\"name\":\"工具名称\",\"arguments\":{}}]
-可用工具：list_devices, list_rules, query_data, control_device, create_rule, trigger_workflow。
-如果不需要查询工具，直接回答用户问题。".to_string()
+            // Phase 2 system prompt - NO tool calling, just generate response based on tool results
+            // Tool execution is already complete, this phase is for summarizing results
+            "你是NeoTalk物联网助手。工具已经执行完成，结果在对话历史中。
+请直接根据工具执行结果回答用户问题，不要再调用任何工具。
+- 简洁直接地回答
+- 如果工具返回了数据，简要总结要点
+- 如果工具执行失败，解释原因并提供建议".to_string()
         };
 
         // Build input outside the lock

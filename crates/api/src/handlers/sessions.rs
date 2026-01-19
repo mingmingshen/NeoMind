@@ -19,6 +19,7 @@ use edge_ai_agent::AgentEvent;
 #[derive(Debug, Clone)]
 struct StreamEvent {
     json: String,
+    #[allow(dead_code)]
     session_id: String,
 }
 
@@ -730,11 +731,12 @@ async fn handle_ws_socket(
                 }
             }
         }
+    }
 
-        // Cleanup: persist session history before closing
-        if let Some(session_id) = current_session_id.read().await.as_ref()
-            && let Err(e) = state.session_manager.persist_history(session_id).await {
-                tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
-            }
+    // Cleanup: persist session history AFTER loop ends (when connection closes)
+    if let Some(session_id) = current_session_id.read().await.as_ref() {
+        if let Err(e) = state.session_manager.persist_history(session_id).await {
+            tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
+        }
     }
 }

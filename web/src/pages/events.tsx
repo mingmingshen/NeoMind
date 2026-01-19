@@ -1,19 +1,19 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Bell,
-  Terminal,
   Activity,
+  Cpu,
   Sparkles,
-  Check,
+  Workflow,
+  Bell,
+  Brain,
+  RefreshCw,
 } from 'lucide-react'
 import { PageLayout } from '@/components/layout/PageLayout'
-import { PageTabs, PageTabsContent } from '@/components/shared'
-import { AlertsTab } from '@/components/automation/AlertsTab'
-import { CommandsTab } from '@/components/automation/CommandsTab'
 import { api } from '@/lib/api'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -22,175 +22,259 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { EmptyStateInline, ActionBar } from '@/components/shared'
+import { EmptyStateInline } from '@/components/shared'
 import { useApiData } from '@/hooks/useApiData'
 import { formatTimestamp } from '@/lib/utils/format'
 import type { Event as SystemEvent } from '@/types'
+import { cn } from '@/lib/utils'
 
-type ActiveTab = 'alerts' | 'commands' | 'events'
+type EventFilter = 'all' | 'device' | 'rule' | 'workflow' | 'alert' | 'llm'
 
 const fetchEvents = async (): Promise<SystemEvent[]> => {
-  const response = await api.getEvents({ limit: 100 }) as unknown as { events: SystemEvent[]; count: number }
+  const response = await api.getEvents({ limit: 200 }) as unknown as { events: SystemEvent[]; count: number }
   return response.events || []
 }
 
-export function EventsPage() {
-  const { t } = useTranslation(['common', 'events', 'alerts', 'commands'])
-  const [activeTab, setActiveTab] = useState<ActiveTab>('alerts')
+// Event type configuration with icons
+const EVENT_FILTERS_CONFIG = [
+  { value: 'all' as EventFilter, labelKey: 'all', icon: Activity },
+  { value: 'device' as EventFilter, labelKey: 'device', icon: Cpu },
+  { value: 'rule' as EventFilter, labelKey: 'rule', icon: Sparkles },
+  { value: 'workflow' as EventFilter, labelKey: 'workflow', icon: Workflow },
+  { value: 'alert' as EventFilter, labelKey: 'alert', icon: Bell },
+  { value: 'llm' as EventFilter, labelKey: 'llm', icon: Brain },
+]
 
-  const tabs = [
-    {
-      value: 'alerts' as ActiveTab,
-      label: t('events:alerts', { defaultValue: 'Alerts' }),
-      icon: <Bell className="h-4 w-4" />,
+// Determine event category from event_type string
+function getEventCategory(eventType: string): EventFilter {
+  const type = eventType.toLowerCase()
+
+  if (type.includes('device') || type.includes('metric') || type.includes('command')) {
+    return 'device'
+  }
+  if (type.includes('rule') || type.includes('trigger') || type.includes('evaluated')) {
+    return 'rule'
+  }
+  if (type.includes('workflow') || type.includes('step')) {
+    return 'workflow'
+  }
+  if (type.includes('alert')) {
+    return 'alert'
+  }
+  if (type.includes('llm') || type.includes('decision') || type.includes('periodic') || type.includes('tool')) {
+    return 'llm'
+  }
+  return 'all'
+}
+
+// Get event display info
+function getEventDisplayInfo(eventType: string) {
+  const category = getEventCategory(eventType)
+
+  // Base styles by category
+  const baseStyles = {
+    device: {
+      color: 'text-blue-600 dark:text-blue-400',
+      bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+      borderColor: 'border-blue-200 dark:border-blue-800',
+      badgeVariant: 'outline' as const,
     },
-    {
-      value: 'commands' as ActiveTab,
-      label: t('events:commands', { defaultValue: 'Commands' }),
-      icon: <Terminal className="h-4 w-4" />,
+    rule: {
+      color: 'text-yellow-600 dark:text-yellow-400',
+      bgColor: 'bg-yellow-50 dark:bg-yellow-950/30',
+      borderColor: 'border-yellow-200 dark:border-yellow-800',
+      badgeVariant: 'outline' as const,
     },
-    {
-      value: 'events' as ActiveTab,
-      label: t('events:systemEvents', { defaultValue: 'Events' }),
-      icon: <Activity className="h-4 w-4" />,
+    workflow: {
+      color: 'text-purple-600 dark:text-purple-400',
+      bgColor: 'bg-purple-50 dark:bg-purple-950/30',
+      borderColor: 'border-purple-200 dark:border-purple-800',
+      badgeVariant: 'outline' as const,
     },
-  ]
+    alert: {
+      color: 'text-red-600 dark:text-red-400',
+      bgColor: 'bg-red-50 dark:bg-red-950/30',
+      borderColor: 'border-red-200 dark:border-red-800',
+      badgeVariant: 'destructive' as const,
+    },
+    llm: {
+      color: 'text-green-600 dark:text-green-400',
+      bgColor: 'bg-green-50 dark:bg-green-950/30',
+      borderColor: 'border-green-200 dark:border-green-800',
+      badgeVariant: 'outline' as const,
+    },
+    all: {
+      color: 'text-gray-600 dark:text-gray-400',
+      bgColor: 'bg-gray-50 dark:bg-gray-950/30',
+      borderColor: 'border-gray-200 dark:border-gray-800',
+      badgeVariant: 'secondary' as const,
+    },
+  }
+
+  const styles = baseStyles[category]
+  const IconComponent = EVENT_FILTERS_CONFIG.find(f => f.value === category)?.icon || Activity
+
+  return { styles, IconComponent }
+}
+
+export function EventsPage() {
+  const { t } = useTranslation(['common', 'events'])
+  const [activeFilter, setActiveFilter] = useState<EventFilter>('all')
 
   const { data: events, loading, refetch } = useApiData(
     () => fetchEvents(),
     { deps: [] }
   )
 
-  const getEventTypeBadge = (eventType: string) => {
-    const type = eventType.toLowerCase()
-    let variant: 'default' | 'secondary' | 'destructive' | 'outline' = 'secondary'
-    let color = ''
+  const displayEvents = events || []
 
-    if (type.includes('device') || type.includes('online') || type.includes('offline')) {
-      variant = 'outline'
-      color = 'text-blue-600'
-    } else if (type.includes('rule') || type.includes('trigger')) {
-      variant = 'default'
-      color = 'text-yellow-600'
-    } else if (type.includes('workflow')) {
-      variant = 'default'
-      color = 'text-purple-600'
-    } else if (type.includes('alert')) {
-      variant = 'destructive'
-      color = 'text-red-600'
-    } else if (type.includes('automation') || type.includes('llm')) {
-      variant = 'default'
-      color = 'text-green-600'
-    }
+  // Filter events by category
+  const filteredEvents = useMemo(() => {
+    if (!displayEvents) return []
+    if (activeFilter === 'all') return displayEvents
+    return displayEvents.filter(event => getEventCategory(event.event_type) === activeFilter)
+  }, [displayEvents, activeFilter])
 
-    return (
-      <Badge variant={variant} className={color}>
-        {eventType}
-      </Badge>
-    )
-  }
-
-  const getEventIcon = (eventType: string) => {
-    const type = eventType.toLowerCase()
-
-    if (type.includes('device') || type.includes('online') || type.includes('offline')) {
-      return <Activity className="h-4 w-4 text-blue-500" />
+  // Get count for each filter
+  const filterCounts = useMemo(() => {
+    if (!displayEvents) return {}
+    const counts: Record<string, number> = { all: displayEvents.length }
+    for (const event of displayEvents) {
+      const category = getEventCategory(event.event_type)
+      counts[category] = (counts[category] || 0) + 1
     }
-    if (type.includes('rule') || type.includes('trigger')) {
-      return <Sparkles className="h-4 w-4 text-yellow-500" />
-    }
-    if (type.includes('workflow')) {
-      return <Terminal className="h-4 w-4 text-purple-500" />
-    }
-    if (type.includes('alert')) {
-      return <Bell className="h-4 w-4 text-red-500" />
-    }
-    if (type.includes('automation') || type.includes('llm')) {
-      return <Check className="h-4 w-4 text-green-500" />
-    }
-
-    return <Activity className="h-4 w-4" />
-  }
+    return counts
+  }, [displayEvents])
 
   return (
-    <PageLayout>
-      <PageTabs
-        tabs={tabs}
-        activeTab={activeTab}
-        onTabChange={(v) => setActiveTab(v as ActiveTab)}
-      >
-        <PageTabsContent value="alerts" activeTab={activeTab}>
-          <AlertsTab />
-        </PageTabsContent>
+    <PageLayout
+      title={t('events:title')}
+      subtitle={t('events:description')}
+    >
+      {/* Filter Bar */}
+      <div className="flex items-center gap-2 flex-wrap mb-6">
+        {EVENT_FILTERS_CONFIG.map((filter) => {
+          const Icon = filter.icon
+          const count = filterCounts[filter.value] || 0
+          const isActive = activeFilter === filter.value
+          const label = t(`events:${filter.labelKey}`)
 
-        <PageTabsContent value="commands" activeTab={activeTab}>
-          <CommandsTab />
-        </PageTabsContent>
+          return (
+            <Button
+              key={filter.value}
+              variant={isActive ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setActiveFilter(filter.value)}
+              className={cn(
+                "gap-2 rounded-lg",
+                !isActive && "bg-background hover:bg-muted"
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              <span>{label}</span>
+              <Badge
+                variant={isActive ? 'secondary' : 'outline'}
+                className="h-5 px-1.5 text-xs"
+              >
+                {count}
+              </Badge>
+            </Button>
+          )
+        })}
 
-        <PageTabsContent value="events" activeTab={activeTab}>
-          <div className="space-y-4">
-            {/* Header */}
-            <ActionBar
-              title={t('events:systemEvents', { defaultValue: 'System Events' })}
-              titleIcon={<Activity className="h-5 w-5" />}
-              description={t('events:systemEventsDesc', {
-                defaultValue: 'Real-time system events and activity log',
-              })}
-              onRefresh={refetch}
-            />
+        <div className="flex-1" />
 
-            {/* Events Table */}
-            <Card>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('events:type', { defaultValue: 'Type' })}</TableHead>
-                    <TableHead>{t('events:source', { defaultValue: 'Source' })}</TableHead>
-                    <TableHead>{t('events:data', { defaultValue: 'Data' })}</TableHead>
-                    <TableHead>{t('events:timestamp', { defaultValue: 'Timestamp' })}</TableHead>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={refetch}
+          className="gap-2"
+        >
+          <RefreshCw className="h-4 w-4" />
+          {t('common:refresh')}
+        </Button>
+      </div>
+
+      {/* Events Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[90px]">ID</TableHead>
+              <TableHead className="w-[160px]">{t('events:type')}</TableHead>
+              <TableHead>{t('events:source')}</TableHead>
+              <TableHead>{t('events:data')}</TableHead>
+              <TableHead className="w-[90px] text-center">{t('events:status')}</TableHead>
+              <TableHead className="w-[140px]">{t('events:timestamp')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <EmptyStateInline
+                title={t('common:loading')}
+                colSpan={6}
+              />
+            ) : !filteredEvents || filteredEvents.length === 0 ? (
+              <EmptyStateInline
+                title={activeFilter === 'all'
+                  ? t('events:noEvents')
+                  : t('events:noFilteredEvents')
+                }
+                colSpan={6}
+              />
+            ) : (
+              filteredEvents.map((event) => {
+                const { styles, IconComponent } = getEventDisplayInfo(event.event_type)
+
+                return (
+                  <TableRow key={event.id} className="group">
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {event.id.slice(0, 8)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className={cn(
+                        "flex items-center gap-2 px-2.5 py-1.5 rounded-lg border",
+                        styles.borderColor, styles.bgColor
+                      )}>
+                        <IconComponent className={cn("h-4 w-4", styles.color)} />
+                        <span className={cn("text-sm font-medium", styles.color)}>
+                          {event.event_type}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {event.source ? (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {event.source.length > 15 ? event.source.substring(0, 15) + '...' : event.source}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="max-w-md">
+                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-all font-sans">
+                          {JSON.stringify(event.data, null, 2)}
+                        </pre>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant={event.processed ? 'secondary' : 'outline'} className="text-xs">
+                        {event.processed ? t('events:processed') : t('events:pending')}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatTimestamp(event.timestamp)}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <EmptyStateInline title={t('common:loading')} colSpan={4} />
-                  ) : !events || events.length === 0 ? (
-                    <EmptyStateInline
-                      title={t('events:noEvents', { defaultValue: 'No events found' })}
-                      colSpan={4}
-                    />
-                  ) : (
-                    events.map((event) => (
-                      <TableRow key={event.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getEventIcon(event.event_type)}
-                            {getEventTypeBadge(event.event_type)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {event.source && (
-                            <span className="font-mono text-xs">{event.source}</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="max-w-md overflow-hidden">
-                            <pre className="text-xs text-muted-foreground truncate">
-                              {JSON.stringify(event.data, null, 2)}
-                            </pre>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatTimestamp(event.timestamp)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </Card>
-          </div>
-        </PageTabsContent>
-      </PageTabs>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </Card>
     </PageLayout>
   )
 }

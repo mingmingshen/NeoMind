@@ -90,6 +90,11 @@ impl ErrorResponse {
             StatusCode::SERVICE_UNAVAILABLE,
         )
     }
+
+    /// Gone (410) - resource is no longer available.
+    pub fn gone(message: impl Into<String>) -> Self {
+        Self::new("GONE", message, StatusCode::GONE)
+    }
 }
 
 impl IntoResponse for ErrorResponse {

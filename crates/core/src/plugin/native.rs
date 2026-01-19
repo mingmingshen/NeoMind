@@ -181,7 +181,7 @@ impl NativePluginLoader {
             })?
         };
 
-        let descriptor = unsafe { &*descriptor };
+        let descriptor = &*descriptor;
 
         // Check API version
         if descriptor.api_version != NEOTALK_PLUGIN_API_VERSION {

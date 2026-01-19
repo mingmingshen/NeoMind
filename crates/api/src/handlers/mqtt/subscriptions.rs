@@ -120,7 +120,6 @@ pub async fn subscribe_device_handler(
     // Get the adapter for this device and subscribe
     if let Some(ref adapter_id) = device.adapter_id
         && let Some(adapter) = state.device_service.get_adapter(adapter_id).await {
-            use edge_ai_devices::adapter::DeviceAdapter;
             adapter
                 .subscribe_device(&device_id)
                 .await

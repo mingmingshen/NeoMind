@@ -1,0 +1,17 @@
+{
+  "extensions": {
+    "title": "Extensions",
+    "description": "Manage system extensions",
+    "installed": "Installed",
+    "available": "Available",
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "noExtensions": "No extensions found",
+    "extensionDetails": "Extension Details",
+    "version": "Version",
+    "author": "Author",
+    "description": "Description"
+  }
+}

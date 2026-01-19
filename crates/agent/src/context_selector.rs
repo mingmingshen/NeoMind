@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use edge_ai_devices::mdl_format::DeviceTypeDefinition;
-use edge_ai_rules::RuleEngine;
+use edge_ai_rules::{RuleEngine, dsl::RuleCondition};
 
 // Import configuration for default max_tokens
 use edge_ai_core::config::agent_env_vars;
@@ -546,26 +546,59 @@ impl ContextSelector {
             let rules = engine.list_rules().await;
 
             for rule in rules {
+                // Extract device_id from condition for matching
+                let device_id = match &rule.condition {
+                    RuleCondition::Simple { device_id, .. } |
+                    RuleCondition::Range { device_id, .. } => Some(device_id.clone()),
+                    _ => None, // Complex conditions don't have a single device
+                };
+
                 let include = match analysis.context_scope {
                     ContextScope::Minimal => false,
-                    ContextScope::Standard => target_devices.contains(&rule.condition.device_id),
+                    ContextScope::Standard => {
+                        if let Some(ref did) = device_id {
+                            target_devices.contains(did)
+                        } else {
+                            false
+                        }
+                    }
                     ContextScope::Extended | ContextScope::Full => true,
                 };
 
                 if include {
                     token_count += 50; // Estimate per rule
 
+                    // Build condition description
+                    let condition_desc = match &rule.condition {
+                        RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                            format!(
+                                "{}.{} {} {}",
+                                device_id,
+                                metric,
+                                operator.as_str(),
+                                threshold
+                            )
+                        }
+                        RuleCondition::Range { device_id, metric, min, max } => {
+                            format!(
+                                "{}.{} BETWEEN {} AND {}",
+                                device_id,
+                                metric,
+                                min,
+                                max
+                            )
+                        }
+                        RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+                            format!("(complex condition with {} sub-conditions)", conditions.len())
+                        }
+                        RuleCondition::Not(_) => "(NOT condition)".to_string(),
+                    };
+
                     rule_refs.push(RuleReference {
                         rule_id: rule.id.to_string(),
                         name: rule.name.clone(),
-                        condition: format!(
-                            "{}.{} {} {}",
-                            rule.condition.device_id,
-                            rule.condition.metric,
-                            rule.condition.operator.as_str(),
-                            rule.condition.threshold
-                        ),
-                        device_id: rule.condition.device_id,
+                        condition: condition_desc,
+                        device_id: device_id.unwrap_or_else(|| "(complex)".to_string()),
                     });
                 }
             }

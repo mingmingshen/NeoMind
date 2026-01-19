@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Check, Trash2, Eye, Bell } from "lucide-react"
-import { EmptyStateInline, Pagination, AlertBadge, BulkActionBar, ActionBar } from "@/components/shared"
+import { EmptyStateInline, Pagination, AlertBadge, BulkActionBar } from "@/components/shared"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
@@ -145,14 +145,6 @@ export function AlertsTab() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <ActionBar
-        title={t('automation:alerts')}
-        titleIcon={<Bell className="h-5 w-5" />}
-        description={t('automation:alertsDesc')}
-        onRefresh={fetchAlerts}
-      />
-
       {/* Bulk Actions Bar */}
       <BulkActionBar
         selectedCount={selectedIds.size}

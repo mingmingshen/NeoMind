@@ -1000,31 +1000,16 @@ impl SettingsStore {
         Ok(all.into_iter().filter(|b| b.enabled).collect())
     }
 
-    /// Save HASS discovery enabled state.
-    pub fn save_hass_discovery_enabled(&self, enabled: bool) -> Result<(), Error> {
-        let write_txn = self.db.begin_write()?;
-        {
-            let mut table = write_txn.open_table(SETTINGS_TABLE)?;
-            let key = "hass_discovery_enabled";
-            let value: &[u8] = if enabled { b"true" } else { b"false" };
-            table.insert(key, value)?;
-        }
-        write_txn.commit()?;
+    /// Save HASS discovery enabled state (deprecated - returns Ok)
+    pub fn save_hass_discovery_enabled(&self, _enabled: bool) -> Result<(), Error> {
+        // HASS discovery deprecated - stub implementation
         Ok(())
     }
 
-    /// Load HASS discovery enabled state.
+    /// Load HASS discovery enabled state (deprecated - returns false)
     pub fn load_hass_discovery_enabled(&self) -> Result<bool, Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(SETTINGS_TABLE)?;
-
-        if let Some(value) = table.get("hass_discovery_enabled")? {
-            let s = std::str::from_utf8(value.value())
-                .map_err(|e| Error::Serialization(e.to_string()))?;
-            Ok(s == "true")
-        } else {
-            Ok(false) // Default to disabled
-        }
+        // HASS discovery deprecated - stub implementation
+        Ok(false)
     }
 }
 

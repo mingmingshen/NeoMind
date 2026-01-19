@@ -425,6 +425,27 @@ impl RuleHistoryStore {
 
         Ok(rules.into_iter().collect())
     }
+
+    /// Get count of triggered rules since a given timestamp.
+    pub fn count_since(&self, since_timestamp: i64) -> Result<u64> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(RULE_HISTORY_TABLE)?;
+
+        let mut count = 0u64;
+        for result in table.iter()? {
+            let (_key, value) = result?;
+            if let Ok(execution) = serde_json::from_slice::<RuleExecution>(value.value()) {
+                if execution.timestamp >= since_timestamp {
+                    // Count only triggered rules (not "NotTriggered")
+                    if !matches!(execution.result, RuleExecutionResult::NotTriggered) {
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(count)
+    }
 }
 
 /// Workflow execution history entry.
@@ -603,6 +624,24 @@ impl WorkflowHistoryStore {
         }
 
         Ok(workflows.into_iter().collect())
+    }
+
+    /// Get count of executions since a given timestamp.
+    pub fn count_since(&self, since_timestamp: i64) -> Result<u64> {
+        let txn = self.db.begin_read()?;
+        let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
+
+        let mut count = 0u64;
+        for result in table.iter()? {
+            let (_key, value) = result?;
+            if let Ok(execution) = serde_json::from_slice::<WorkflowExecution>(value.value()) {
+                if execution.timestamp >= since_timestamp {
+                    count += 1;
+                }
+            }
+        }
+
+        Ok(count)
     }
 }
 
@@ -894,6 +933,14 @@ impl AlertStore {
             }
 
         true
+    }
+
+    /// Get count of alerts created since a given timestamp.
+    pub fn count_since(&self, since_timestamp: i64) -> Result<u64> {
+        let filter = AlertFilter::new()
+            .with_time_range(since_timestamp, i64::MAX);
+        let alerts = self.query(&filter)?;
+        Ok(alerts.len() as u64)
     }
 }
 

@@ -819,17 +819,17 @@ pub async fn process_stream_events_with_safeguards(
         "温度", "temperature",
     ];
 
-    let is_greeting = greeting_patterns
+    let _is_greeting = greeting_patterns
         .iter()
         .any(|&pat| trimmed.eq_ignore_ascii_case(pat) || trimmed.starts_with(pat));
 
     // Check for device list query
-    let is_device_query = device_list_patterns
+    let _is_device_query = device_list_patterns
         .iter()
         .any(|&pat| lower.contains(&pat.to_lowercase()) && lower.len() < 30);
 
     // Check for temperature query (simple single-word queries)
-    let is_temp_query = temp_query_patterns
+    let _is_temp_query = temp_query_patterns
         .iter()
         .any(|&pat| lower == pat || lower.ends_with(pat) || lower.starts_with("当前") && lower.contains("温度"));
 

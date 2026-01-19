@@ -1,5 +1,8 @@
 //! Device type management.
 
+use edge_ai_automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
+use edge_ai_automation::discovery::DeviceSample;
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -16,8 +19,6 @@ use edge_ai_llm::{
     OllamaConfig, OllamaRuntime,
 };
 use edge_ai_llm::backends::openai::{CloudConfig, CloudProvider, CloudRuntime};
-use edge_ai_automation::device_type_generator::{DeviceTypeGenerator, GenerationConfig};
-use edge_ai_automation::discovery::DeviceSample;
 
 use super::models::DeviceTypeDto;
 use crate::handlers::{

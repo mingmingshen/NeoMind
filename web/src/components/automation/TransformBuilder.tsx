@@ -182,8 +182,8 @@ export function TransformBuilder({ open, onOpenChange, transform, devices, onSav
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[90vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 pt-6 pb-4 border-t-0 border-x-0 border-b shrink-0 pr-12">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-purple-500" />
             {transform
@@ -197,7 +197,7 @@ export function TransformBuilder({ open, onOpenChange, transform, devices, onSav
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto space-y-6 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
           {/* Intent Input */}
           <div className="space-y-4">
             <div className="space-y-2">
@@ -394,7 +394,7 @@ export function TransformBuilder({ open, onOpenChange, transform, devices, onSav
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('common:cancel', { defaultValue: 'Cancel' })}
           </Button>

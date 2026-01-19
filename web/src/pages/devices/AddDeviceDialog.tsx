@@ -14,8 +14,7 @@ import {
 } from "@/components/ui/select"
 import { RefreshCw } from "lucide-react"
 import type { DeviceType, AddDeviceRequest, ConnectionConfig } from "@/types"
-import { TemplatePreview } from "@/components/devices/TemplatePreview"
-// Generate 10-character random string (lowercase alphanumeric)
+
 function generateRandomId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let result = ''
@@ -47,38 +46,32 @@ export function AddDeviceDialog({
   const [adapterType, setAdapterType] = useState<"mqtt" | "http" | "webhook">("mqtt")
   const [connectionConfig, setConnectionConfig] = useState<ConnectionConfig>({})
 
-  // Generate random ID when dialog opens
   useEffect(() => {
     if (open && !deviceId) {
       setDeviceId(generateRandomId())
     }
   }, [open])
 
-  // Generate default telemetry topic for MQTT adapter
   useEffect(() => {
+    // Set defaults based on adapter type
     if (adapterType === 'mqtt' && selectedDeviceType && deviceId) {
-      // Generate topic: device/{device_type}/{device_id}/uplink
-      // This matches the MQTT adapter's subscription pattern: device/+/+/uplink
-      // Only set if not already set by user
-      if (!connectionConfig.telemetry_topic) {
-        const defaultTopic = `device/${selectedDeviceType}/${deviceId}/uplink`
-        setConnectionConfig(prev => ({
-          ...prev,
-          telemetry_topic: defaultTopic
-        }))
-      }
-      // Generate default command topic if template has commands
-      const template = deviceTypes.find(t => t.device_type === selectedDeviceType)
-      const hasCommands = template?.commands && template.commands.length > 0
-      if (hasCommands && !connectionConfig.command_topic) {
-        setConnectionConfig(prev => ({
-          ...prev,
-          command_topic: `device/${selectedDeviceType}/${deviceId}/downlink`
-        }))
-      }
+      const defaultTopic = `device/${selectedDeviceType}/${deviceId}/uplink`
+      const defaultCommandTopic = `device/${selectedDeviceType}/${deviceId}/downlink`
+      setConnectionConfig({
+        telemetry_topic: defaultTopic,
+        command_topic: defaultCommandTopic,
+      })
+    } else if (adapterType === 'http') {
+      setConnectionConfig({
+        url: `http://192.168.1.100/api/telemetry`,
+        method: 'GET',
+        poll_interval: 30,
+      })
+    } else {
+      setConnectionConfig({})
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adapterType, selectedDeviceType, deviceId, deviceTypes])
+  }, [adapterType, selectedDeviceType, deviceId])
 
   const handleAdd = async () => {
     if (!selectedDeviceType) return
@@ -94,7 +87,7 @@ export function AddDeviceDialog({
     const success = await onAdd(request)
     if (success) {
       setSelectedDeviceType("")
-      setDeviceId("")
+      setDeviceId(generateRandomId())
       setDeviceName("")
       setAdapterType("mqtt")
       setConnectionConfig({})
@@ -112,10 +105,8 @@ export function AddDeviceDialog({
     }
   }
 
-  // Reset form when dialog opens
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      // Generate new random ID when opening
       setDeviceId(generateRandomId())
       setConnectionConfig({})
     } else {
@@ -128,15 +119,22 @@ export function AddDeviceDialog({
     onOpenChange(open)
   }
 
+  const selectedTemplate = deviceTypes.find(t => t.device_type === selectedDeviceType)
+  const hasCommands = (selectedTemplate?.commands?.length || 0) > 0
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{t('devices:add.title')}</DialogTitle>
         </DialogHeader>
+
         <div className="space-y-4 py-4">
+          {/* Device Type */}
           <div className="space-y-2">
-            <Label htmlFor="device-type" dangerouslySetInnerHTML={{ __html: t('devices:add.typeRequired') }} />
+            <Label htmlFor="device-type">
+              {t('devices:deviceType')} <span className="text-destructive">*</span>
+            </Label>
             <Select value={selectedDeviceType} onValueChange={setSelectedDeviceType}>
               <SelectTrigger id="device-type">
                 <SelectValue placeholder={t('devices:add.typePlaceholder')} />
@@ -149,94 +147,88 @@ export function AddDeviceDialog({
                 ))}
               </SelectContent>
             </Select>
-            {!selectedDeviceType && (
-              <p className="text-xs text-destructive">{t('devices:add.typeValidation')}</p>
-            )}
           </div>
-          
-          {/* Template Preview */}
-          {selectedDeviceType && (() => {
-            const template = deviceTypes.find(t => t.device_type === selectedDeviceType)
-            return template ? (
-              <div className="space-y-2">
-                <TemplatePreview template={template} />
+
+          {/* Device ID & Name */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="device-id">{t('devices:deviceId')}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="device-id"
+                  value={deviceId}
+                  onChange={(e) => setDeviceId(e.target.value)}
+                  placeholder="自动生成"
+                  className="font-mono"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setDeviceId(generateRandomId())}
+                  title="重新生成"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>
-            ) : null
-          })()}
-          
-          <div className="space-y-2">
-            <Label htmlFor="device-id">{t('devices:add.id')}</Label>
-            <div className="flex gap-2">
-              <Input
-                id="device-id"
-                value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value)}
-                placeholder={t('devices:id.autoGenerate')}
-                className="font-mono"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setDeviceId(generateRandomId())}
-                title={t('devices:id.regenerate')}
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
             </div>
-            <p className="text-xs text-muted-foreground">{t('devices:id.topicHint', { type: selectedDeviceType || '{type}', id: deviceId || '{id}' })}</p>
+            <div className="space-y-2">
+              <Label htmlFor="device-name">{t('devices:deviceName')}</Label>
+              <Input
+                id="device-name"
+                value={deviceName}
+                onChange={(e) => setDeviceName(e.target.value)}
+                placeholder={t('common:optional')}
+              />
+            </div>
           </div>
+
+          {/* Adapter Type */}
           <div className="space-y-2">
-            <Label htmlFor="device-name">{t('devices:deviceName')}</Label>
-            <Input
-              id="device-name"
-              value={deviceName}
-              onChange={(e) => setDeviceName(e.target.value)}
-              placeholder={t('common:optional')}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="adapter-type">{t('devices:adapterType') || 'Adapter Type'}</Label>
-            <Select value={adapterType} onValueChange={(v) => {
-              setAdapterType(v as "mqtt" | "http" | "webhook")
-              setConnectionConfig({}) // Reset config when adapter type changes
-            }}>
+            <Label htmlFor="adapter-type">适配器类型</Label>
+            <Select
+              value={adapterType}
+              onValueChange={(v) => setAdapterType(v as "mqtt" | "http" | "webhook")}
+            >
               <SelectTrigger id="adapter-type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="mqtt">MQTT</SelectItem>
-                <SelectItem value="http">HTTP (Polling)</SelectItem>
-                <SelectItem value="webhook">Webhook (Push)</SelectItem>
+                <SelectItem value="http">HTTP</SelectItem>
+                <SelectItem value="webhook">Webhook</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {/* Adapter Config */}
           {adapterType === 'mqtt' && (
-            <div className="space-y-2">
-              <Label htmlFor="telemetry-topic">Telemetry Topic</Label>
-              <Input
-                id="telemetry-topic"
-                value={connectionConfig.telemetry_topic || ''}
-                onChange={(e) => setConnectionConfig({ ...connectionConfig, telemetry_topic: e.target.value })}
-                placeholder="device/{device_type}/{device_id}/uplink"
-              />
-              {selectedDeviceType && (() => {
-                const template = deviceTypes.find(t => t.device_type === selectedDeviceType)
-                const commands = template?.commands || []
-                return commands.length > 0
-              })() && (
-                <>
-                  <Label htmlFor="command-topic">Command Topic</Label>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="telemetry-topic">遥测主题</Label>
+                <Input
+                  id="telemetry-topic"
+                  value={connectionConfig.telemetry_topic || ''}
+                  onChange={(e) => setConnectionConfig({ ...connectionConfig, telemetry_topic: e.target.value })}
+                  placeholder="device/{type}/{id}/uplink"
+                  className="font-mono text-sm"
+                />
+              </div>
+              {hasCommands && (
+                <div className="space-y-2">
+                  <Label htmlFor="command-topic">命令主题</Label>
                   <Input
                     id="command-topic"
                     value={connectionConfig.command_topic || ''}
                     onChange={(e) => setConnectionConfig({ ...connectionConfig, command_topic: e.target.value })}
-                    placeholder="device/{device_type}/{device_id}/downlink"
+                    placeholder="device/{type}/{id}/downlink"
+                    className="font-mono text-sm"
                   />
-                </>
+                </div>
               )}
             </div>
           )}
+
           {adapterType === 'http' && (
             <div className="space-y-3">
               <div className="space-y-2">
@@ -246,11 +238,12 @@ export function AddDeviceDialog({
                   value={connectionConfig.url || ''}
                   onChange={(e) => setConnectionConfig({ ...connectionConfig, url: e.target.value })}
                   placeholder="http://192.168.1.100/api/telemetry"
+                  className="font-mono text-sm"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="http-method">Method</Label>
+                  <Label htmlFor="http-method">请求方法</Label>
                   <Select
                     value={connectionConfig.method || 'GET'}
                     onValueChange={(v) => setConnectionConfig({ ...connectionConfig, method: v })}
@@ -265,7 +258,7 @@ export function AddDeviceDialog({
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="poll-interval">Poll Interval (sec)</Label>
+                  <Label htmlFor="poll-interval">轮询间隔(秒)</Label>
                   <Input
                     id="poll-interval"
                     type="number"
@@ -275,42 +268,26 @@ export function AddDeviceDialog({
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="data-path">Data Path (JSONPath, optional)</Label>
-                <Input
-                  id="data-path"
-                  value={connectionConfig.data_path || ''}
-                  onChange={(e) => setConnectionConfig({ ...connectionConfig, data_path: e.target.value })}
-                  placeholder="$.data.sensors[0]"
-                />
-                <p className="text-xs text-muted-foreground">Extract nested JSON values using dot notation</p>
-              </div>
             </div>
           )}
+
           {adapterType === 'webhook' && (
-            <div className="space-y-4 rounded-lg border p-4 bg-muted/30">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-medium">Webhook Configuration</h4>
-                <span className="text-xs text-muted-foreground">Devices push data to you</span>
-              </div>
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  After adding the device, use the Webhook URL below to configure your device:
-                </p>
-                <div className="flex items-center gap-2 rounded-md bg-background p-3 font-mono text-sm">
-                  <code className="flex-1">
-                    {window.location.origin}/api/devices/webhook/{deviceId}
-                  </code>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Device should POST JSON data: <code className="bg-muted px-1 rounded">{"{\"data\": {\"temperature\": 23.5}}"}</code>
-                </p>
-              </div>
+            <div className="rounded-lg border bg-muted p-4">
+              <p className="text-sm text-muted-foreground mb-2">
+                设备添加后，使用以下 Webhook URL 配置您的设备：
+              </p>
+              <code className="text-xs break-all block">
+                {window.location.origin}/api/devices/webhook/{deviceId}
+              </code>
             </div>
           )}
         </div>
+
         <DialogFooter>
-          <Button onClick={handleAdd} disabled={!selectedDeviceType || adding} size="sm">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('common:cancel')}
+          </Button>
+          <Button onClick={handleAdd} disabled={!selectedDeviceType || adding}>
             {adding ? t('devices:adding') : t('common:add')}
           </Button>
         </DialogFooter>

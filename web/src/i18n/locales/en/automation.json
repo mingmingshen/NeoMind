@@ -508,5 +508,13 @@
   "runTest": "Run Test",
   "transformNamePlaceholder": "e.g., Temperature Average",
   "transformDescriptionPlaceholder": "Describe what this transform does...",
-  "selectPlaceholder": "Select an option..."
+  "selectPlaceholder": "Select an option...",
+  "ruleSaved": "Rule saved successfully",
+  "workflowSaved": "Workflow saved successfully",
+  "transformSaved": "Transform saved successfully",
+  "itemDeleted": "Item deleted successfully",
+  "executeSuccess": "Execution started successfully",
+  "editWorkflow": "Edit Workflow",
+  "createWorkflow": "Create Workflow",
+  "workflowBuilderDesc": "Use the visual editor to design your workflow"
 }

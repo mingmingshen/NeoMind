@@ -172,7 +172,10 @@ export function DecisionsPage() {
   ]
 
   return (
-    <PageLayout>
+    <PageLayout
+      title={t('decisions:title')}
+      subtitle={t('decisions:description')}
+    >
       <PageTabs
         tabs={tabs}
         activeTab={filter}

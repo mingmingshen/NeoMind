@@ -1,0 +1,320 @@
+/**
+ * Extension Slice
+ *
+ * Handles extension state, registration, and management.
+ *
+ * Matches backend API: crates/api/src/handlers/extensions.rs
+ *
+ * This replaces the legacy plugin system for dynamically loaded code modules.
+ * Device adapter management still uses the /api/plugins/device-adapters endpoints.
+ */
+
+import type { StateCreator } from 'zustand'
+import type { Extension, ExtensionStatsDto, ExtensionTypeDto, ExtensionDiscoveryResult } from '@/types'
+import { api } from '@/lib/api'
+
+export interface ExtensionState {
+  extensions: Extension[]
+  selectedExtension: Extension | null
+  extensionsLoading: boolean
+  extensionDialogOpen: boolean
+  discovering: boolean
+  extensionStats: Record<string, ExtensionStatsDto>
+  extensionTypes: ExtensionTypeDto[]
+  // Device adapter plugin state (still using legacy API)
+  deviceAdapters: any[]
+  deviceAdaptersLoading: boolean
+  adapterDialogOpen: boolean
+  selectedAdapterDevices: any[]
+  selectedAdapterDevicesLoading: boolean
+}
+
+export interface ExtensionSlice extends ExtensionState {
+  // Dialog actions
+  setSelectedExtension: (extension: Extension | null) => void
+  setExtensionDialogOpen: (open: boolean) => void
+  setAdapterDialogOpen: (open: boolean) => void
+
+  // Extension actions
+  fetchExtensions: (params?: { extension_type?: string; state?: string }) => Promise<void>
+  getExtension: (id: string) => Promise<Extension | null>
+  registerExtension: (extension: { file_path: string; auto_start?: boolean }) => Promise<boolean>
+  unregisterExtension: (id: string) => Promise<boolean>
+  startExtension: (id: string) => Promise<boolean>
+  stopExtension: (id: string) => Promise<boolean>
+  getExtensionStats: (id: string) => Promise<ExtensionStatsDto | null>
+  getExtensionHealth: (id: string) => Promise<{ healthy: boolean } | null>
+  discoverExtensions: () => Promise<{ discovered: number; results: ExtensionDiscoveryResult[] }>
+  fetchExtensionTypes: () => Promise<void>
+  executeExtensionCommand: (id: string, command: string, args?: Record<string, unknown>) => Promise<{ success: boolean; result?: unknown; message?: string }>
+
+  // Device adapter actions (legacy API, still functional)
+  fetchDeviceAdapters: () => Promise<void>
+  registerDeviceAdapter: (adapter: {
+    id: string
+    name: string
+    adapter_type: string
+    config?: Record<string, unknown>
+    auto_start?: boolean
+  }) => Promise<boolean>
+  getAdapterDevices: (pluginId: string) => Promise<any[]>
+  getDeviceAdapterStats: () => Promise<{ total_adapters: number; running_adapters: number; total_devices: number } | null>
+}
+
+export const createExtensionSlice: StateCreator<
+  ExtensionSlice,
+  [],
+  [],
+  ExtensionSlice
+> = (set, get) => ({
+  // Initial state
+  extensions: [],
+  selectedExtension: null,
+  extensionsLoading: false,
+  extensionDialogOpen: false,
+  discovering: false,
+  extensionStats: {},
+  extensionTypes: [],
+  // Device adapter state (legacy API)
+  deviceAdapters: [],
+  deviceAdaptersLoading: false,
+  adapterDialogOpen: false,
+  selectedAdapterDevices: [],
+  selectedAdapterDevicesLoading: false,
+
+  // Dialog actions
+  setSelectedExtension: (extension) => set({ selectedExtension: extension }),
+  setExtensionDialogOpen: (open) => set({ extensionDialogOpen: open }),
+  setAdapterDialogOpen: (open) => set({ adapterDialogOpen: open }),
+
+  // ========== Extension Actions ==========
+
+  // Fetch all extensions
+  // Backend: GET /api/extensions -> ExtensionDto[]
+  fetchExtensions: async (params) => {
+    set({ extensionsLoading: true })
+    try {
+      const extensions = await api.listExtensions(params)
+      set({ extensions })
+    } catch (error) {
+      console.error('Failed to fetch extensions:', error)
+      set({ extensions: [] })
+    } finally {
+      set({ extensionsLoading: false })
+    }
+  },
+
+  // Get single extension
+  // Backend: GET /api/extensions/:id -> ExtensionDto
+  getExtension: async (id) => {
+    try {
+      const extension = await api.getExtension(id)
+      return extension
+    } catch (error) {
+      console.error('Failed to fetch extension:', error)
+      return null
+    }
+  },
+
+  // Register new extension
+  // Backend: POST /api/extensions -> { message, extension_id, name, version, extension_type, note }
+  registerExtension: async (extension) => {
+    try {
+      await api.registerExtension(extension)
+      // Refresh the list after successful registration
+      await get().fetchExtensions()
+      return true
+    } catch (error) {
+      console.error('Failed to register extension:', error)
+      return false
+    }
+  },
+
+  // Unregister extension
+  // Backend: DELETE /api/extensions/:id -> { message, extension_id }
+  unregisterExtension: async (id) => {
+    try {
+      await api.unregisterExtension(id)
+      // Remove from list and clear stats
+      set((state) => ({
+        extensions: state.extensions.filter((e) => e.id !== id),
+        extensionStats: Object.fromEntries(
+          Object.entries(state.extensionStats).filter(([key]) => key !== id)
+        ) as Record<string, ExtensionStatsDto>,
+      }))
+      return true
+    } catch (error) {
+      console.error('Failed to unregister extension:', error)
+      return false
+    }
+  },
+
+  // Start extension
+  // Backend: POST /api/extensions/:id/start -> { message, extension_id }
+  startExtension: async (id) => {
+    try {
+      await api.startExtension(id)
+      set((state) => ({
+        extensions: state.extensions.map((e) =>
+          e.id === id ? { ...e, state: 'Running' } : e
+        ),
+      }))
+      await get().getExtensionStats(id)
+      return true
+    } catch (error) {
+      console.error('Failed to start extension:', error)
+      return false
+    }
+  },
+
+  // Stop extension
+  // Backend: POST /api/extensions/:id/stop -> { message, extension_id }
+  stopExtension: async (id) => {
+    try {
+      await api.stopExtension(id)
+      set((state) => ({
+        extensions: state.extensions.map((e) =>
+          e.id === id ? { ...e, state: 'Stopped' } : e
+        ),
+      }))
+      await get().getExtensionStats(id)
+      return true
+    } catch (error) {
+      console.error('Failed to stop extension:', error)
+      return false
+    }
+  },
+
+  // Get extension stats
+  // Backend: GET /api/extensions/:id/stats -> ExtensionStatsDto
+  getExtensionStats: async (id) => {
+    try {
+      const stats = await api.getExtensionStats(id)
+      set((state) => ({
+        extensionStats: { ...state.extensionStats, [id]: stats },
+      }))
+      return stats
+    } catch (error) {
+      console.error('Failed to fetch extension stats:', error)
+      return null
+    }
+  },
+
+  // Get extension health
+  // Backend: GET /api/extensions/:id/health -> { extension_id, healthy }
+  getExtensionHealth: async (id) => {
+    try {
+      const response = await api.getExtensionHealth(id)
+      return { healthy: response.healthy }
+    } catch (error) {
+      console.error('Failed to fetch extension health:', error)
+      return null
+    }
+  },
+
+  // Discover extensions
+  // Backend: POST /api/extensions/discover -> ExtensionDiscoveryResult[]
+  discoverExtensions: async () => {
+    set({ discovering: true })
+    try {
+      const results = await api.discoverExtensions()
+      // Refresh the extension list after discovery
+      await get().fetchExtensions()
+      return { discovered: results.length, results }
+    } catch (error) {
+      console.error('Failed to discover extensions:', error)
+      return { discovered: 0, results: [] }
+    } finally {
+      set({ discovering: false })
+    }
+  },
+
+  // Fetch extension types
+  // Backend: GET /api/extensions/types -> ExtensionTypeDto[]
+  fetchExtensionTypes: async () => {
+    try {
+      const types = await api.listExtensionTypes()
+      set({ extensionTypes: types })
+    } catch (error) {
+      console.error('Failed to fetch extension types:', error)
+      set({ extensionTypes: [] })
+    }
+  },
+
+  // Execute extension command
+  // Backend: POST /api/extensions/:id/command -> result
+  executeExtensionCommand: async (id, command, args) => {
+    try {
+      const result = await api.executeExtensionCommand(id, command, args)
+      // Refresh stats after command execution
+      await get().getExtensionStats(id)
+      return { success: true, result }
+    } catch (error) {
+      console.error('Failed to execute extension command:', error)
+      return { success: false, message: 'Command execution failed' }
+    }
+  },
+
+  // ========== Device Adapter Actions (Legacy API) ==========
+
+  // Fetch all device adapters
+  // Backend: GET /api/plugins/device-adapters -> DeviceAdapterPluginsResponse
+  fetchDeviceAdapters: async () => {
+    set({ deviceAdaptersLoading: true })
+    try {
+      const response = await api.listDeviceAdapters()
+      set({ deviceAdapters: response.adapters || [] })
+    } catch (error) {
+      // Device adapter registry might not be initialized
+      set({ deviceAdapters: [] })
+    } finally {
+      set({ deviceAdaptersLoading: false })
+    }
+  },
+
+  // Register a new device adapter
+  // Backend: POST /api/plugins/device-adapters -> { message, plugin_id }
+  registerDeviceAdapter: async (adapter) => {
+    try {
+      await api.registerDeviceAdapter(adapter)
+      await get().fetchDeviceAdapters()
+      return true
+    } catch (error) {
+      console.error('Failed to register device adapter:', error)
+      return false
+    }
+  },
+
+  // Get devices managed by an adapter
+  // Backend: GET /api/plugins/:id/devices -> { plugin_id, devices, count }
+  getAdapterDevices: async (pluginId) => {
+    set({ selectedAdapterDevicesLoading: true })
+    try {
+      const response = await api.getAdapterDevices(pluginId)
+      set({ selectedAdapterDevices: response.devices || [] })
+      return response.devices || []
+    } catch (error) {
+      console.error('Failed to fetch adapter devices:', error)
+      set({ selectedAdapterDevices: [] })
+      return []
+    } finally {
+      set({ selectedAdapterDevicesLoading: false })
+    }
+  },
+
+  // Get device adapter statistics
+  // Backend: GET /api/plugins/device-adapters/stats -> DeviceAdapterStats
+  getDeviceAdapterStats: async () => {
+    try {
+      const response = await api.getDeviceAdapterStats()
+      return {
+        total_adapters: response.total_adapters,
+        running_adapters: response.running_adapters,
+        total_devices: response.total_devices,
+      }
+    } catch (error) {
+      console.error('Failed to fetch device adapter stats:', error)
+      return null
+    }
+  },
+})

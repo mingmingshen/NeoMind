@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 use edge_ai_agent::SessionManager;
 use edge_ai_alerts::AlertManager;
 use edge_ai_commands::{CommandManager, CommandQueue, CommandStateStore};
-use edge_ai_core::{EventBus, extension::ExtensionRegistry, plugin::UnifiedPluginRegistry};
+use edge_ai_core::{EventBus, extension::ExtensionRegistry};
 use edge_ai_devices::adapter::AdapterResult;
 use edge_ai_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
 use edge_ai_rules::{InMemoryValueProvider, RuleEngine};
@@ -79,14 +79,18 @@ pub struct ServerState {
     pub response_cache: Arc<crate::cache::ResponseCache>,
     /// Rate limiter for API request throttling.
     pub rate_limiter: Arc<RateLimiter>,
-    /// Plugin registry for managing all plugins (deprecated, use extension_registry).
-    pub plugin_registry: Arc<UnifiedPluginRegistry>,
     /// Extension registry for managing dynamically loaded extensions (.so/.wasm).
     pub extension_registry: Arc<tokio::sync::RwLock<ExtensionRegistry>>,
     /// Device registry for templates and configurations (new architecture)
     pub device_registry: Arc<DeviceRegistry>,
     /// Device service for unified device operations (new architecture)
     pub device_service: Arc<DeviceService>,
+    /// Rule history store for statistics.
+    pub rule_history_store: Option<Arc<edge_ai_storage::business::RuleHistoryStore>>,
+    /// Workflow history store for statistics.
+    pub workflow_history_store: Option<Arc<edge_ai_storage::business::WorkflowHistoryStore>>,
+    /// Alert store for statistics.
+    pub alert_store: Option<Arc<edge_ai_storage::business::AlertStore>>,
     /// Server start timestamp.
     pub started_at: i64,
 }
@@ -208,12 +212,9 @@ impl ServerState {
         let rate_limit_config = RateLimitConfig::default();
         let rate_limiter = Arc::new(RateLimiter::with_config(rate_limit_config));
 
-        // Create plugin registry with NeoTalk version (deprecated, use extension_registry)
-        let plugin_registry = Arc::new(UnifiedPluginRegistry::new(env!("CARGO_PKG_VERSION")));
-
         // Create extension registry for dynamically loaded extensions (.so/.wasm)
         let extension_registry = Arc::new(tokio::sync::RwLock::new(
-            ExtensionRegistry::new(env!("CARGO_PKG_VERSION")),
+            ExtensionRegistry::new(),
         ));
 
         // Create device service (new architecture)
@@ -275,10 +276,48 @@ impl ServerState {
             auth_user_state: Arc::new(AuthUserState::new()),
             response_cache: Arc::new(crate::cache::ResponseCache::with_default_ttl()),
             rate_limiter,
-            plugin_registry,
             extension_registry,
             device_registry,
             device_service,
+            rule_history_store: {
+                use edge_ai_storage::business::RuleHistoryStore;
+                match RuleHistoryStore::open("data/rule_history.redb") {
+                    Ok(store) => {
+                        tracing::info!("Rule history store initialized at data/rule_history.redb");
+                        Some(Arc::new(store))
+                    }
+                    Err(e) => {
+                        tracing::warn!(category = "storage", error = %e, "Failed to open rule history store, statistics will be limited");
+                        None
+                    }
+                }
+            },
+            workflow_history_store: {
+                use edge_ai_storage::business::WorkflowHistoryStore;
+                match WorkflowHistoryStore::open("data/workflow_history.redb") {
+                    Ok(store) => {
+                        tracing::info!("Workflow history store initialized at data/workflow_history.redb");
+                        Some(Arc::new(store))
+                    }
+                    Err(e) => {
+                        tracing::warn!(category = "storage", error = %e, "Failed to open workflow history store, statistics will be limited");
+                        None
+                    }
+                }
+            },
+            alert_store: {
+                use edge_ai_storage::business::AlertStore;
+                match AlertStore::open("data/alerts.redb") {
+                    Ok(store) => {
+                        tracing::info!("Alert store initialized at data/alerts.redb");
+                        Some(Arc::new(store))
+                    }
+                    Err(e) => {
+                        tracing::warn!(category = "storage", error = %e, "Failed to open alert store, statistics will be limited");
+                        None
+                    }
+                }
+            },
             started_at,
         }
     }
@@ -406,12 +445,10 @@ impl ServerState {
         };
 
         // Create the MQTT adapter
-        let event_bus = self.event_bus.as_ref();
-        if event_bus.is_none() {
+        let Some(event_bus) = self.event_bus.as_ref() else {
             tracing::error!("EventBus not initialized, cannot create MQTT adapter");
             return;
-        }
-        let event_bus = event_bus.unwrap();
+        };
 
         let mqtt_config_value = match serde_json::to_value(mqtt_config) {
             Ok(v) => v,
@@ -497,12 +534,65 @@ impl ServerState {
         }
     }
 
-    /// Initialize event log storage (no-op, kept for compatibility).
+    /// Initialize event persistence service.
+    ///
+    /// Starts a background task that subscribes to EventBus and persists
+    /// events to EventLogStore for historical queries.
     pub async fn init_event_log(&self) {
-        if self.event_log.is_some() {
-            tracing::debug!("Event log already initialized during construction");
+        let (event_bus, event_log) = match (&self.event_bus, &self.event_log) {
+            (Some(bus), Some(log)) => (bus, log),
+            _ => {
+                tracing::warn!("Event persistence not started: event_bus or event_log not available");
+                return;
+            }
+        };
+
+        use crate::event_persistence::EventPersistenceService;
+
+        let service = EventPersistenceService::with_defaults(
+            (*event_bus).clone(),
+            event_log.clone(),
+        );
+
+        let running = service.start();
+        if running.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::info!(
+                category = "event_persistence",
+                "Event persistence service started - events will be stored to EventLogStore"
+            );
         } else {
-            tracing::warn!("Event log not available - may have failed to initialize");
+            tracing::warn!("Event persistence service failed to start");
+        }
+    }
+
+    /// Initialize rule engine event service.
+    ///
+    /// Starts a background task that subscribes to device metric events
+    /// and automatically evaluates rules when relevant data is received.
+    pub async fn init_rule_engine_events(&self) {
+        let (event_bus, rule_engine) = match (&self.event_bus, &self.rule_engine) {
+            (Some(bus), engine) => (bus, engine),
+            _ => {
+                tracing::warn!("Rule engine events not started: event_bus or rule_engine not available");
+                return;
+            }
+        };
+
+        use crate::event_persistence::RuleEngineEventService;
+
+        let service = RuleEngineEventService::new(
+            (*event_bus).clone(),
+            rule_engine.clone(),
+        );
+
+        let running = service.start();
+        if running.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::info!(
+                category = "rule_engine",
+                "Rule engine event service started - rules will auto-evaluate on device metrics"
+            );
+        } else {
+            tracing::warn!("Rule engine event service failed to start");
         }
     }
 

@@ -85,7 +85,7 @@ impl DeviceSample {
 /// A discovered data path from samples
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveredPath {
-    /// Extracted path (e.g., "payload.sensors[0].v")
+    /// Extracted path (e.g., "payload.sensors[0].v" or "payload.sensors[].v" for array patterns)
     pub path: String,
     /// Data type at this path
     pub data_type: DataType,
@@ -102,6 +102,124 @@ pub struct DiscoveredPath {
     pub is_array: bool,
     /// Object if path contains objects
     pub is_object: bool,
+    /// If true, this path is an array pattern (e.g., "detections[].class_name")
+    #[serde(default)]
+    pub is_array_pattern: bool,
+    /// For array patterns, the array field name (e.g., "detections" for "detections[].class_name")
+    #[serde(default)]
+    pub array_name: Option<String>,
+    /// For array patterns, the inferred maximum array length
+    #[serde(default)]
+    pub inferred_array_length: Option<usize>,
+}
+
+impl DiscoveredPath {
+    /// Normalize array paths by converting numeric indices to [] pattern
+    /// e.g., "detections.0.class_name" -> "detections[].class_name"
+    ///      "data.sensors.1.value" -> "data.sensors[].value"
+    pub fn normalize_array_path(path: &str) -> (String, Option<String>, Option<usize>) {
+        let parts: Vec<&str> = path.split('.').collect();
+        let mut normalized_parts = Vec::new();
+        let mut array_name: Option<String> = None;
+        let mut array_index: Option<usize> = None;
+
+        for (i, part) in parts.iter().enumerate() {
+            // Check if this part is a numeric array index
+            if let Ok(idx) = part.parse::<usize>() {
+                // This is an array index - replace with []
+                // The array name is the previous part
+                if i > 0 {
+                    array_name = Some(parts[i - 1].to_string());
+                    array_index = Some(idx);
+                }
+                normalized_parts.push("[]".to_string());
+            } else {
+                normalized_parts.push(part.to_string());
+            }
+        }
+
+        let normalized = normalized_parts.join(".");
+        (normalized, array_name, array_index)
+    }
+
+    /// Check if this is an array index pattern (numeric part in path)
+    pub fn contains_array_index(path: &str) -> bool {
+        path.split('.').any(|part| part.parse::<usize>().is_ok())
+    }
+
+    /// Extract array name from a path with array indices
+    /// e.g., "detections.0.class_name" -> Some("detections")
+    ///      "data.sensors.1.value" -> Some("sensors")
+    pub fn extract_array_name(path: &str) -> Option<String> {
+        let parts: Vec<&str> = path.split('.').collect();
+        for (i, part) in parts.iter().enumerate() {
+            if part.parse::<usize>().is_ok() && i > 0 {
+                return Some(parts[i - 1].to_string());
+            }
+        }
+        None
+    }
+
+    /// Aggregate multiple paths that are array variations into a single pattern
+    /// e.g., ["detections.0.class_name", "detections.1.class_name"]
+    ///      -> DiscoveredPath { path: "detections[].class_name", inferred_array_length: 2 }
+    pub fn aggregate_array_pattern(paths: Vec<DiscoveredPath>) -> Option<DiscoveredPath> {
+        if paths.is_empty() {
+            return None;
+        }
+
+        // Normalize all paths to find common pattern
+        let normalized_info: Vec<_> = paths.iter()
+            .map(|p| Self::normalize_array_path(&p.path))
+            .collect();
+
+        // Check if all normalize to the same pattern
+        let first_normalized = &normalized_info[0].0;
+        if !normalized_info.iter().all(|(norm, _, _)| norm == first_normalized) {
+            return None; // Not the same pattern
+        }
+
+        // Find max array index
+        let max_length = normalized_info.iter()
+            .filter_map(|(_, _, idx)| *idx)
+            .map(|idx| idx + 1) // Convert 0-based index to length
+            .max();
+
+        let first = &paths[0];
+        Some(DiscoveredPath {
+            path: first_normalized.clone(),
+            is_array_pattern: true,
+            array_name: normalized_info[0].1.clone(),
+            inferred_array_length: max_length,
+            // Merge other properties from the first path
+            data_type: first.data_type.clone(),
+            is_consistent: first.is_consistent,
+            coverage: first.coverage,
+            sample_values: first.sample_values.clone(),
+            value_range: first.value_range.clone(),
+            is_array: true,
+            is_object: first.is_object,
+        })
+    }
+
+    /// Create a pattern path from a concrete path
+    /// e.g., "detections.0.class_name" -> "detections[].class_name"
+    pub fn as_pattern(&self) -> DiscoveredPath {
+        let (normalized_path, array_name, array_index) = Self::normalize_array_path(&self.path);
+        DiscoveredPath {
+            path: normalized_path,
+            is_array_pattern: self.is_array || array_name.is_some(),
+            array_name,
+            inferred_array_length: array_index.map(|i| i + 1),
+            data_type: self.data_type.clone(),
+            is_consistent: self.is_consistent,
+            coverage: self.coverage,
+            sample_values: self.sample_values.clone(),
+            value_range: self.value_range.clone(),
+            is_array: self.is_array,
+            is_object: self.is_object,
+        }
+    }
 }
 
 /// Data type inferred from values
@@ -333,45 +451,184 @@ impl SemanticType {
     pub fn infer_from_context(field_name: &str, value: &Option<serde_json::Value>) -> Self {
         let name_lower = field_name.to_lowercase();
 
-        // Check field name patterns
+        // For nested fields like "detections.0.class_name", also check the last segment
+        let last_segment = name_lower.split('.').last().unwrap_or(&name_lower);
+
+        // Check field name patterns - prioritize more specific patterns first
+
+        // Temperature
         if name_lower.contains("temp") || name_lower.contains("温度") {
             return SemanticType::Temperature;
         }
+
+        // Humidity
         if name_lower.contains("hum") || name_lower.contains("湿度") {
             return SemanticType::Humidity;
         }
+
+        // Pressure
         if name_lower.contains("press") || name_lower.contains("压力") {
             return SemanticType::Pressure;
         }
+
+        // Light
         if name_lower.contains("light") || name_lower.contains("lux") || name_lower.contains("光照") {
             return SemanticType::Light;
         }
+
+        // Motion
         if name_lower.contains("motion") || name_lower.contains("pir") || name_lower.contains("移动") {
             return SemanticType::Motion;
         }
-        if name_lower.contains("switch") || name_lower.contains("power") && name_lower.contains("state") {
+
+        // Switch
+        if name_lower.contains("switch") || (name_lower.contains("power") && name_lower.contains("state")) {
             return SemanticType::Switch;
         }
+
+        // Dimmer/Brightness
         if name_lower.contains("dimmer") || name_lower.contains("brightness") {
             return SemanticType::Dimmer;
         }
+
+        // Color
         if name_lower.contains("color") || name_lower.contains("rgb") {
             return SemanticType::Color;
         }
+
+        // Battery
         if name_lower.contains("battery") || name_lower.contains("batt") {
             return SemanticType::Battery;
         }
-        if name_lower.contains("rssi") || name_lower.contains("signal") {
+
+        // Power
+        if name_lower == "power" || name_lower.contains("power") {
+            return SemanticType::Power;
+        }
+
+        // Energy
+        if name_lower.contains("energy") || name_lower.contains("kwh") || name_lower.contains("能耗") {
+            return SemanticType::Energy;
+        }
+
+        // Speed
+        if name_lower.contains("speed") || name_lower.contains("rpm") || name_lower.contains("velocity") {
+            return SemanticType::Speed;
+        }
+
+        // Flow
+        if name_lower.contains("flow") || name_lower.contains("rate") {
+            return SemanticType::Flow;
+        }
+
+        // Level
+        if name_lower.contains("level") || name_lower.contains("液位") {
+            return SemanticType::Level;
+        }
+
+        // RSSI/Signal
+        if name_lower.contains("rssi") || name_lower.contains("signal") || name_lower.contains("snr") {
             return SemanticType::Rssi;
         }
-        if name_lower.contains("status") || name_lower.contains("state") {
+
+        // Status
+        if name_lower == "status" || name_lower == "state" || name_lower.contains("状态") {
             return SemanticType::Status;
         }
-        if name_lower.contains("error") || name_lower.contains("fault") {
+
+        // Error
+        if name_lower == "error" || name_lower.contains("fault") || name_lower.contains("错误") {
             return SemanticType::Error;
         }
-        if name_lower.contains("alarm") || name_lower.contains("alert") {
+
+        // Alarm
+        if name_lower.contains("alarm") || name_lower.contains("alert") || name_lower.contains("告警") {
             return SemanticType::Alarm;
+        }
+
+        // Count / detection_count
+        if name_lower.contains("count") || name_lower.ends_with("_count") {
+            return SemanticType::Status; // Count is a status metric
+        }
+
+        // Width/Height (image dimensions) - check last segment for nested fields
+        if last_segment == "width" || last_segment == "height" || name_lower.ends_with(".width") || name_lower.ends_with(".height") {
+            return SemanticType::Status;
+        }
+
+        // Size - check last segment
+        if last_segment == "size" || name_lower.ends_with(".size") {
+            return SemanticType::Status;
+        }
+
+        // Timestamp
+        if name_lower.contains("time") || name_lower.contains("timestamp") {
+            return SemanticType::Status;
+        }
+
+        // Percentage (explicit)
+        if name_lower.contains("percent") || name_lower.contains("%") {
+            return SemanticType::Battery; // Often battery or generic percentage
+        }
+
+        // Identifier fields
+        if name_lower.contains("id") || name_lower.contains("identifier") {
+            return SemanticType::Status;
+        }
+
+        // Name
+        if name_lower.contains("name") {
+            return SemanticType::Status;
+        }
+
+        // Version
+        if name_lower.contains("version") || name_lower.contains("ver") {
+            return SemanticType::Status;
+        }
+
+        // Quality - check last segment
+        if last_segment == "quality" || name_lower.ends_with(".quality") {
+            return SemanticType::Status;
+        }
+
+        // Format - check last segment
+        if last_segment == "format" || name_lower.ends_with(".format") {
+            return SemanticType::Status;
+        }
+
+        // Type - prefer exact match, but allow device_type, encoding_type etc.
+        if last_segment == "type" || name_lower.ends_with("_type") || name_lower.ends_with(".type") {
+            return SemanticType::Status;
+        }
+
+        // Confidence
+        if name_lower.contains("confidence") || name_lower.contains("conf") {
+            return SemanticType::Status;
+        }
+
+        // Threshold
+        if name_lower.contains("threshold") || name_lower.contains("thresh") {
+            return SemanticType::Status;
+        }
+
+        // Index - check last segment for nested fields
+        if last_segment == "index" || name_lower.ends_with(".index") {
+            return SemanticType::Status;
+        }
+
+        // Class / class_name
+        if name_lower.contains("class") {
+            return SemanticType::Status;
+        }
+
+        // X/Y coordinates - check last segment for nested fields
+        if last_segment == "x" || last_segment == "y" || name_lower.ends_with(".x") || name_lower.ends_with(".y") {
+            return SemanticType::Status;
+        }
+
+        // Latency / inference time
+        if name_lower.contains("latency") || name_lower.contains("inference_time") || name_lower.contains("delay") {
+            return SemanticType::Speed;
         }
 
         // Try to infer from value range
@@ -696,6 +953,334 @@ pub struct DeviceTypeInference {
     pub confidence: f32,
     /// Supporting evidence
     pub evidence: Vec<String>,
+}
+
+/// ============================================================================
+/// Zero-Config Auto-Onboarding Types
+/// ============================================================================
+
+/// Status of a draft device in the auto-onboarding process
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DraftDeviceStatus {
+    /// Collecting samples from unknown device
+    Collecting,
+    /// AI is analyzing samples and generating device type
+    Analyzing,
+    /// Draft device type generated, waiting for user review
+    PendingReview,
+    /// User approved, device type being registered
+    Registering,
+    /// Successfully registered as active device
+    Registered,
+    /// User rejected the draft
+    Rejected,
+    /// Analysis failed (e.g., invalid data, LLM error)
+    Failed,
+}
+
+/// A draft device discovered through zero-config auto-onboarding
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DraftDevice {
+    /// Unique identifier for this draft (generated)
+    pub id: String,
+    /// Proposed device ID (can be edited by user)
+    pub device_id: String,
+    /// Source of discovery (mqtt_topic, webhook_url, etc.)
+    pub source: String,
+    /// Current status
+    pub status: DraftDeviceStatus,
+    /// Collected data samples
+    pub samples: Vec<DeviceSample>,
+    /// Maximum samples to collect before analysis
+    pub max_samples: usize,
+    /// Generated device type (available after analysis)
+    pub generated_type: Option<GeneratedDeviceType>,
+    /// When first discovered
+    pub discovered_at: i64,
+    /// When status last changed
+    pub updated_at: i64,
+    /// Error message if status is Failed
+    pub error_message: Option<String>,
+    /// User-provided name override
+    pub user_name: Option<String>,
+    /// User-provided description override
+    pub user_description: Option<String>,
+    /// Whether to auto-approve (skip manual review)
+    pub auto_approve: bool,
+}
+
+/// A generated device type from AI analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GeneratedDeviceType {
+    /// Generated device type ID (can be edited)
+    pub device_type: String,
+    /// Display name
+    pub name: String,
+    /// Description
+    pub description: String,
+    /// Inferred category
+    pub category: DeviceCategory,
+    /// Generated metrics
+    pub metrics: Vec<DiscoveredMetric>,
+    /// Generated commands
+    pub commands: Vec<DiscoveredCommand>,
+    /// Confidence score (0-1)
+    pub confidence: f32,
+    /// Raw MDL definition (JSON)
+    pub mdl_definition: serde_json::Value,
+    /// Processing summary for user review
+    pub summary: ProcessingSummary,
+}
+
+/// Summary of the AI processing for user review
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessingSummary {
+    /// Number of samples analyzed
+    pub samples_analyzed: usize,
+    /// Number of fields discovered
+    pub fields_discovered: usize,
+    /// Number of metrics generated
+    pub metrics_generated: usize,
+    /// Number of commands generated
+    pub commands_generated: usize,
+    /// Inferred device category
+    pub inferred_category: String,
+    /// Key insights about the device
+    pub insights: Vec<String>,
+    /// Any warnings or issues
+    pub warnings: Vec<String>,
+    /// Recommended next steps
+    pub recommendations: Vec<String>,
+}
+
+/// Configuration for auto-onboarding behavior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoOnboardConfig {
+    /// Enable zero-config auto-onboarding
+    #[serde(default = "default_auto_onboard_enabled")]
+    pub enabled: bool,
+    /// Maximum number of samples to collect before analysis
+    #[serde(default = "default_max_samples")]
+    pub max_samples: usize,
+    /// Minimum samples required for analysis
+    #[serde(default = "default_min_samples")]
+    pub min_samples: usize,
+    /// Timeout (seconds) before analysis triggers
+    #[serde(default = "default_sample_timeout")]
+    pub sample_timeout_secs: u64,
+    /// Auto-approve devices with confidence >= this threshold
+    #[serde(default = "default_auto_approve_threshold")]
+    pub auto_approve_threshold: f32,
+    /// Maximum number of draft devices to keep
+    #[serde(default = "default_max_drafts")]
+    pub max_draft_devices: usize,
+    /// Draft retention time (seconds) - cleanup after this time
+    #[serde(default = "default_draft_retention")]
+    pub draft_retention_secs: u64,
+    /// Whether to persist draft devices to storage
+    #[serde(default = "default_persist_drafts")]
+    pub persist_drafts: bool,
+}
+
+impl Default for AutoOnboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_samples: 10,
+            min_samples: 3,
+            sample_timeout_secs: 60,
+            auto_approve_threshold: 0.85,
+            max_draft_devices: 50,
+            draft_retention_secs: 7 * 24 * 3600, // 7 days
+            persist_drafts: true,
+        }
+    }
+}
+
+fn default_auto_onboard_enabled() -> bool { true }
+fn default_max_samples() -> usize { 10 }
+fn default_min_samples() -> usize { 3 }
+fn default_sample_timeout() -> u64 { 60 }
+fn default_auto_approve_threshold() -> f32 { 0.85 }
+fn default_max_drafts() -> usize { 50 }
+fn default_draft_retention() -> u64 { 7 * 24 * 3600 }
+fn default_persist_drafts() -> bool { true }
+
+/// Event emitted during auto-onboarding process
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event_type", rename_all = "snake_case")]
+pub enum AutoOnboardEvent {
+    /// New draft device created
+    DraftCreated {
+        draft_id: String,
+        device_id: String,
+        source: String,
+    },
+    /// Sample collected
+    SampleCollected {
+        draft_id: String,
+        sample_count: usize,
+    },
+    /// Analysis started
+    AnalysisStarted {
+        draft_id: String,
+        sample_count: usize,
+    },
+    /// Analysis completed
+    AnalysisCompleted {
+        draft_id: String,
+        device_type: String,
+        confidence: f32,
+    },
+    /// Device approved and registered
+    DeviceRegistered {
+        draft_id: String,
+        device_id: String,
+        device_type: String,
+    },
+    /// Device rejected
+    DeviceRejected {
+        draft_id: String,
+        reason: String,
+    },
+    /// Analysis failed
+    AnalysisFailed {
+        draft_id: String,
+        error: String,
+    },
+}
+
+impl DraftDevice {
+    /// Create a new draft device
+    pub fn new(device_id: String, source: String, max_samples: usize) -> Self {
+        let id = format!("draft-{}-{}", device_id, chrono::Utc::now().timestamp());
+        Self {
+            id,
+            device_id,
+            source,
+            status: DraftDeviceStatus::Collecting,
+            samples: Vec::new(),
+            max_samples,
+            generated_type: None,
+            discovered_at: chrono::Utc::now().timestamp(),
+            updated_at: chrono::Utc::now().timestamp(),
+            error_message: None,
+            user_name: None,
+            user_description: None,
+            auto_approve: false,
+        }
+    }
+
+    /// Add a sample to the draft
+    pub fn add_sample(&mut self, sample: DeviceSample) -> bool {
+        if self.samples.len() >= self.max_samples {
+            return false;
+        }
+        self.samples.push(sample);
+        self.updated_at = chrono::Utc::now().timestamp();
+        true
+    }
+
+    /// Check if ready for analysis
+    pub fn ready_for_analysis(&self, min_samples: usize) -> bool {
+        self.status == DraftDeviceStatus::Collecting
+            && self.samples.len() >= min_samples
+    }
+
+    /// Check if should trigger analysis by timeout
+    pub fn should_trigger_analysis(&self, min_samples: usize, timeout_secs: u64) -> bool {
+        self.status == DraftDeviceStatus::Collecting
+            && self.samples.len() >= min_samples
+            && (chrono::Utc::now().timestamp() - self.updated_at) > timeout_secs as i64
+    }
+
+    /// Get samples as JSON values
+    pub fn json_samples(&self) -> Vec<serde_json::Value> {
+        self.samples.iter()
+            .filter_map(|s| s.parsed.clone())
+            .collect()
+    }
+
+    /// Update status
+    pub fn set_status(&mut self, status: DraftDeviceStatus) {
+        self.status = status;
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+}
+
+impl GeneratedDeviceType {
+    /// Create from discovered metrics and commands
+    pub fn from_discovered(
+        device_type: String,
+        name: String,
+        metrics: Vec<DiscoveredMetric>,
+        commands: Vec<DiscoveredCommand>,
+        category: DeviceCategory,
+        mdl_definition: serde_json::Value,
+        samples_analyzed: usize,
+    ) -> Self {
+        let metrics_count = metrics.len();
+        let commands_count = commands.len();
+        let category_name = category.display_name().to_string();
+
+        let confidence = if metrics.is_empty() {
+            0.0
+        } else {
+            metrics.iter().map(|m| m.confidence).sum::<f32>() / metrics.len() as f32
+        };
+
+        let (insights, warnings) = Self::generate_insights(&metrics, &commands);
+
+        Self {
+            device_type,
+            name,
+            description: format!("Auto-generated device type for {}", category_name),
+            category,
+            metrics,
+            commands,
+            confidence,
+            mdl_definition,
+            summary: ProcessingSummary {
+                samples_analyzed,
+                fields_discovered: metrics_count,
+                metrics_generated: metrics_count,
+                commands_generated: commands_count,
+                inferred_category: category_name,
+                insights,
+                warnings,
+                recommendations: vec![
+                    "Review the generated metrics for accuracy".to_string(),
+                    "Test the device with actual data".to_string(),
+                    "Add custom transforms if needed".to_string(),
+                ],
+            },
+        }
+    }
+
+    fn generate_insights(metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand]) -> (Vec<String>, Vec<String>) {
+        let mut insights = Vec::new();
+        let mut warnings = Vec::new();
+
+        // Analyze metrics
+        let temp_count = metrics.iter().filter(|m| m.semantic_type == SemanticType::Temperature).count();
+        let humid_count = metrics.iter().filter(|m| m.semantic_type == SemanticType::Humidity).count();
+
+        if temp_count > 0 && humid_count > 0 {
+            insights.push("Device measures both temperature and humidity".to_string());
+        }
+
+        let low_conf = metrics.iter().filter(|m| m.confidence < 0.6).count();
+        if low_conf > 0 {
+            warnings.push(format!("{} metrics have low confidence (<60%), manual review recommended", low_conf));
+        }
+
+        if !commands.is_empty() {
+            insights.push(format!("Device supports {} commands", commands.len()));
+        }
+
+        (insights, warnings)
+    }
 }
 
 #[cfg(test)]

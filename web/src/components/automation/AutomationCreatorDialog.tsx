@@ -245,8 +245,8 @@ export function AutomationCreatorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
+      <DialogContent className="max-w-4xl max-h-[90vh] p-0 gap-0 flex flex-col">
+        <DialogHeader className="px-6 pt-6 pb-4 border-t-0 border-x-0 border-b shrink-0 pr-12">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
             {t('automation:createAutomation')}
@@ -256,24 +256,26 @@ export function AutomationCreatorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="describe" className="flex items-center gap-2">
-              <Wand2 className="h-4 w-4" />
-              {t('automation:naturalLanguage')}
-            </TabsTrigger>
-            <TabsTrigger value="templates" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              {t('automation:templates')}
-            </TabsTrigger>
-            <TabsTrigger value="manual" className="flex items-center gap-2">
-              <Zap className="h-4 w-4" />
-              {t('automation:manual')}
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <div className="px-6 pt-4 pb-2 shrink-0">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="describe" className="flex items-center gap-2">
+                <Wand2 className="h-4 w-4" />
+                {t('automation:naturalLanguage')}
+              </TabsTrigger>
+              <TabsTrigger value="templates" className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                {t('automation:templates')}
+              </TabsTrigger>
+              <TabsTrigger value="manual" className="flex items-center gap-2">
+                <Zap className="h-4 w-4" />
+                {t('automation:manual')}
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* Describe Tab - AI-powered creation */}
-          <TabsContent value="describe" className="flex-1 overflow-y-auto mt-4 space-y-4">
+          <TabsContent value="describe" className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-4">
               <div>
                 <Label htmlFor="automation-description">{t('automation:describeAutomation')}</Label>
@@ -386,7 +388,7 @@ export function AutomationCreatorDialog({
           </TabsContent>
 
           {/* Templates Tab */}
-          <TabsContent value="templates" className="flex-1 overflow-hidden flex flex-col mt-4">
+          <TabsContent value="templates" className="flex-1 min-h-0 overflow-hidden flex flex-col px-6 py-4">
             <div className="flex gap-4 h-full overflow-hidden">
               {/* Template List */}
               <div className="w-1/2 overflow-y-auto pr-2">
@@ -558,7 +560,7 @@ export function AutomationCreatorDialog({
           </TabsContent>
 
           {/* Manual Tab - Advanced */}
-          <TabsContent value="manual" className="flex-1 overflow-y-auto mt-4 space-y-4">
+          <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 {t('automation:manualCreationDesc')}
@@ -642,7 +644,7 @@ export function AutomationCreatorDialog({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter className="border-t pt-4">
+        <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('automation:cancel')}
           </Button>

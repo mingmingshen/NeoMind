@@ -119,6 +119,14 @@ pub struct SystemInfo {
 pub async fn get_system_stats_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
+    // Calculate start of today (UTC midnight)
+    let now = chrono::Utc::now();
+    let start_of_today = now.date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc()
+        .timestamp();
+
     // Get device stats using DeviceService
     let configs = state.device_service.list_devices().await;
     // Get current metrics to count devices with metrics
@@ -133,15 +141,25 @@ pub async fn get_system_stats_handler(
             }
     }
 
+    // Get online/offline device counts from connection status tracking
+    use edge_ai_devices::adapter::ConnectionStatus;
+    let online_devices = state.device_service.get_devices_by_status(ConnectionStatus::Connected).await.len();
+    let offline_devices = state.device_service.get_devices_by_status(ConnectionStatus::Disconnected).await.len();
+
     let device_stats = DeviceStats {
         total_devices: configs.len(),
-        online_devices: configs.len(), // TODO: Track connection status in DeviceService
-        offline_devices: 0,            // TODO: Track connection status in DeviceService
+        online_devices,
+        offline_devices,
         devices_with_metrics,
     };
 
     // Get rule stats
     let rules = state.rule_engine.list_rules().await;
+    let triggered_today = if let Some(store) = &state.rule_history_store {
+        store.count_since(start_of_today).unwrap_or(0) as usize
+    } else {
+        0
+    };
     let rule_stats = RuleStats {
         total_rules: rules.len(),
         enabled_rules: rules
@@ -152,16 +170,21 @@ pub async fn get_system_stats_handler(
             .iter()
             .filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Disabled))
             .count(),
-        triggered_today: 0, // TODO: Get from history
+        triggered_today,
     };
 
     // Get workflow stats
     let workflow_stats = if let Some(engine) = state.workflow_engine.read().await.as_ref() {
         let workflows = engine.list_workflows().await.unwrap_or_default();
+        let executions_today = if let Some(store) = &state.workflow_history_store {
+            store.count_since(start_of_today).unwrap_or(0) as usize
+        } else {
+            0
+        };
         WorkflowStats {
             total_workflows: workflows.len(),
             active_workflows: workflows.iter().filter(|w| w.enabled).count(),
-            executions_today: 0, // TODO: Get from execution history
+            executions_today,
         }
     } else {
         WorkflowStats {
@@ -177,6 +200,14 @@ pub async fn get_system_stats_handler(
         .into_iter()
         .filter(|a| matches!(a.status, edge_ai_alerts::AlertStatus::Active))
         .collect();
+
+    // Get today's alerts count from history store
+    let alerts_today = if let Some(store) = &state.alert_store {
+        store.count_since(start_of_today).unwrap_or(0) as usize
+    } else {
+        0
+    };
+
     let alert_stats = AlertStats {
         active_alerts: active_alerts.len(),
         by_severity: json!({
@@ -185,14 +216,26 @@ pub async fn get_system_stats_handler(
             "critical": active_alerts.iter().filter(|a| matches!(a.severity, edge_ai_alerts::AlertSeverity::Critical)).count(),
             "emergency": active_alerts.iter().filter(|a| matches!(a.severity, edge_ai_alerts::AlertSeverity::Emergency)).count(),
         }),
-        alerts_today: 0, // TODO: Get from history
+        alerts_today,
     };
 
     // Get command stats
     let command_stats = if let Some(manager) = &state.command_manager {
         let state_stats = manager.state.stats().await;
+        let total_commands = state_stats.total_count;
+        let failed_commands = state_stats
+            .by_status
+            .iter()
+            .filter(|(s, _)| matches!(s, edge_ai_commands::command::CommandStatus::Failed))
+            .map(|(_, c)| *c)
+            .sum();
+        let success_rate = if total_commands > 0 {
+            ((total_commands - failed_commands) as f32 / total_commands as f32 * 100.0)
+        } else {
+            0.0
+        };
         CommandStats {
-            total_commands: state_stats.total_count,
+            total_commands,
             pending_commands: state_stats
                 .by_status
                 .iter()
@@ -205,13 +248,8 @@ pub async fn get_system_stats_handler(
                 })
                 .map(|(_, c)| *c)
                 .sum(),
-            failed_commands: state_stats
-                .by_status
-                .iter()
-                .filter(|(s, _)| matches!(s, edge_ai_commands::command::CommandStatus::Failed))
-                .map(|(_, c)| *c)
-                .sum(),
-            success_rate: 0.0, // TODO: Calculate from history
+            failed_commands,
+            success_rate,
         }
     } else {
         CommandStats {
@@ -288,13 +326,17 @@ pub async fn get_device_stats_handler(
             .map(|m| m.len())
             .unwrap_or(0);
 
+        // Get actual connection status from DeviceService
+        let device_status = state.device_service.get_device_status(&config.device_id).await;
+        let is_online = device_status.is_connected();
+
         devices_with_stats.push(json!({
             "device_id": config.device_id,
             "device_type": config.device_type,
             "name": config.name,
-            "online": true, // TODO: Track connection status in DeviceService
-                "metrics_count": metrics_count,
-            "last_seen": chrono::Utc::now().timestamp(), // TODO: Track last_seen in DeviceService
+            "online": is_online,
+            "metrics_count": metrics_count,
+            "last_seen": device_status.last_seen,
         }));
     }
 

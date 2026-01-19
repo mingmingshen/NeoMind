@@ -7,13 +7,13 @@ pub mod config;
 pub mod error;
 pub mod event;
 pub mod eventbus;
-pub mod eventbus_persistence;
 pub mod extension;
 pub mod integration;
 pub mod llm;
 pub mod macros;
 pub mod message;
-pub mod plugin;
+// Plugin system has been migrated to Extension system
+// Use edge_ai_core::extension instead
 pub mod session;
 pub mod storage;
 pub mod tools;
@@ -38,12 +38,6 @@ pub use event::{EventMetadata, MetricValue, NeoTalkEvent, ProposedAction};
 pub use eventbus::{
     DEFAULT_CHANNEL_CAPACITY, EventBus, EventBusReceiver, FilterBuilder,
     FilteredReceiver, NoOpPersistence, PersistError, SharedEventBus,
-};
-
-// Event persistence exports
-pub use eventbus_persistence::{
-    EventPersistence, EventPersistenceManager, EventStore, MemoryEventStore,
-    PersistedEvent, PersistenceConfig,
 };
 
 /// Re-exports commonly used types.
@@ -85,10 +79,7 @@ pub mod prelude {
         Alert, AlertChannel, AlertError, AlertSeverity, AlertStatus, ChannelFactory,
     };
 
-    // Plugin system (legacy)
-    pub use crate::plugin::{DynPlugin, Plugin, PluginError, PluginMetadata, PluginRegistry};
-
-    // Extension system (new)
+    // Extension system (replaces legacy Plugin system)
     pub use crate::extension::{
         DynExtension, Extension, ExtensionError, ExtensionMetadata, ExtensionRegistry,
         ExtensionState, ExtensionStats, ExtensionType,

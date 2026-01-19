@@ -402,7 +402,7 @@ impl WasmPluginLoader {
         // Check file existence
         msg.push_str("📁 File Status:\n");
         if !path.exists() {
-            msg.push_str(&"   ✗ File does not exist\n\n".to_string());
+            msg.push_str("   ✗ File does not exist\n\n");
             msg.push_str("🔍 Searched in paths:\n");
             if self.search_paths.is_empty() {
                 msg.push_str("   (No search paths configured)\n");
@@ -418,13 +418,13 @@ impl WasmPluginLoader {
             }
             return msg;
         }
-        msg.push_str(&"   ✓ File exists\n".to_string());
+        msg.push_str("   ✓ File exists\n");
 
         // Check file extension
         msg.push_str("\n📄 File Details:\n");
         match path.extension() {
             Some(ext) if ext == "wasm" => {
-                msg.push_str(&"   ✓ Extension: .wasm (correct)\n".to_string());
+                msg.push_str("   ✓ Extension: .wasm (correct)\n");
             }
             Some(ext) => {
                 msg.push_str(&format!("   ✗ Extension: {:?} (expected .wasm)\n", ext));
@@ -496,7 +496,7 @@ impl WasmPluginLoader {
         }
 
         // Error details
-        msg.push_str(&"\n❌ Error Details:\n".to_string());
+        msg.push_str("\n❌ Error Details:\n");
         msg.push_str(&format!("   {}\n\n", error));
 
         // Troubleshooting hints
@@ -510,12 +510,12 @@ impl WasmPluginLoader {
         );
 
         msg.push_str("2. Create a sidecar .json file with plugin metadata:\n");
-        msg.push_str(&"   {\n".to_string());
-        msg.push_str(&"     \"id\": \"my-plugin\",\n".to_string());
-        msg.push_str(&"     \"name\": \"My Plugin\",\n".to_string());
-        msg.push_str(&"     \"version\": \"1.0.0\",\n".to_string());
-        msg.push_str(&"     \"type\": \"tool\"\n".to_string());
-        msg.push_str(&"   }\n\n".to_string());
+        msg.push_str("   {\n");
+        msg.push_str("     \"id\": \"my-plugin\",\n");
+        msg.push_str("     \"name\": \"My Plugin\",\n");
+        msg.push_str("     \"version\": \"1.0.0\",\n");
+        msg.push_str("     \"type\": \"tool\"\n");
+        msg.push_str("   }\n\n");
 
         msg.push_str("3. Use the validation tool:\n");
         msg.push_str(&format!(
@@ -814,13 +814,13 @@ impl ValidationResult {
     /// Format as a human-readable report.
     pub fn format_report(&self) -> String {
         let mut msg = "╔══════════════════════════════════════════════════════════╗\n".to_string();
-        msg.push_str(&"║         WASM Plugin Validation Report                    ║\n".to_string());
-        msg.push_str(&"╠══════════════════════════════════════════════════════════╣\n".to_string());
+        msg.push_str("║         WASM Plugin Validation Report                    ║\n");
+        msg.push_str("╠══════════════════════════════════════════════════════════╣\n");
         msg.push_str(&format!(
             "║ File: {:50} ║\n",
             self.path.file_name().and_then(|s| s.to_str()).unwrap_or("")
         ));
-        msg.push_str(&"╚══════════════════════════════════════════════════════════╝\n\n".to_string());
+        msg.push_str("╚══════════════════════════════════════════════════════════╝\n\n");
 
         if !self.checks.is_empty() {
             msg.push_str("✓ Checks Passed:\n");
@@ -846,7 +846,7 @@ impl ValidationResult {
             msg.push('\n');
         }
 
-        msg.push_str(&"═══════════════════════════════════════════════════════════\n".to_string());
+        msg.push_str("═══════════════════════════════════════════════════════════\n");
         msg.push_str(&format!(
             "Status: {}\n",
             if self.is_valid {

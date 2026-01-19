@@ -1,458 +1,317 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
-import { ws } from "@/lib/websocket"
+import { Settings, Send, Sparkles, PanelLeft, Plus, Zap, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Send, Bot, User, Settings, Copy, Check, Wrench, Brain, MessageSquare } from "lucide-react"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu"
+import { SessionSidebar } from "@/components/session/SessionSidebar"
+import { WelcomeArea } from "@/components/chat/WelcomeArea"
+import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
+import { ToolCallVisualization } from "@/components/chat/ToolCallVisualization"
+import { QuickActions } from "@/components/chat/QuickActions"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { ws } from "@/lib/websocket"
+import type { Message, ServerMessage } from "@/types"
 import { cn } from "@/lib/utils"
-import type { Message, ServerMessage, ToolCall } from "@/types"
-import { SessionSidebar, MarkdownMessage, ConnectionStatus, ThinkingBlock, ToolCallVisualization } from "@/components/chat"
-import type { ConnectionState } from "@/lib/websocket"
+
+/**
+ * Merge fragmented assistant messages for display.
+ * Same logic as MergedMessageList component.
+ */
+function mergeMessagesForDisplay(messages: Message[]): Message[] {
+  const result: Message[] = []
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i]
+
+    // Skip tool messages (internal use)
+    if ((msg as any).role === "tool") continue
+
+    // User messages and system messages are kept as-is
+    if (msg.role !== "assistant") {
+      result.push(msg)
+      continue
+    }
+
+    // Assistant messages - check if we should merge with following assistant messages
+    const mergedAssistant: Message = { ...msg }
+    const contentParts: string[] = []
+    if (msg.content) {
+      contentParts.push(msg.content)
+    }
+
+    // Look ahead for consecutive assistant messages to merge
+    let j = i + 1
+    while (j < messages.length && messages[j].role === "assistant") {
+      const nextMsg = messages[j]
+
+      // Collect content
+      if (nextMsg.content) {
+        contentParts.push(nextMsg.content)
+      }
+
+      // Use thinking from first message that has it
+      if (!mergedAssistant.thinking && nextMsg.thinking) {
+        mergedAssistant.thinking = nextMsg.thinking
+      }
+
+      // Use tool_calls from first message that has them
+      if (!mergedAssistant.tool_calls && nextMsg.tool_calls) {
+        mergedAssistant.tool_calls = nextMsg.tool_calls
+      }
+
+      j++
+    }
+
+    // Set merged content
+    mergedAssistant.content = contentParts.join("")
+
+    // Only add if there's something to show
+    if (mergedAssistant.content || mergedAssistant.thinking || mergedAssistant.tool_calls) {
+      result.push(mergedAssistant)
+    }
+
+    // Skip the merged messages
+    i = j - 1
+  }
+
+  return result
+}
+
+// Hook to detect desktop breakpoint (lg: 1024px)
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false)
+  
+  useEffect(() => {
+    const checkIsDesktop = () => setIsDesktop(window.innerWidth >= 1024)
+    checkIsDesktop()
+    window.addEventListener("resize", checkIsDesktop)
+    return () => window.removeEventListener("resize", checkIsDesktop)
+  }, [])
+  
+  return isDesktop
+}
+
+// Format timestamp to readable time
+function formatTime(timestamp: number | undefined): string {
+  // Guard against invalid timestamps
+  if (!timestamp || timestamp < 1000000000000) {
+    // Timestamp missing or before year 2001 (likely seconds instead of ms, or invalid)
+    return ""
+  }
+  
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / (1000 * 60))
+
+  if (diffMins < 1) return "刚刚"
+  if (diffMins < 60) return `${diffMins}分钟前`
+
+  const diffHours = Math.floor(diffMins / 60)
+  if (diffHours < 24) return `${diffHours}小时前`
+
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays < 7) return `${diffDays}天前`
+
+  return date.toLocaleDateString()
+}
 
 export function DashboardPage() {
   const { t } = useTranslation(['common', 'dashboard'])
-
-  // Use selectors to subscribe only to specific state fields
-  // This prevents unnecessary re-renders when other parts of the store change
-  const messages = useStore((state) => state.messages)
-  const sessions = useStore((state) => state.sessions)
-  const sessionId = useStore((state) => state.sessionId)
-  const setSessionId = useStore((state) => state.setSessionId)
-  const addMessage = useStore((state) => state.addMessage)
-  const setWsConnected = useStore((state) => state.setWsConnected)
-  const wsConnected = useStore((state) => state.wsConnected)
-  const setCurrentPage = useStore((state) => state.setCurrentPage)
-  const loadSessions = useStore((state) => state.loadSessions)
   const llmBackends = useStore((state) => state.llmBackends)
-  const llmBackendLoading = useStore((state) => state.llmBackendLoading)
-  const loadBackends = useStore((state) => state.loadBackends)
+  const activeBackendId = useStore((state) => state.activeBackendId)
   const activateBackend = useStore((state) => state.activateBackend)
-  const updateBackend = useStore((state) => state.updateBackend)
+  const loadBackends = useStore((state) => state.loadBackends)
+  const hasLoadedBackends = useRef(false)
+  const setCurrentPage = useStore((state) => state.setCurrentPage)
+
+  // Chat state from store
+  const {
+    sessionId,
+    messages,
+    addMessage,
+    createSession,
+    switchSession,
+    loadSessions,
+    user
+  } = useStore()
+
+  // Local state
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState("")
   const [streamingThinking, setStreamingThinking] = useState("")
-  const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCall[]>([])
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [connectionState, setConnectionState] = useState<ConnectionState>({ status: 'disconnected' })
-  const [hasLoadedBackendsOnce, setHasLoadedBackendsOnce] = useState(false)
+  const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([])
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  
+  // Responsive
+  const isDesktop = useIsDesktop()
 
-  const scrollRef = useRef<HTMLDivElement>(null)
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const streamingMessageIdRef = useRef<string | null>(null)
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
-  const streamingToolCallsRef = useRef<ToolCall[]>([])
-  const isMountedRef = useRef(true)
-  // Track partial message ID for incremental saving
-  const partialMessageIdRef = useRef<string | null>(null)
-  // Track last save time to avoid too frequent updates
-  const lastPartialSaveRef = useRef<number>(0)
+  const streamingToolCallsRef = useRef<any[]>([])
 
-  // Cleanup on unmount
+  // Load LLM backends and sessions on mount
   useEffect(() => {
-    isMountedRef.current = true
-    return () => {
-      isMountedRef.current = false
-    }
-  }, [])
-
-  // Load LLM backends
-  const hasFetchedBackends = useRef(false)
-  useEffect(() => {
-    if (!hasFetchedBackends.current && isMountedRef.current) {
-      hasFetchedBackends.current = true
-      loadBackends().then(() => {
-        if (isMountedRef.current) {
-          setHasLoadedBackendsOnce(true)
-        }
-      })
-    }
-  }, [])
-
-  // Load sessions on mount (once)
-  const hasFetchedSessions = useRef(false)
-  useEffect(() => {
-    if (!hasFetchedSessions.current) {
-      hasFetchedSessions.current = true
+    if (!hasLoadedBackends.current) {
+      hasLoadedBackends.current = true
+      loadBackends()
       loadSessions()
     }
-  }, [])
+  }, [loadBackends, loadSessions])
 
-  // Handle backend change
-  const handleBackendChange = async (backendId: string) => {
-    await activateBackend(backendId)
-    ws.setActiveBackend(backendId)
-  }
-
-  // Handle thinking toggle
-  const handleThinkingToggle = async (checked: boolean) => {
-    const activeBackend = llmBackends?.find(b => b.is_active)
-    if (activeBackend) {
-      await updateBackend(activeBackend.id, { thinking_enabled: checked })
-    }
-  }
-
-  // Initialize active backend in WebSocket when backends are loaded
-  useEffect(() => {
-    if (hasLoadedBackendsOnce && llmBackends && llmBackends.length > 0) {
-      const activeBackend = llmBackends.find(b => b.is_active)
-      if (activeBackend) {
-        ws.setActiveBackend(activeBackend.id)
-      }
-    }
-  }, [hasLoadedBackendsOnce, llmBackends])
-
-  // Initialize session
+  // Sync WebSocket sessionId when store sessionId changes
   useEffect(() => {
     if (sessionId) {
       ws.setSessionId(sessionId)
-      if (!ws.isConnected()) {
-        ws.connect(sessionId)
-      }
     }
   }, [sessionId])
 
-  // Setup WebSocket connection handlers
+  // Auto-scroll to bottom
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [])
+
   useEffect(() => {
-    const unsubscribeConn = ws.onConnection((connected) => {
-      setWsConnected(connected)
-    })
+    scrollToBottom()
+  }, [messages, streamingContent, scrollToBottom])
 
-    // Listen for detailed connection state changes
-    const unsubscribeState = ws.onStateChange((state) => {
-      setConnectionState(state)
-    })
-
-    return () => {
-      unsubscribeConn()
-      unsubscribeState()
-    }
-  }, [setWsConnected])
-
-  // Auto-create session when connected and no session exists
+  // Handle WebSocket events
   useEffect(() => {
-    if (wsConnected && !sessionId) {
-      // Create a new session via API
-      fetch('/api/sessions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.data?.id) {
-            setSessionId(data.data.id)
-            ws.setSessionId(data.data.id)
+    const handleMessage = (data: ServerMessage) => {
+      switch (data.type) {
+        case "Thinking":
+          setIsStreaming(true)
+          streamingThinkingRef.current += (data.content || "")
+          setStreamingThinking(streamingThinkingRef.current)
+          break
+
+        case "Content":
+          setIsStreaming(true)
+          streamingContentRef.current += (data.content || "")
+          setStreamingContent(streamingContentRef.current)
+          break
+
+        case "ToolCallStart": {
+          const toolCall = {
+            id: crypto.randomUUID(),
+            name: data.tool,
+            arguments: data.arguments,
+            result: null
           }
-        })
-        .catch(err => {
-          console.error('Failed to create session:', err)
-        })
-    }
-  }, [wsConnected, sessionId, setSessionId])
+          streamingToolCallsRef.current.push(toolCall)
+          setStreamingToolCalls([...streamingToolCallsRef.current])
+          break
+        }
 
-  // Reset streaming states when sessionId changes
-  useEffect(() => {
-    // Before clearing, save any partial message that was being streamed
-    // This prevents data loss when switching sessions during an active stream
-    const content = streamingContentRef.current
-    const thinking = streamingThinkingRef.current
-    const toolCalls = streamingToolCallsRef.current
+        case "ToolCallEnd": {
+          setStreamingToolCalls(prev =>
+            prev.map(tc =>
+              tc.name === data.tool
+                ? { ...tc, result: data.result }
+                : tc
+            )
+          )
+          break
+        }
 
-    // Only save if we have actual content (not just empty state)
-    if (content || thinking || toolCalls.length > 0) {
-      const partialMsg: Message = {
-        id: partialMessageIdRef.current || crypto.randomUUID(),
-        role: "assistant",
-        content: content,
-        timestamp: Date.now(),
-        thinking: thinking || undefined,
-        tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-        // Mark as non-partial since we're finalizing it
-        isPartial: false,
+        case "end":
+          if (streamingContentRef.current || streamingThinkingRef.current || streamingToolCallsRef.current.length > 0) {
+            const completeMessage: Message = {
+              id: streamingMessageIdRef.current || crypto.randomUUID(),
+              role: "assistant",
+              content: streamingContentRef.current,
+              timestamp: Date.now(),
+              thinking: streamingThinkingRef.current || undefined,
+              tool_calls: streamingToolCallsRef.current.length > 0 ? streamingToolCallsRef.current : undefined,
+            }
+            addMessage(completeMessage)
+          }
+          setIsStreaming(false)
+          setStreamingContent("")
+          setStreamingThinking("")
+          setStreamingToolCalls([])
+          streamingContentRef.current = ""
+          streamingThinkingRef.current = ""
+          streamingToolCallsRef.current = []
+          streamingMessageIdRef.current = null
+          break
+
+        case "Error":
+          console.error("WebSocket error:", data.message)
+          setIsStreaming(false)
+          break
+
+        case "session_created":
+        case "session_switched":
+          if (data.sessionId) {
+            switchSession(data.sessionId)
+          }
+          break
       }
-      // Save the message before switching sessions
-      addMessage(partialMsg)
-      console.log('[dashboard] Saved partial message before session switch:', {
-        contentLength: content.length,
-        thinkingLength: thinking.length,
-        toolCallsCount: toolCalls.length,
-      })
     }
 
-    // Now reset all streaming states when switching sessions
-    setIsStreaming(false)
-    setStreamingContent("")
-    setStreamingThinking("")
-    setStreamingToolCalls([])
-    // Also reset refs to ensure no stale data persists
-    streamingContentRef.current = ""
-    streamingThinkingRef.current = ""
-    streamingToolCallsRef.current = []
-    partialMessageIdRef.current = null
-    lastPartialSaveRef.current = 0
-  }, [sessionId, addMessage])
+    const unsubscribe = ws.onMessage(handleMessage)
+    return () => { void unsubscribe() }
+  }, [addMessage, switchSession])
 
-  // Setup WebSocket message handler
-  // Use ref to avoid re-subscription when addMessage changes
-  const addMessageRef = useRef(addMessage)
-  const loadSessionsRef = useRef(loadSessions)
-  const setSessionIdRef = useRef(setSessionId)
+  // Send message - auto-create session if needed
+  const handleSend = async () => {
+    const trimmedInput = input.trim()
+    if (!trimmedInput || isStreaming) return
 
-  useEffect(() => {
-    addMessageRef.current = addMessage
-    loadSessionsRef.current = loadSessions
-    setSessionIdRef.current = setSessionId
-  }, [addMessage, loadSessions, setSessionId])
+    // Get current sessionId from store (not from closure)
+    let currentSessionId = useStore.getState().sessionId
 
-  // Function to save/update partial message during streaming
-  const savePartialMessage = useCallback(() => {
-    const content = streamingContentRef.current
-    const thinking = streamingThinkingRef.current
-    const toolCalls = streamingToolCallsRef.current
-
-    // Skip if nothing to save
-    if (!content && !thinking && toolCalls.length === 0) return
-
-    const partialMsg: Message = {
-      id: partialMessageIdRef.current || crypto.randomUUID(),
-      role: "assistant",
-      content: content,
-      timestamp: Date.now(),
-      thinking: thinking || undefined,
-      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-      // Mark as partial to indicate it's still being updated
-      isPartial: true,
-    }
-
-    // Store the ID for future updates
-    if (!partialMessageIdRef.current) {
-      partialMessageIdRef.current = partialMsg.id
-      // Add new partial message
-      addMessageRef.current(partialMsg)
-    } else {
-      // Update existing partial message
-      // We need to update the message in the list
-      addMessageRef.current(partialMsg)
-    }
-  }, [addMessageRef])
-
-  const handleMessage = useCallback((msg: ServerMessage) => {
-    // Debug: Log all incoming message types
-    console.log('[dashboard WS] Received message type:', msg.type, {
-      hasSessionId: 'sessionId' in msg,
-      sessionId: (msg as any).sessionId,
-      currentSessionId: sessionId,
-    })
-
-    // Only process messages that belong to the current session
-    // Messages without sessionId (device_update) are always processed
-    // Control messages (session_created, session_switched) are always processed
-    const hasSessionId = 'sessionId' in msg && (msg as any).sessionId !== undefined
-    if (hasSessionId && msg.type !== 'session_created' && msg.type !== 'session_switched') {
-      // If there's no active session, or sessionId doesn't match, ignore
-      if (!sessionId || (msg as any).sessionId !== sessionId) {
-        console.log('[dashboard] Ignoring message for different session', {
-          msgSessionId: (msg as any).sessionId,
-          currentSessionId: sessionId,
-          msgType: msg.type,
-        })
+    // If no session exists, create one first
+    if (!currentSessionId) {
+      const newSessionId = await createSession()
+      if (!newSessionId) {
+        console.error('Failed to create session')
         return
       }
+      currentSessionId = newSessionId
     }
 
-    switch (msg.type) {
-      case 'system':
-        break
-
-      case 'session_created':
-      case 'session_switched':
-        console.log('[dashboard] Processing session event:', msg.type, msg.sessionId)
-        if (msg.sessionId) {
-          // Update BOTH React state and WebSocket instance
-          setSessionIdRef.current(msg.sessionId)
-          ws.setSessionId(msg.sessionId)
-          // Refresh the sessions list to show the new/updated session
-          loadSessionsRef.current()
-        }
-        break
-
-      case 'Thinking':
-        console.log('[dashboard] Thinking event, content length:', (msg.content || '').length)
-        setIsStreaming(true)
-        // Update ref synchronously to avoid stale data in end event
-        streamingThinkingRef.current += (msg.content || "")
-        setStreamingThinking(streamingThinkingRef.current)
-
-        // Incremental save: Update partial message every 500ms
-        const now = Date.now()
-        if (now - lastPartialSaveRef.current > 500) {
-          lastPartialSaveRef.current = now
-          savePartialMessage()
-        }
-        break
-
-      case 'Content':
-        console.log('[dashboard] Content event, content length:', (msg.content || '').length)
-        setIsStreaming(true)
-        // Update ref synchronously to avoid stale data in end event
-        streamingContentRef.current += (msg.content || "")
-        setStreamingContent(streamingContentRef.current)
-
-        // Incremental save: Update partial message every 500ms
-        const now2 = Date.now()
-        if (now2 - lastPartialSaveRef.current > 500) {
-          lastPartialSaveRef.current = now2
-          savePartialMessage()
-        }
-        break
-
-      case 'ToolCallStart':
-        console.log('[dashboard] ToolCallStart event:', msg.tool)
-        setIsStreaming(true)
-        const newToolCall: ToolCall = {
-          id: crypto.randomUUID(),
-          name: msg.tool || "",
-          arguments: msg.arguments,
-        }
-        streamingToolCallsRef.current.push(newToolCall)
-        setStreamingToolCalls([...streamingToolCallsRef.current])
-        // Save partial message when tool call starts
-        savePartialMessage()
-        break
-
-      case 'ToolCallEnd':
-        streamingToolCallsRef.current = streamingToolCallsRef.current.map((tc) =>
-          tc.name === msg.tool
-            ? { ...tc, result: msg.result }
-            : tc
-        )
-        setStreamingToolCalls(streamingToolCallsRef.current)
-        // Save partial message when tool call ends
-        savePartialMessage()
-        break
-
-      case 'Error':
-        console.error('Server error:', msg.message)
-        setIsStreaming(false)
-        // Clear partial message state on error
-        partialMessageIdRef.current = null
-        lastPartialSaveRef.current = 0
-        break
-
-      case 'end':
-        console.log('*** [dashboard] END EVENT RECEIVED ***', {
-          contentLength: streamingContentRef.current.length,
-          thinkingLength: streamingThinkingRef.current.length,
-          toolCallsCount: streamingToolCallsRef.current.length,
-        })
-        // Use refs directly since they're updated synchronously now
-        const finalContent = streamingContentRef.current
-        const finalThinking = streamingThinkingRef.current
-        const finalCalls = streamingToolCallsRef.current
-
-        console.log('[dashboard] end event received', {
-          contentLength: finalContent.length,
-          thinkingLength: finalThinking.length,
-          toolCallsCount: finalCalls.length,
-        })
-
-        if (finalContent || finalThinking || finalCalls.length > 0) {
-          // Convert partial message to final message, or create new one
-          const assistantMsg: Message = {
-            id: partialMessageIdRef.current || crypto.randomUUID(),
-            role: "assistant",
-            content: finalContent,
-            timestamp: Date.now(),
-            thinking: finalThinking || undefined,
-            tool_calls: finalCalls.length > 0 ? finalCalls : undefined,
-            // Remove partial flag to indicate this is the final message
-            isPartial: false,
-          }
-          console.log('[dashboard] Adding final assistant message')
-          addMessageRef.current(assistantMsg)
-        } else {
-          console.warn('[dashboard] end event received but no content to save')
-        }
-
-        // Clear refs immediately
-        streamingContentRef.current = ""
-        streamingThinkingRef.current = ""
-        streamingToolCallsRef.current = []
-        partialMessageIdRef.current = null
-        lastPartialSaveRef.current = 0
-
-        setStreamingContent("")
-        setStreamingThinking("")
-        setStreamingToolCalls([])
-        setIsStreaming(false)
-        console.log('[dashboard] Streaming state cleared, isStreaming=false')
-        break
-
-      case 'response':
-        if (msg.content) {
-          const assistantMsg: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: msg.content,
-            timestamp: Date.now(),
-          }
-          addMessageRef.current(assistantMsg)
-        }
-        setIsStreaming(false)
-        break
-
-      case 'device_update':
-        break
-    }
-  }, [sessionId]) // sessionId is used for message filtering
-
-  // Register message handler once
-  useEffect(() => {
-    const unsubscribe = ws.onMessage(handleMessage)
-    return () => {
-      unsubscribe()
-    }
-  }, [handleMessage])
-
-  // Auto-scroll to bottom
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-    }
-  }, [messages, streamingContent, streamingThinking, streamingToolCalls])
-
-  const handleSend = () => {
-    if (!input.trim() || isStreaming) return
-
-    const userMsg: Message = {
+    const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: input,
+      content: trimmedInput,
       timestamp: Date.now(),
     }
+    addMessage(userMessage)
 
-    addMessage(userMsg)
-    ws.sendMessage(input)
     setInput("")
     setIsStreaming(true)
+    streamingMessageIdRef.current = crypto.randomUUID()
+
+    ws.sendMessage(trimmedInput)
+
+    setTimeout(() => {
+      inputRef.current?.focus()
+    }, 100)
   }
 
-  const handleCopy = (content: string, id: string) => {
-    navigator.clipboard.writeText(content)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
+  // Handle quick action
+  const handleQuickAction = (prompt: string) => {
+    setInput(prompt)
+    inputRef.current?.focus()
   }
 
+  // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
@@ -460,360 +319,280 @@ export function DashboardPage() {
     }
   }
 
-  // Show LLM setup prompt if no LLM backend is configured (only after first load attempt)
-  // This prevents UI flashing during backend switching/updates
-  if (hasLoadedBackendsOnce && (!llmBackends || llmBackends.length === 0)) {
+  const getUserInitials = (username: string) => {
+    return username.slice(0, 2).toUpperCase()
+  }
+
+  // Filter out partial messages and merge fragmented assistant messages
+  const filteredMessages = messages.filter(msg => !msg.isPartial)
+  const displayMessages = mergeMessagesForDisplay(filteredMessages)
+  
+  // Show chat area if there are messages or currently streaming
+  const hasMessages = filteredMessages.length > 0 || isStreaming
+
+  // Show LLM setup prompt if not configured
+  if (!llmBackends || llmBackends.length === 0) {
     return (
-      <div className="flex h-full flex-row relative">
-        {/* Sidebar - always expanded on desktop/tablet */}
-        <aside className="hidden md:flex w-64 flex-col border-r bg-muted/10 overflow-hidden">
-          <SessionSidebar onNewChat={() => setInput("")} />
-        </aside>
-
-        {/* Mobile Sidebar - overlay drawer */}
-        <div
-          className={cn(
-            "fixed inset-0 z-50 md:hidden transition-opacity duration-300",
-            sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-          )}
-        >
-          {/* Backdrop */}
-          <div
-            className={cn(
-              "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
-              sidebarOpen ? "opacity-100" : "opacity-0"
-            )}
-            onClick={() => setSidebarOpen(false)}
-          />
-          {/* Drawer - slides from left */}
-          <div className={cn(
-            "absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-background shadow-2xl transition-transform duration-300 ease-in-out",
-            sidebarOpen ? "translate-x-0" : "-translate-x-full"
-          )}>
-            <SessionSidebar onNewChat={() => setInput("")} onClose={() => setSidebarOpen(false)} />
+      <div className="flex h-full items-center justify-center bg-background">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-muted">
+            <Settings className="h-8 w-8 text-muted-foreground" />
           </div>
-        </div>
-
-        {/* Main content */}
-        <div className="flex h-full flex-1 flex-col relative">
-          {/* Mobile FAB - left side of chat area */}
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="md:hidden absolute left-4 top-4 z-10 bg-primary text-primary-foreground p-2 rounded-lg shadow-md hover:bg-primary/90 active:scale-95 transition-all duration-200 flex items-center gap-1.5"
-          >
-            <MessageSquare className="h-4 w-4" />
-            {sessions && sessions.length > 0 && (
-              <span className="text-xs font-medium">{sessions.length}</span>
-            )}
-          </button>
-
-          <div className="flex h-[calc(100vh-100px)] items-center justify-center">
-            <div className="text-center max-w-md">
-              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-muted">
-                <Settings className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <h2 className="mb-3 text-lg font-semibold">{t('dashboard:llmNotConfigured')}</h2>
-              <p className="mb-6 text-sm text-muted-foreground">
-                {t('dashboard:llmNotConfiguredDesc')}
-              </p>
-              <Button onClick={() => setCurrentPage('settings')}>
-                <Settings className="mr-2 h-4 w-4" />
-                {t('dashboard:goToSettings')}
-              </Button>
-            </div>
-          </div>
+          <h2 className="mb-3 text-lg font-semibold">{t('dashboard:llmNotConfigured') || 'LLM 未配置'}</h2>
+          <p className="mb-6 text-sm text-muted-foreground">
+            {t('dashboard:llmNotConfiguredDesc') || '请先配置 LLM 后端以使用聊天功能'}
+          </p>
+          <Button onClick={() => setCurrentPage('settings')}>
+            <Settings className="mr-2 h-4 w-4" />
+            {t('dashboard:goToSettings') || '前往设置'}
+          </Button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex h-full flex-row relative">
-      {/* Sidebar - always expanded on desktop/tablet */}
-      <aside className="hidden md:flex w-64 flex-col border-r bg-muted/10 overflow-hidden">
-        <SessionSidebar onNewChat={() => setInput("")} />
-      </aside>
-
-      {/* Mobile Sidebar - overlay drawer */}
-      <div
-        className={cn(
-          "fixed inset-0 z-50 md:hidden transition-opacity duration-300",
-          sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-        )}
-      >
-        {/* Backdrop */}
-        <div
-          className={cn(
-            "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300",
-            sidebarOpen ? "opacity-100" : "opacity-0"
-          )}
-          onClick={() => setSidebarOpen(false)}
+    <div className="flex h-[calc(100vh-56px)]">
+      {/* Desktop Sidebar - fixed on left */}
+      {isDesktop && (
+        <SessionSidebar
+          open={true}
+          onClose={() => {}}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          isDesktop={true}
         />
-        {/* Drawer - slides from left */}
-        <div className={cn(
-          "absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-background shadow-2xl transition-transform duration-300 ease-in-out",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}>
-          <SessionSidebar onNewChat={() => setInput("")} onClose={() => setSidebarOpen(false)} />
-        </div>
-      </div>
+      )}
 
-      {/* Main content */}
-      <div className="flex h-full flex-1 flex-col relative">
-        {/* Mobile FAB - left side of chat area */}
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="md:hidden absolute left-4 top-4 z-10 bg-primary text-primary-foreground p-2 rounded-lg shadow-md hover:bg-primary/90 active:scale-95 transition-all duration-200 flex items-center gap-1.5"
-        >
-          <MessageSquare className="h-4 w-4" />
-          {sessions && sessions.length > 0 && (
-            <span className="text-xs font-medium">{sessions.length}</span>
-          )}
-        </button>
+      {/* Mobile Sidebar - drawer */}
+      {!isDesktop && (
+        <SessionSidebar 
+          open={sidebarOpen} 
+          onClose={() => setSidebarOpen(false)}
+          isDesktop={false}
+        />
+      )}
 
-        <ScrollArea className="flex-1">
-          <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b px-4 py-2">
-            <div className="flex items-center justify-between">
-              <ConnectionStatus state={connectionState} />
-              {sessionId && (
-                <span className="text-xs text-muted-foreground">
-                  会话: {sessionId.slice(0, 8)}
-                </span>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Mobile Header - only show on mobile */}
+        {!isDesktop && (
+          <div className="h-11 flex items-center px-3 gap-2 bg-background/50 backdrop-blur-sm border-b border-border/30">
+            {/* Menu button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSidebarOpen(true)}
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+
+            <div className="flex-1" />
+
+            {/* New session button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await createSession()
+              }}
+              className="h-8 gap-1.5 rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="text-xs">新对话</span>
+            </Button>
+          </div>
+        )}
+
+        {/* Chat Content Area */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {hasMessages ? (
+          /* Chat Messages */
+          <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-4 sm:py-6">
+            <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+              {displayMessages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`flex gap-2 sm:gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                >
+                  {message.role === "assistant" && (
+                    <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-foreground flex items-center justify-center">
+                      <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-background" />
+                    </div>
+                  )}
+
+                  <div className={`max-w-[85%] sm:max-w-[80%] ${message.role === "user" ? "order-1" : ""}`}>
+                    <div
+                      className={cn(
+                        "rounded-2xl px-3 py-2 sm:px-4 sm:py-3",
+                        message.role === "user"
+                          ? "bg-foreground text-background"
+                          : "bg-muted text-foreground"
+                      )}
+                    >
+                      {message.thinking && <ThinkingBlock thinking={message.thinking} />}
+                      {message.tool_calls && message.tool_calls.length > 0 && (
+                        <ToolCallVisualization toolCalls={message.tool_calls} isStreaming={false} />
+                      )}
+                      {message.content && (
+                        <div className="prose prose-sm max-w-none dark:prose-invert">
+                          {message.content}
+                        </div>
+                      )}
+                    </div>
+
+                    {message.role === "assistant" && (
+                      <QuickActions message={message} onActionClick={handleQuickAction} />
+                    )}
+
+                    <p className="text-xs text-muted-foreground mt-1 px-1">
+                      {formatTime(message.timestamp)}
+                    </p>
+                  </div>
+
+                  {message.role === "user" && user && (
+                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 order-2">
+                      <AvatarFallback className="bg-muted text-muted-foreground text-[10px] sm:text-xs">
+                        {getUserInitials(user.username)}
+                      </AvatarFallback>
+                    </Avatar>
+                  )}
+                </div>
+              ))}
+
+              {/* Streaming message */}
+              {isStreaming && (
+                <div className="flex gap-2 sm:gap-3 justify-start">
+                  <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-foreground flex items-center justify-center">
+                    <Sparkles className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-background animate-pulse" />
+                  </div>
+                  <div className="max-w-[85%] sm:max-w-[80%]">
+                    <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted text-foreground">
+                      {streamingThinking && <ThinkingBlock thinking={streamingThinking} />}
+                      {streamingToolCalls.length > 0 && (
+                        <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} />
+                      )}
+                      {streamingContent && (
+                        <div className="prose prose-sm max-w-none dark:prose-invert">
+                          {streamingContent}
+                        </div>
+                      )}
+                      {!streamingContent && !streamingThinking && streamingToolCalls.length === 0 && (
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "0ms" }} />
+                          <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "150ms" }} />
+                          <span className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
+
+              <div ref={messagesEndRef} />
             </div>
           </div>
-          <div ref={scrollRef} className="p-4">
-          {messages.length === 0 && !isStreaming && (
-            <div className="flex h-[calc(100vh-200px)] items-center justify-center">
-              <div className="text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                  <Bot className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <h3 className="mb-2 text-sm font-medium">{t('dashboard:startChat')}</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  {wsConnected ? t('dashboard:chatReady') : t('dashboard:connecting')}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {messages.filter(msg => !msg.isPartial).map((msg) => {
-              return (
-              <div
-                key={msg.id}
-                className={cn(
-                  "flex gap-3",
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                )}
-              >
-                {msg.role === "assistant" && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <Bot className="h-4 w-4" />
-                  </div>
-                )}
-
-                <div className="max-w-[80%]">
-                  {/* Thinking */}
-                  {msg.role === "assistant" && msg.thinking && (
-                    <div className="mb-2">
-                      <ThinkingBlock
-                        thinking={msg.thinking}
-                        defaultExpanded={true}
-                      />
-                    </div>
-                  )}
-
-                  {/* Tool Calls */}
-                  {msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0 && (
-                    <div className="mb-3">
-                      <ToolCallVisualization toolCalls={msg.tool_calls} />
-                    </div>
-                  )}
-
-                  {/* Message */}
-                  <div
-                    className={cn(
-                      "rounded-lg px-3 py-2 text-sm",
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
-                    )}
-                  >
-                    {msg.role === "assistant" ? (
-                      <MarkdownMessage content={msg.content} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                    {msg.role === "assistant" && (
-                      <button
-                        onClick={() => handleCopy(msg.content, msg.id)}
-                        className="mt-2 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        {copiedId === msg.id ? <Check className="h-3 w-3 inline" /> : <Copy className="h-3 w-3 inline" />}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {msg.role === "user" && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                    <User className="h-4 w-4" />
-                  </div>
-                )}
-              </div>
-              )
-            })}
-
-            {/* Streaming Message */}
-            {isStreaming && (streamingContent || streamingThinking || streamingToolCalls.length > 0) && (
-              <div className="flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Bot className="h-4 w-4" />
-                </div>
-                <div className="max-w-[80%]">
-                  {streamingThinking && (
-                    <div className="mb-2">
-                      <ThinkingBlock
-                        thinking={streamingThinking}
-                        isStreaming={true}
-                        defaultExpanded={true}
-                      />
-                    </div>
-                  )}
-                  {streamingToolCalls.length > 0 && (
-                    <div className="mb-3">
-                      <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} />
-                    </div>
-                  )}
-                  <div className="rounded-lg px-3 py-2 text-sm bg-muted">
-                    <div className="relative">
-                      <MarkdownMessage content={streamingContent} />
-                      <span className="inline-block w-1 h-4 bg-foreground animate-pulse ml-0.5 align-middle" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Loading indicator */}
-            {isStreaming && !streamingContent && !streamingThinking && streamingToolCalls.length === 0 && (
-              <div className="flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
-                  <Bot className="h-4 w-4" />
-                </div>
-                <div className="flex items-center px-3 py-2 bg-muted rounded-lg text-sm">
-                  <span className="flex gap-1">
-                    <span className="w-1 h-1 bg-foreground rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-1 h-1 bg-foreground rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-1 h-1 bg-foreground rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+        ) : (
+          /* Welcome Area */
+          <WelcomeArea onQuickAction={handleQuickAction} />
+        )}
         </div>
-      </ScrollArea>
 
-      <div className="border-t bg-background pb-3">
-        <div className="px-4 pt-3">
-          {/* Unified input container with inline divider */}
-          <div className="flex flex-col rounded-xl border border-input bg-background shadow-sm overflow-hidden">
-            {/* Text input area with embedded send button */}
-            <div className="relative">
+        {/* Input Area */}
+        <div className="bg-background px-3 sm:px-4 py-3">
+          <div className="max-w-3xl mx-auto">
+            {/* Input toolbar with model selector */}
+            <div className="flex items-center gap-2 mb-2">
+              {/* Model selector */}
+              {llmBackends.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs gap-1 max-w-[140px]"
+                    >
+                      <Zap className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {llmBackends.find(b => b.id === activeBackendId)?.name ||
+                         llmBackends.find(b => b.id === activeBackendId)?.model ||
+                         '选择模型'}
+                      </span>
+                      <ChevronDown className="h-3 w-3 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground">
+                      选择 LLM 模型
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {llmBackends.map((backend) => (
+                      <DropdownMenuItem
+                        key={backend.id}
+                        onClick={() => activateBackend(backend.id)}
+                        className={cn(
+                          "flex items-center gap-2",
+                          backend.id === activeBackendId && "bg-muted"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-1.5 h-1.5 rounded-full shrink-0",
+                          backend.healthy ? "bg-green-500" : "bg-muted-foreground"
+                        )} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate">{backend.name || backend.model}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {backend.backend_type} · {backend.model}
+                          </p>
+                        </div>
+                        {backend.id === activeBackendId && (
+                          <span className="text-[10px] text-muted-foreground">✓</span>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <div className="flex-1" />
+            </div>
+
+            <div className="flex items-center gap-2">
               <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={t('dashboard:messagePlaceholder')}
-                disabled={isStreaming}
-                rows={2}
-                className="w-full px-3 py-2 pr-10 text-sm bg-transparent placeholder:text-muted-foreground focus:outline-none resize-none leading-[1.25rem]"
-                style={{ height: '42px', minHeight: '42px', maxHeight: '42px' }}
+                placeholder="输入消息..."
+                rows={1}
+                className={cn(
+                  "flex-1 px-4 py-2.5 rounded-2xl resize-none text-sm",
+                  "bg-muted/50 text-foreground placeholder:text-muted-foreground",
+                  "focus:outline-none focus:ring-2 focus:ring-foreground/20",
+                  "transition-all max-h-32"
+                )}
+                style={{ minHeight: "44px", height: "44px" }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement
+                  target.style.height = "44px"
+                  target.style.height = Math.min(target.scrollHeight, 128) + "px"
+                }}
               />
-              {/* Send button embedded in text area */}
-              <button
+
+              <Button
                 onClick={handleSend}
                 disabled={!input.trim() || isStreaming}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 shrink-0 h-7 w-7 rounded-md bg-black text-white hover:bg-black/80 dark:bg-white dark:text-black dark:hover:bg-white/90 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                className={cn(
+                  "h-11 w-11 rounded-full flex-shrink-0",
+                  "bg-foreground hover:bg-foreground/90 text-background",
+                  "transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
               >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-
-            {/* Divider line */}
-            <div className="h-px bg-border/40" />
-
-            {/* Controls area */}
-            <div className="flex items-center gap-2 px-2 py-1.5">
-              {/* Model selector */}
-              <Select
-                value={llmBackends?.find(b => b.is_active)?.id || ""}
-                onValueChange={handleBackendChange}
-                disabled={isStreaming || llmBackendLoading || !llmBackends || llmBackends.length === 0}
-              >
-                <SelectTrigger className="h-7 w-[100px] text-xs shrink-0 border-0 bg-transparent hover:bg-muted/50 focus:ring-0 focus:ring-offset-0 rounded px-2 text-foreground">
-                  <SelectValue placeholder={t('dashboard:selectBackend')}>
-                    {llmBackends?.find(b => b.is_active)?.name}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent align="start" className="w-[160px]">
-                  {llmBackends && llmBackends.length > 0 ? (
-                    llmBackends.map((backend) => (
-                      <SelectItem key={backend.id} value={backend.id} className="gap-2">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <span className="text-xs truncate">{backend.name}</span>
-                          <div className="flex items-center gap-1 shrink-0 ml-auto">
-                            {backend.capabilities?.supports_thinking && (
-                              <Brain className="h-3 w-3 text-blue-500" />
-                            )}
-                            {backend.capabilities?.supports_tools && (
-                              <Wrench className="h-3 w-3 text-green-500" />
-                            )}
-                            {backend.capabilities?.supports_multimodal && (
-                              <svg className="h-3 w-3 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                <circle cx="8.5" cy="8.5" r="1.5" />
-                                <polyline points="21 15 16 10 5 21" />
-                            </svg>
-                            )}
-                          </div>
-                        </div>
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="p-2 text-xs text-muted-foreground text-center">
-                      {t('dashboard:noBackends')}
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-
-              {/* Thinking toggle */}
-              {llmBackends?.find(b => b.is_active)?.capabilities.supports_thinking && (
-                <button
-                  onClick={() => {
-                    const activeBackend = llmBackends?.find(b => b.is_active)
-                    if (activeBackend) {
-                      handleThinkingToggle(!activeBackend.thinking_enabled)
-                    }
-                  }}
-                  disabled={isStreaming}
-                  className={cn(
-                    "h-7 w-7 rounded-md flex items-center justify-center transition-all shrink-0 hover:bg-muted/50",
-                    llmBackends?.find(b => b.is_active)?.thinking_enabled
-                      ? "text-blue-600 bg-blue-50 dark:bg-blue-950/30"
-                      : "text-foreground/70 hover:text-foreground hover:bg-muted"
-                  )}
-                  title={llmBackends?.find(b => b.is_active)?.thinking_enabled ? t('dashboard:thinking') + ': ' + t('common:on') : t('dashboard:thinking') + ': ' + t('common:off')}
-                >
-                  <Brain className="h-4 w-4" />
-                </button>
-              )}
+                <Send className="h-5 w-5" />
+              </Button>
             </div>
           </div>
         </div>
-      </div>
       </div>
     </div>
   )

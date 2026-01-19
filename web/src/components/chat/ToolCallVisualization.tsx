@@ -1,6 +1,7 @@
 // ToolCallVisualization component - displays AI tool calls with execution details
 import { useState } from "react"
 import { Wrench, ChevronDown, ChevronUp, Clock, CheckCircle2, Loader2, AlertCircle, Code } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { ToolCall } from "@/types"
 
 interface ToolCallVisualizationProps {
@@ -15,12 +16,12 @@ interface ToolCallWithDuration extends ToolCall {
 
 function getToolStatusIcon(hasResult: boolean, isStreaming: boolean) {
   if (isStreaming && !hasResult) {
-    return <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-600" />
+    return <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
   }
   if (hasResult) {
-    return <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+    return <CheckCircle2 className="h-3 w-3 text-muted-foreground" />
   }
-  return <AlertCircle className="h-3.5 w-3.5 text-muted-foreground" />
+  return <AlertCircle className="h-3 w-3 text-muted-foreground" />
 }
 
 function formatDuration(ms?: number): string {
@@ -86,18 +87,22 @@ export function ToolCallVisualization({
     })
   }
 
+  const completedCount = toolCalls.filter(tc => tc.result !== undefined && tc.result !== null).length
+
   return (
-    <div className="tool-call-visualization rounded-lg border border-blue-200/50 bg-blue-50/30 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-100/50 border-b border-blue-200/50">
-        <Wrench className="h-4 w-4 text-blue-600" />
-        <span className="font-medium text-sm text-blue-900">
-          工具调用 ({toolCalls.length})
-        </span>
+    <div className="tool-call-visualization rounded-md border border-border/50 bg-muted/30 overflow-hidden text-sm">
+      {/* Header - minimal style */}
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/30">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          <Wrench className="h-3.5 w-3.5" />
+          <span className="text-xs">
+            工具调用 · {completedCount}/{toolCalls.length}
+          </span>
+        </div>
       </div>
 
-      {/* Tool List with Timeline */}
-      <div className="divide-y divide-blue-100/50">
+      {/* Tool List - compact */}
+      <div className="divide-y divide-border/30">
         {toolCalls.map((tc, i) => {
           const resultKey = `result-${i}`
           const argsKey = `args-${i}`
@@ -107,68 +112,75 @@ export function ToolCallVisualization({
           const hasArguments = tc.arguments !== undefined && tc.arguments !== null
 
           return (
-            <div key={i} className="px-3 py-3 hover:bg-blue-50/30 transition-colors">
+            <div key={i} className="px-3 py-2 hover:bg-muted/50 transition-colors">
               {/* Tool Name Row */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-start gap-3 flex-1 min-w-0">
-                  {/* Status & Timeline */}
-                  <div className="flex flex-col items-center pt-0.5">
-                    <div className={`h-7 w-7 rounded-full flex items-center justify-center ${
-                      hasResult ? 'bg-green-100 border border-green-300' : 'bg-amber-100 border border-amber-300'
-                    }`}>
-                      {getToolStatusIcon(hasResult, isStreaming)}
-                    </div>
-                    {i < toolCalls.length - 1 && (
-                      <div className="w-0.5 h-6 bg-gradient-to-b from-blue-300 to-transparent my-1" />
-                    )}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {/* Status icon */}
+                  <div className={cn(
+                    "h-5 w-5 rounded flex items-center justify-center shrink-0",
+                    hasResult ? "bg-muted" : "bg-muted/50"
+                  )}>
+                    {getToolStatusIcon(hasResult, isStreaming)}
                   </div>
 
-                  {/* Tool info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-sm font-semibold bg-white px-2.5 py-1 rounded-md border border-blue-200 text-blue-800">
-                        {tc.name}
-                      </span>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        hasResult
-                          ? 'bg-green-100 text-green-700'
-                          : isStreaming
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {hasResult ? '已完成' : isStreaming ? '执行中...' : '无结果'}
-                      </span>
-                      {(tc as ToolCallWithDuration).duration_ms && (
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {formatDuration((tc as ToolCallWithDuration).duration_ms)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  {/* Tool name */}
+                  <span className="font-mono text-xs text-foreground/80 truncate">
+                    {tc.name}
+                  </span>
+
+                  {/* Status badge */}
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded shrink-0",
+                    hasResult
+                      ? "bg-muted text-muted-foreground"
+                      : isStreaming
+                        ? "bg-muted text-muted-foreground"
+                        : "bg-muted/50 text-muted-foreground/70"
+                  )}>
+                    {hasResult ? '完成' : isStreaming ? '执行中' : '等待'}
+                  </span>
+
+                  {/* Duration */}
+                  {(tc as ToolCallWithDuration).duration_ms && (
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0">
+                      <Clock className="h-2.5 w-2.5" />
+                      {formatDuration((tc as ToolCallWithDuration).duration_ms)}
+                    </span>
+                  )}
                 </div>
 
                 {/* Expand buttons */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 shrink-0">
                   {hasArguments && (
                     <button
                       onClick={() => toggleArguments(argsKey)}
-                      className="p-1.5 hover:bg-white/70 rounded-md transition-colors text-muted-foreground hover:text-foreground"
+                      className={cn(
+                        "p-1 rounded transition-colors",
+                        isArgsExpanded 
+                          ? "bg-muted text-foreground" 
+                          : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                      )}
                       title="查看参数"
                     >
-                      <Code className="h-3.5 w-3.5" />
+                      <Code className="h-3 w-3" />
                     </button>
                   )}
                   {hasResult && (
                     <button
                       onClick={() => toggleResult(resultKey)}
-                      className="p-1.5 hover:bg-white/70 rounded-md transition-colors text-muted-foreground hover:text-foreground"
+                      className={cn(
+                        "p-1 rounded transition-colors",
+                        isResultExpanded 
+                          ? "bg-muted text-foreground" 
+                          : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+                      )}
                       title="查看结果"
                     >
                       {isResultExpanded ? (
-                        <ChevronUp className="h-3.5 w-3.5" />
+                        <ChevronUp className="h-3 w-3" />
                       ) : (
-                        <ChevronDown className="h-3.5 w-3.5" />
+                        <ChevronDown className="h-3 w-3" />
                       )}
                     </button>
                   )}
@@ -177,12 +189,12 @@ export function ToolCallVisualization({
 
               {/* Expandable Arguments */}
               {isArgsExpanded && hasArguments && (
-                <div className="mt-2 ml-10 p-2.5 bg-white/70 rounded-md border border-blue-200">
-                  <div className="text-xs font-medium text-blue-800 mb-1.5 flex items-center gap-1.5">
-                    <Code className="h-3 w-3" />
-                    调用参数
+                <div className="mt-2 ml-7 p-2 bg-background/50 rounded border border-border/30">
+                  <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                    <Code className="h-2.5 w-2.5" />
+                    参数
                   </div>
-                  <pre className="text-xs font-mono text-gray-700 overflow-x-auto whitespace-pre-wrap break-words bg-gray-50 p-2 rounded">
+                  <pre className="text-[11px] font-mono text-foreground/70 overflow-x-auto whitespace-pre-wrap break-words">
                     {formatArguments(tc.arguments)}
                   </pre>
                 </div>
@@ -190,12 +202,12 @@ export function ToolCallVisualization({
 
               {/* Expandable Result */}
               {isResultExpanded && hasResult && (
-                <div className="mt-2 ml-10 p-2.5 bg-green-50/70 rounded-md border border-green-200">
-                  <div className="text-xs font-medium text-green-800 mb-1.5 flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3 w-3" />
-                    执行结果
+                <div className="mt-2 ml-7 p-2 bg-background/50 rounded border border-border/30">
+                  <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                    <CheckCircle2 className="h-2.5 w-2.5" />
+                    结果
                   </div>
-                  <pre className="text-xs font-mono text-gray-700 overflow-x-auto whitespace-pre-wrap break-words bg-white p-2 rounded max-h-60 overflow-y-auto">
+                  <pre className="text-[11px] font-mono text-foreground/70 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
                     {formatResult(tc.result)}
                   </pre>
                 </div>
@@ -203,16 +215,6 @@ export function ToolCallVisualization({
             </div>
           )
         })}
-      </div>
-
-      {/* Footer with summary */}
-      <div className="px-3 py-2 bg-blue-100/30 border-t border-blue-200/50">
-        <div className="flex items-center justify-between text-xs text-blue-700">
-          <span>共 {toolCalls.length} 个工具调用</span>
-          <span>
-            {toolCalls.filter(tc => tc.result !== undefined && tc.result !== null).length} 个已完成
-          </span>
-        </div>
       </div>
     </div>
   )

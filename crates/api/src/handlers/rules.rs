@@ -7,7 +7,7 @@ use axum::{
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-use edge_ai_rules::{CompiledRule, RuleId, RuleStatus, MetricDataType as RulesMetricDataType};
+use edge_ai_rules::{CompiledRule, RuleId, RuleStatus, RuleCondition, RuleAction, ComparisonOperator, MetricDataType as RulesMetricDataType};
 use edge_ai_devices::MetricDataType as DeviceMetricDataType;
 
 use super::{
@@ -27,17 +27,8 @@ struct RuleDetailDto {
     trigger_count: u64,
     last_triggered: Option<String>,
     created_at: String,
-    condition: RuleConditionDto,
+    condition: Value,  // Changed to Value to handle different condition types
     actions: Vec<RuleActionDto>,
-}
-
-/// Rule condition for API responses.
-#[derive(Debug, serde::Serialize)]
-struct RuleConditionDto {
-    device_id: String,
-    metric: String,
-    operator: String,
-    threshold: f64,
 }
 
 /// Rule action for API responses.
@@ -46,6 +37,7 @@ struct RuleConditionDto {
 enum RuleActionDto {
     Notify {
         message: String,
+        channels: Option<Vec<String>>,
     },
     Execute {
         device_id: String,
@@ -83,6 +75,46 @@ pub struct SetRuleStatusRequest {
 
 impl From<&CompiledRule> for RuleDetailDto {
     fn from(rule: &CompiledRule) -> Self {
+        // Convert RuleCondition enum to JSON Value
+        let condition_json = match &rule.condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                json!({
+                    "type": "simple",
+                    "device_id": device_id,
+                    "metric": metric,
+                    "operator": format!("{:?}", operator),
+                    "threshold": threshold,
+                })
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                json!({
+                    "type": "range",
+                    "device_id": device_id,
+                    "metric": metric,
+                    "min": min,
+                    "max": max,
+                })
+            }
+            RuleCondition::And(conditions) => {
+                json!({
+                    "type": "and",
+                    "conditions": conditions,
+                })
+            }
+            RuleCondition::Or(conditions) => {
+                json!({
+                    "type": "or",
+                    "conditions": conditions,
+                })
+            }
+            RuleCondition::Not(condition) => {
+                json!({
+                    "type": "not",
+                    "condition": condition,
+                })
+            }
+        };
+
         Self {
             id: rule.id.to_string(),
             name: rule.name.clone(),
@@ -91,20 +123,16 @@ impl From<&CompiledRule> for RuleDetailDto {
             trigger_count: rule.state.trigger_count,
             last_triggered: rule.state.last_triggered.map(|dt| dt.to_rfc3339()),
             created_at: rule.created_at.to_rfc3339(),
-            condition: RuleConditionDto {
-                device_id: rule.condition.device_id.clone(),
-                metric: rule.condition.metric.clone(),
-                operator: format!("{:?}", rule.condition.operator),
-                threshold: rule.condition.threshold,
-            },
+            condition: condition_json,
             actions: rule
                 .actions
                 .iter()
                 .map(|a| match a {
-                    edge_ai_rules::RuleAction::Notify { message } => RuleActionDto::Notify {
+                    RuleAction::Notify { message, channels } => RuleActionDto::Notify {
                         message: message.clone(),
+                        channels: channels.clone(),
                     },
-                    edge_ai_rules::RuleAction::Execute {
+                    RuleAction::Execute {
                         device_id,
                         command,
                         params,
@@ -113,9 +141,14 @@ impl From<&CompiledRule> for RuleDetailDto {
                         command: command.clone(),
                         params: params.clone(),
                     },
-                    edge_ai_rules::RuleAction::Log { level, message, .. } => RuleActionDto::Log {
+                    RuleAction::Log { level, message, severity: _ } => RuleActionDto::Log {
                         level: level.to_string(),
                         message: message.clone(),
+                    },
+                    // For other action types, create a placeholder
+                    _ => RuleActionDto::Log {
+                        level: "info".to_string(),
+                        message: format!("{:?}", a),
                     },
                 })
                 .collect(),
@@ -294,19 +327,29 @@ pub async fn test_rule_handler(
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
+    // Extract condition fields using pattern matching
+    let (device_id, metric, operator, threshold) = match &rule.condition {
+        RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            (device_id.clone(), metric.clone(), operator.clone(), *threshold)
+        }
+        RuleCondition::Range { device_id, metric, min, max } => {
+            // For range conditions, use the max as threshold for testing
+            (device_id.clone(), metric.clone(), ComparisonOperator::GreaterThan, *max)
+        }
+        _ => {
+            return Err(ErrorResponse::bad_request("Cannot test complex conditions"));
+        }
+    };
+
     // Get current value for the condition
-    let current_value = state
-        .rule_engine
-        .get_value(&rule.condition.device_id, &rule.condition.metric);
+    let current_value = state.rule_engine.get_value(&device_id, &metric);
 
     let condition_met = if let Some(val) = current_value {
-        rule.condition
-            .operator
-            .evaluate(val, rule.condition.threshold)
+        operator.evaluate(val, threshold)
     } else {
         return Err(ErrorResponse::internal(format!(
             "Cannot get value for {}:{}",
-            rule.condition.device_id, rule.condition.metric,
+            device_id, metric,
         )));
     };
 
@@ -315,8 +358,8 @@ pub async fn test_rule_handler(
         "rule_name": rule.name,
         "condition_met": condition_met,
         "current_value": current_value,
-        "threshold": rule.condition.threshold,
-        "operator": format!("{:?}", rule.condition.operator),
+        "threshold": threshold,
+        "operator": format!("{:?}", operator),
     }))
 }
 
@@ -507,6 +550,7 @@ pub async fn get_resources_handler(
             device_type: device.device_type.clone(),
             metrics,
             commands,
+            properties: vec![],
             online,
         });
     }
@@ -585,7 +629,7 @@ pub async fn validate_rule_handler(
         .and_then(|v| v.as_f64())
         .ok_or_else(|| ErrorResponse::bad_request("Missing or invalid 'condition.threshold'"))?;
 
-    let condition = RuleCondition {
+    let condition = RuleCondition::Simple {
         device_id: device_id.to_string(),
         metric: metric.to_string(),
         operator,
@@ -628,6 +672,7 @@ pub async fn validate_rule_handler(
             device_type: device.device_type.clone(),
             metrics,
             commands: vec![],
+            properties: vec![],
             online: true,
         });
     }
@@ -640,8 +685,14 @@ pub async fn validate_rule_handler(
                 match action_type {
                     "notify" => {
                         if let Some(message) = action_value.get("message").and_then(|v| v.as_str()) {
+                            // Get channels if specified
+                            let channels = action_value.get("channels")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+
                             actions.push(edge_ai_rules::RuleAction::Notify {
                                 message: message.to_string(),
+                                channels,
                             });
                         }
                     }
@@ -724,6 +775,7 @@ pub async fn generate_rule_handler(
             device_type: device.device_type.clone(),
             metrics,
             commands: vec![],
+            properties: vec![],
             online: true,
         });
     }
@@ -734,22 +786,45 @@ pub async fn generate_rule_handler(
 
     // Convert to DSL
     let rule = &generated.rule;
+
+    // Extract condition fields for DSL formatting
+    let (device_id, metric, operator_str, threshold_str) = match &rule.condition {
+        RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            (
+                device_id.clone(),
+                metric.clone(),
+                format!("{:?}", operator),
+                threshold.to_string(),
+            )
+        }
+        RuleCondition::Range { device_id, metric, min, max } => {
+            (
+                device_id.clone(),
+                metric.clone(),
+                "BETWEEN".to_string(),
+                format!("{} AND {}", min, max),
+            )
+        }
+        _ => ("complex".to_string(), "complex".to_string(), "COMPLEX".to_string(), "N/A".to_string()),
+    };
+
     let dsl = format!(
         "RULE \"{}\"\n  WHEN {}.{} {} {}\n  DO {}\nEND",
         rule.name,
-        rule.condition.device_id,
-        rule.condition.metric,
-        rule.condition.operator.as_str(),
-        rule.condition.threshold,
+        device_id,
+        metric,
+        operator_str,
+        threshold_str,
         if !rule.actions.is_empty() {
             match &rule.actions[0] {
-                edge_ai_rules::RuleAction::Notify { message } => {
+                edge_ai_rules::RuleAction::Notify { message, .. } => {
                     format!("NOTIFY \"{}\"", message)
                 }
                 edge_ai_rules::RuleAction::Execute { command, .. } => {
                     format!("EXECUTE {}", command)
                 }
                 edge_ai_rules::RuleAction::Log { .. } => "LOG".to_string(),
+                _ => "ACTION".to_string(),
             }
         } else {
             "LOG".to_string()

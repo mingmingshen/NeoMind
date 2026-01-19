@@ -4,7 +4,7 @@
 //! using LLM assistance.
 
 use crate::dsl::{ComparisonOperator, ParsedRule, RuleAction, RuleCondition};
-use crate::validator::ValidationContext;
+use crate::validator::{ValidationContext, DeviceInfo, MetricInfo, MetricDataType, CommandInfo, ParameterInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -299,26 +299,28 @@ impl RuleGenerator {
         };
 
         // Extract numbers from description
+        // First try direct whitespace-separated numbers
         let threshold = description
             .split_whitespace()
             .find_map(|s| s.parse::<f64>().ok())
             .or_else(|| {
-                // Look for numbers after "超过" or degree symbols
-                if let Some(pos) = description.find("超过") {
-                    description[pos + 6..]
-                        .split_whitespace()
-                        .next()
-                        .and_then(|s| s.parse::<f64>().ok())
-                } else if let Some(pos) = description.find("度") {
-                    // Look before "度"
-                    let before = &description[..pos];
-                    before
-                        .split_whitespace()
-                        .last()
-                        .and_then(|s| s.parse::<f64>().ok())
-                } else {
-                    None
-                }
+                // Try to extract number from "50度" pattern - extract digits and optional decimal
+                description
+                    .chars()
+                    .scan(true, |in_number, c| {
+                        if c.is_ascii_digit() || c == '.' {
+                            *in_number = true;
+                            Some(c)
+                        } else if *in_number {
+                            *in_number = false;
+                            Some(' ')
+                        } else {
+                            Some(' ')
+                        }
+                    })
+                    .collect::<String>()
+                    .split_whitespace()
+                    .find_map(|s| s.parse::<f64>().ok())
             });
 
         (operator, threshold)
@@ -397,7 +399,7 @@ impl RuleGenerator {
 
         let threshold = extracted.threshold.unwrap_or(50.0);
 
-        let condition = RuleCondition {
+        let condition = RuleCondition::Simple {
             device_id: device_id.clone(),
             metric,
             operator: Self::parse_operator(&operator)?,
@@ -412,6 +414,7 @@ impl RuleGenerator {
                     .action_message
                     .clone()
                     .unwrap_or_else(|| format!("{} 触发", extracted.name)),
+                channels: None,
             },
             "log" => RuleAction::Log {
                 level: crate::dsl::LogLevel::Info,
@@ -423,6 +426,7 @@ impl RuleGenerator {
                     .action_message
                     .clone()
                     .unwrap_or_else(|| format!("{} 触发", extracted.name)),
+                channels: None,
             },
         };
 
@@ -431,6 +435,8 @@ impl RuleGenerator {
             condition,
             actions: vec![action],
             for_duration: extracted.for_duration.map(std::time::Duration::from_secs),
+            description: None,
+            tags: vec![],
         })
     }
 
@@ -485,23 +491,52 @@ impl RuleGenerator {
 
     /// Generate a human-readable explanation.
     fn generate_explanation(_extracted: &ExtractedRuleInfo, rule: &ParsedRule) -> String {
-        format!(
-            "规则 \"{}\": 当设备 {} 的 {} {} {} 时，{}",
-            rule.name,
-            rule.condition.device_id,
-            rule.condition.metric,
-            rule.condition.operator.as_str(),
-            rule.condition.threshold,
-            if !rule.actions.is_empty() {
-                match &rule.actions[0] {
-                    RuleAction::Notify { message } => format!("发送通知: {}", message),
-                    RuleAction::Execute { command, .. } => format!("执行命令: {}", command),
-                    RuleAction::Log { .. } => "记录日志".to_string(),
+        let condition_str = Self::format_condition(&rule.condition);
+        let action_str = if !rule.actions.is_empty() {
+            match &rule.actions[0] {
+                RuleAction::Notify { message, .. } => format!("发送通知: {}", message),
+                RuleAction::Execute { command, .. } => format!("执行命令: {}", command),
+                RuleAction::Log { .. } => "记录日志".to_string(),
+                RuleAction::Set { device_id, property, value } => {
+                    format!("设置 {}.{} = {:?}", device_id, property, value)
                 }
-            } else {
-                "无动作".to_string()
+                RuleAction::Delay { duration } => format!("延迟 {:?}", duration),
+                RuleAction::TriggerWorkflow { workflow_id, .. } => {
+                    format!("触发工作流: {}", workflow_id)
+                }
+                RuleAction::CreateAlert { title, .. } => format!("创建告警: {}", title),
+                RuleAction::HttpRequest { method, url, .. } => {
+                    format!("HTTP请求: {:?} {}", method, url)
+                }
             }
-        )
+        } else {
+            "无动作".to_string()
+        };
+
+        format!("规则 \"{}\": 当 {} 时，{}", rule.name, condition_str, action_str)
+    }
+
+    /// Format a condition as human-readable string.
+    fn format_condition(condition: &RuleCondition) -> String {
+        match condition {
+            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                format!("设备 {} 的 {} {} {}", device_id, metric, operator.as_str(), threshold)
+            }
+            RuleCondition::Range { device_id, metric, min, max } => {
+                format!("设备 {} 的 {} 在 {} 到 {} 之间", device_id, metric, min, max)
+            }
+            RuleCondition::And(conditions) => {
+                let parts: Vec<String> = conditions.iter().map(Self::format_condition).collect();
+                format!("({})", parts.join(" 且 "))
+            }
+            RuleCondition::Or(conditions) => {
+                let parts: Vec<String> = conditions.iter().map(Self::format_condition).collect();
+                format!("({})", parts.join(" 或 "))
+            }
+            RuleCondition::Not(condition) => {
+                format!("非({})", Self::format_condition(condition))
+            }
+        }
     }
 }
 
@@ -809,6 +844,7 @@ mod tests {
             device_type: "sensor".to_string(),
             metrics: vec![],
             commands: vec![],
+            properties: vec![],
             online: true,
         });
 

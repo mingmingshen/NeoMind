@@ -3,13 +3,13 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent } from "@/components/shared"
-import { PluginUploadDialog, PluginGrid } from "@/components/plugins"
+import { ExtensionGrid, ExtensionConfigDialog } from "@/components/extensions"
 import { UnifiedLLMBackendsTab } from "@/components/llm/UnifiedLLMBackendsTab"
 import { UnifiedAlertChannelsTab } from "@/components/alerts/UnifiedAlertChannelsTab"
 import { UnifiedDeviceConnectionsTab } from "@/components/connections"
-import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
-import { Upload } from "lucide-react"
+import { RefreshCw, Plus } from "lucide-react"
+import { ExtensionUploadDialog } from "@/components/extensions"
 
 type PluginTabValue = "llm" | "connections" | "alert-channels" | "extensions"
 
@@ -18,17 +18,18 @@ export function PluginsPage() {
   const { toast } = useToast()
 
   const {
-    plugins,
-    pluginsLoading,
-    fetchPlugins,
-    // Plugin actions
-    enablePlugin,
-    disablePlugin,
-    startPlugin,
-    stopPlugin,
-    unregisterPlugin,
-    setSelectedPlugin,
-    setConfigDialogOpen,
+    extensions,
+    extensionsLoading,
+    fetchExtensions,
+    // Extension actions
+    startExtension,
+    stopExtension,
+    unregisterExtension,
+    selectedExtension,
+    setSelectedExtension,
+    extensionDialogOpen,
+    setExtensionDialogOpen,
+    discoverExtensions,
     // LLM Backend actions
     createBackend,
     updateBackend,
@@ -39,16 +40,12 @@ export function PluginsPage() {
   const [activeTab, setActiveTab] = useState<PluginTabValue>("llm")
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
 
-  // Filter to only external dynamic plugins (exclude built-in types)
-  // Built-in types: llm_backend, device_adapter, alert_channel
-  const externalPlugins = plugins.filter((p) => p.path && !['llm_backend', 'device_adapter', 'alert_channel'].includes(p.plugin_type))
-
-  // Fetch external plugins on mount and when extensions tab is activated
+  // Fetch extensions on mount and when extensions tab is activated
   useEffect(() => {
     if (activeTab === "extensions") {
-      fetchPlugins({ builtin: false })
+      fetchExtensions()
     }
-  }, [fetchPlugins, activeTab])
+  }, [fetchExtensions, activeTab])
 
   const tabs = [
     { value: "llm" as PluginTabValue, label: t("plugins:llmBackends") },
@@ -57,26 +54,9 @@ export function PluginsPage() {
     { value: "extensions" as PluginTabValue, label: t("plugins:extensionPlugins") },
   ]
 
-  // Plugin action handlers
-  const handleToggle = async (id: string, enabled: boolean) => {
-    const result = enabled ? await enablePlugin(id) : await disablePlugin(id)
-    if (result) {
-      toast({
-        title: t(enabled ? "plugins:pluginEnabled" : "plugins:pluginDisabled"),
-      })
-    } else {
-      toast({
-        title: t("plugins:actionFailed"),
-        variant: "destructive",
-      })
-    }
-    // Refresh to get updated state
-    fetchPlugins({ builtin: false })
-    return result
-  }
-
+  // Extension action handlers
   const handleStart = async (id: string) => {
-    const result = await startPlugin(id)
+    const result = await startExtension(id)
     if (result) {
       toast({
         title: t("plugins:pluginStarted"),
@@ -91,7 +71,7 @@ export function PluginsPage() {
   }
 
   const handleStop = async (id: string) => {
-    const result = await stopPlugin(id)
+    const result = await stopExtension(id)
     if (result) {
       toast({
         title: t("plugins:pluginStopped"),
@@ -106,15 +86,15 @@ export function PluginsPage() {
   }
 
   const handleConfigure = (id: string) => {
-    const plugin = plugins.find((p) => p.id === id)
-    if (plugin) {
-      setSelectedPlugin(plugin)
-      setConfigDialogOpen(true)
+    const extension = extensions.find((e) => e.id === id)
+    if (extension) {
+      setSelectedExtension(extension)
+      setExtensionDialogOpen(true)
     }
   }
 
   const handleDelete = async (id: string) => {
-    const result = await unregisterPlugin(id)
+    const result = await unregisterExtension(id)
     if (result) {
       toast({
         title: t("plugins:unregisterSuccess"),
@@ -129,19 +109,53 @@ export function PluginsPage() {
   }
 
   const handleRefresh = async () => {
-    await fetchPlugins({ builtin: false })
+    await fetchExtensions()
     toast({
       title: t("plugins:refreshed"),
     })
     return true
   }
 
+  const handleDiscover = async () => {
+    const result = await discoverExtensions()
+    toast({
+      title: t("plugins:discovered", { count: result.discovered }),
+    })
+  }
+
   return (
-    <PageLayout>
+    <PageLayout
+      title={t('plugins:title', '扩展与连接')}
+      subtitle={t('plugins:description', '管理 LLM 后端、设备连接、告警通道和扩展插件')}
+    >
       <PageTabs
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={(v) => setActiveTab(v as PluginTabValue)}
+        actions={
+          activeTab === 'extensions'
+            ? [
+                {
+                  label: t('plugins:discover'),
+                  icon: <RefreshCw className="h-4 w-4" />,
+                  variant: 'outline' as const,
+                  onClick: handleDiscover,
+                },
+                {
+                  label: t('plugins:refresh'),
+                  icon: <RefreshCw className="h-4 w-4" />,
+                  variant: 'outline' as const,
+                  onClick: handleRefresh,
+                },
+                {
+                  label: t('plugins:add'),
+                  icon: <Plus className="h-4 w-4" />,
+                  variant: 'default' as const,
+                  onClick: () => setUploadDialogOpen(true),
+                },
+              ]
+            : []
+        }
       >
         {/* LLM Backends Tab */}
         <PageTabsContent value="llm" activeTab={activeTab}>
@@ -163,54 +177,41 @@ export function PluginsPage() {
           <UnifiedAlertChannelsTab />
         </PageTabsContent>
 
-        {/* Extension Plugins Tab - External Only */}
+        {/* Extension Plugins Tab */}
         <PageTabsContent value="extensions" activeTab={activeTab}>
-          <div className="space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight">{t("plugins:extensionPlugins")}</h2>
-                <p className="text-muted-foreground text-sm">
-                  动态加载的外部插件 (.so/.wasm)
-                </p>
-              </div>
-              <Button onClick={() => setUploadDialogOpen(true)}>
-                <Upload className="mr-2 h-4 w-4" />
-                {t("plugins:upload")}
-              </Button>
-            </div>
-
-            {/* External Plugins List */}
-            <PluginGrid
-              plugins={externalPlugins}
-              loading={pluginsLoading}
-              onToggle={handleToggle}
-              onStart={handleStart}
-              onStop={handleStop}
-              onConfigure={handleConfigure}
-              onDelete={handleDelete}
-              onRefresh={handleRefresh}
-              onAddPlugin={() => setUploadDialogOpen(true)}
-            />
-          </div>
+          <ExtensionGrid
+            extensions={extensions}
+            loading={extensionsLoading}
+            onStart={handleStart}
+            onStop={handleStop}
+            onConfigure={handleConfigure}
+            onDelete={handleDelete}
+          />
         </PageTabsContent>
       </PageTabs>
 
-      {/* Upload Plugin Dialog */}
-      <PluginUploadDialog
+      {/* Upload Extension Dialog */}
+      <ExtensionUploadDialog
         open={uploadDialogOpen}
         onOpenChange={(open) => {
           setUploadDialogOpen(open)
           if (!open) {
-            fetchPlugins({ builtin: false })
+            fetchExtensions()
           }
         }}
-        onUploadComplete={(pluginId) => {
+        onUploadComplete={(extensionId) => {
           toast({
-            title: t("plugins:pluginLoaded", { id: pluginId }),
+            title: t("plugins:pluginLoaded", { id: extensionId }),
           })
-          fetchPlugins({ builtin: false })
+          fetchExtensions()
         }}
+      />
+
+      {/* Extension Config Dialog */}
+      <ExtensionConfigDialog
+        extension={selectedExtension}
+        open={extensionDialogOpen}
+        onOpenChange={setExtensionDialogOpen}
       />
     </PageLayout>
   )

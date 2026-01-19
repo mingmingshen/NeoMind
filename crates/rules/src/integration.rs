@@ -260,23 +260,76 @@ impl ValueProvider for CachedValueProvider {
 }
 
 /// Evaluate a single rule condition against a value.
+/// Returns None if the condition doesn't apply to this device/metric,
+/// Some(result) with the evaluation result otherwise.
 pub fn evaluate_rule_condition(
     condition: &RuleCondition,
     device_id: &str,
     metric: &str,
     value: f64,
 ) -> Option<bool> {
-    // Check if this condition matches the device/metric
-    if condition.device_id != device_id && condition.device_id != "*" && condition.device_id != "+"
-    {
-        return None;
-    }
-    if condition.metric != metric && metric != "*" {
-        return None;
-    }
+    match condition {
+        RuleCondition::Simple {
+            device_id: cond_device,
+            metric: cond_metric,
+            operator,
+            threshold,
+        } => {
+            // Check if this condition matches the device/metric
+            if cond_device != device_id && cond_device != "*" && cond_device != "+" {
+                return None;
+            }
+            if cond_metric != metric && metric != "*" {
+                return None;
+            }
 
-    // Evaluate the comparison
-    Some(condition.operator.evaluate(value, condition.threshold))
+            // Evaluate the comparison
+            Some(operator.evaluate(value, *threshold))
+        }
+        RuleCondition::Range {
+            device_id: cond_device,
+            metric: cond_metric,
+            min,
+            max,
+        } => {
+            if cond_device != device_id && cond_device != "*" && cond_device != "+" {
+                return None;
+            }
+            if cond_metric != metric && metric != "*" {
+                return None;
+            }
+
+            Some(value >= *min && value <= *max)
+        }
+        RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
+            // For compound conditions, evaluate all sub-conditions
+            let mut results = Vec::new();
+            for cond in conditions {
+                if let Some(result) = evaluate_rule_condition(cond, device_id, metric, value) {
+                    results.push(result);
+                }
+            }
+
+            // If no sub-conditions matched, return None
+            if results.is_empty() {
+                return None;
+            }
+
+            // For AND, all must be true; for OR, any must be true
+            match condition {
+                RuleCondition::And(_) => Some(results.iter().all(|&r| r)),
+                RuleCondition::Or(_) => Some(results.iter().any(|&r| r)),
+                _ => unreachable!(),
+            }
+        }
+        RuleCondition::Not(cond) => {
+            if let Some(result) = evaluate_rule_condition(cond, device_id, metric, value) {
+                Some(!result)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -357,7 +410,7 @@ mod tests {
         use crate::dsl::ComparisonOperator;
         use crate::dsl::RuleCondition;
 
-        let condition = RuleCondition {
+        let condition = RuleCondition::Simple {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -383,7 +436,7 @@ mod tests {
         );
 
         // Wildcard device match
-        let wildcard_condition = RuleCondition {
+        let wildcard_condition = RuleCondition::Simple {
             device_id: "*".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,

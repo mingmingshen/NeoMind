@@ -1330,6 +1330,7 @@ impl Tool for QueryWorkflowStatusTool {
                         ExecutionStatus::Completed => "completed",
                         ExecutionStatus::Failed => "failed",
                         ExecutionStatus::Cancelled => "cancelled",
+                        ExecutionStatus::Compensating => "compensating",
                     },
                     "started_at": state.started_at,
                     "completed_at": state.completed_at,

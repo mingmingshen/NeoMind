@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
@@ -11,10 +11,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { LoadingState, EmptyStateInline, Pagination, BulkActionBar, ActionBar, StatusBadge } from "@/components/shared"
+import { LoadingState, EmptyStateInline, Pagination, BulkActionBar, StatusBadge } from "@/components/shared"
 import { Badge } from "@/components/ui/badge"
-import { Eye, Trash2, Server, Plus, Radar } from "lucide-react"
-import { Dialog, DialogTrigger } from "@/components/ui/dialog"
+import { Eye, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Device } from "@/types"
 import { api } from "@/lib/api"
@@ -48,9 +47,9 @@ export function DeviceList({
   onViewDetails,
   onDelete,
   onPageChange,
-  onAddDevice,
-  discoveryDialogOpen,
-  onDiscoveryOpenChange,
+  onAddDevice: _onAddDevice,
+  discoveryDialogOpen: _discoveryDialogOpen,
+  onDiscoveryOpenChange: _onDiscoveryOpenChange,
   discoveryDialog,
   addDeviceDialog,
 }: DeviceListProps) {
@@ -107,35 +106,6 @@ export function DeviceList({
 
   return (
     <>
-      {/* Toolbar */}
-      <ActionBar
-        title={t('devices:deviceList')}
-        titleIcon={<Server className="h-5 w-5" />}
-        description={`${devices.length} ${t('devices:totalDevices')}`}
-        actions={
-          <>
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button size="sm" onClick={onAddDevice}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('devices:addDevice')}
-                </Button>
-              </DialogTrigger>
-              {addDeviceDialog}
-            </Dialog>
-            <Dialog open={discoveryDialogOpen} onOpenChange={onDiscoveryOpenChange}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Radar className="mr-2 h-4 w-4" />
-                  {t('devices:localNetworkScan')}
-                </Button>
-              </DialogTrigger>
-              {discoveryDialog}
-            </Dialog>
-          </>
-        }
-      />
-
       {/* Bulk Actions Bar */}
       <BulkActionBar
         selectedCount={selectedIds.size}
@@ -151,6 +121,10 @@ export function DeviceList({
         onCancel={() => setSelectedIds(new Set())}
       />
 
+      {/* Dialogs (由上层 TAB 操作按钮控制 open 状态) */}
+      {addDeviceDialog}
+      {discoveryDialog}
+
       {loading ? (
         <LoadingState text={t('devices:loading')} />
       ) : (
@@ -165,7 +139,6 @@ export function DeviceList({
                 <TableHead>{t('devices:headers.name')}</TableHead>
                 <TableHead>{t('devices:headers.type')}</TableHead>
                 <TableHead>{t('devices:headers.adapter')}</TableHead>
-                <TableHead>{t('devices:headers.plugin')}</TableHead>
                 <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms' })}</TableHead>
                 <TableHead align="center">{t('devices:headers.status')}</TableHead>
                 <TableHead>{t('devices:headers.lastOnline')}</TableHead>
@@ -174,7 +147,7 @@ export function DeviceList({
             </TableHeader>
             <TableBody>
               {devices.length === 0 ? (
-                <EmptyStateInline title={t('devices:noDevices')} colSpan={10} />
+                <EmptyStateInline title={t('devices:noDevices')} colSpan={9} />
               ) : (
                 paginatedDevices.map((device) => (
                   <TableRow key={device.id} className={cn(selectedIds.has(device.id) && "bg-muted/50")}>
@@ -191,17 +164,6 @@ export function DeviceList({
                     <Badge variant="outline" className="text-xs">
                       {device.adapter_type || 'mqtt'}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {device.plugin_name ? (
-                      <Badge variant="secondary" className="text-xs">
-                        {device.plugin_name}
-                      </Badge>
-                    ) : device.adapter_id ? (
-                      <span className="text-xs text-muted-foreground font-mono">{device.adapter_id}</span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{t('devices:builtinMqtt')}</span>
-                    )}
                   </TableCell>
                   <TableCell align="center">
                     <TransformsBadge deviceId={device.id} onRefresh={onRefresh} />

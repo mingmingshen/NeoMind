@@ -130,8 +130,8 @@ export function WorkflowMonitor({
   const { isConnected, clearEvents, reconnect } = useWorkflowEvents({
     enabled: autoRefresh && !isPaused,
     onEvent: handleWorkflowEvent,
-    onConnected: (connected) => {
-      console.log(`[WorkflowMonitor] Event stream ${connected ? "connected" : "disconnected"}`)
+    onConnected: () => {
+      // Connection state changed
     },
     onError: (error) => {
       console.error("[WorkflowMonitor] Event stream error:", error)

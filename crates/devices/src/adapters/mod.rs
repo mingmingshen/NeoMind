@@ -13,8 +13,9 @@
 //! | `discovery` | mDNS device discovery |
 //! | `embedded-broker` | Embedded MQTT broker |
 
-// Specialized adapter plugins
-pub mod plugins;
+// Specialized adapter plugins - DEPRECATED
+// Migrated to Extension system. Use edge_ai_core::extension instead.
+// pub mod plugins;
 
 // MQTT adapter (feature-gated)
 #[cfg(feature = "mqtt")]
@@ -32,9 +33,9 @@ pub use http::{HttpAdapter, HttpAdapterConfig, HttpDeviceConfig, create_http_ada
 pub mod webhook;
 pub use webhook::{WebhookAdapter, WebhookAdapterConfig, WebhookPayload, create_webhook_adapter};
 
-// HTTP plugin exports (feature-gated)
-#[cfg(feature = "http")]
-pub use plugins::{UnifiedAdapterPluginFactory, http_adapter_config_schema};
+// HTTP plugin exports - DEPRECATED
+// #[cfg(feature = "http")]
+// pub use plugins::{UnifiedAdapterPluginFactory, http_adapter_config_schema};
 
 use crate::adapter::{AdapterResult, DeviceAdapter};
 use edge_ai_core::EventBus;

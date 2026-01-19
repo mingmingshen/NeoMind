@@ -1,6 +1,9 @@
 //! Session storage using redb.
 //!
 //! Provides persistent storage for chat sessions and message history.
+//!
+//! NOTE: Uses JSON serialization instead of Bincode for better schema compatibility.
+//! JSON is more forgiving when fields are added/removed from structs over time.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -8,6 +11,7 @@ use std::sync::Mutex as StdMutex;
 
 use redb::{Database, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
+use serde_json;
 
 use crate::Error;
 
@@ -141,7 +145,9 @@ impl SessionStore {
 
         // Check if we already have a store for this path
         {
-            let singleton = SESSION_STORE_SINGLETON.lock().unwrap();
+            let Ok(singleton) = SESSION_STORE_SINGLETON.lock() else {
+                return Err(Error::Storage("Failed to acquire session store lock".to_string()));
+            };
             if let Some(store) = singleton.as_ref()
                 && store.path == path_str {
                     eprintln!(
@@ -172,7 +178,12 @@ impl SessionStore {
             path: path_str,
         });
 
-        *SESSION_STORE_SINGLETON.lock().unwrap() = Some(store.clone());
+        {
+            let Ok(mut singleton) = SESSION_STORE_SINGLETON.lock() else {
+                return Err(Error::Storage("Failed to acquire session store lock".to_string()));
+            };
+            *singleton = Some(store.clone());
+        }
         eprintln!("[DEBUG SessionStore::open] Session store created/loaded successfully");
         Ok(store)
     }
@@ -248,7 +259,7 @@ impl SessionStore {
             // Insert new messages
             for (index, message) in messages.iter().enumerate() {
                 let key = (session_id, index as u64);
-                let value = bincode::serialize(message)?;
+                let value = serde_json::to_vec(message)?;
                 table.insert(key, value)?;
             }
 
@@ -288,6 +299,7 @@ impl SessionStore {
     }
 
     /// Load message history for a session.
+    /// Skips corrupted messages and logs warnings instead of failing completely.
     pub fn load_history(&self, session_id: &str) -> Result<Vec<SessionMessage>, Error> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(HISTORY_TABLE)?;
@@ -296,11 +308,36 @@ impl SessionStore {
         let end_key = (session_id, u64::MAX);
 
         let mut messages = Vec::new();
+        let mut skipped_count = 0;
         for result in table.range(start_key..=end_key)? {
             let (_key, value) = result?;
             let value_vec = value.value(); // This is now &Vec<u8>
-            let message: SessionMessage = bincode::deserialize(value_vec.as_slice())?;
-            messages.push(message);
+
+            // Handle deserialization errors gracefully
+            match serde_json::from_slice::<SessionMessage>(value_vec.as_slice()) {
+                Ok(message) => messages.push(message),
+                Err(e) => {
+                    skipped_count += 1;
+                    // Only log the first few errors to avoid spam
+                    if skipped_count <= 3 {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            error = %e,
+                            "Failed to deserialize session message (schema mismatch or corruption), skipping"
+                        );
+                    }
+                }
+            }
+        }
+
+        if skipped_count > 0 {
+            tracing::info!(
+                session_id = %session_id,
+                total = messages.len() + skipped_count,
+                skipped = skipped_count,
+                loaded = messages.len(),
+                "Session history loaded with some skipped messages due to corruption"
+            );
         }
 
         Ok(messages)
@@ -328,7 +365,7 @@ impl SessionStore {
 
             // Insert the new message
             let key = (session_id, max_index);
-            let value = bincode::serialize(message)?;
+            let value = serde_json::to_vec(message)?;
             table.insert(key, value)?;
 
             max_index
@@ -368,7 +405,7 @@ impl SessionStore {
             // Insert all messages
             for message in messages {
                 let key = (session_id, next_index);
-                let value = bincode::serialize(message)?;
+                let value = serde_json::to_vec(message)?;
                 table.insert(key, value)?;
                 next_index += 1;
             }
@@ -486,7 +523,7 @@ impl SessionStore {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(SESSIONS_META_TABLE)?;
-            let value = bincode::serialize(metadata)?;
+            let value = serde_json::to_vec(metadata)?;
             table.insert(session_id, value)?;
         }
         write_txn.commit()?;
@@ -505,7 +542,7 @@ impl SessionStore {
 
         match table.get(session_id)? {
             Some(value) => {
-                let metadata: SessionMetadata = bincode::deserialize(value.value().as_slice())?;
+                let metadata: SessionMetadata = serde_json::from_slice(value.value().as_slice())?;
                 Ok(metadata)
             }
             None => Ok(SessionMetadata::default()),
@@ -649,8 +686,8 @@ mod tests {
             timestamp: 12345,
         };
 
-        let serialized = bincode::serialize(&msg).unwrap();
-        let deserialized: SessionMessage = bincode::deserialize(&serialized).unwrap();
+        let serialized = serde_json::to_vec(&msg).unwrap();
+        let deserialized: SessionMessage = serde_json::from_slice(&serialized).unwrap();
         assert_eq!(deserialized.role, "user");
         assert_eq!(deserialized.content, "Hello");
         assert_eq!(deserialized.timestamp, 12345);

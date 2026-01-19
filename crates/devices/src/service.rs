@@ -605,8 +605,8 @@ impl DeviceService {
         if let Some(adapter) = adapters.get(adapter_id) {
             Some(AdapterInfo {
                 id: adapter_id.to_string(),
-                name: adapter.name(),
-                adapter_type: adapter.adapter_type(),
+                name: adapter.name().to_string(),
+                adapter_type: adapter.adapter_type().to_string(),
                 running: adapter.is_running(),
                 device_count: adapter.device_count(),
                 status: format!("{:?}", adapter.connection_status()),
@@ -624,8 +624,8 @@ impl DeviceService {
             .iter()
             .map(|(id, adapter)| AdapterInfo {
                 id: id.clone(),
-                name: adapter.name(),
-                adapter_type: adapter.adapter_type(),
+                name: adapter.name().to_string(),
+                adapter_type: adapter.adapter_type().to_string(),
                 running: adapter.is_running(),
                 device_count: adapter.device_count(),
                 status: format!("{:?}", adapter.connection_status()),

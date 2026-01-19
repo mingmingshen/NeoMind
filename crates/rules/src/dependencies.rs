@@ -296,6 +296,11 @@ impl DependencyManager {
         let mut ready = Vec::new();
 
         for rule_id in existing_rules {
+            // Skip already completed rules
+            if completed.contains(rule_id) {
+                continue;
+            }
+
             if let Some(deps) = self.dependencies.get(rule_id) {
                 // Check if all dependencies are satisfied
                 if deps.iter().all(|dep| completed.contains(dep) || !existing_rules.contains(dep)) {

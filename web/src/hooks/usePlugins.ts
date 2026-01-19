@@ -18,6 +18,7 @@ import type {
   Plugin,
   AdapterPluginDto,
   PluginStatsDto,
+  ExtensionStatsDto,
 } from '@/types'
 import type {
   UnifiedPluginData,
@@ -232,6 +233,23 @@ function getPluginIcon(type: PluginType): string {
 }
 
 /**
+ * Convert ExtensionStatsDto to PluginStatsDto by adding default values for missing fields
+ */
+function extensionStatsToPluginStats(extensionStats?: ExtensionStatsDto): PluginStatsDto | undefined {
+  if (!extensionStats) return undefined
+  return {
+    start_count: extensionStats.start_count,
+    stop_count: extensionStats.stop_count,
+    error_count: extensionStats.error_count,
+    total_execution_ms: 0, // Extension stats don't track this
+    avg_response_time_ms: 0, // Extension stats don't track this
+    last_start_time: undefined,
+    last_stop_time: undefined,
+    device_count: undefined,
+  }
+}
+
+/**
  * Convert backend Plugin to UnifiedPluginData
  */
 function toUnifiedPluginData(plugin: Plugin): UnifiedPluginData {
@@ -342,52 +360,81 @@ function toAdapterPluginData(adapter: AdapterPluginDto, deviceCount: number = 0)
 
 export function usePlugins(): UsePluginsReturn {
   const {
-    plugins,
-    pluginsLoading,
+    extensions,
+    extensionsLoading,
     discovering,
-    pluginStats,
+    extensionStats,
     deviceAdapters,
-    fetchPlugins,
-    enablePlugin,
-    disablePlugin,
-    startPlugin,
-    stopPlugin,
-    unregisterPlugin,
-    updatePluginConfig,
-    executePluginCommand,
-    discoverPlugins,
+    fetchExtensions,
+    startExtension,
+    stopExtension,
+    unregisterExtension,
+    executeExtensionCommand,
+    discoverExtensions,
     fetchDeviceAdapters,
     getAdapterDevices,
   } = useStore()
 
+  // Map extension type to plugin category
+  const mapExtensionToCategory = (extensionType: string): 'ai' | 'devices' | 'notify' => {
+    const type = extensionType.toLowerCase()
+    if (type === 'llm_provider') return 'ai'
+    if (type === 'device_protocol') return 'devices'
+    return 'notify' // Default to notify for other types
+  }
+
   // Refresh all plugin data
   const refresh = useCallback(async () => {
     await Promise.all([
-      fetchPlugins(),
+      fetchExtensions(),
       fetchDeviceAdapters(),
     ])
-  }, [fetchPlugins, fetchDeviceAdapters])
+  }, [fetchExtensions, fetchDeviceAdapters])
 
   // Convert all plugins to unified format
   const unifiedPlugins = useMemo(() => {
     const result: UnifiedPluginData[] = []
 
-    // Add regular plugins
-    for (const plugin of plugins) {
+    // Add regular extensions as plugins
+    for (const extension of extensions) {
+      // Convert Extension to Plugin format for compatibility
+      const stats = extensionStatsToPluginStats(extensionStats[extension.id])
+      const plugin: Plugin = {
+        id: extension.id,
+        name: extension.name,
+        plugin_type: extension.extension_type,
+        state: extension.state,
+        enabled: extension.state === 'Running',
+        running: extension.state === 'Running',
+        version: extension.version,
+        description: extension.description || '',
+        author: extension.author,
+        required_version: '1.0.0',
+        stats: stats || {
+          start_count: 0,
+          stop_count: 0,
+          error_count: 0,
+          total_execution_ms: 0,
+          avg_response_time_ms: 0,
+        },
+        loaded_at: extension.loaded_at ? new Date(extension.loaded_at * 1000).toISOString() : new Date().toISOString(),
+        path: extension.file_path,
+        category: mapExtensionToCategory(extension.extension_type),
+      }
       result.push(toUnifiedPluginData(plugin))
     }
 
-    // Add device adapters that aren't already in the plugins list
-    const adapterIds = new Set(plugins.map(p => p.id))
+    // Add device adapters that aren't already in the extensions list
+    const extensionIds = new Set(extensions.map(e => e.id))
     for (const adapter of deviceAdapters) {
-      if (!adapterIds.has(adapter.id)) {
-        const deviceCount = pluginStats[adapter.id]?.device_count ?? adapter.device_count ?? 0
+      if (!extensionIds.has(adapter.id)) {
+        const deviceCount = adapter.device_count ?? 0
         result.push(toAdapterPluginData(adapter, deviceCount))
       }
     }
 
     return result
-  }, [plugins, deviceAdapters, pluginStats])
+  }, [extensions, deviceAdapters, extensionStats])
 
   // Filter by category
   const filterByCategory = useCallback((category: PluginCategory) => {
@@ -415,66 +462,86 @@ export function usePlugins(): UsePluginsReturn {
     )
   }, [unifiedPlugins])
 
-  // Toggle enable/disable
+  // Toggle enable/disable (start/stop for extensions)
   const toggle = useCallback(async (id: string, enabled: boolean) => {
     const result = enabled
-      ? await enablePlugin(id)
-      : await disablePlugin(id)
+      ? await startExtension(id)
+      : await stopExtension(id)
     if (result) {
-      await fetchPlugins()
+      await fetchExtensions()
     }
     return result
-  }, [enablePlugin, disablePlugin, fetchPlugins])
+  }, [startExtension, stopExtension, fetchExtensions])
 
   // Start plugin
   const start = useCallback(async (id: string) => {
-    const result = await startPlugin(id)
+    const result = await startExtension(id)
     if (result) {
-      await fetchPlugins()
+      await fetchExtensions()
     }
     return result
-  }, [startPlugin, fetchPlugins])
+  }, [startExtension, fetchExtensions])
 
   // Stop plugin
   const stop = useCallback(async (id: string) => {
-    const result = await stopPlugin(id)
+    const result = await stopExtension(id)
     if (result) {
-      await fetchPlugins()
+      await fetchExtensions()
     }
     return result
-  }, [stopPlugin, fetchPlugins])
+  }, [stopExtension, fetchExtensions])
 
   // Remove plugin
   const remove = useCallback(async (id: string) => {
-    return await unregisterPlugin(id)
-  }, [unregisterPlugin])
+    return await unregisterExtension(id)
+  }, [unregisterExtension])
 
-  // Configure plugin
+  // Configure plugin (execute command with config)
   const configure = useCallback(async (id: string, config: Record<string, unknown>) => {
-    return await updatePluginConfig(id, config, true)
-  }, [updatePluginConfig])
+    const result = await executeExtensionCommand(id, 'update_config', config)
+    return result.success
+  }, [executeExtensionCommand])
 
   // Test plugin (execute a test command)
   const test = useCallback(async (id: string) => {
-    const result = await executePluginCommand(id, 'test', {})
+    const result = await executeExtensionCommand(id, 'test', {})
     return result.success
-  }, [executePluginCommand])
+  }, [executeExtensionCommand])
 
   // Discover new plugins
   const discover = useCallback(async () => {
-    return await discoverPlugins()
-  }, [discoverPlugins])
+    const result = await discoverExtensions()
+    return {
+      discovered: result.discovered,
+      message: `Discovered ${result.discovered} new extensions`,
+    }
+  }, [discoverExtensions])
 
   // Get adapter devices
   const getAdapterDevicesCallback = useCallback(async (pluginId: string) => {
     return await getAdapterDevices(pluginId)
   }, [getAdapterDevices])
 
+  // Convert extension stats to plugin stats for return type
+  const convertedStats: Record<string, PluginStatsDto> = useMemo(() => {
+    const result: Record<string, PluginStatsDto> = {}
+    for (const [id, stats] of Object.entries(extensionStats)) {
+      result[id] = extensionStatsToPluginStats(stats) || {
+        start_count: 0,
+        stop_count: 0,
+        error_count: 0,
+        total_execution_ms: 0,
+        avg_response_time_ms: 0,
+      }
+    }
+    return result
+  }, [extensionStats])
+
   return {
     plugins: unifiedPlugins,
-    loading: pluginsLoading,
+    loading: extensionsLoading,
     discovering,
-    stats: pluginStats,
+    stats: convertedStats,
     filterByCategory,
     filterByType,
     filterByState,

@@ -278,16 +278,6 @@ export function UnifiedAlertChannelsTab({
   if (view === 'list') {
     return (
       <>
-        {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{t('alerts:channels')}</h2>
-            <p className="text-muted-foreground text-sm">
-              {t('alerts:channelsDesc')}
-            </p>
-          </div>
-        </div>
-
         {/* Channel Type Cards Grid */}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {channelTypes.map((type) => {

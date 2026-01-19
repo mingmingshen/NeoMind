@@ -1,14 +1,19 @@
 //! Workflow engine - manages and executes workflows
 
+use crate::compensation::{CompensationExecutor, FailureStrategy};
 use crate::error::{Result, WorkflowError};
 use crate::executor::{ExecutionContext, Executor};
 use crate::scheduler::Scheduler;
 use crate::store::{ExecutionRecord, ExecutionStatus, ExecutionStore, WorkflowStore};
 use crate::trigger::TriggerManager;
-use crate::workflow::Workflow;
+use crate::workflow::{Step, Workflow};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+// Re-export for API convenience
+pub use edge_ai_devices::service::DeviceService;
+pub use edge_ai_alerts::AlertManager;
 
 /// Workflow engine
 pub struct WorkflowEngine {
@@ -17,6 +22,7 @@ pub struct WorkflowEngine {
     executor: Arc<Executor>,
     trigger_manager: Arc<TriggerManager>,
     scheduler: Arc<Scheduler>,
+    compensation_executor: Arc<CompensationExecutor>,
     running_executions: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
@@ -31,6 +37,7 @@ impl WorkflowEngine {
         let executor = Arc::new(Executor::new());
         let trigger_manager = Arc::new(TriggerManager::new());
         let scheduler = Arc::new(Scheduler::new()?);
+        let compensation_executor = Arc::new(CompensationExecutor::with_defaults());
 
         Ok(Self {
             workflow_store,
@@ -38,6 +45,7 @@ impl WorkflowEngine {
             executor,
             trigger_manager,
             scheduler,
+            compensation_executor,
             running_executions: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -108,9 +116,13 @@ impl WorkflowEngine {
 
         // Execute each step
         for step in &workflow.steps {
+            let step_clone = step.clone();
+            let executor = self.executor.clone();
             let result = tokio::time::timeout(
                 tokio::time::Duration::from_secs(workflow.timeout_seconds),
-                self.executor.execute_step(step, &mut context),
+                async {
+                    executor.execute_step(&step_clone, &mut context).await
+                },
             )
             .await;
 
@@ -124,12 +136,21 @@ impl WorkflowEngine {
                         status: ExecutionStatus::Failed,
                         output: None,
                         error: Some(e.to_string()),
+                        compensated: false,
+                        compensation_result: None,
                     };
                     context
                         .step_results
                         .insert(step.id().to_string(), step_result.clone());
 
-                    // Update record as failed
+                    // Execute compensation for completed steps based on failure strategy
+                    let compensation_results = if context.failure_strategy == FailureStrategy::CompensateAll {
+                        self.execute_compensation(&workflow, &mut context).await?
+                    } else {
+                        Vec::new()
+                    };
+
+                    // Update record as failed with compensation info
                     record.status = ExecutionStatus::Failed;
                     record.error = Some(e.to_string());
                     record.completed_at = Some(chrono::Utc::now().timestamp());
@@ -142,6 +163,7 @@ impl WorkflowEngine {
                         status: ExecutionStatus::Failed,
                         step_results: context.step_results,
                         error: Some(e.to_string()),
+                        compensated_steps: compensation_results.len(),
                     });
                 }
                 Err(_) => {
@@ -152,12 +174,21 @@ impl WorkflowEngine {
                         status: ExecutionStatus::Failed,
                         output: None,
                         error: Some("Timeout".to_string()),
+                        compensated: false,
+                        compensation_result: None,
                     };
                     context
                         .step_results
                         .insert(step.id().to_string(), step_result.clone());
 
-                    // Update record as failed
+                    // Execute compensation for completed steps
+                    let compensation_results = if context.failure_strategy == FailureStrategy::CompensateAll {
+                        self.execute_compensation(&workflow, &mut context).await?
+                    } else {
+                        Vec::new()
+                    };
+
+                    // Update record as failed with compensation info
                     record.status = ExecutionStatus::Failed;
                     record.error = Some("Workflow execution timeout".to_string());
                     record.completed_at = Some(chrono::Utc::now().timestamp());
@@ -170,6 +201,7 @@ impl WorkflowEngine {
                         status: ExecutionStatus::Failed,
                         step_results: context.step_results,
                         error: Some("Timeout".to_string()),
+                        compensated_steps: compensation_results.len(),
                     });
                 }
             };
@@ -191,6 +223,7 @@ impl WorkflowEngine {
             status: ExecutionStatus::Completed,
             step_results: context.step_results,
             error: None,
+            compensated_steps: 0,
         })
     }
 
@@ -209,15 +242,14 @@ impl WorkflowEngine {
         self.execution_store.get_recent(limit)
     }
 
-    /// Set device manager for the executor
-    pub async fn set_device_manager(&self, _manager: Arc<()>) {
-        // Update executor with device manager
-        // This would require internal mutability or a different structure
+    /// Set device service for the executor
+    pub async fn set_device_manager(&self, manager: Arc<DeviceService>) {
+        self.executor.set_device_manager(manager).await;
     }
 
     /// Set alert manager for the executor
-    pub async fn set_alert_manager(&self, _manager: Arc<()>) {
-        // Update executor with alert manager
+    pub async fn set_alert_manager(&self, manager: Arc<AlertManager>) {
+        self.executor.set_alert_manager(manager).await;
     }
 
     /// Initialize WASM runtime
@@ -245,6 +277,63 @@ pub struct ExecutionResult {
     pub status: ExecutionStatus,
     pub step_results: HashMap<String, crate::store::StepResult>,
     pub error: Option<String>,
+    /// Number of steps that were compensated (if any)
+    pub compensated_steps: usize,
+}
+
+impl WorkflowEngine {
+    /// Execute compensation for completed steps in a workflow
+    async fn execute_compensation(
+        &self,
+        workflow: &Workflow,
+        context: &mut ExecutionContext,
+    ) -> Result<Vec<crate::store::StepResult>> {
+        context.log(
+            "info",
+            format!("Starting compensation for workflow {}", workflow.id),
+        );
+
+        // Update status to Compensating
+        let execution_id = context.execution_id.clone();
+        let _ = self.execution_store.save_status(&execution_id, ExecutionStatus::Compensating);
+
+        // Collect completed steps that need compensation
+        let mut steps_to_compensate = Vec::new();
+
+        for step_id in context.completed_steps_reverse() {
+            if let Some(step_result) = context.step_results.get(&step_id) {
+                if step_result.status == ExecutionStatus::Completed && !step_result.compensated {
+                    if let Some(step) = workflow.get_step(&step_id) {
+                        steps_to_compensate.push((step.clone(), step_result.clone()));
+                    }
+                }
+            }
+        }
+
+        // Execute compensation
+        let compensation_results = self
+            .compensation_executor
+            .compensate(steps_to_compensate, context)
+            .await?;
+
+        // Update step results with compensation info
+        for result in &compensation_results {
+            context
+                .step_results
+                .insert(result.step_id.clone(), result.clone());
+        }
+
+        Ok(compensation_results)
+    }
+}
+
+impl ExecutionStore {
+    /// Helper to update execution status
+    fn save_status(&self, _id: &str, _status: ExecutionStatus) -> Result<()> {
+        // In a full implementation, this would update just the status
+        // For now, the full record is saved elsewhere
+        Ok(())
+    }
 }
 
 #[cfg(test)]
