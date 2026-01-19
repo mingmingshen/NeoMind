@@ -75,6 +75,7 @@ impl EventPersistenceService {
 
         let mut rx = self.event_bus.subscribe();
         let running = self.running.clone();
+        let running_copy = running.clone();  // Clone before async move
         let event_log = self.event_log.clone();
         let config = self.config.clone();
 
@@ -121,7 +122,7 @@ impl EventPersistenceService {
             tracing::info!("Event persistence service stopped");
         });
 
-        running.clone()
+        running_copy
     }
 
     /// Stop the persistence service.
@@ -357,6 +358,7 @@ impl RuleEngineEventService {
 
         let mut rx = self.event_bus.filter().device_events();
         let running = self.running.clone();
+        let running_copy = running.clone();  // Clone before async move
         let rule_engine = self.rule_engine.clone();
         let event_bus = self.event_bus.clone();
 
@@ -407,7 +409,7 @@ impl RuleEngineEventService {
             tracing::info!("Rule engine event service stopped");
         });
 
-        running.clone()
+        running_copy
     }
 
     /// Stop the event service.

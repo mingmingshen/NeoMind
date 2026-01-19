@@ -237,27 +237,27 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/devices/:id/webhook-url",
             get(devices::get_webhook_url_handler),
         )
-        // Draft Devices API - auto-onboarding
-        .route("/api/devices/drafts", get(devices::list_draft_devices))
-        .route("/api/devices/drafts/:device_id", get(devices::get_draft_device))
-        .route("/api/devices/drafts/:device_id", put(devices::update_draft_device))
-        .route(
-            "/api/devices/drafts/:device_id/approve",
-            post(devices::approve_draft_device),
-        )
-        .route(
-            "/api/devices/drafts/:device_id/reject",
-            post(devices::reject_draft_device),
-        )
-        .route(
-            "/api/devices/drafts/:device_id/analyze",
-            post(devices::trigger_draft_analysis),
-        )
-        .route("/api/devices/drafts/cleanup", post(devices::cleanup_draft_devices))
-        .route(
-            "/api/devices/drafts/type-signatures",
-            get(devices::get_type_signatures),
-        )
+        // Draft Devices API - auto-onboarding (TODO: re-enable after fixing state extraction)
+        // .route("/api/devices/drafts", get(devices::list_draft_devices))
+        // .route("/api/devices/drafts/:device_id", get(devices::get_draft_device))
+        // .route("/api/devices/drafts/:device_id", put(devices::update_draft_device))
+        // .route(
+        //     "/api/devices/drafts/:device_id/approve",
+        //     post(devices::approve_draft_device),
+        // )
+        // .route(
+        //     "/api/devices/drafts/:device_id/reject",
+        //     post(devices::reject_draft_device),
+        // )
+        // .route(
+        //     "/api/devices/drafts/:device_id/analyze",
+        //     post(devices::trigger_draft_analysis),
+        // )
+        // .route("/api/devices/drafts/cleanup", post(devices::cleanup_draft_devices))
+        // .route(
+        //     "/api/devices/drafts/type-signatures",
+        //     get(devices::get_type_signatures),
+        // )
         // Rules API - specific routes first, then parameterized routes
         .route("/api/rules", get(rules::list_rules_handler))
         .route("/api/rules", post(rules::create_rule_handler))
