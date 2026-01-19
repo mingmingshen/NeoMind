@@ -226,11 +226,14 @@ pub trait DeviceAdapter: Send + Sync {
 
 **已实现的插件**:
 - `MqttAdapter`: 订阅 MQTT broker 的设备消息
-- `HassAdapter`: 订阅 HASS discovery topic
-- `ModbusAdapter`: 轮询 Modbus 设备
+- `HttpAdapter`: HTTP API 适配器
+- `WebhookAdapter`: Webhook 适配器
+
+**~~已移除~~插件** (转为插件系统):
+- ~~`HassAdapter`~~: ~~订阅 HASS discovery topic~~ (已移除，可通过插件扩展)
+- ~~`ModbusAdapter`~~: ~~轮询 Modbus 设备~~ (已移除，可通过插件扩展)
 
 **未来插件**:
-- `HttpAdapter`: 定期拉取 HTTP API
 - `OpcuaAdapter`: OPC-UA 工业协议
 - `LorawanAdapter`: LoRaWAN 物联网协议
 
@@ -760,18 +763,18 @@ pub struct MqttAdapter {
     event_tx: broadcast::Sender<NeoTalkEvent>,
 }
 
-/// HASS 设备适配器 (HASS 只是其中一个适配器)
-pub struct HassAdapter {
-    broker: String,
-    port: u16,
-    event_tx: broadcast::Sender<NeoTalkEvent>,
-}
+/// ~~HASS 设备适配器~~ (已移除，转为插件系统)
+/// pub struct HassAdapter {
+///     broker: String,
+///     port: u16,
+///     event_tx: broadcast::Sender<NeoTalkEvent>,
+/// }
 
-/// Modbus 设备适配器
-pub struct ModbusAdapter {
-    devices: Vec<ModbusDeviceConfig>,
-    event_tx: broadcast::Sender<NeoTalkEvent>,
-}
+/// ~~Modbus 设备适配器~~ (已移除，转为插件系统)
+/// pub struct ModbusAdapter {
+///     devices: Vec<ModbusDeviceConfig>,
+///     event_tx: broadcast::Sender<NeoTalkEvent>,
+/// }
 
 /// HTTP API 设备适配器
 pub struct HttpAdapter {

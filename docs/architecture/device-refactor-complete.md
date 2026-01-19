@@ -14,12 +14,12 @@
 │  ├── DeviceTypeList.tsx          - 设备类型管理                          │
 │  ├── DeviceTypeDialogs.tsx       - 类型对话框（已有AI生成）              │
 │  ├── AddDeviceDialog.tsx         - 添加设备对话框                        │
-│  └── HassDiscoveryDialog.tsx     - HASS设备发现对话框                    │
+│  └── HassDiscoveryDialog.tsx     - ~~HASS设备发现对话框~~ (已移除，转为插件) │
 │                                                                         │
 │  后端 API (crates/api/src/handlers/devices/)                            │
 │  ├── crud.rs                      - 设备CRUD                              │
 │  ├── types.rs                     - 设备类型API                           │
-│  ├── hass.rs                      - HASS集成（15KB）                       │
+│  ├── hass.rs                      - ~~HASS集成~~ (已移除，转为插件)           │
 │  ├── mdl.rs                       - MDL生成                               │
 │  ├── discovery.rs                 - 设备发现                              │
 │  └── telemetry.rs                 - 遥测数据                              │
@@ -852,8 +852,8 @@ const [addMode, setAddMode] = useState<'template' | 'manual'>('template')
   deviceTypes={deviceTypes}
 />
 
-{/* 保留原有的 HASS Discovery 对话框 */}
-<HassDiscoveryDialog ... />
+{/* ~~保留原有的 HASS Discovery 对话框~~ (已移除，转为插件) */}
+{/* <HassDiscoveryDialog ... /> */}
 ```
 
 ### 6.3 修改设备列表显示适配器
@@ -926,9 +926,9 @@ const [addMode, setAddMode] = useState<'template' | 'manual'>('template')
    - `DeviceList.tsx`：添加模板入口
    - 设备列表显示适配器列
 
-3. **保留现有组件**
+3. **~~保留现有组件~~ (已更新)**
    - `AddDeviceDialog.tsx`
-   - `HassDiscoveryDialog.tsx`
+   - ~~`HassDiscoveryDialog.tsx`~~ (已移除，转为插件)
 
 ### 阶段 4：测试（1天）
 

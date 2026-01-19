@@ -1,11 +1,8 @@
-import { useEffect, useState, useMemo, useRef } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
@@ -16,13 +13,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
   Table,
   TableBody,
   TableCell,
@@ -31,22 +21,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Check, Trash2, Eye, Bell } from "lucide-react"
+import { Check, Trash2, Eye, Bell } from "lucide-react"
 import { EmptyStateInline, Pagination, AlertBadge, BulkActionBar, ActionBar } from "@/components/shared"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import type { Alert } from "@/types"
 
-type AlertFilter = 'all' | 'unacknowledged' | 'info' | 'warning' | 'critical'
-
 export function AlertsTab() {
   const { t } = useTranslation(['common', 'alerts'])
-  const { alerts, alertsLoading, fetchAlerts, acknowledgeAlert, createAlert } = useStore()
+  const { alerts, alertsLoading, fetchAlerts, acknowledgeAlert } = useStore()
   const { toast } = useToast()
-
-  // Filter state
-  const [filter, setFilter] = useState<AlertFilter>('all')
 
   // Pagination state
   const [page, setPage] = useState(1)
@@ -56,12 +41,7 @@ export function AlertsTab() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkProcessing, setBulkProcessing] = useState(false)
 
-  // Create alert dialog state
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [newAlertTitle, setNewAlertTitle] = useState("")
-  const [newAlertMessage, setNewAlertMessage] = useState("")
-  const [newAlertSeverity, setNewAlertSeverity] = useState<"info" | "warning" | "critical">("info")
-  const [creating, setCreating] = useState(false)
+  // Acknowledging state
   const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
 
   // Detail dialog state
@@ -81,20 +61,8 @@ export function AlertsTab() {
     setPage(1)
   }, [alerts.length])
 
-  // Reset selection when filter changes
-  useEffect(() => {
-    setSelectedIds(new Set())
-  }, [filter])
-
-  // Filter alerts
-  const filteredAlerts = useMemo(() => {
-    if (filter === 'all') return alerts
-    if (filter === 'unacknowledged') return alerts.filter(a => !a.acknowledged)
-    return alerts.filter(a => a.severity === filter)
-  }, [alerts, filter])
-
   // Paginated alerts
-  const paginatedAlerts = filteredAlerts.slice(
+  const paginatedAlerts = alerts.slice(
     (page - 1) * alertsPerPage,
     page * alertsPerPage
   )
@@ -106,27 +74,6 @@ export function AlertsTab() {
       toast({ title: t('common:success'), description: t('alerts:acknowledged') })
     } finally {
       setAcknowledgingId(null)
-    }
-  }
-
-  const handleCreateAlert = async () => {
-    if (!newAlertTitle.trim() || !newAlertMessage.trim()) return
-
-    setCreating(true)
-    try {
-      await createAlert({
-        title: newAlertTitle,
-        message: newAlertMessage,
-        severity: newAlertSeverity,
-        source: "manual",
-      })
-      toast({ title: t('common:success'), description: t('alerts:alertCreated') })
-      setCreateDialogOpen(false)
-      setNewAlertTitle("")
-      setNewAlertMessage("")
-      setNewAlertSeverity("info")
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -196,14 +143,6 @@ export function AlertsTab() {
 
   const allOnPageSelected = paginatedAlerts.length > 0 && paginatedAlerts.every((a) => selectedIds.has(a.id))
 
-  const filters = [
-    { value: 'all' as AlertFilter, label: t('alerts:all') },
-    { value: 'unacknowledged' as AlertFilter, label: t('alerts:unacknowledged') },
-    { value: 'info' as AlertFilter, label: t('alerts:info') },
-    { value: 'warning' as AlertFilter, label: t('alerts:warning') },
-    { value: 'critical' as AlertFilter, label: t('alerts:critical') },
-  ]
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -211,29 +150,8 @@ export function AlertsTab() {
         title={t('automation:alerts')}
         titleIcon={<Bell className="h-5 w-5" />}
         description={t('automation:alertsDesc')}
-        actions={[
-          {
-            label: t('alerts:createAlert'),
-            icon: <Plus className="h-4 w-4" />,
-            onClick: () => setCreateDialogOpen(true),
-          },
-        ]}
         onRefresh={fetchAlerts}
       />
-
-      {/* Filter tabs */}
-      <div className="flex gap-2">
-        {filters.map((f) => (
-          <Button
-            key={f.value}
-            variant={filter === f.value ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilter(f.value)}
-          >
-            {f.label}
-          </Button>
-        ))}
-      </div>
 
       {/* Bulk Actions Bar */}
       <BulkActionBar
@@ -267,7 +185,7 @@ export function AlertsTab() {
           <TableBody>
             {alertsLoading ? (
               <EmptyStateInline title={t('common:loading')} colSpan={7} />
-            ) : filteredAlerts.length === 0 ? (
+            ) : alerts.length === 0 ? (
               <EmptyStateInline title={`${t('alerts:noAlerts')} - ${t('alerts:noAlertsDesc')}`} colSpan={7} />
             ) : paginatedAlerts.length === 0 ? (
               <EmptyStateInline title={t('alerts:noAlertsOnPage')} colSpan={7} />
@@ -311,7 +229,7 @@ export function AlertsTab() {
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatTimestamp(alert.created_at)}
+                    {formatTimestamp(alert.created_at || alert.timestamp)}
                   </TableCell>
                   <TableCell align="right">
                     <div className="flex items-center justify-end gap-1">
@@ -326,13 +244,12 @@ export function AlertsTab() {
                       {!alert.acknowledged && (
                         <Button
                           variant="ghost"
-                          size="sm"
-                          className="h-8"
+                          size="icon"
+                          className="h-8 w-8"
                           onClick={() => handleAcknowledge(alert.id)}
                           disabled={acknowledgingId === alert.id}
                         >
-                          <Check className="mr-1 h-3 w-3" />
-                          {acknowledgingId === alert.id ? t('alerts:acknowledging') : t('alerts:acknowledge')}
+                          <Check className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
@@ -344,10 +261,10 @@ export function AlertsTab() {
         </Table>
 
         {/* Pagination */}
-        {filteredAlerts.length > alertsPerPage && (
+        {alerts.length > alertsPerPage && (
           <div className="px-4 pt-4 border-t">
             <Pagination
-              total={filteredAlerts.length}
+              total={alerts.length}
               pageSize={alertsPerPage}
               currentPage={page}
               onPageChange={setPage}
@@ -355,63 +272,6 @@ export function AlertsTab() {
           </div>
         )}
       </Card>
-
-      {/* Create Alert Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('alerts:createAlert')}</DialogTitle>
-            <DialogDescription>
-              {t('alerts:manualCreateDesc')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="alert-title">{t('alerts:alertTitle')}</Label>
-              <Input
-                id="alert-title"
-                value={newAlertTitle}
-                onChange={(e) => setNewAlertTitle(e.target.value)}
-                placeholder={t('alerts:titlePlaceholder')}
-              />
-            </div>
-            <div>
-              <Label htmlFor="alert-severity">{t('alerts:severity')}</Label>
-              <Select value={newAlertSeverity} onValueChange={(v: any) => setNewAlertSeverity(v)}>
-                <SelectTrigger id="alert-severity">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="info">{t('alerts:info')}</SelectItem>
-                  <SelectItem value="warning">{t('alerts:warning')}</SelectItem>
-                  <SelectItem value="critical">{t('alerts:critical')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="alert-message">{t('alerts:detailDescription')}</Label>
-              <Textarea
-                id="alert-message"
-                value={newAlertMessage}
-                onChange={(e) => setNewAlertMessage(e.target.value)}
-                placeholder={t('alerts:descriptionPlaceholder')}
-                className="min-h-[80px]"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
-              {t('common:cancel')}
-            </Button>
-            <Button
-              onClick={handleCreateAlert}
-              disabled={!newAlertTitle.trim() || !newAlertMessage.trim() || creating}
-            >
-              {creating ? t('common:creating') : t('common:add')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Alert Detail Dialog */}
       <Dialog open={!!selectedAlert} onOpenChange={() => setSelectedAlert(null)}>

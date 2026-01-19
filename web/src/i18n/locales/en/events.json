@@ -1,0 +1,17 @@
+{
+  "alerts": "Alerts",
+  "commands": "Commands",
+  "systemEvents": "System Events",
+  "systemEventsDesc": "Real-time system events and activity log",
+  "all": "All",
+  "device": "Device",
+  "rule": "Rule",
+  "workflow": "Workflow",
+  "alert": "Alert",
+  "automation": "Automation",
+  "type": "Type",
+  "source": "Source",
+  "data": "Data",
+  "timestamp": "Timestamp",
+  "noEvents": "No events found"
+}

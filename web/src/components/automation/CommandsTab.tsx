@@ -19,25 +19,21 @@ import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
 import { Terminal, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 
-type CommandFilter = 'all' | 'pending' | 'completed' | 'failed'
-
-const fetchCommands = async (filter: CommandFilter): Promise<CommandDto[]> => {
-  const status = filter === 'all' ? undefined : filter
-  const response = await api.listCommands({ status, limit: 100 })
+const fetchCommands = async (): Promise<CommandDto[]> => {
+  const response = await api.listCommands({ limit: 100 })
   return response.commands || []
 }
 
 export function CommandsTab() {
   const { t } = useTranslation(['common', 'commands'])
-  const [filter, setFilter] = useState<CommandFilter>('all')
   const { toast } = useToast()
 
   // Expandable details state
   const [expandedDetails, setExpandedDetails] = useState<Set<string>>(new Set())
 
   const { data: commands, loading, refetch } = useApiData(
-    () => fetchCommands(filter),
-    { deps: [filter] }
+    () => fetchCommands(),
+    { deps: [] }
   )
 
   const handleRetry = async (id: string) => {
@@ -122,13 +118,6 @@ export function CommandsTab() {
     )
   }
 
-  const filters = [
-    { value: 'all' as CommandFilter, label: t('commands:all') },
-    { value: 'pending' as CommandFilter, label: t('commands:pending') },
-    { value: 'completed' as CommandFilter, label: t('commands:completed') },
-    { value: 'failed' as CommandFilter, label: t('commands:failed') },
-  ]
-
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -138,20 +127,6 @@ export function CommandsTab() {
         description={t('automation:commandsDesc')}
         onRefresh={refetch}
       />
-
-      {/* Filter tabs */}
-      <div className="flex gap-2">
-        {filters.map((f) => (
-          <Button
-            key={f.value}
-            variant={filter === f.value ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilter(f.value)}
-          >
-            {f.label}
-          </Button>
-        ))}
-      </div>
 
       {/* Table */}
       <Card>

@@ -1,0 +1,17 @@
+{
+  "alerts": "告警",
+  "commands": "指令历史",
+  "systemEvents": "系统事件",
+  "systemEventsDesc": "实时系统事件和活动日志",
+  "all": "全部",
+  "device": "设备",
+  "rule": "规则",
+  "workflow": "工作流",
+  "alert": "告警",
+  "automation": "自动化",
+  "type": "类型",
+  "source": "来源",
+  "data": "数据",
+  "timestamp": "时间戳",
+  "noEvents": "暂无事件"
+}
