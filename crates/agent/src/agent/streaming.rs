@@ -653,10 +653,19 @@ struct ToolExecutionResult {
     result: std::result::Result<edge_ai_tools::ToolOutput, edge_ai_tools::ToolError>,
 }
 
-/// Estimate token count for a string (rough approximation: 1 token ≈ 4 characters for Chinese, 1 token ≈ 4 characters for English)
-/// This is a simple heuristic - for production, consider using a proper tokenizer
+/// Estimate token count for a string.
+///
+/// Uses the accurate tokenizer implementation from the tokenizer module,
+/// which properly handles:
+/// - Chinese characters: ~1.8 tokens each
+/// - English words: ~0.25 tokens per character
+/// - Numbers: ~0.3 tokens per digit
+/// - Special characters: ~0.5 tokens each
+///
+/// This is much more accurate than the simple char_count / 4 heuristic.
 fn estimate_tokens(text: &str) -> usize {
-    text.chars().count() / 4
+    use crate::agent::tokenizer::estimate_tokens as accurate_estimate;
+    accurate_estimate(text)
 }
 
 /// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing for Streaming ===

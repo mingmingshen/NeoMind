@@ -466,6 +466,8 @@
     "enhanceTriggered": "AI 增强已触发，正在生成中文名称...",
     "enhanceFailed": "AI 增强失败",
     "detailDesc": "自动发现的待注册设备详情",
+    "process": "处理",
+    "confirmRegister": "确认注册",
     "status": {
       "collecting": "采集中",
       "analyzing": "分析中",

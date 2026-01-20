@@ -466,6 +466,8 @@
     "enhanceTriggered": "AI enhancement triggered, Chinese names being generated...",
     "enhanceFailed": "AI enhancement failed",
     "detailDesc": "Pending device details from auto-discovery",
+    "process": "Process",
+    "confirmRegister": "Confirm Register",
     "status": {
       "collecting": "Collecting",
       "analyzing": "Analyzing",

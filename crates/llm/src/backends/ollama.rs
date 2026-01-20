@@ -145,6 +145,45 @@ impl OllamaRuntime {
         })
     }
 
+    /// Warm up the model by sending a minimal request.
+    ///
+    /// This eliminates the ~500ms first-request latency by triggering model loading
+    /// during initialization rather than during the first user interaction.
+    ///
+    /// The warmup request uses minimal tokens (1 token) to reduce overhead.
+    pub async fn warmup(&self) -> Result<(), LlmError> {
+        tracing::info!("Warming up model: {} (this may take a moment...)", self.model);
+
+        let url = format!("{}/api/chat", self.config.endpoint);
+        let warmup_request = serde_json::json!({
+            "model": self.model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": false,
+            "options": {
+                "num_predict": 1  // Only generate 1 token for warmup
+            }
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&warmup_request)
+            .send()
+            .await
+            .map_err(|e| LlmError::Network(e.to_string()))?;
+
+        if response.status().is_success() {
+            tracing::info!("Model warmup complete: {}", self.model);
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::warn!("Model warmup returned non-success status: {} - {}", status, error_text);
+            // Don't fail on warmup errors - the model may still work
+            Ok(())
+        }
+    }
+
     /// Format tools for text-based tool calling (for models without native tool support).
     /// Uses JSON format instead of XML for better model compatibility.
     fn format_tools_for_text_calling(

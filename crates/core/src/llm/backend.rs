@@ -525,6 +525,16 @@ pub trait LlmRuntime: Send + Sync {
         true
     }
 
+    /// Warm up the model by sending a minimal request.
+    ///
+    /// This eliminates first-request latency by triggering model loading
+    /// during initialization. Implementations should use minimal tokens
+    /// to reduce overhead. Default implementation does nothing.
+    async fn warmup(&self) -> Result<(), LlmError> {
+        // Default: no warmup
+        Ok(())
+    }
+
     /// Generate a response (non-streaming).
     async fn generate(&self, input: LlmInput) -> Result<LlmOutput, LlmError>;
 

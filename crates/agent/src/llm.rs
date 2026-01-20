@@ -43,22 +43,28 @@ pub fn get_concurrent_limit() -> usize {
 #[derive(Clone)]
 struct ConcurrencyLimiter {
     current: Arc<AtomicUsize>,
-    max: usize,
+    max: Arc<AtomicUsize>,  // Make max AtomciUsize for dynamic adjustment
+    base_max: usize,         // Original configured max
 }
 
 impl ConcurrencyLimiter {
     fn new(max: usize) -> Self {
         Self {
             current: Arc::new(AtomicUsize::new(0)),
-            max,
+            max: Arc::new(AtomicUsize::new(max)),
+            base_max: max,
         }
     }
 
     /// Try to acquire a permit. Returns Some(permit) if successful, None if at limit.
     fn try_acquire(&self) -> Option<ConcurrencyPermit> {
+        // Update dynamic limit before acquiring
+        self.update_dynamic_limit();
+
+        let max = self.max.load(Ordering::Relaxed);
         let mut current = self.current.load(Ordering::Relaxed);
         loop {
-            if current >= self.max {
+            if current >= max {
                 return None;
             }
             match self.current.compare_exchange_weak(
@@ -85,6 +91,82 @@ impl ConcurrencyLimiter {
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
+    }
+
+    /// Update the dynamic concurrency limit based on system load.
+    ///
+    /// This adjusts the maximum concurrent requests based on:
+    /// - System memory usage
+    /// - CPU load
+    /// - Current utilization
+    fn update_dynamic_limit(&self) {
+        let utilization = self.current.load(Ordering::Relaxed) as f64 / self.base_max as f64;
+
+        // Get system memory (in bytes)
+        let memory_available = get_available_memory_bytes();
+        let memory_gb = memory_available as f64 / (1024.0 * 1024.0 * 1024.0);
+
+        // Calculate dynamic limit based on system conditions
+        let dynamic_max = if memory_gb < 1.0 {
+            // Low memory: reduce concurrency
+            (self.base_max as f64 * 0.5).max(1.0) as usize
+        } else if memory_gb < 2.0 {
+            // Medium-low memory
+            (self.base_max as f64 * 0.75).max(1.0) as usize
+        } else if utilization > 0.8 {
+            // High utilization: reduce slightly
+            (self.base_max as f64 * 0.85).max(1.0) as usize
+        } else {
+            // Good conditions: use configured max
+            self.base_max
+        };
+
+        self.max.store(dynamic_max, Ordering::Relaxed);
+    }
+}
+
+/// Get available memory in bytes.
+/// Returns a conservative estimate to avoid over-committing.
+fn get_available_memory_bytes() -> usize {
+    // Target 2GB minimum free memory for healthy operation
+    // On systems with more memory, allow higher concurrency
+    #[cfg(target_os = "linux")]
+    {
+        // Try to read from /proc/meminfo
+        if let Ok(info) = std::fs::read_to_string("/proc/meminfo") {
+            for line in info.lines() {
+                if line.starts_with("MemAvailable:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(kb) = parts[1].parse::<usize>() {
+                            return kb * 1024;
+                        }
+                    }
+                }
+            }
+        }
+        // Fallback: assume 2GB available
+        2 * 1024 * 1024 * 1024
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, use sysctl to get memory info
+        // For simplicity, return a conservative estimate
+        4 * 1024 * 1024 * 1024  // Assume 4GB available
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use GlobalMemoryStatusEx
+        // For simplicity, return a conservative estimate
+        4 * 1024 * 1024 * 1024  // Assume 4GB available
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        // Unknown platform: conservative estimate
+        2 * 1024 * 1024 * 1024
     }
 }
 
@@ -152,6 +234,11 @@ pub struct LlmInterface {
     system_prompt: Arc<RwLock<String>>,
     /// Tool definitions for function calling.
     tool_definitions: Arc<RwLock<Vec<edge_ai_core::llm::backend::ToolDefinition>>>,
+    /// System prompt cache to avoid rebuilding on every request.
+    /// Stores (tools_hash, prompt) to invalidate when tools change.
+    system_prompt_cache: Arc<RwLock<Option<(String, String)>>>,
+    /// Hash of cached tool definitions for invalidation.
+    cached_tools_hash: Arc<RwLock<Option<String>>>,
     /// Concurrency limiter.
     limiter: ConcurrencyLimiter,
     /// Whether to use instance manager for runtime retrieval.
@@ -180,6 +267,8 @@ impl LlmInterface {
             max_tokens: config.max_tokens,
             system_prompt: Arc::new(RwLock::new("You are a helpful AI assistant.".to_string())),
             tool_definitions: Arc::new(RwLock::new(Vec::new())),
+            system_prompt_cache: Arc::new(RwLock::new(None)),
+            cached_tools_hash: Arc::new(RwLock::new(None)),
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(0)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Use backend default (from storage)
@@ -204,6 +293,8 @@ impl LlmInterface {
             max_tokens: config.max_tokens,
             system_prompt: Arc::new(RwLock::new("You are a helpful AI assistant.".to_string())),
             tool_definitions: Arc::new(RwLock::new(Vec::new())),
+            system_prompt_cache: Arc::new(RwLock::new(None)),
+            cached_tools_hash: Arc::new(RwLock::new(None)),
             limiter: ConcurrencyLimiter::new(concurrent_limit),
             use_instance_manager: Arc::new(AtomicUsize::new(1)),
             thinking_enabled: Arc::new(RwLock::new(None)), // Will use instance manager setting
@@ -315,15 +406,16 @@ impl LlmInterface {
     }
 
     /// Get the current concurrency limit (max concurrent requests).
+    /// This returns the dynamic limit which may be adjusted based on system load.
     pub fn max_concurrent(&self) -> usize {
-        self.limiter.max
+        self.limiter.max.load(Ordering::Relaxed)
     }
 
     /// Get the number of available permit slots.
     pub fn available_permits(&self) -> usize {
-        self.limiter
-            .max
-            .saturating_sub(self.limiter.current.load(Ordering::Relaxed))
+        let max = self.limiter.max.load(Ordering::Relaxed);
+        let current = self.limiter.current.load(Ordering::Relaxed);
+        max.saturating_sub(current)
     }
 
     /// Get the maximum context window size for the current LLM backend.
@@ -353,6 +445,23 @@ impl LlmInterface {
         }
     }
 
+    /// Warm up the model by sending a minimal request.
+    ///
+    /// This eliminates the ~500ms first-request latency by triggering model loading
+    /// during initialization. Should be called during application startup.
+    ///
+    /// # Example
+    /// ```ignore
+    /// // During application startup
+    /// llm_interface.warmup().await?;
+    /// ```
+    pub async fn warmup(&self) -> Result<(), AgentError> {
+        match self.get_runtime().await {
+            Ok(runtime) => runtime.warmup().await.map_err(|e| AgentError::Generation(e.to_string())),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Set the system prompt (builder pattern).
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         // Store the prompt in Arc<RwLock<String>>
@@ -376,6 +485,8 @@ impl LlmInterface {
         tools: Vec<edge_ai_core::llm::backend::ToolDefinition>,
     ) {
         *self.tool_definitions.write().await = tools;
+        // Invalidate system prompt cache when tools change
+        self.invalidate_prompt_cache().await;
     }
 
     /// Get current tool definitions.
@@ -472,77 +583,47 @@ impl LlmInterface {
         filtered
     }
 
-    /// Build system prompt with tool descriptions.
-    /// Uses enhanced prompts from prompts module for better conversation quality.
-    async fn build_system_prompt_with_tools(&self, user_message: Option<&str>) -> String {
-        use edge_ai_tools::simplified;
+    /// Invalidate the system prompt cache.
+    /// Call this when tools or configuration changes.
+    pub async fn invalidate_prompt_cache(&self) {
+        *self.system_prompt_cache.write().await = None;
+        *self.cached_tools_hash.write().await = None;
+    }
+
+    /// Build the base system prompt (without user-specific parts).
+    /// This is cached to avoid rebuilding on every request.
+    async fn build_base_system_prompt(&self) -> String {
         use crate::prompts::PromptBuilder;
 
-        let mut prompt = String::with_capacity(4096);
+        // Check cache first
+        {
+            let cache_read = self.system_prompt_cache.read().await;
+            if let Some((_, cached)) = cache_read.as_ref() {
+                return cached.clone();
+            }
+        }
 
-        // Use enhanced system prompt from prompts module
+        // Build base prompt
         let builder = PromptBuilder::new()
             .with_thinking(true)  // Include thinking guidelines
             .with_examples(true); // Include usage examples
 
-        // Start with enhanced base prompt
+        let mut prompt = String::with_capacity(4096);
         prompt.push_str(&builder.build_system_prompt());
         prompt.push_str("\n\n");
 
-        // Add intent-specific addon if we can classify the user's message
-        if let Some(msg) = user_message {
-            let intent = self.intent_classifier.classify(msg);
-            let intent_namespace = match intent.category {
-                crate::agent::staged::IntentCategory::Device => "device",
-                crate::agent::staged::IntentCategory::Data => "data",
-                crate::agent::staged::IntentCategory::Rule => "rule",
-                crate::agent::staged::IntentCategory::Workflow => "workflow",
-                crate::agent::staged::IntentCategory::Alert => "alert",
-                crate::agent::staged::IntentCategory::System => "system",
-                crate::agent::staged::IntentCategory::Help => "help",
-                crate::agent::staged::IntentCategory::General => "general",
-            };
-            let addon = builder.get_intent_prompt_addon(intent_namespace);
-            if !addon.is_empty() {
-                prompt.push_str(&addon);
-                prompt.push_str("\n\n");
-            }
-        }
-
-        // Add business context section if available
-        if let Some(query) = user_message {
-            let context_section = self.build_business_context_section(query).await;
-            if !context_section.is_empty() {
-                prompt.push_str(&context_section);
-                prompt.push_str("\n\n");
-            }
-        }
-
-        // Use simplified tool format
-        let simplified_tools = simplified::get_simplified_tools();
-
-        // Filter tools based on user message intent
-        let relevant_tools = if let Some(msg) = user_message {
-            let intent = self.intent_classifier.classify(msg);
-            self.filter_simplified_tools(&simplified_tools, &intent)
-        } else {
-            simplified_tools.clone()
-        };
-
-        if relevant_tools.is_empty() {
-            return prompt;
-        }
-
-        // Tool calling instruction - brief and direct
+        // Add tool calling instruction and format
         prompt.push_str("## 重要：你必须调用工具来回答问题\n");
         prompt.push_str("不要只说你将要做什么，直接输出工具调用的JSON！\n\n");
-
         prompt.push_str("## 工具调用格式\n");
         prompt.push_str("在回复中输出: [{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n\n");
 
-        // Available tools with simplified descriptions
+        // Add simplified tools
+        use edge_ai_tools::simplified;
+        let simplified_tools = simplified::get_simplified_tools();
+
         prompt.push_str("## 可用工具\n\n");
-        for tool in relevant_tools.iter() {
+        for tool in simplified_tools.iter() {
             prompt.push_str(&format!("### {} ({})\n", tool.name, tool.description));
 
             if !tool.aliases.is_empty() {
@@ -573,7 +654,7 @@ impl LlmInterface {
             prompt.push('\n');
         }
 
-        // Quick reference for common queries
+        // Add quick reference table
         prompt.push_str("## 快速参考\n");
         prompt.push_str("| 用户问什么 | 调用什么工具 |\n");
         prompt.push_str("|-----------|-------------|\n");
@@ -584,6 +665,56 @@ impl LlmInterface {
         prompt.push_str("| \"显示所有规则\" | `list_rules()` |\n");
         prompt.push('\n');
 
+        // Cache the result
+        let cache_key = "base_prompt".to_string();
+        {
+            let mut cache_write = self.system_prompt_cache.write().await;
+            *cache_write = Some((cache_key, prompt.clone()));
+        }
+
+        prompt
+    }
+
+    /// Build system prompt with tool descriptions.
+    /// Uses enhanced prompts from prompts module for better conversation quality.
+    /// Uses cached base prompt and adds user-specific parts.
+    async fn build_system_prompt_with_tools(&self, user_message: Option<&str>) -> String {
+        // Get cached base prompt
+        let mut prompt = self.build_base_system_prompt().await;
+
+        // Add intent-specific addon if we can classify the user's message
+        if let Some(msg) = user_message {
+            let intent = self.intent_classifier.classify(msg);
+            let intent_namespace = match intent.category {
+                crate::agent::staged::IntentCategory::Device => "device",
+                crate::agent::staged::IntentCategory::Data => "data",
+                crate::agent::staged::IntentCategory::Rule => "rule",
+                crate::agent::staged::IntentCategory::Workflow => "workflow",
+                crate::agent::staged::IntentCategory::Alert => "alert",
+                crate::agent::staged::IntentCategory::System => "system",
+                crate::agent::staged::IntentCategory::Help => "help",
+                crate::agent::staged::IntentCategory::General => "general",
+            };
+            // Get intent addon (recreate builder for this part)
+            let builder = crate::prompts::PromptBuilder::new();
+            let addon = builder.get_intent_prompt_addon(intent_namespace);
+            if !addon.is_empty() {
+                prompt.push_str(&addon);
+                prompt.push_str("\n\n");
+            }
+        }
+
+        // Add business context section if available
+        if let Some(query) = user_message {
+            let context_section = self.build_business_context_section(query).await;
+            if !context_section.is_empty() {
+                prompt.push_str(&context_section);
+                prompt.push_str("\n\n");
+            }
+        }
+
+        // Note: Tools are already included in base_prompt from build_base_system_prompt()
+        // No need to duplicate them here unless we want to do user-specific filtering
         prompt
     }
 

@@ -12,7 +12,7 @@ import {
 import { EmptyStateInline, Pagination } from "@/components/shared"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Check, X, Eye, RefreshCw, Zap, Sparkles } from "lucide-react"
+import { Eye, RefreshCw, Settings } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -248,76 +248,9 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
     }
   }
 
-  // Trigger manual analysis
-  const handleAnalyze = async (draft: DraftDevice) => {
-    setProcessing(draft.id)
-    try {
-      await api.triggerDraftAnalysis(draft.device_id)
-      toast({
-        title: t('common:success'),
-        description: t('devices:pending.analysisTriggered'),
-      })
-      await fetchDrafts()
-    } catch (error) {
-      toast({
-        title: t('common:failed'),
-        description: t('devices:pending.analysisFailed'),
-        variant: "destructive"
-      })
-    } finally {
-      setProcessing(null)
-    }
-  }
-
-  // Enhance draft with LLM (Chinese names, descriptions, units)
-  const handleEnhance = async (draft: DraftDevice) => {
-    setProcessing(draft.id)
-    try {
-      await api.enhanceDraftWithLLM(draft.device_id)
-      toast({
-        title: t('common:success'),
-        description: t('devices:pending.enhanceTriggered'),
-      })
-      // Poll for updates since enhancement happens in background
-      setTimeout(() => fetchDrafts(), 2000)
-      setTimeout(() => fetchDrafts(), 5000)
-    } catch (error) {
-      toast({
-        title: t('common:failed'),
-        description: t('devices:pending.enhanceFailed'),
-        variant: "destructive"
-      })
-    } finally {
-      setProcessing(null)
-    }
-  }
-
   // Normalize status string for consistent comparison
   const normalizeStatus = (status: string): string => {
     return status.toLowerCase().replace(/[^a-z]/g, '_')
-  }
-
-  // Check if draft can be approved
-  const canApprove = (draft: DraftDevice): boolean => {
-    const normalized = normalizeStatus(draft.status)
-    return normalized === 'waiting_processing' && !!draft.generated_type
-  }
-
-  // Check if draft can be rejected
-  const canReject = (draft: DraftDevice): boolean => {
-    const normalized = normalizeStatus(draft.status)
-    return normalized === 'waiting_processing' || normalized === 'collecting' || normalized === 'analyzing'
-  }
-
-  // Check if draft can be analyzed
-  const canAnalyze = (draft: DraftDevice): boolean => {
-    const normalized = normalizeStatus(draft.status)
-    return normalized === 'collecting' || normalized === 'failed'
-  }
-
-  // Check if draft can be enhanced with LLM
-  const canEnhance = (draft: DraftDevice): boolean => {
-    return !!draft.generated_type && normalizeStatus(draft.status) === 'waiting_processing'
   }
 
   // Get status badge
@@ -406,7 +339,7 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      {/* View details */}
+                      {/* View Details */}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -417,35 +350,19 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
                         <Eye className="h-4 w-4" />
                       </Button>
 
-                      {/* Trigger analysis - for collecting or failed status */}
-                      {canAnalyze(draft) && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleAnalyze(draft)}
-                          disabled={processing === draft.id}
-                          title={t('devices:pending.triggerAnalysis')}
-                        >
-                          <Zap className="h-4 w-4" />
-                        </Button>
-                      )}
+                      {/* Process - opens approval dialog */}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        onClick={() => handleApproveClick(draft)}
+                        disabled={processing === draft.id}
+                        title={t('devices:pending.process')}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
 
-                      {/* LLM Enhance - for waiting_processing with generated_type */}
-                      {canEnhance(draft) && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50"
-                          onClick={() => handleEnhance(draft)}
-                          disabled={processing === draft.id}
-                          title={t('devices:pending.enhanceWithLLM')}
-                        >
-                          <Sparkles className="h-4 w-4" />
-                        </Button>
-                      )}
-
-                      {/* Refresh - for any status */}
+                      {/* Refresh */}
                       <Button
                         variant="ghost"
                         size="icon"
@@ -455,34 +372,6 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
                       >
                         <RefreshCw className="h-4 w-4" />
                       </Button>
-
-                      {/* Approve - for waiting_processing with generated_type */}
-                      {canApprove(draft) && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
-                          onClick={() => handleApproveClick(draft)}
-                          disabled={processing === draft.id}
-                          title={t('devices:pending.approve')}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                      )}
-
-                      {/* Reject - for waiting_processing, collecting, or analyzing */}
-                      {canReject(draft) && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => handleReject(draft)}
-                          disabled={processing === draft.id}
-                          title={t('devices:pending.reject')}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -695,7 +584,20 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
               </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                onClick={() => {
+                  setShowApproveDialog(false)
+                  if (selectedDraftForApproval) {
+                    handleReject(selectedDraftForApproval)
+                  }
+                }}
+                disabled={processing === selectedDraftForApproval.id}
+              >
+                {t('devices:pending.reject')}
+              </Button>
               <Button variant="outline" onClick={() => setShowApproveDialog(false)}>
                 {t('common:cancel')}
               </Button>
@@ -703,7 +605,7 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
                 onClick={handleFinalApprove}
                 disabled={processing === selectedDraftForApproval.id || (selectedTypeOption === 'existing' && !selectedExistingType)}
               >
-                {processing === selectedDraftForApproval.id ? t('common:processing') : t('devices:pending.approve')}
+                {processing === selectedDraftForApproval.id ? t('common:processing') : t('devices:pending.confirmRegister')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -716,11 +618,6 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
           draft={selectedDraft}
           open={!!selectedDraft}
           onOpenChange={(open) => !open && setSelectedDraft(null)}
-          onApprove={handleApproveClick}
-          onReject={handleReject}
-          onAnalyze={handleAnalyze}
-          onEnhance={handleEnhance}
-          processing={processing}
         />
       )}
     </>
@@ -732,11 +629,6 @@ interface DraftDetailDialogProps {
   draft: DraftDevice
   open: boolean
   onOpenChange: (open: boolean) => void
-  onApprove?: (draft: DraftDevice) => void
-  onReject?: (draft: DraftDevice) => void
-  onAnalyze?: (draft: DraftDevice) => void
-  onEnhance?: (draft: DraftDevice) => void
-  processing?: string | null
 }
 
 interface EditingMetric {
@@ -749,7 +641,7 @@ interface EditingMetric {
   confidence: number
 }
 
-function DraftDetailDialog({ draft, open, onOpenChange, onApprove, onReject, onAnalyze, onEnhance, processing }: DraftDetailDialogProps) {
+function DraftDetailDialog({ draft, open, onOpenChange }: DraftDetailDialogProps) {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
 
@@ -773,37 +665,6 @@ function DraftDetailDialog({ draft, open, onOpenChange, onApprove, onReject, onA
       })))
     }
   }, [genType])
-
-  // Normalize status for consistent display
-  const normalizeStatus = (status: string): string => {
-    return status.toLowerCase().replace(/[^a-z]/g, '_')
-  }
-
-  const normalizedStatus = normalizeStatus(draft.status)
-  const canApprove = normalizedStatus === 'waiting_processing' && !!genType
-  const canReject = normalizedStatus === 'waiting_processing' || normalizedStatus === 'collecting' || normalizedStatus === 'analyzing'
-  const canAnalyze = normalizedStatus === 'collecting' || normalizedStatus === 'failed'
-  const canEnhance = !!genType && normalizedStatus === 'waiting_processing'
-
-  const handleApproveClick = () => {
-    onApprove?.(draft)
-    onOpenChange(false)
-  }
-
-  const handleRejectClick = () => {
-    onReject?.(draft)
-    onOpenChange(false)
-  }
-
-  const handleAnalyzeClick = () => {
-    onAnalyze?.(draft)
-    onOpenChange(false)
-  }
-
-  const handleEnhanceClick = () => {
-    onEnhance?.(draft)
-    // Don't close dialog - enhancement happens in background
-  }
 
   // Save metrics edits
   const handleSaveMetrics = async () => {
@@ -1236,59 +1097,10 @@ function DraftDetailDialog({ draft, open, onOpenChange, onApprove, onReject, onA
           )}
         </div>
 
-        <DialogFooter className="flex justify-between gap-2">
-          <div className="flex gap-2">
-            {canAnalyze && (
-              <Button
-                variant="outline"
-                onClick={handleAnalyzeClick}
-                disabled={processing === draft.id}
-              >
-                <Zap className="mr-2 h-4 w-4" />
-                {t('devices:pending.triggerAnalysis')}
-              </Button>
-            )}
-            {canEnhance && (
-              <Button
-                variant="outline"
-                className="text-purple-600 hover:text-purple-700 border-purple-200 hover:bg-purple-50"
-                onClick={handleEnhanceClick}
-                disabled={processing === draft.id}
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                {t('devices:pending.enhanceWithLLM')}
-              </Button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              {t('common:close')}
-            </Button>
-            {canReject && (
-              <Button
-                variant="destructive"
-                onClick={handleRejectClick}
-                disabled={processing === draft.id}
-              >
-                <X className="mr-2 h-4 w-4" />
-                {t('devices:pending.reject')}
-              </Button>
-            )}
-            {canApprove && (
-              <Button
-                variant="default"
-                className="bg-green-600 hover:bg-green-700"
-                onClick={handleApproveClick}
-                disabled={processing === draft.id}
-              >
-                <Check className="mr-2 h-4 w-4" />
-                {t('devices:pending.approve')}
-              </Button>
-            )}
-          </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('common:close')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
