@@ -15,7 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ActionBar, EmptyState } from '@/components/shared'
-import { TransformBuilder } from './TransformBuilder'
+import { TransformBuilder as TransformBuilderSplit } from './TransformBuilderSplit'
 import { TransformTestDialog } from './TransformTestDialog'
 import type { TransformAutomation } from '@/types'
 
@@ -87,16 +87,28 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
 
   const handleSaveTransform = async (data: Partial<TransformAutomation>) => {
     try {
+      // Build the transform definition matching backend TransformAutomation structure
+      const now = Math.floor(Date.now() / 1000)
       const definition = {
-        scope: data.scope,
-        device_type_filter: data.device_type_filter,
-        operations: data.operations || [],
+        id: editingTransform?.id || crypto.randomUUID(),
+        name: data.name || '',
+        description: data.description || '',
+        enabled: data.enabled ?? true,
+        scope: data.scope || 'global',
+        js_code: data.js_code || '',
+        output_prefix: data.output_prefix || '',
+        complexity: data.complexity || 2,
+        execution_count: 0,
+        created_at: now,
+        updated_at: now,
+        last_executed: null as number | null,
       }
 
       if (editingTransform) {
         await api.updateAutomation(editingTransform.id, {
-          name: data.name || '',
+          name: data.name,
           description: data.description,
+          enabled: data.enabled,
           definition,
         })
       } else {
@@ -130,31 +142,35 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
   }
 
   const getScopeLabel = (scope: TransformAutomation['scope']) => {
-    switch (scope.type) {
-      case 'global':
-        return t('automation:scopeGlobal', { defaultValue: 'Global' })
-      case 'device_type':
-        return t('automation:scopeDeviceType', { device_type: scope.device_type })
-      case 'device':
-        return t('automation:scopeDevice', { device_id: scope.device_id })
-      case 'user':
-        return t('automation:scopeUser', { user_id: scope.user_id })
+    // New scope format: 'global' | { device_type: string } | { device: string }
+    if (scope === 'global') {
+      return t('automation:scopeGlobal', { defaultValue: 'Global' })
     }
+    if (typeof scope === 'object') {
+      if ('device_type' in scope) {
+        return t('automation:scopeDeviceType', { device_type: scope.device_type })
+      }
+      if ('device' in scope) {
+        return t('automation:scopeDevice', { device_id: scope.device })
+      }
+    }
+    return String(scope)
   }
 
   const getScopeBadgeVariant = (scope: TransformAutomation['scope']) => {
-    switch (scope.type) {
-      case 'global':
-        return 'default'
-      case 'device_type':
-        return 'secondary'
-      case 'device':
-        return 'outline'
-      case 'user':
-        return 'destructive' as const
-      default:
-        return 'default'
+    // New scope format: 'global' | { device_type: string } | { device: string }
+    if (scope === 'global') {
+      return 'default'
     }
+    if (typeof scope === 'object') {
+      if ('device_type' in scope) {
+        return 'secondary'
+      }
+      if ('device' in scope) {
+        return 'outline'
+      }
+    }
+    return 'default'
   }
 
   const getComplexityDots = (complexity: number) => {
@@ -381,15 +397,13 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
       </Card>
 
       {/* Transform Builder Dialog */}
-      {builderOpen && (
-        <TransformBuilder
-          open={builderOpen}
-          onOpenChange={setBuilderOpen}
-          transform={editingTransform}
-          devices={devices}
-          onSave={handleSaveTransform}
-        />
-      )}
+      <TransformBuilderSplit
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        transform={editingTransform}
+        devices={devices}
+        onSave={handleSaveTransform}
+      />
 
       {/* Transform Test Dialog */}
       {testDialogOpen && testingTransformId && (

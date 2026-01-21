@@ -22,14 +22,14 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
       const result = await api.listTransforms()
       let filtered = result.transforms || []
 
-      // Filter transforms by scope
+      // Filter transforms by scope - new format: 'global' | { device_type: string } | { device: string } | { user: string }
       if (deviceId) {
         filtered = filtered.filter((tr) =>
-          tr.scope.type === 'device' && tr.scope.device_id === deviceId
+          typeof tr.scope === 'object' && 'device' in tr.scope && tr.scope.device === deviceId
         )
       } else if (deviceTypeId) {
         filtered = filtered.filter((tr) =>
-          tr.scope.type === 'device_type' && tr.scope.device_type === deviceTypeId
+          typeof tr.scope === 'object' && 'device_type' in tr.scope && tr.scope.device_type === deviceTypeId
         )
       }
 

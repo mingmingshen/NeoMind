@@ -29,10 +29,8 @@ export interface AddDeviceTypeDialogProps {
   onOpenChange: (open: boolean) => void
   onAdd: (definition: DeviceType) => Promise<boolean>
   onValidate: (definition: DeviceType) => Promise<ValidationResult>
-  onGenerateMDL: (deviceName: string, description: string, metricsExample: string, commandsExample: string) => Promise<string>
   adding: boolean
   validating: boolean
-  generating: boolean
   editDeviceType?: DeviceType | null
 }
 
@@ -48,7 +46,6 @@ export interface EditDeviceTypeDialogProps {
   deviceType: DeviceType | null
   onEdit: (updated: DeviceType) => void
   editing: boolean
-  onGenerateMDL: (deviceName: string, description: string, metricsExample: string, commandsExample: string) => Promise<string>
 }
 
 // ============================================================================
@@ -67,8 +64,6 @@ export interface DataDefinitionStepProps {
   errors: FormErrors
   onDataChange: (data: DeviceType) => void
   onErrorsChange: (errors: FormErrors) => void
-  onGenerateMDL: (deviceName: string, description: string, metricsExample: string, commandsExample: string) => Promise<string>
-  generating: boolean
 }
 
 export interface CommandsStepProps {

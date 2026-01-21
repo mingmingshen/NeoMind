@@ -71,19 +71,20 @@ export function RuleTester({
   }
 
   const checkCondition = (condition: RuleCondition, simulatedValue: number): boolean => {
+    const threshold = condition.threshold ?? 0
     switch (condition.operator) {
       case '>':
-        return simulatedValue > condition.threshold
+        return simulatedValue > threshold
       case '<':
-        return simulatedValue < condition.threshold
+        return simulatedValue < threshold
       case '>=':
-        return simulatedValue >= condition.threshold
+        return simulatedValue >= threshold
       case '<=':
-        return simulatedValue <= condition.threshold
+        return simulatedValue <= threshold
       case '==':
-        return simulatedValue === condition.threshold
+        return simulatedValue === threshold
       case '!=':
-        return simulatedValue !== condition.threshold
+        return simulatedValue !== threshold
       default:
         return false
     }
@@ -93,7 +94,7 @@ export function RuleTester({
     if (simulatedValues.length === 0) return 'pending'
 
     const simulatedValue = simulatedValues[index]
-    if (!simulatedValue || simulatedValue.deviceId !== condition.device_id) {
+    if (!simulatedValue || !condition.device_id || simulatedValue.deviceId !== condition.device_id) {
       return 'noValue'
     }
 
@@ -152,7 +153,7 @@ export function RuleTester({
                 <div key={index} className="border rounded-md p-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium">
-                      {getDeviceName(condition.device_id)} - {condition.metric}
+                      {getDeviceName(condition.device_id || '')} - {condition.metric || 'value'}
                     </span>
                     <Badge
                       variant={
@@ -185,11 +186,11 @@ export function RuleTester({
                       />
                     </div>
                     <div className="flex items-center gap-2 text-sm">
-                      <span className={simValue && simValue.value > condition.threshold ? 'text-green-600 font-medium' : ''}>
+                      <span className={simValue && simValue.value > (condition.threshold ?? 0) ? 'text-green-600 font-medium' : ''}>
                         {simValue?.value ?? 0}
                       </span>
-                      <span className="text-muted-foreground">{condition.operator}</span>
-                      <span className="font-medium">{condition.threshold}</span>
+                      <span className="text-muted-foreground">{condition.operator || '>'}</span>
+                      <span className="font-medium">{condition.threshold ?? 0}</span>
                     </div>
                   </div>
                 </div>

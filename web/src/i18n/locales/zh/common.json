@@ -37,6 +37,7 @@
   "loading": "加载中...",
   "success": "成功",
   "failed": "失败",
+  "warning": "警告",
   "error": "错误",
   "optional": "可选",
   "required": "必填",

@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useEvents } from "@/hooks/useEvents"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent } from "@/components/shared"
-import { Upload, Download, Sparkles, Settings } from "lucide-react"
+import { Upload, Download, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -38,33 +38,30 @@ type DeviceTabValue = "devices" | "types" | "drafts"
 export function DevicesPage() {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
-  const {
-    devices,
-    devicesLoading,
-    fetchDevices,
-    fetchDeviceDetails,
-    fetchDeviceTypeDetails,
-    addDevice,
-    deleteDevice,
-    deviceTypes,
-    deviceTypesLoading,
-    fetchDeviceTypes,
-    addDeviceType,
-    deleteDeviceType,
-    validateDeviceType,
-    generateMDL,
-    addDeviceDialogOpen,
-    setAddDeviceDialogOpen,
-    sendCommand,
-    deviceTypeDetails,
-    deviceDetails,
-    telemetryData,
-    telemetryLoading,
-    fetchTelemetryData,
-    discoverDevices,
-    discovering,
-    discoveredDevices,
-  } = useStore()
+  const devices = useStore((state) => state.devices)
+  const devicesLoading = useStore((state) => state.devicesLoading)
+  const fetchDevices = useStore((state) => state.fetchDevices)
+  const fetchDeviceDetails = useStore((state) => state.fetchDeviceDetails)
+  const fetchDeviceTypeDetails = useStore((state) => state.fetchDeviceTypeDetails)
+  const addDevice = useStore((state) => state.addDevice)
+  const deleteDevice = useStore((state) => state.deleteDevice)
+  const deviceTypes = useStore((state) => state.deviceTypes)
+  const deviceTypesLoading = useStore((state) => state.deviceTypesLoading)
+  const fetchDeviceTypes = useStore((state) => state.fetchDeviceTypes)
+  const addDeviceType = useStore((state) => state.addDeviceType)
+  const deleteDeviceType = useStore((state) => state.deleteDeviceType)
+  const validateDeviceType = useStore((state) => state.validateDeviceType)
+  const addDeviceDialogOpen = useStore((state) => state.addDeviceDialogOpen)
+  const setAddDeviceDialogOpen = useStore((state) => state.setAddDeviceDialogOpen)
+  const sendCommand = useStore((state) => state.sendCommand)
+  const deviceTypeDetails = useStore((state) => state.deviceTypeDetails)
+  const deviceDetails = useStore((state) => state.deviceDetails)
+  const telemetryData = useStore((state) => state.telemetryData)
+  const telemetryLoading = useStore((state) => state.telemetryLoading)
+  const fetchTelemetryData = useStore((state) => state.fetchTelemetryData)
+  const discoverDevices = useStore((state) => state.discoverDevices)
+  const discovering = useStore((state) => state.discovering)
+  const discoveredDevices = useStore((state) => state.discoveredDevices)
 
   // Pagination state
   const [devicePage, setDevicePage] = useState(1)
@@ -160,32 +157,82 @@ export function DevicesPage() {
   const [deviceDetailView, setDeviceDetailView] = useState<string | null>(null)
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null)
 
-  // Fetch devices on mount (once)
+  // Fetch devices when component mounts
   const hasFetchedDevices = useRef(false)
   useEffect(() => {
     if (!hasFetchedDevices.current) {
       hasFetchedDevices.current = true
       fetchDevices()
     }
-  }, [])
+  }, [fetchDevices])
 
-  // Fetch device types on mount (once)
-  const hasFetchedDeviceTypes = useRef(false)
+  // Fetch device types when component mounts
+  const hasFetchedTypes = useRef(false)
   useEffect(() => {
-    if (!hasFetchedDeviceTypes.current) {
-      hasFetchedDeviceTypes.current = true
+    if (!hasFetchedTypes.current) {
+      hasFetchedTypes.current = true
       fetchDeviceTypes()
+    }
+  }, [fetchDeviceTypes])
+
+  // Debounced refresh to prevent excessive API calls
+  const refreshDevicesRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refreshDeviceTypesRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const debouncedFetchDevices = useCallback(() => {
+    if (refreshDevicesRef.current) {
+      clearTimeout(refreshDevicesRef.current)
+    }
+    refreshDevicesRef.current = setTimeout(() => {
+      fetchDevices()
+    }, 500) // 500ms debounce
+  }, [fetchDevices])
+
+  const debouncedFetchDeviceTypes = useCallback(() => {
+    if (refreshDeviceTypesRef.current) {
+      clearTimeout(refreshDeviceTypesRef.current)
+    }
+    refreshDeviceTypesRef.current = setTimeout(() => {
+      fetchDeviceTypes()
+    }, 300) // 300ms debounce for device types
+  }, [fetchDeviceTypes])
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshDevicesRef.current) clearTimeout(refreshDevicesRef.current)
+      if (refreshDeviceTypesRef.current) clearTimeout(refreshDeviceTypesRef.current)
     }
   }, [])
 
   // WebSocket event handler for device status changes
   const handleDeviceEvent = useCallback((event: { type: string; data: unknown }) => {
-    // Refresh device list on device status changes
-    if (event.type === 'DeviceOnline' || event.type === 'DeviceOffline' ||
-        event.type === 'DeviceMetric' || event.type === 'DeviceCommandResult') {
-      fetchDevices()
+    switch (event.type) {
+      case 'DeviceOnline':
+      case 'DeviceOffline':
+        // Status change - refresh devices immediately
+        fetchDevices()
+        break
+      case 'DeviceRegistered':
+      case 'DeviceUnregistered':
+        // Device list changed - refresh devices
+        debouncedFetchDevices()
+        break
+      case 'DeviceTypeRegistered':
+      case 'DeviceTypeUnregistered':
+        // Device type list changed - refresh device types
+        debouncedFetchDeviceTypes()
+        break
+      case 'DeviceMetric':
+        // Don't refresh on every metric - too frequent
+        // Status is handled by DeviceOnline/Offline events
+        break
+      case 'DeviceCommandResult':
+        // Command completed - refresh devices to see updated state
+        debouncedFetchDevices()
+        break
     }
-  }, [fetchDevices])
+  }, [fetchDevices, debouncedFetchDevices, debouncedFetchDeviceTypes])
 
   // Subscribe to device events for real-time updates
   const { isConnected: deviceEventsConnected } = useEvents({
@@ -217,12 +264,8 @@ export function DevicesPage() {
 
   const handleDeleteDevice = async (id: string) => {
     if (confirm(t('devices:deleteConfirm'))) {
-      const success = await deleteDevice(id)
-      if (success) {
-        toast({ title: t('common:success'), description: t('devices:deviceDeleted') })
-      } else {
-        toast({ title: t('common:failed'), description: t('devices:deleteFailed'), variant: "destructive" })
-      }
+      await deleteDevice(id)
+      toast({ title: t('common:success'), description: t('devices:deviceDeleted') })
     }
   }
 
@@ -323,7 +366,6 @@ export function DevicesPage() {
   const [editingDeviceType, setEditingDeviceType] = useState<DeviceType | null>(null)
   const [addingType, setAddingType] = useState(false)
   const [validatingType, setValidatingType] = useState(false)
-  const [generatingMDL, setGeneratingMDL] = useState(false)
 
   // Device Type handlers
   const handleRefreshDeviceTypes = () => {
@@ -362,12 +404,8 @@ export function DevicesPage() {
 
   const handleDeleteDeviceType = async (id: string) => {
     if (confirm(t('devices:deleteTypeConfirm'))) {
-      const success = await deleteDeviceType(id)
-      if (success) {
-        toast({ title: t('common:success'), description: t('devices:deviceTypeDeleted') })
-      } else {
-        toast({ title: t('common:failed'), description: t('devices:deviceTypeDeleteFailed'), variant: "destructive" })
-      }
+      await deleteDeviceType(id)
+      toast({ title: t('common:success'), description: t('devices:deviceTypeDeleted') })
     }
   }
 
@@ -386,28 +424,6 @@ export function DevicesPage() {
       return await validateDeviceType(definition)
     } finally {
       setValidatingType(false)
-    }
-  }
-
-  const handleGenerateMDL = async (deviceName: string, description: string, metricsExample: string, commandsExample: string) => {
-    setGeneratingMDL(true)
-    try {
-      // Backend API still expects uplink_example/downlink_example for backward compatibility
-      const result = await generateMDL({ 
-        device_name: deviceName, 
-        description, 
-        uplink_example: metricsExample, 
-        downlink_example: commandsExample 
-      })
-      // Add metric_count and command_count to the result
-      const fullResult = {
-        ...result,
-        metric_count: result.metrics?.length || 0,
-        command_count: result.commands?.length || 0,
-      }
-      return JSON.stringify(fullResult, null, 2)
-    } finally {
-      setGeneratingMDL(false)
     }
   }
 
@@ -554,12 +570,6 @@ export function DevicesPage() {
                     disabled: deviceTypes.length === 0,
                   },
                   {
-                    label: t('devices:types.generator.button'),
-                    icon: <Sparkles className="h-4 w-4" />,
-                    variant: 'outline',
-                    onClick: () => setGeneratorOpen(true),
-                  },
-                  {
                     label: t('devices:addDeviceType'),
                     onClick: () => setAddDeviceTypeOpen(true),
                   },
@@ -633,10 +643,8 @@ export function DevicesPage() {
                   onOpenChange={setAddDeviceTypeOpen}
                   onAdd={handleAddDeviceType}
                   onValidate={handleValidateDeviceType}
-                  onGenerateMDL={handleGenerateMDL}
                   adding={addingType}
                   validating={validatingType}
-                  generating={generatingMDL}
                 />
               }
             />
@@ -644,7 +652,12 @@ export function DevicesPage() {
 
           {/* Draft Devices Tab (Auto-onboarding) */}
           <PageTabsContent value="drafts" activeTab={activeTab}>
-            <PendingDevicesList onRefresh={fetchDeviceTypes} />
+            <PendingDevicesList
+              onRefresh={() => {
+                fetchDevices()
+                fetchDeviceTypes()
+              }}
+            />
           </PageTabsContent>
         </PageTabs>
       )}
@@ -662,7 +675,6 @@ export function DevicesPage() {
         deviceType={editingDeviceType}
         onEdit={handleEditDeviceTypeSubmit}
         editing={addingType}
-        onGenerateMDL={handleGenerateMDL}
       />
 
       {/* Hidden file input for device type import */}

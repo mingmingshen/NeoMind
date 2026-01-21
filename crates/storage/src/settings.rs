@@ -329,6 +329,12 @@ pub struct ExternalBroker {
 
     /// Last updated timestamp.
     pub updated_at: i64,
+
+    /// Topics to subscribe to on this broker.
+    /// Defaults to ["#"] for all topics, or ["device/+/+/uplink"] for standard format.
+    #[serde(default = "default_external_broker_subscribe_topics")]
+    #[serde(skip_serializing_if = "is_default_subscribe_topics")]
+    pub subscribe_topics: Vec<String>,
 }
 
 fn default_external_broker_port() -> u16 {
@@ -337,6 +343,14 @@ fn default_external_broker_port() -> u16 {
 
 fn default_external_broker_enabled() -> bool {
     true
+}
+
+fn default_external_broker_subscribe_topics() -> Vec<String> {
+    vec!["#".to_string()] // Default to subscribe to all topics
+}
+
+fn is_default_subscribe_topics(topics: &[String]) -> bool {
+    topics.len() == 1 && topics.first() == Some(&"#".to_string())
 }
 
 impl ExternalBroker {
@@ -357,6 +371,7 @@ impl ExternalBroker {
             connected: false,
             last_error: None,
             updated_at: chrono::Utc::now().timestamp(),
+            subscribe_topics: default_external_broker_subscribe_topics(),
         }
     }
 

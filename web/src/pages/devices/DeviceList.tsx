@@ -90,8 +90,9 @@ export function DeviceList({
     setBulkProcessing(true)
     try {
       const response = await api.bulkDeleteDevices(Array.from(selectedIds))
-      if (response.deleted) {
-        toast({ title: t('common:success'), description: t('devices:deletedCount', { count: response.deleted }) })
+      if (response.succeeded || response.deleted) {
+        const count = response.succeeded ?? response.deleted ?? 0
+        toast({ title: t('common:success'), description: t('devices:deletedCount', { count }) })
         setSelectedIds(new Set())
         onRefresh()
       }
@@ -136,7 +137,7 @@ export function DeviceList({
               <TableHead>{t('devices:headers.name')}</TableHead>
               <TableHead>{t('devices:headers.type')}</TableHead>
               <TableHead>{t('devices:headers.adapter')}</TableHead>
-              <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms' })}</TableHead>
+              <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms Data' })}</TableHead>
               <TableHead align="center">{t('devices:headers.status')}</TableHead>
               <TableHead>{t('devices:headers.lastOnline')}</TableHead>
               <TableHead align="right">{t('devices:headers.actions')}</TableHead>

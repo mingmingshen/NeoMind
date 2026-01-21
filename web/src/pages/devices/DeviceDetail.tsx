@@ -59,7 +59,33 @@ function renderMetricValue(
     )
   }
   if (typeof value === "object" && value !== null) {
-    if (Array.isArray(value)) return <span className="text-muted-foreground/60">[{value.length}]</span>
+    if (Array.isArray(value)) {
+      // Show array elements with better formatting
+      if (value.length === 0) return <span className="text-muted-foreground/60">[]</span>
+      // For small arrays, show all elements
+      if (value.length <= 5) {
+        const elements = value.map((v, i) => {
+          const formatted = typeof v === 'string' ? `"${v}"` : String(v)
+          return <span key={i}>{formatted}</span>
+        })
+        return (
+          <span className="text-xs font-mono">
+            [<span className="text-muted-foreground">{elements.map((el, i) => (
+              <span key={i}>{i > 0 && <>, </>}{el}</span>
+            ))}</span>]
+          </span>
+        )
+      }
+      // For large arrays, show count and preview
+      return (
+        <span className="text-xs font-mono" title={JSON.stringify(value)}>
+          <span className="text-muted-foreground">[{value.length}]</span>
+          <span className="ml-1 text-muted-foreground/60">
+            [{typeof value[0] === 'string' ? `"${value[0]}"` : String(value[0])}, ...]
+          </span>
+        </span>
+      )
+    }
     const str = JSON.stringify(value)
     return <span className="text-xs text-muted-foreground/60 font-mono">{str.length > 30 ? str.slice(0, 30) + '...' : str}</span>
   }
@@ -87,7 +113,50 @@ export function DeviceDetail({
   const [dialogParams, setDialogParams] = useState<Record<string, unknown>>({})
 
   const commands = deviceType?.commands || []
-  const metricDefinitions = deviceType?.metrics || []
+  const templateMetrics = deviceType?.metrics || []
+
+  // Identify virtual metrics vs auto-extracted metrics
+  // True virtual metrics = Transform-generated with dot notation (transform.count, virtual.avg)
+  // Auto-extracted metrics = from UnifiedExtractor (e.g., values.battery, values._value)
+  const templateMetricNames = new Set(templateMetrics.map(m => m.name))
+
+  // Transform-generated metric namespaces (with dot notation)
+  const transformNamespaces = ['transform.', 'virtual.', 'computed.', 'derived.', 'aggregated.']
+  const isTransformMetric = (m: string) =>
+    transformNamespaces.some(prefix => m.startsWith(prefix))
+
+  // Auto-extracted metrics typically start with common auto-extract prefixes
+  const isAutoExtracted = (m: string) =>
+    // Skip if it's a transform metric
+    isTransformMetric(m) ? false : (
+      m.startsWith('values.') ||
+      m.startsWith('data.') ||
+      m.startsWith('params.') ||
+      m.includes('.')
+    )
+
+  // Metrics in storage but not in template
+  const extraMetrics = (telemetryData?.metrics || []).filter(m =>
+    m !== '_raw' && !templateMetricNames.has(m)
+  )
+
+  // Only include Transform-generated virtual metrics (exclude auto-extracted)
+  const virtualMetrics = extraMetrics.filter(m =>
+    isTransformMetric(m) && !isAutoExtracted(m)
+  )
+  // Note: auto-extracted metrics (with dot notation like values.battery) are excluded from display
+  // as they're just decomposed raw data, not true virtual metrics
+
+  // Combine: template metrics + true virtual metrics
+  const metricDefinitions = [
+    ...templateMetrics,
+    ...virtualMetrics.map(name => ({
+      name,
+      display_name: name,
+      data_type: 'float' as const,
+      unit: '-',
+    }))
+  ]
 
   const handleCommandClick = (cmd: CommandDefinition) => {
     setSelectedCommandDef(cmd)
@@ -256,22 +325,53 @@ export function DeviceDetail({
                   <Settings className="h-5 w-5 text-muted-foreground" />
                   <h2 className="font-semibold">实时指标</h2>
                   <span className="text-xs text-muted-foreground">({metricDefinitions.length})</span>
+                  {virtualMetrics.length > 0 && (
+                    <Badge variant="secondary" className="text-xs ml-2">
+                      {virtualMetrics.length} 虚拟指标
+                    </Badge>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {metricDefinitions.map((metricDef) => {
-                    const value = device?.current_values?.[metricDef.name]
+                    // Try to get value from device.current_values first (for template metrics)
+                    // Then fall back to telemetry data (for virtual metrics)
+                    let value = device?.current_values?.[metricDef.name]
+
+                    // For virtual metrics, get the latest value from telemetry data
+                    if (value === undefined && telemetryData?.data[metricDef.name]) {
+                      const points = telemetryData.data[metricDef.name]
+                      if (points && points.length > 0) {
+                        // Get the most recent point
+                        const latestPoint = points[points.length - 1]
+                        value = latestPoint.value
+                      }
+                    }
+
+                    const isVirtual = virtualMetrics.includes(metricDef.name)
                     const hasImage = isMetricImage(value)
                     return (
                       <button
                         key={metricDef.name}
                         onClick={() => handleMetricCardClick(metricDef.name)}
-                        className="group bg-gradient-to-br from-primary/5 to-primary/0 rounded-2xl p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border border-primary/10 hover:border-primary/30"
+                        className={cn(
+                          "group rounded-2xl p-5 text-left transition-all duration-200 hover:shadow-md hover:scale-[1.02] border",
+                          isVirtual
+                            ? "bg-gradient-to-br from-purple-500/10 to-blue-500/5 border-purple-500/20 hover:border-purple-500/40"
+                            : "bg-gradient-to-br from-primary/5 to-primary/0 border-primary/10 hover:border-primary/30"
+                        )}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm text-muted-foreground mb-2 truncate">
-                              {metricDef.display_name || metricDef.name}
-                            </p>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm text-muted-foreground truncate">
+                                {metricDef.display_name || metricDef.name}
+                              </p>
+                              {isVirtual && (
+                                <Badge variant="outline" className="text-xs px-1.5 py-0">
+                                  虚拟
+                                </Badge>
+                              )}
+                            </div>
                             <div className="flex items-center gap-2">
                               {renderMetricValue(value, (src) => {
                                 setPreviewImageSrc(src)
@@ -279,7 +379,9 @@ export function DeviceDetail({
                               })}
                             </div>
                           </div>
-                          {hasImage ? (
+                          {isVirtual ? (
+                            <Zap className="h-5 w-5 text-purple-500/60 group-hover:text-purple-500 transition-colors shrink-0 ml-2" />
+                          ) : hasImage ? (
                             <ImageIcon className="h-5 w-5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />
                           ) : (
                             <ChevronRight className="h-5 w-5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0 ml-2" />

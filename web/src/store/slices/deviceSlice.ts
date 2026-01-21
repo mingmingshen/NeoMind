@@ -144,18 +144,13 @@ export const createDeviceSlice: StateCreator<
   },
 
   deleteDevice: async (id) => {
-    try {
-      const result = await api.deleteDevice(id)
-      // Backend returns { device_id, deleted: true } after unwrap
-      if (result.deleted) {
-        await get().fetchDevices()
-        return true
-      }
-      return false
-    } catch (error) {
-      console.error('Failed to delete device:', error)
-      return false
+    const result = await api.deleteDevice(id)
+    // Backend returns { device_id, deleted: true } after unwrap
+    if (result.deleted) {
+      await get().fetchDevices()
+      return true
     }
+    return false
   },
 
   sendCommand: async (deviceId, command, params) => {
@@ -175,25 +170,15 @@ export const createDeviceSlice: StateCreator<
 
   // Device Type CRUD
   addDeviceType: async (definition) => {
-    try {
-      await api.addDeviceType(definition)
-      await get().fetchDeviceTypes()
-      return true
-    } catch (error) {
-      console.error('Failed to add device type:', error)
-      return false
-    }
+    await api.addDeviceType(definition)
+    await get().fetchDeviceTypes()
+    return true
   },
 
   deleteDeviceType: async (id) => {
-    try {
-      await api.deleteDeviceType(id)
-      await get().fetchDeviceTypes()
-      return true
-    } catch (error) {
-      console.error('Failed to delete device type:', error)
-      return false
-    }
+    await api.deleteDeviceType(id)
+    await get().fetchDeviceTypes()
+    return true
   },
 
   validateDeviceType: async (definition) => {

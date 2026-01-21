@@ -913,11 +913,10 @@ impl LlmInterface {
             *self.thinking_enabled.read().await
         };
 
-        // DEBUG: Log thinking_enabled value
-        eprintln!(
-            "[LlmInterface] chat_stream_internal: thinking_enabled={:?}, uses_instance_manager={}",
-            thinking_enabled,
-            self.uses_instance_manager()
+        tracing::debug!(
+            thinking_enabled = ?thinking_enabled,
+            uses_instance_manager = self.uses_instance_manager(),
+            "LlmInterface chat_stream_internal"
         );
 
         let params = edge_ai_core::llm::backend::GenerationParams {
@@ -1134,11 +1133,10 @@ impl LlmInterface {
             *self.thinking_enabled.read().await
         };
 
-        // DEBUG: Log thinking_enabled value
-        eprintln!(
-            "[LlmInterface] chat_stream_internal: thinking_enabled={:?}, uses_instance_manager={}",
-            thinking_enabled,
-            self.uses_instance_manager()
+        tracing::debug!(
+            thinking_enabled = ?thinking_enabled,
+            uses_instance_manager = self.uses_instance_manager(),
+            "LlmInterface chat_stream_internal"
         );
 
         let params = edge_ai_core::llm::backend::GenerationParams {

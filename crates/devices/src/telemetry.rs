@@ -51,6 +51,11 @@ impl DataPoint {
             ),
             MetricValue::String(s) => Value::String(s.clone()),
             MetricValue::Boolean(b) => Value::Bool(*b),
+            MetricValue::Array(arr) => {
+                // Convert array to JSON array
+                let json_arr: Vec<Value> = arr.iter().map(|v| Self::metric_value_to_json(v)).collect();
+                Value::Array(json_arr)
+            }
             MetricValue::Binary(data) => Value::String(base64::encode(data)),
             MetricValue::Null => Value::Null,
         }

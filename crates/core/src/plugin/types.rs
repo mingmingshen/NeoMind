@@ -47,8 +47,6 @@ pub enum PluginType {
     AlertChannel,
     /// Rule engine plugin
     RuleEngine,
-    /// Workflow engine plugin
-    WorkflowEngine,
     /// Custom plugin type
     Custom(String),
 }
@@ -66,7 +64,6 @@ impl PluginType {
             PluginType::Integration => "integration",
             PluginType::AlertChannel => "alert_channel",
             PluginType::RuleEngine => "rule_engine",
-            PluginType::WorkflowEngine => "workflow_engine",
             PluginType::Custom(s) => s,
         }
     }
@@ -83,7 +80,6 @@ impl PluginType {
             "integration" => PluginType::Integration,
             "alert_channel" => PluginType::AlertChannel,
             "rule_engine" => PluginType::RuleEngine,
-            "workflow_engine" => PluginType::WorkflowEngine,
             other => PluginType::Custom(other.to_string()),
         }
     }
@@ -100,7 +96,6 @@ impl PluginType {
             PluginType::Integration => "Integration".to_string(),
             PluginType::AlertChannel => "Alert Channel".to_string(),
             PluginType::RuleEngine => "Rule Engine".to_string(),
-            PluginType::WorkflowEngine => "Workflow Engine".to_string(),
             PluginType::Custom(s) => format!("Custom ({})", s),
         }
     }

@@ -131,7 +131,6 @@ export function DashboardPage() {
   const activateBackend = useStore((state) => state.activateBackend)
   const loadBackends = useStore((state) => state.loadBackends)
   const hasLoadedBackends = useRef(false)
-  const setCurrentPage = useStore((state) => state.setCurrentPage)
 
   // Chat state from store
   const {
@@ -339,13 +338,9 @@ export function DashboardPage() {
             <Settings className="h-8 w-8 text-muted-foreground" />
           </div>
           <h2 className="mb-3 text-lg font-semibold">{t('dashboard:llmNotConfigured') || 'LLM 未配置'}</h2>
-          <p className="mb-6 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {t('dashboard:llmNotConfiguredDesc') || '请先配置 LLM 后端以使用聊天功能'}
           </p>
-          <Button onClick={() => setCurrentPage('settings')}>
-            <Settings className="mr-2 h-4 w-4" />
-            {t('dashboard:goToSettings') || '前往设置'}
-          </Button>
         </div>
       </div>
     )

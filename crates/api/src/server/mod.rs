@@ -34,11 +34,11 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // Initialize LLM
     state.init_llm().await;
 
-    // Initialize workflow engine
-    state.init_workflow_engine().await;
-    startup.service("Workflow engine", ServiceStatus::Started);
+    // Initialize transform event service
+    state.init_transform_event_service().await;
+    startup.service("Transform event service", ServiceStatus::Started);
 
-    // Initialize tools (must be after workflow engine)
+    // Initialize tools
     state.init_tools().await;
     startup.service("AI tools", ServiceStatus::Started);
 

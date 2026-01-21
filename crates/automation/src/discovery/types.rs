@@ -398,31 +398,31 @@ pub enum SemanticType {
 }
 
 impl SemanticType {
-    /// Get display name for this semantic type
+    /// Get display name for this semantic type (English, for i18n key)
     pub fn display_name(&self) -> &'static str {
         match self {
-            SemanticType::Temperature => "温度",
-            SemanticType::Humidity => "湿度",
-            SemanticType::Pressure => "压力",
-            SemanticType::Light => "光照",
-            SemanticType::Motion => "运动",
-            SemanticType::Switch => "开关",
-            SemanticType::Dimmer => "调光",
-            SemanticType::Color => "颜色",
-            SemanticType::Power => "功率",
-            SemanticType::Energy => "能耗",
-            SemanticType::Co2 => "二氧化碳",
-            SemanticType::Pm25 => "PM2.5",
-            SemanticType::Voc => "VOC",
-            SemanticType::Speed => "速度",
-            SemanticType::Flow => "流量",
-            SemanticType::Level => "液位",
-            SemanticType::Status => "状态",
-            SemanticType::Error => "错误",
-            SemanticType::Alarm => "告警",
-            SemanticType::Battery => "电池",
-            SemanticType::Rssi => "信号强度",
-            SemanticType::Unknown => "未知",
+            SemanticType::Temperature => "temperature",
+            SemanticType::Humidity => "humidity",
+            SemanticType::Pressure => "pressure",
+            SemanticType::Light => "light",
+            SemanticType::Motion => "motion",
+            SemanticType::Switch => "switch",
+            SemanticType::Dimmer => "dimmer",
+            SemanticType::Color => "color",
+            SemanticType::Power => "power",
+            SemanticType::Energy => "energy",
+            SemanticType::Co2 => "co2",
+            SemanticType::Pm25 => "pm25",
+            SemanticType::Voc => "voc",
+            SemanticType::Speed => "speed",
+            SemanticType::Flow => "flow",
+            SemanticType::Level => "level",
+            SemanticType::Status => "status",
+            SemanticType::Error => "error",
+            SemanticType::Alarm => "alarm",
+            SemanticType::Battery => "battery",
+            SemanticType::Rssi => "rssi",
+            SemanticType::Unknown => "unknown",
         }
     }
 
@@ -659,8 +659,6 @@ pub struct FieldSemantic {
     pub display_name: String,
     /// Recommended unit
     pub recommended_unit: Option<String>,
-    /// Confidence score (0-1)
-    pub confidence: f32,
     /// Reasoning for the inference
     pub reasoning: String,
     /// Field name(s) that led to this inference
@@ -680,16 +678,9 @@ impl FieldSemantic {
             standard_name: standard_name.into(),
             display_name: display_name.into(),
             recommended_unit,
-            confidence: 0.5,
             reasoning: String::new(),
             source_fields: Vec::new(),
         }
-    }
-
-    /// Set confidence level
-    pub fn with_confidence(mut self, confidence: f32) -> Self {
-        self.confidence = confidence.clamp(0.0, 1.0);
-        self
     }
 
     /// Set reasoning
@@ -728,8 +719,6 @@ pub struct DiscoveredMetric {
     pub is_readable: bool,
     /// Whether writable
     pub is_writable: bool,
-    /// Confidence in this discovery (0-1)
-    pub confidence: f32,
 }
 
 impl Default for DiscoveredMetric {
@@ -745,7 +734,6 @@ impl Default for DiscoveredMetric {
             value_range: None,
             is_readable: true,
             is_writable: false,
-            confidence: 0.0,
         }
     }
 }
@@ -761,8 +749,6 @@ pub struct DiscoveredCommand {
     pub description: String,
     /// Parameters for this command
     pub parameters: Vec<CommandParameter>,
-    /// Confidence in this discovery (0-1)
-    pub confidence: f32,
 }
 
 /// Command parameter
@@ -825,26 +811,26 @@ pub enum DeviceCategory {
 }
 
 impl DeviceCategory {
-    /// Get display name
+    /// Get display name (English, for i18n key)
     pub fn display_name(&self) -> &'static str {
         match self {
-            DeviceCategory::TemperatureSensor => "温度传感器",
-            DeviceCategory::HumiditySensor => "湿度传感器",
-            DeviceCategory::MultiSensor => "多参数传感器",
-            DeviceCategory::MotionSensor => "运动传感器",
-            DeviceCategory::LightSensor => "光照传感器",
-            DeviceCategory::Switch => "开关",
-            DeviceCategory::Dimmer => "调光器",
-            DeviceCategory::Thermostat => "温控器",
-            DeviceCategory::Camera => "摄像头",
-            DeviceCategory::EnergyMonitor => "能耗监控",
-            DeviceCategory::Gateway => "网关",
-            DeviceCategory::Controller => "控制器",
-            DeviceCategory::Actuator => "执行器",
-            DeviceCategory::Display => "显示屏",
-            DeviceCategory::Alarm => "报警器",
-            DeviceCategory::Lock => "门锁",
-            DeviceCategory::Unknown => "未知设备",
+            DeviceCategory::TemperatureSensor => "temperature_sensor",
+            DeviceCategory::HumiditySensor => "humidity_sensor",
+            DeviceCategory::MultiSensor => "multi_sensor",
+            DeviceCategory::MotionSensor => "motion_sensor",
+            DeviceCategory::LightSensor => "light_sensor",
+            DeviceCategory::Switch => "switch",
+            DeviceCategory::Dimmer => "dimmer",
+            DeviceCategory::Thermostat => "thermostat",
+            DeviceCategory::Camera => "camera",
+            DeviceCategory::EnergyMonitor => "energy_monitor",
+            DeviceCategory::Gateway => "gateway",
+            DeviceCategory::Controller => "controller",
+            DeviceCategory::Actuator => "actuator",
+            DeviceCategory::Display => "display",
+            DeviceCategory::Alarm => "alarm",
+            DeviceCategory::Lock => "lock",
+            DeviceCategory::Unknown => "unknown",
         }
     }
 }
@@ -949,8 +935,6 @@ pub struct DeviceTypeInference {
     pub suggested_name: String,
     /// Description
     pub description: String,
-    /// Confidence score (0-1)
-    pub confidence: f32,
     /// Supporting evidence
     pub evidence: Vec<String>,
 }
@@ -986,8 +970,12 @@ pub struct DraftDevice {
     pub id: String,
     /// Proposed device ID (can be edited by user)
     pub device_id: String,
-    /// Source of discovery (mqtt_topic, webhook_url, etc.)
+    /// Source of discovery (e.g., "mqtt", "webhook")
     pub source: String,
+    /// Original topic/path where data was received (for MQTT: the actual topic)
+    /// This is the telemetry topic that the device publishes to
+    #[serde(default)]
+    pub original_topic: Option<String>,
     /// Current status
     pub status: DraftDeviceStatus,
     /// Collected data samples
@@ -1029,8 +1017,6 @@ pub struct GeneratedDeviceType {
     pub metrics: Vec<DiscoveredMetric>,
     /// Generated commands
     pub commands: Vec<DiscoveredCommand>,
-    /// Confidence score (0-1)
-    pub confidence: f32,
     /// Raw MDL definition (JSON)
     pub mdl_definition: serde_json::Value,
     /// Processing summary for user review
@@ -1086,7 +1072,6 @@ pub enum AutoOnboardEvent {
     AnalysisCompleted {
         draft_id: String,
         device_type: String,
-        confidence: f32,
     },
     /// Device approved and registered
     DeviceRegistered {
@@ -1109,11 +1094,22 @@ pub enum AutoOnboardEvent {
 impl DraftDevice {
     /// Create a new draft device
     pub fn new(device_id: String, source: String, max_samples: usize) -> Self {
+        Self::with_original_topic(device_id, source, max_samples, None)
+    }
+
+    /// Create a new draft device with original topic
+    pub fn with_original_topic(
+        device_id: String,
+        source: String,
+        max_samples: usize,
+        original_topic: Option<String>,
+    ) -> Self {
         let id = format!("draft-{}-{}", device_id, chrono::Utc::now().timestamp());
         Self {
             id,
             device_id,
             source,
+            original_topic,
             status: DraftDeviceStatus::Collecting,
             samples: Vec::new(),
             max_samples,
@@ -1167,48 +1163,39 @@ impl DraftDevice {
 
 impl GeneratedDeviceType {
     /// Create from discovered metrics and commands
+    /// Name, description, and category are left empty/unknown for user to fill during registration
     pub fn from_discovered(
         device_type: String,
-        name: String,
         metrics: Vec<DiscoveredMetric>,
         commands: Vec<DiscoveredCommand>,
-        category: DeviceCategory,
         mdl_definition: serde_json::Value,
         samples_analyzed: usize,
     ) -> Self {
         let metrics_count = metrics.len();
         let commands_count = commands.len();
-        let category_name = category.display_name().to_string();
-
-        let confidence = if metrics.is_empty() {
-            0.0
-        } else {
-            metrics.iter().map(|m| m.confidence).sum::<f32>() / metrics.len() as f32
-        };
 
         let (insights, warnings) = Self::generate_insights(&metrics, &commands);
 
         Self {
             device_type,
-            name,
-            description: format!("Auto-generated device type for {}", category_name),
-            category,
+            name: String::new(), // Empty - user will fill during registration
+            description: String::new(), // Empty - user will fill during registration
+            category: DeviceCategory::Unknown, // Not auto-detected
             metrics,
             commands,
-            confidence,
             mdl_definition,
             summary: ProcessingSummary {
                 samples_analyzed,
                 fields_discovered: metrics_count,
                 metrics_generated: metrics_count,
                 commands_generated: commands_count,
-                inferred_category: category_name,
+                inferred_category: "Unknown".to_string(),
                 insights,
                 warnings,
                 recommendations: vec![
+                    "Fill in the device name and description during registration".to_string(),
                     "Review the generated metrics for accuracy".to_string(),
                     "Test the device with actual data".to_string(),
-                    "Add custom transforms if needed".to_string(),
                 ],
             },
         }
@@ -1224,11 +1211,6 @@ impl GeneratedDeviceType {
 
         if temp_count > 0 && humid_count > 0 {
             insights.push("Device measures both temperature and humidity".to_string());
-        }
-
-        let low_conf = metrics.iter().filter(|m| m.confidence < 0.6).count();
-        if low_conf > 0 {
-            warnings.push(format!("{} metrics have low confidence (<60%), manual review recommended", low_conf));
         }
 
         if !commands.is_empty() {

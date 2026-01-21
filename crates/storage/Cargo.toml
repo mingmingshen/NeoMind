@@ -16,9 +16,6 @@ tracing = { workspace = true }
 # New database: redb
 redb = "2.1"
 
-# Vector search: HNSW
-hnsw = { version = "0.1", optional = true }
-
 # Utils
 bincode = "1.3"
 uuid = { workspace = true, features = ["v4", "serde"] }
@@ -33,11 +30,8 @@ default = ["redb"]
 redb = []
 memory = []
 
-# Vector search
-hnsw = ["dep:hnsw"]
-
 # Settings migration support
 settings = []
 
 # All features
-all = ["redb", "memory", "hnsw", "settings"]
+all = ["redb", "memory", "settings"]

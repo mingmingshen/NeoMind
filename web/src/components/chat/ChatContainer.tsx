@@ -169,7 +169,20 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     const trimmedInput = input.trim()
     if (!trimmedInput || isStreaming) return
 
-    // Add user message
+    // Check if we're viewing a historical session with existing messages
+    // If so, create a new session first to avoid adding message to old session
+    const hasExistingMessages = messages.length > 0
+
+    if (hasExistingMessages) {
+      // Create new session first - this will clear messages and update sessionId
+      const newSessionId = await createSession()
+      if (newSessionId) {
+        // Session switched, messages cleared
+        // The WebSocket now points to the new session
+      }
+    }
+
+    // Add user message to the (now empty or current) session
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -186,7 +199,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     setIsStreaming(true)
     streamingMessageIdRef.current = crypto.randomUUID()
 
-    // Send via WebSocket
+    // Send via WebSocket (now using the correct session)
     ws.sendMessage(trimmedInput)
 
     // Focus input after sending

@@ -74,16 +74,22 @@ const getAdapterSchema = (adapterType: string): PluginConfigSchema => {
             description: 'Use TLS/SSL',
             default: false,
           },
+          subscribe_topics: {
+            type: 'array',
+            description: 'Topics to subscribe (default: "#" for all topics)',
+            default: ['#'],
+          },
         },
         required: ['broker'],
         ui_hints: {
-          field_order: ['broker', 'port', 'username', 'password', 'tls'],
+          field_order: ['broker', 'port', 'username', 'password', 'tls', 'subscribe_topics'],
           display_names: {
             broker: 'Broker Address',
             port: 'Port',
             username: 'Username',
             password: 'Password',
             tls: 'Use TLS',
+            subscribe_topics: 'Subscribe Topics',
           },
         },
       }
@@ -295,6 +301,7 @@ export function UnifiedDeviceConnectionsTab() {
         password: config.password,
         tls: config.tls || false,
         enabled: true,
+        subscribe_topics: config.subscribe_topics as string[] | undefined,
       }
       await api.createBroker(data)
     }
@@ -318,6 +325,7 @@ export function UnifiedDeviceConnectionsTab() {
         username: config.username as string,
         password: config.password as string,
         enabled: broker.enabled,
+        subscribe_topics: config.subscribe_topics as string[] | undefined,
       })
     } else {
       throw new Error('Editing not supported for this adapter type')
@@ -805,6 +813,7 @@ function brokerToInstance(broker: any): PluginInstance {
       port: Number(broker.port || 1883),
       username: broker.username || '',
       tls: broker.tls || false,
+      subscribe_topics: broker.subscribe_topics || ['#'],
     } as Record<string, unknown>,
     status: {
       connected: broker.connected ?? false,

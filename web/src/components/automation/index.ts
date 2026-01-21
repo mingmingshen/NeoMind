@@ -1,7 +1,6 @@
 // Automation Components
 export { RuleMonitor } from "./RuleMonitor"
 export { SimpleRuleBuilderSplit } from "./SimpleRuleBuilderSplit"
-export { WorkflowBuilderSplit } from "./WorkflowBuilderSplit"
 export { ThreePaneBuilder, FormSection as TFormSection } from "./ThreePaneBuilder"
 export type { ChatMessage } from "./ThreePaneBuilder"
 export type {
@@ -11,9 +10,6 @@ export type {
   RuleStats,
 } from "./RuleMonitor"
 export { SimpleRuleBuilder } from "./SimpleRuleBuilder"
-export { WorkflowVisualEditor } from "./WorkflowVisualEditor"
-export { WorkflowTemplateDialog } from "./WorkflowTemplateDialog"
-export type { WorkflowTemplateDialogProps } from "./WorkflowTemplateDialog"
 export { AutomationCreator } from "./AutomationCreator"
 export { AutomationCreatorDialog } from "./AutomationCreatorDialog"
 export type { AutomationCreatorDialogProps } from "./AutomationCreatorDialog"

@@ -163,16 +163,13 @@ impl SessionManager {
     /// Create a new session manager with in-memory storage.
     /// This does not open any database files, avoiding lock conflicts.
     pub fn memory() -> Self {
-        eprintln!("[DEBUG SessionManager] Creating memory SessionManager (fallback mode)");
+        tracing::debug!(message = "Creating memory SessionManager (fallback mode)");
         let store = SessionStore::open(":memory:").unwrap_or_else(|e| {
             // Fallback to temp file if :memory: fails
-            eprintln!(
-                "[DEBUG SessionManager] :memory: failed, using temp file: {}",
-                e
-            );
+            tracing::error!(error = %e, ":memory: failed, using temp file");
             let temp_path = std::env::temp_dir()
                 .join(format!("sessions_fallback_{}.redb", uuid::Uuid::new_v4()));
-            eprintln!("[DEBUG SessionManager] Fallback path: {:?}", temp_path);
+            tracing::debug!(path = ?temp_path, "Using fallback path for session store");
             SessionStore::open(&temp_path).expect("Failed to create fallback session store")
         });
         Self {
@@ -207,32 +204,15 @@ impl SessionManager {
         // Restore sessions from database on startup
         // Note: This requires LLM backend to be configured later via set_llm_backend
         let session_ids = manager.store.list_sessions().unwrap_or_else(|e| {
-            eprintln!("Failed to list sessions from database: {}", e);
+            tracing::error!(error = %e, message = "Failed to list sessions from database");
             Vec::new()
         });
 
         if !session_ids.is_empty() {
-            eprintln!(
-                "SessionManager: Found {} persisted sessions, restoring...",
-                session_ids.len()
-            );
-
-            // Use a blocking task since we're in a sync context
-            let rt = tokio::runtime::Handle::try_current();
-            if rt.is_ok() {
-                // We're in a tokio runtime, restore sessions asynchronously
-                // For now, just log that sessions will be restored lazily
-                eprintln!(
-                    "SessionManager: Sessions will be restored on first access (lazy restoration)"
-                );
-            } else {
-                eprintln!(
-                    "SessionManager: No tokio runtime available, sessions will be restored lazily"
-                );
-            }
+            tracing::info!(count = session_ids.len(), "Found persisted sessions, will restore lazily");
         }
 
-        eprintln!("SessionManager initialized with persistent storage");
+        tracing::info!(message = "SessionManager initialized with persistent storage");
 
         Ok(manager)
     }
@@ -246,9 +226,9 @@ impl SessionManager {
 
     /// Delete a session from persistent storage.
     fn delete_session_id(&self, session_id: &str) -> Result<()> {
-        eprintln!("[DEBUG] delete_session_id called for: {}", session_id);
+        tracing::debug!(" delete_session_id called for: {}", session_id);
         let result = self.store.delete_session(session_id);
-        eprintln!("[DEBUG] delete_session result: {:?}", result);
+        tracing::debug!(" delete_session result: {:?}", result);
         result.map_err(|e| AgentError::Storage(format!("Failed to delete session: {}", e)))
     }
 
@@ -303,10 +283,10 @@ impl SessionManager {
             .map_err(|e| AgentError::Storage(format!("Failed to load history: {}", e)))?;
 
         // Debug: Log loaded messages
-        eprintln!("[load_history] Loaded {} messages from DB for session {}", session_messages.len(), session_id);
+        tracing::debug!(" Loaded {} messages from DB for session {}", session_messages.len(), session_id);
         for (i, sm) in session_messages.iter().enumerate() {
             if sm.role == "assistant" {
-                eprintln!("[load_history] Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
+                tracing::debug!(" Message {}: role={}, content_len={}, has_thinking={}, tool_calls_count={}",
                     i, sm.role, sm.content.len(), sm.thinking.is_some(),
                     sm.tool_calls.as_ref().map_or(0, |c| c.len()));
             }
@@ -487,7 +467,7 @@ impl SessionManager {
 
     /// Restore a session from the database into memory.
     async fn restore_session_from_db(&self, session_id: &str) -> Result<Arc<Agent>> {
-        eprintln!("Restoring session {} from database", session_id);
+        tracing::info!(session_id = %session_id, message = "Restoring session from database");
 
         // Use tool registry if set, otherwise create default agent
         let tool_registry = self.tool_registry.read().await.clone();
@@ -516,11 +496,7 @@ impl SessionManager {
         // Restore history to agent's memory
         if !history.is_empty() {
             agent.restore_history(history.clone()).await;
-            eprintln!(
-                "Restored {} messages for session {}",
-                history.len(),
-                session_id
-            );
+            tracing::debug!(session_id = %session_id, count = history.len(), "Restored messages for session");
         }
 
         // Save to in-memory cache
@@ -552,7 +528,7 @@ impl SessionManager {
                     if in_db {
                         // Session is in database but not in memory (server restart)
                         // Recreate the agent
-                        eprintln!("Restoring session {} from database", id);
+                        tracing::info!(session_id = %id, "Restoring session from database");
 
                         // Use tool registry if set, otherwise create default mock tools
                         let tool_registry = self.tool_registry.read().await.clone();
@@ -574,14 +550,14 @@ impl SessionManager {
 
                         // Load message history from database
                         let history = self.load_history(&id).unwrap_or_else(|e| {
-                            eprintln!("Failed to load history for session {}: {}", id, e);
+                            tracing::error!(session_id = %id, error = %e, message = "Failed to load history");
                             Vec::new()
                         });
 
                         // Restore history to agent's memory
                         if !history.is_empty() {
                             agent.restore_history(history.clone()).await;
-                            eprintln!("Restored {} messages for session {}", history.len(), id);
+                            tracing::debug!(session_id = %id, count = history.len(), "Restored messages for session");
                         }
 
                         // Save to in-memory cache
@@ -594,7 +570,7 @@ impl SessionManager {
                         id
                     } else {
                         // Create a new session
-                        eprintln!("Session {} not found in database, creating new session", id);
+                        tracing::info!(session_id = %id, message = "Session not found in database, creating new session");
                         
                         self
                             .create_session()
@@ -615,20 +591,20 @@ impl SessionManager {
     /// Remove a session.
     /// Removes from both memory and database, even if not currently loaded in memory.
     pub async fn remove_session(&self, session_id: &str) -> Result<()> {
-        eprintln!("[DEBUG] remove_session called for: {}", session_id);
+        tracing::debug!(" remove_session called for: {}", session_id);
 
         // Check if session exists (in memory or database)
         let in_memory = self.sessions.read().await.contains_key(session_id);
-        eprintln!("[DEBUG] in_memory: {}", in_memory);
+        tracing::debug!(" in_memory: {}", in_memory);
 
         let in_db = self
             .store
             .session_exists(session_id)
             .map_err(|e| AgentError::Storage(format!("Failed to check session: {}", e)))?;
-        eprintln!("[DEBUG] in_db: {}", in_db);
+        tracing::debug!(" in_db: {}", in_db);
 
         if !in_memory && !in_db {
-            eprintln!("[DEBUG] Session not found in memory or database");
+            tracing::debug!(" Session not found in memory or database");
             return Err(AgentError::NotFound(format!("Session: {}", session_id)));
         }
 
@@ -637,9 +613,9 @@ impl SessionManager {
         self.session_messages.write().await.remove(session_id);
 
         // Remove from database
-        eprintln!("[DEBUG] Deleting from database...");
+        tracing::debug!(" Deleting from database...");
         self.delete_session_id(session_id)?;
-        eprintln!("[DEBUG] Session deleted successfully");
+        tracing::debug!(" Session deleted successfully");
 
         Ok(())
     }
@@ -690,7 +666,7 @@ impl SessionManager {
         let db_session_ids = match self.store.list_sessions() {
             Ok(ids) => ids,
             Err(e) => {
-                eprintln!("Failed to list sessions from database: {}", e);
+                tracing::error!(error = %e, message = "Failed to list sessions from database");
                 // Fallback to memory-only sessions
                 self.sessions.read().await.keys().cloned().collect()
             }
@@ -762,7 +738,7 @@ impl SessionManager {
         match self.store.list_sessions() {
             Ok(ids) => ids,
             Err(e) => {
-                eprintln!("Failed to list sessions from database: {}", e);
+                tracing::error!(error = %e, message = "Failed to list sessions from database");
                 // Fallback to memory-only sessions
                 self.sessions.read().await.keys().cloned().collect()
             }
@@ -780,7 +756,7 @@ impl SessionManager {
         session_id: &str,
         message: &str,
     ) -> Result<super::agent::AgentResponse> {
-        println!("[SessionManager::process_message] session_id={}, message={}", session_id, message);
+        tracing::debug!(session_id = %session_id, message = %message, "SessionManager::process_message");
         let agent = self.get_session(session_id).await?;
         let response = agent.process(message).await?;
 
@@ -793,7 +769,7 @@ impl SessionManager {
 
         // Persist history to database
         if let Err(e) = self.save_history(session_id, &messages) {
-            eprintln!("Failed to save history for session {}: {}", session_id, e);
+            tracing::error!(session_id = %session_id, error = %e, message = "Failed to save history");
         }
 
         Ok(response)
@@ -856,26 +832,20 @@ impl SessionManager {
             Err(AgentError::NotFound(_)) => {
                 // Session not found in memory or DB - might be dirty data
                 // Return empty history instead of error
-                eprintln!(
-                    "Session {} not found, returning empty history (may be dirty data)",
-                    session_id
-                );
+                tracing::warn!(session_id = %session_id, "Session not found, returning empty history");
                 Ok(Vec::new())
             }
             Err(AgentError::Storage(e)) => {
                 // Storage error (database corrupted, etc.) - try to load directly from store
-                eprintln!(
-                    "Storage error accessing session {}, trying direct load: {}",
-                    session_id, e
-                );
+                tracing::error!(session_id = %session_id, error = %e, "Storage error, trying direct load");
                 // Try to load history directly from storage as a fallback
                 match self.load_history(session_id) {
                     Ok(messages) => {
-                        eprintln!("Successfully loaded {} messages via direct load", messages.len());
+                        tracing::debug!(count = messages.len(), "Successfully loaded messages via direct load");
                         Ok(messages)
                     }
                     Err(load_err) => {
-                        eprintln!("Direct load also failed: {}, returning empty history", load_err);
+                        tracing::error!(error = %load_err, "Direct load also failed, returning empty history");
                         Ok(Vec::new())
                     }
                 }
@@ -897,7 +867,7 @@ impl SessionManager {
 
         // Clear persisted history using the dedicated clear method
         if let Err(e) = self.store.clear_history(session_id) {
-            eprintln!("Failed to clear history for session {}: {}", session_id, e);
+            tracing::error!(session_id = %session_id, error = %e, message = "Failed to clear history");
         }
 
         Ok(())
@@ -954,17 +924,11 @@ impl SessionManager {
                         if let Ok(Some(timestamp)) = self.store.get_session_timestamp(&session_id) {
                             let age_seconds = now - timestamp;
                             if age_seconds > empty_session_threshold {
-                                eprintln!(
-                                    "Found empty session {} (age: {}s), removing",
-                                    session_id, age_seconds
-                                );
+                                tracing::debug!(session_id = %session_id, age = age_seconds, "Found empty session, removing");
                                 let _ = self.delete_session_id(&session_id);
                                 invalid_count += 1;
                             } else {
-                                eprintln!(
-                                    "Skipping recent empty session {} (age: {}s)",
-                                    session_id, age_seconds
-                                );
+                                tracing::debug!(session_id = %session_id, age = age_seconds, "Skipping recent empty session");
                             }
                         }
                     }
@@ -972,10 +936,7 @@ impl SessionManager {
                 }
                 Err(e) => {
                     // Failed to load history - corrupted data
-                    eprintln!(
-                        "Found corrupted session {} (error: {}), removing",
-                        session_id, e
-                    );
+                    tracing::warn!(session_id = %session_id, error = %e, "Found corrupted session, removing");
                     let _ = self.delete_session_id(&session_id);
                     invalid_count += 1;
                 }
@@ -1173,10 +1134,7 @@ impl SessionManager {
 impl Default for SessionManager {
     fn default() -> Self {
         Self::new().unwrap_or_else(|e| {
-            eprintln!(
-                "Failed to create SessionManager: {}, using in-memory only",
-                e
-            );
+            tracing::error!(error = %e, "Failed to create SessionManager, using in-memory only");
             Self {
                 sessions: Arc::new(RwLock::new(HashMap::new())),
                 session_messages: Arc::new(RwLock::new(HashMap::new())),

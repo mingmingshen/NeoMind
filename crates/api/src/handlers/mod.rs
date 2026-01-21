@@ -25,7 +25,6 @@ pub mod settings;
 pub mod stats;
 pub mod test_data;
 pub mod tools;
-pub mod workflows;
 
 // Re-export ServerState so handlers can use it
 pub use crate::server::ServerState;

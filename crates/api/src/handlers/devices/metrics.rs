@@ -143,6 +143,17 @@ pub fn value_to_json(value: &MetricValue) -> serde_json::Value {
         MetricValue::Boolean(v) => json!(v),
         // Encode binary data as base64 string for frontend image detection
         MetricValue::Binary(v) => json!(STANDARD.encode(v)),
+        MetricValue::Array(arr) => {
+            let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                MetricValue::Integer(i) => json!(*i),
+                MetricValue::Float(f) => json!(*f),
+                MetricValue::String(s) => json!(s),
+                MetricValue::Boolean(b) => json!(*b),
+                MetricValue::Null => json!(null),
+                MetricValue::Array(_) | MetricValue::Binary(_) => json!(null),
+            }).collect();
+            json!(json_arr)
+        }
         MetricValue::Null => json!(null),
     }
 }

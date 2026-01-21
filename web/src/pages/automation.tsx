@@ -1,7 +1,7 @@
 /**
  * NeoTalk Automation Page
  *
- * Unified automation interface with rules, workflows, and data transforms.
+ * Unified automation interface with rules and data transforms.
  * Uses PageLayout + PageTabs structure consistent with other pages.
  */
 
@@ -11,19 +11,17 @@ import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent } from "@/components/shared"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import type { TransformAutomation, Rule, Workflow as WorkflowType } from "@/types"
+import type { TransformAutomation, Rule } from "@/types"
 
 // Import split-pane builder components
 import { SimpleRuleBuilderSplit } from "@/components/automation/SimpleRuleBuilderSplit"
 import { TransformBuilder as TransformBuilderSplit } from "@/components/automation/TransformBuilderSplit"
-import { WorkflowBuilderSplit } from "@/components/automation/WorkflowBuilderSplit"
 
 // Import list components
 import { RulesList } from "./automation-components/RulesList"
-import { WorkflowsList } from "./automation-components/WorkflowsList"
 import { TransformsList } from "./automation-components/TransformsList"
 
-type AutomationTab = 'rules' | 'workflows' | 'transforms'
+type AutomationTab = 'rules' | 'transforms'
 
 export function AutomationPage() {
   const { t: tCommon } = useTranslation('common')
@@ -34,16 +32,13 @@ export function AutomationPage() {
   // Builder states
   const [showRuleDialog, setShowRuleDialog] = useState(false)
   const [showTransformDialog, setShowTransformDialog] = useState(false)
-  const [showWorkflowDialog, setShowWorkflowDialog] = useState(false)
 
   // Editing states
   const [editingRule, setEditingRule] = useState<Rule | undefined>(undefined)
   const [editingTransform, setEditingTransform] = useState<TransformAutomation | undefined>(undefined)
-  const [editingWorkflow, setEditingWorkflow] = useState<WorkflowType | undefined>(undefined)
 
   // Data state
   const [rules, setRules] = useState<Rule[]>([])
-  const [workflows, setWorkflows] = useState<WorkflowType[]>([])
   const [transforms, setTransforms] = useState<TransformAutomation[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -75,9 +70,6 @@ export function AutomationPage() {
       if (activeTab === 'rules') {
         const data = await api.listRules()
         setRules(data.rules || [])
-      } else if (activeTab === 'workflows') {
-        const data = await api.listWorkflows()
-        setWorkflows(data.workflows || [])
       } else if (activeTab === 'transforms') {
         const data = await api.listTransforms()
         setTransforms(data.transforms || [])
@@ -99,9 +91,6 @@ export function AutomationPage() {
     if (activeTab === 'rules') {
       setEditingRule(undefined)
       setShowRuleDialog(true)
-    } else if (activeTab === 'workflows') {
-      setEditingWorkflow(undefined)
-      setShowWorkflowDialog(true)
     } else if (activeTab === 'transforms') {
       setEditingTransform(undefined)
       setShowTransformDialog(true)
@@ -160,62 +149,6 @@ export function AutomationPage() {
       })
     } catch (error) {
       console.error('Failed to execute rule:', error)
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    }
-  }
-
-  // Workflow handlers
-  const handleEditWorkflow = (workflow: WorkflowType) => {
-    setEditingWorkflow(workflow)
-    setShowWorkflowDialog(true)
-  }
-
-  const handleDeleteWorkflow = async (workflow: WorkflowType) => {
-    if (!confirm(tAuto('deleteConfirm'))) return
-    try {
-      await api.deleteWorkflow(workflow.id)
-      await loadItems()
-      toast({
-        title: tCommon('success'),
-        description: tAuto('itemDeleted'),
-      })
-    } catch (error) {
-      console.error('Failed to delete workflow:', error)
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    }
-  }
-
-  const handleToggleWorkflow = async (workflow: WorkflowType) => {
-    try {
-      await api.updateWorkflow(workflow.id, { enabled: !workflow.enabled })
-      await loadItems()
-    } catch (error) {
-      console.error('Failed to toggle workflow:', error)
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    }
-  }
-
-  const handleExecuteWorkflow = async (workflow: WorkflowType) => {
-    try {
-      await api.executeWorkflow(workflow.id)
-      toast({
-        title: tCommon('success'),
-        description: tAuto('executeSuccess'),
-      })
-    } catch (error) {
-      console.error('Failed to execute workflow:', error)
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -291,17 +224,33 @@ export function AutomationPage() {
 
   const handleSaveTransform = async (data: Partial<TransformAutomation>) => {
     try {
+      // Build the transform definition matching backend TransformAutomation structure
+      // Backend requires: id, name, description, enabled, scope, js_code, output_prefix, complexity, execution_count, created_at, updated_at, last_executed
+      const now = Math.floor(Date.now() / 1000)
+      const buildDefinition = () => {
+        const baseFields = {
+          id: editingTransform?.id || crypto.randomUUID(),
+          name: data.name || '',
+          description: data.description || '',
+          enabled: data.enabled ?? true,
+          scope: data.scope || 'global',
+          js_code: data.js_code || '',
+          output_prefix: data.output_prefix || '',
+          complexity: data.complexity || 2,
+          execution_count: 0,
+          created_at: now,
+          updated_at: now,
+          last_executed: null as number | null,
+        }
+        return baseFields
+      }
+
       if (editingTransform?.id) {
         await api.updateAutomation(editingTransform.id, {
           name: data.name,
           description: data.description,
           enabled: data.enabled,
-          definition: {
-            scope: data.scope,
-            operations: data.operations,
-            js_code: data.js_code,
-            output_prefix: data.output_prefix,
-          },
+          definition: buildDefinition(),
         })
       } else {
         await api.createAutomation({
@@ -309,12 +258,7 @@ export function AutomationPage() {
           description: data.description,
           type: 'transform',
           enabled: data.enabled ?? true,
-          definition: {
-            scope: data.scope || { type: 'global' },
-            operations: data.operations || [],
-            js_code: data.js_code,
-            output_prefix: data.output_prefix,
-          },
+          definition: buildDefinition(),
         })
       }
       setShowTransformDialog(false)
@@ -335,31 +279,6 @@ export function AutomationPage() {
     }
   }
 
-  const handleSaveWorkflow = async (workflow: any) => {
-    try {
-      if (workflow.id) {
-        await api.updateWorkflow(workflow.id, workflow)
-      } else {
-        await api.createWorkflow(workflow)
-      }
-      setShowWorkflowDialog(false)
-      setEditingWorkflow(undefined)
-      await loadItems()
-      toast({
-        title: tCommon('success'),
-        description: tAuto('workflowSaved'),
-      })
-    } catch (error) {
-      console.error('Failed to save workflow:', error)
-      toast({
-        title: tCommon('failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-      throw error
-    }
-  }
-
   return (
     <PageLayout
       title={tAuto('title')}
@@ -369,7 +288,6 @@ export function AutomationPage() {
       <PageTabs
         tabs={[
           { value: 'rules', label: tAuto('tabs.rules') },
-          { value: 'workflows', label: tAuto('tabs.workflows') },
           { value: 'transforms', label: tAuto('tabs.transforms') },
         ]}
         activeTab={activeTab}
@@ -396,18 +314,6 @@ export function AutomationPage() {
             onDelete={handleDeleteRule}
             onToggleStatus={handleToggleRule}
             onExecute={handleExecuteRule}
-          />
-        </PageTabsContent>
-
-        {/* Workflows Tab */}
-        <PageTabsContent value="workflows" activeTab={activeTab}>
-          <WorkflowsList
-            workflows={workflows}
-            loading={loading}
-            onEdit={handleEditWorkflow}
-            onDelete={handleDeleteWorkflow}
-            onToggleStatus={handleToggleWorkflow}
-            onExecute={handleExecuteWorkflow}
           />
         </PageTabsContent>
 
@@ -439,15 +345,6 @@ export function AutomationPage() {
         transform={editingTransform}
         devices={devices}
         onSave={handleSaveTransform}
-      />
-
-      {/* Workflow Builder */}
-      <WorkflowBuilderSplit
-        open={showWorkflowDialog}
-        onClose={() => setShowWorkflowDialog(false)}
-        workflow={editingWorkflow}
-        onSave={handleSaveWorkflow}
-        resources={{ devices, metrics: ['temperature', 'humidity'], alertChannels: [] }}
       />
     </PageLayout>
   )

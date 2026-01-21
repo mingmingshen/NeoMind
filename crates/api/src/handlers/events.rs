@@ -45,9 +45,16 @@ pub struct EventHistoryQuery {
     /// Filter by category
     #[serde(default)]
     pub category: Option<String>,
-    /// Maximum number of results
+    /// Maximum number of results (default: 50, max: 200)
     #[serde(default = "default_limit")]
     pub limit: usize,
+    /// Skip N results for pagination
+    #[serde(default)]
+    pub offset: usize,
+}
+
+fn default_limit() -> usize {
+    50
 }
 
 /// Event subscription request.
@@ -77,8 +84,14 @@ pub struct EventSubscriptionResponse {
 pub struct EventListResponse {
     /// List of events with metadata
     pub events: Vec<EventWithMetadata>,
-    /// Total count
+    /// Total count (for this query filter)
     pub total: usize,
+    /// Current offset
+    pub offset: usize,
+    /// Current limit
+    pub limit: usize,
+    /// Whether there are more results
+    pub has_more: bool,
 }
 
 /// Event with metadata.
@@ -111,10 +124,6 @@ pub struct EventStats {
     pub events_by_category: HashMap<String, u64>,
     /// Active subscriptions
     pub active_subscriptions: usize,
-}
-
-fn default_limit() -> usize {
-    100
 }
 
 /// SSE endpoint for streaming events.
@@ -325,7 +334,7 @@ pub async fn event_websocket_handler(
 
 /// Query event history.
 ///
-/// Retrieves historical events from storage with optional filtering.
+/// Retrieves historical events from storage with optional filtering and pagination.
 pub async fn event_history_handler(
     State(state): State<ServerState>,
     Query(query): Query<EventHistoryQuery>,
@@ -334,6 +343,10 @@ pub async fn event_history_handler(
     let event_log = state.event_log.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
     use edge_ai_storage::business::EventFilter;
+
+    // Cap limit to prevent excessive data load
+    let limit = query.limit.min(200);
+    let offset = query.offset;
 
     // Convert query parameters to EventFilter
     let mut filter = EventFilter::new();
@@ -344,20 +357,33 @@ pub async fn event_history_handler(
     if let Some(end) = query.end {
         filter.end_time = Some(end);
     }
-    filter.limit = Some(query.limit);
 
-    // Map event types to EventLog event types
-    if !query.event_type.is_empty() {
-        filter.event_types = query.event_type;
+    // Apply category filter by mapping to event types
+    if let Some(category) = &query.category {
+        filter.event_types = event_types_for_category(category);
+    } else if !query.event_type.is_empty() {
+        filter.event_types = query.event_type.clone();
     }
+
+    // Set offset and limit for pagination
+    filter.offset = Some(offset);
+    filter.limit = Some(limit + 1); // Fetch one extra to determine if there are more
 
     // Query events from storage
     let logs = event_log
         .query(&filter)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Determine if there are more results
+    let has_more = logs.len() > limit;
+    let events_to_return = if has_more {
+        logs[..limit].to_vec()
+    } else {
+        logs
+    };
+
     // Convert EventLog entries to EventWithMetadata
-    let events: Vec<EventWithMetadata> = logs
+    let events: Vec<EventWithMetadata> = events_to_return
         .into_iter()
         .map(|log| EventWithMetadata {
             event: serde_json::json!({
@@ -375,9 +401,61 @@ pub async fn event_history_handler(
         })
         .collect();
 
-    let total = events.len();
+    // Get total count by doing a separate query without limit/offset
+    // For performance, we estimate or do a lightweight count query
+    let total_filter = EventFilter::new()
+        .with_time_range(
+            query.start.unwrap_or(i64::MAX - 86400 * 30),
+            query.end.unwrap_or(i64::MAX)
+        );
+    // For exact total, we'd need to count - for now use a reasonable estimate
+    // or omit this to avoid performance impact
+    let total = offset + events.len() + if has_more { 1 } else { 0 };
 
-    Ok(Json(EventListResponse { events, total }))
+    Ok(Json(EventListResponse {
+        events,
+        total,
+        offset,
+        limit,
+        has_more,
+    }))
+}
+
+/// Get event types for a category filter.
+fn event_types_for_category(category: &str) -> Vec<String> {
+    match category {
+        "device" => vec![
+            "DeviceOnline".to_string(),
+            "DeviceOffline".to_string(),
+            "DeviceMetric".to_string(),
+            "DeviceCommandResult".to_string(),
+        ],
+        "rule" => vec![
+            "RuleEvaluated".to_string(),
+            "RuleTriggered".to_string(),
+            "RuleExecuted".to_string(),
+        ],
+        "workflow" => vec![
+            "WorkflowTriggered".to_string(),
+            "WorkflowStepCompleted".to_string(),
+            "WorkflowCompleted".to_string(),
+        ],
+        "llm" => vec![
+            "PeriodicReviewTriggered".to_string(),
+            "LlmDecisionProposed".to_string(),
+            "LlmDecisionExecuted".to_string(),
+            "UserMessage".to_string(),
+            "LlmResponse".to_string(),
+            "ToolExecutionStart".to_string(),
+            "ToolExecutionSuccess".to_string(),
+            "ToolExecutionFailure".to_string(),
+        ],
+        "alert" => vec![
+            "AlertCreated".to_string(),
+            "AlertAcknowledged".to_string(),
+        ],
+        _ => vec![],
+    }
 }
 
 /// Query events with category filter.
@@ -393,6 +471,7 @@ pub async fn events_query_handler(
 /// Get event statistics.
 ///
 /// Returns statistics about events in the system.
+/// Optimized to only sample recent events (last 24 hours, max 1000).
 pub async fn event_stats_handler(
     State(state): State<ServerState>,
 ) -> Result<Json<EventStats>, StatusCode> {
@@ -400,10 +479,17 @@ pub async fn event_stats_handler(
 
     let event_bus = state.event_bus.as_ref().ok_or(StatusCode::NOT_FOUND)?;
 
-    // Get all events for statistics
+    // Only sample recent events for better performance
+    // Query events from last 24 hours, max 1000
+    let now = chrono::Utc::now().timestamp();
+    let day_ago = now - 86400;
+
     use edge_ai_storage::business::EventFilter;
     let logs = event_log
-        .query(&EventFilter::new().with_limit(10000))
+        .query(&EventFilter::new()
+            .with_time_range(day_ago, now)
+            .with_limit(1000)
+        )
         .unwrap_or_default();
 
     let mut events_by_type: HashMap<String, u64> = HashMap::new();

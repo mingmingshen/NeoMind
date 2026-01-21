@@ -49,7 +49,7 @@ export interface AutomationsTabProps {
   onSearchChange?: (query: string) => void
 }
 
-type FilterType = 'all' | 'rule' | 'workflow'
+type FilterType = 'all' | 'rule' | 'transform'
 type StatusFilter = 'all' | 'enabled' | 'disabled'
 
 export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChange }: AutomationsTabProps) {
@@ -119,8 +119,6 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
     try {
       if (automation.type === 'rule') {
         await api.testRule(automation.id)
-      } else {
-        await api.executeWorkflow(automation.id)
       }
       toast({
         title: t('common:success'),
@@ -175,12 +173,12 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
   }
 
   const getTypeLabel = (type: AutomationType) =>
-    type === 'rule' ? t('automation:rules') : t('automation:workflows')
+    type === 'rule' ? t('automation:rules') : t('automation:transforms')
 
   const getTypeColor = (type: AutomationType) =>
     type === 'rule'
       ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900 dark:text-blue-300'
-      : 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900 dark:text-purple-300'
+      : 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900 dark:text-green-300'
 
   const getComplexityDots = (complexity: number) => {
     return Array.from({ length: 5 }, (_, i) => (
@@ -205,7 +203,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
             <SelectContent>
               <SelectItem value="all">{t('automation:all')}</SelectItem>
               <SelectItem value="rule">{t('automation:rules')}</SelectItem>
-              <SelectItem value="workflow">{t('automation:workflows')}</SelectItem>
+              <SelectItem value="transform">{t('automation:transforms')}</SelectItem>
             </SelectContent>
           </Select>
 

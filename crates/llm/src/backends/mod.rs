@@ -6,7 +6,7 @@
 #[cfg(feature = "cloud")]
 use crate::backend_plugin::BackendRegistry;
 
-// Ollama backend (local LLM runner via llama.cpp)
+// Ollama backend (local LLM runner - uses llama.cpp internally)
 #[cfg(feature = "ollama")]
 pub mod ollama;
 #[cfg(feature = "ollama")]

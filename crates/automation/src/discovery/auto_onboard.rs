@@ -159,6 +159,20 @@ impl AutoOnboardManager {
         data: &serde_json::Value,
         is_binary: bool,
     ) -> Result<bool> {
+        self.process_unknown_device_with_topic(device_id, source, data, is_binary, None).await
+    }
+
+    /// Process incoming data from an unknown device with original topic
+    ///
+    /// Returns whether the data was accepted for collection
+    pub async fn process_unknown_device_with_topic(
+        &self,
+        device_id: &str,
+        source: &str,
+        data: &serde_json::Value,
+        is_binary: bool,
+        original_topic: Option<String>,
+    ) -> Result<bool> {
         let config = self.config.read().await;
         if !config.enabled {
             return Ok(false);
@@ -180,7 +194,7 @@ impl AutoOnboardManager {
         drop(drafts);
 
         // Create new draft device
-        self.create_draft(device_id, source, data, is_binary).await
+        self.create_draft_with_topic(device_id, source, data, is_binary, original_topic).await
     }
 
     /// Create a new draft device
@@ -191,12 +205,25 @@ impl AutoOnboardManager {
         data: &serde_json::Value,
         is_binary: bool,
     ) -> Result<bool> {
+        self.create_draft_with_topic(device_id, source, data, is_binary, None).await
+    }
+
+    /// Create a new draft device with original topic
+    async fn create_draft_with_topic(
+        &self,
+        device_id: &str,
+        source: &str,
+        data: &serde_json::Value,
+        is_binary: bool,
+        original_topic: Option<String>,
+    ) -> Result<bool> {
         let mut drafts = self.drafts.write().await;
 
-        let mut draft = DraftDevice::new(
+        let mut draft = DraftDevice::with_original_topic(
             device_id.to_string(),
             source.to_string(),
             self.config.read().await.max_samples,
+            original_topic,
         );
 
         // Mark as binary if applicable
@@ -219,19 +246,23 @@ impl AutoOnboardManager {
         };
         draft.add_sample(sample);
 
-        // Clone values needed for event before moving draft
+        // Clone values needed for event and analysis before moving draft
         let draft_id = draft.id.clone();
         let device_id_owned = device_id.to_string();
         let source_owned = source.to_string();
+        let samples = draft.json_samples();
 
         drafts.insert(device_id.to_string(), draft.clone());
+        drop(drafts);
 
-        // Publish event (fire-and-forget)
-        let manager = self.clone();
+        // Publish DraftCreated event (fire-and-forget)
+        let manager_for_event = self.clone();
+        let draft_id_for_event = draft_id.clone();
+        let device_id_for_event = device_id_owned.clone();
         tokio::spawn(async move {
-            manager.publish_event(AutoOnboardEvent::DraftCreated {
-                draft_id,
-                device_id: device_id_owned,
+            manager_for_event.publish_event(AutoOnboardEvent::DraftCreated {
+                draft_id: draft_id_for_event,
+                device_id: device_id_for_event,
                 source: source_owned,
             }).await;
         });
@@ -243,6 +274,12 @@ impl AutoOnboardManager {
             self.config.read().await.max_samples,
             is_binary
         );
+
+        // Trigger analysis immediately since MIN_SAMPLES_FOR_ANALYSIS = 1
+        let manager_for_analysis = self.clone();
+        tokio::spawn(async move {
+            let _ = manager_for_analysis.analyze_device(&draft_id, &device_id_owned, samples).await;
+        });
 
         Ok(true)
     }
@@ -366,21 +403,17 @@ impl AutoOnboardManager {
 
             let category = DeviceCategory::Unknown;
             let type_id = format!("auto_{}", device_id.replace('-', "_"));
-            let display_name = self.generate_device_name(device_id, &category, &[]);
 
-            let mdl_definition = self.generate_simple_mdl(&type_id, &display_name, &category).await?;
+            let mdl_definition = self.generate_simple_mdl(&type_id, &type_id, &category).await?;
 
             let generated_type = GeneratedDeviceType::from_discovered(
                 type_id.clone(),
-                display_name,
                 vec![], // No metrics for binary devices
                 vec![], // Commands
-                category,
                 mdl_definition,
                 samples.len(),
             );
 
-            let confidence = 0.5; // Lower confidence for binary devices since we don't analyze structure
             let type_id_for_event = type_id.clone();
 
             // Update draft with generated type
@@ -399,15 +432,13 @@ impl AutoOnboardManager {
                 manager.publish_event(AutoOnboardEvent::AnalysisCompleted {
                     draft_id: draft_id_str,
                     device_type: type_id_for_event,
-                    confidence,
                 }).await;
             });
 
             tracing::info!(
-                "Analysis complete for binary device '{}': type={}, confidence={}, simple mode",
+                "Analysis complete for binary device '{}': type={}, simple mode",
                 device_id,
-                type_id,
-                confidence
+                type_id
             );
 
             return Ok(generated_type);
@@ -451,34 +482,30 @@ impl AutoOnboardManager {
         // Check for existing type with matching signature
         let existing_type = self.find_matching_type(&metrics, &category).await;
 
-        let (type_id, display_name, reusing_type) = if let Some(existing_type_id) = existing_type {
+        let (type_id, reusing_type) = if let Some(existing_type_id) = existing_type {
             tracing::info!(
                 "Found matching type signature for device '{}': reusing type '{}'",
                 device_id,
                 existing_type_id
             );
-            (existing_type_id.clone(), format!("{} (reused)", existing_type_id), true)
+            (existing_type_id.clone(), true)
         } else {
             // Generate new device type ID
             let new_type_id = format!("auto_{}", device_id.replace('-', "_"));
-            let new_display_name = self.generate_device_name(device_id, &category, &metrics);
-            (new_type_id, new_display_name, false)
+            (new_type_id, false)
         };
 
         // Generate MDL definition
-        let mdl_definition = self.generate_mdl(&type_id, &display_name, &metrics, &category).await?;
+        let mdl_definition = self.generate_mdl(&type_id, &type_id, &metrics, &category).await?;
 
         let generated_type = GeneratedDeviceType::from_discovered(
             type_id.clone(),
-            display_name,
             metrics.clone(),
             vec![], // Commands - TODO: infer from data patterns
-            category.clone(),
             mdl_definition,
             device_samples.len(),
         );
 
-        let confidence = generated_type.confidence;
         let type_id_for_event = type_id.clone(); // Clone for event publishing
 
         // Register type signature if this is a new type
@@ -503,15 +530,13 @@ impl AutoOnboardManager {
             manager.publish_event(AutoOnboardEvent::AnalysisCompleted {
                 draft_id: draft_id_str,
                 device_type: type_id_for_event,
-                confidence,
             }).await;
         });
 
         tracing::info!(
-            "Analysis complete for '{}': type={}, confidence={}, reusing={}",
+            "Analysis complete for '{}': type={}, reusing={}",
             device_id,
             type_id,
-            confidence,
             reusing_type
         );
 
@@ -634,7 +659,6 @@ impl AutoOnboardManager {
                 m.display_name = enhancement.display_name.clone();
                 m.description = enhancement.description.clone();
                 m.unit = enhancement.unit.clone();
-                m.confidence = (m.confidence + 0.2).min(1.0); // Boost confidence from LLM
             }
             m
         }).collect();
@@ -700,19 +724,22 @@ impl AutoOnboardManager {
         })
     }
 
-    /// Reject a draft device
+    /// Reject a draft device - completely removes it so it can be re-discovered later
     pub async fn reject_device(&self, device_id: &str, reason: &str) -> Result<()> {
         let mut drafts = self.drafts.write().await;
-        let draft = drafts.get_mut(device_id).ok_or_else(|| {
+
+        // Get the draft info before removing (for logging and event)
+        let draft = drafts.get(device_id).ok_or_else(|| {
             DiscoveryError::InvalidData(format!("Draft not found: {}", device_id))
         })?;
+        let draft_id = draft.id.clone();
 
-        draft.set_status(DraftDeviceStatus::Rejected);
-        draft.error_message = Some(reason.to_string());
+        // Completely remove the draft instead of just marking as rejected
+        // This allows the device to be re-discovered when it sends data again
+        drafts.remove(device_id);
 
         // Publish event (fire-and-forget)
         let manager = self.clone();
-        let draft_id = draft.id.clone();
         let reason_str = reason.to_string();
         tokio::spawn(async move {
             manager.publish_event(AutoOnboardEvent::DeviceRejected {
@@ -721,7 +748,20 @@ impl AutoOnboardManager {
             }).await;
         });
 
-        tracing::info!("Draft device '{}' rejected: {}", device_id, reason);
+        tracing::info!("Draft device '{}' rejected and removed: {}", device_id, reason);
+
+        Ok(())
+    }
+
+    /// Remove a draft device completely (used after successful registration)
+    pub async fn remove_draft(&self, device_id: &str) -> Result<()> {
+        let mut drafts = self.drafts.write().await;
+
+        // Check if draft exists before removing
+        if drafts.contains_key(device_id) {
+            drafts.remove(device_id);
+            tracing::info!("Draft device '{}' removed after registration", device_id);
+        }
 
         Ok(())
     }

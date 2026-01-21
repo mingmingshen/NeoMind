@@ -8,7 +8,7 @@
 //! The system gracefully degrades if LLM is unavailable or returns invalid data.
 
 use crate::discovery::types::*;
-use crate::discovery::{StructureAnalyzer, StatisticsAnalyzer, HexAnalyzer, ValuePattern, SuggestedType, ValueStatistics, DataType, ValueRange};
+use crate::discovery::{StructureAnalyzer, StatisticsAnalyzer, HexAnalyzer, ValuePattern, SuggestedType, ValueStatistics, DataType, ValueRange, InferredType};
 use edge_ai_core::{LlmRuntime, Message, GenerationParams, llm::backend::LlmInput};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,7 +54,7 @@ pub enum InferenceSource {
     Default,
 }
 
-/// Enhanced field semantic with source tracking
+/// Enhanced field semantic with source tracking (internal for LLM enhancement)
 #[derive(Debug, Clone)]
 pub struct FieldSemantic {
     /// Inferred semantic type
@@ -65,7 +65,7 @@ pub struct FieldSemantic {
     pub display_name: String,
     /// Recommended unit of measurement
     pub recommended_unit: Option<String>,
-    /// Confidence score (0.0 - 1.0)
+    /// Confidence score (0.0 - 1.0) - internal for LLM enhancement logic only
     pub confidence: f32,
     /// Explanation/reasoning for the inference
     pub reasoning: String,
@@ -299,7 +299,6 @@ impl SemanticInference {
             value_range: path.value_range.clone(),
             is_readable: true,
             is_writable: false,
-            confidence: semantic.confidence,
         }
     }
 
@@ -361,10 +360,41 @@ impl SemanticInference {
             self.collect_path_values(&mut path_values, sample, "$");
         }
 
+        // Identify array element paths that should be grouped
+        // For example: sensors[0].name, sensors[0].value, sensors[1].name, sensors[1].value
+        // should be grouped into a single "sensors" array metric
+        let mut array_parent_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut array_element_patterns: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+
+        for path_info in &structure_result.paths {
+            if path_info.is_array_element {
+                // Extract the parent array path by removing [index] suffix
+                // e.g., "sensors[0].name" -> "sensors", "data.sensors[0]" -> "data.sensors"
+                let parent_path = if let Some(idx) = path_info.path.find('[') {
+                    let before_bracket = &path_info.path[..idx];
+                    // Remove trailing dot if present (e.g., "sensors.[0]." -> "sensors")
+                    before_bracket.strip_suffix('.').unwrap_or(before_bracket).to_string()
+                } else {
+                    continue;
+                };
+
+                // Also check if there's more after the array access (nested object in array)
+                // If the path has structure like "sensors[0].xxx", we want to treat "sensors" as the array path
+                array_parent_paths.insert(parent_path.clone());
+                array_element_patterns.entry(parent_path).or_default().push(path_info.path.clone());
+            }
+        }
+
         // Stage 4: Batch Semantic Inference - Single LLM call for all fields (only if use_llm is true)
         // Build a map of field_name -> values for batch processing
+        // Skip array element paths (they will be grouped under parent array path)
         let mut fields_for_batch: std::collections::HashMap<String, Vec<serde_json::Value>> = std::collections::HashMap::new();
         for path_info in &structure_result.paths {
+            // Skip array element paths - they will be handled as part of the parent array
+            if path_info.is_array_element && array_element_patterns.values().any(|paths| paths.contains(&path_info.path)) {
+                continue;
+            }
+
             let field_name = Self::extract_field_name(&path_info.path);
             if let Some(values) = path_values.get(&path_info.path) {
                 fields_for_batch.insert(field_name, values.clone());
@@ -395,6 +425,11 @@ impl SemanticInference {
 
         // Stage 2 & 3 & 4: Process each path with combined analysis
         for path_info in &structure_result.paths {
+            // Skip array element paths - they will be handled as part of the parent array
+            if path_info.is_array_element && array_element_patterns.values().any(|paths| paths.contains(&path_info.path)) {
+                continue;
+            }
+
             let values = path_values.get(&path_info.path)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
@@ -458,20 +493,8 @@ impl SemanticInference {
                 .clone()
                 .or(semantic.recommended_unit.clone());
 
-            // Adjust confidence based on analysis agreement
-            let mut confidence = semantic.confidence;
-
-            // Boost confidence if multiple analyzers agree
-            if semantic.semantic_type != crate::discovery::types::SemanticType::Unknown {
-                confidence += 0.1;
-            }
-            if stats_result.quality_score > 0.7 {
-                confidence += 0.1;
-            }
-            if structure_result.is_consistent && path_info.always_present {
-                confidence += 0.05;
-            }
-            confidence = confidence.clamp(0.0, 1.0);
+            // Strip $. prefix from path for consistency with manual definitions
+            let metric_path = path_info.path.strip_prefix("$.").unwrap_or(&path_info.path);
 
             let metric = DiscoveredMetric {
                 name: semantic.standard_name.clone(),
@@ -481,17 +504,54 @@ impl SemanticInference {
                 } else {
                     semantic.reasoning.clone()
                 },
-                path: path_info.path.clone(),
+                path: metric_path.to_string(),
                 data_type,
                 semantic_type: semantic.semantic_type.clone(),
                 unit,
                 value_range,
                 is_readable: true,
                 is_writable: false,
-                confidence,
             };
 
             metrics.push(metric);
+        }
+
+        // Create array metrics for parent array paths
+        // When we detect array elements like sensors[0].name, sensors[0].value, etc.
+        // Create a single "sensors" array metric instead
+        for parent_path in array_parent_paths {
+            // Convert JSONPath format to field name (remove $. prefix)
+            let field_name = parent_path.strip_prefix("$.").unwrap_or(&parent_path);
+
+            // Collect array samples from original data
+            let mut array_samples = Vec::new();
+            for sample in samples.iter().take(10) {
+                // Navigate to the array path in the sample
+                if let Some(array_value) = Self::navigate_to_path(sample, &parent_path) {
+                    if array_value.is_array() {
+                        array_samples.push(array_value.clone());
+                    }
+                }
+            }
+
+            if !array_samples.is_empty() {
+                // Infer element type from samples
+                let element_type = Self::infer_array_element_type(&array_samples);
+
+                let metric = DiscoveredMetric {
+                    name: field_name.to_string(),
+                    display_name: Self::to_display_name(field_name),
+                    description: format!("Array of {}", element_type.display_name()),
+                    path: parent_path.clone(),
+                    data_type: DataType::Array,
+                    semantic_type: SemanticType::Unknown,
+                    unit: None,
+                    value_range: None,
+                    is_readable: true,
+                    is_writable: false,
+                };
+                metrics.push(metric);
+            }
         }
 
         // Log summary
@@ -864,7 +924,8 @@ impl SemanticInference {
 
         // Build result
         let standard_name = Self::standardize_name(field_name);
-        let display_name = semantic_type.display_name().to_string();
+        // Use field_name directly as display_name (JSON key)
+        let display_name = field_name.to_string();
         let recommended_unit = stats_result.unit.clone().or_else(|| {
             semantic_type.default_unit().map(|u| u.to_string())
         });
@@ -991,6 +1052,137 @@ impl SemanticInference {
             .replace([' ', '-', '_'], "_")
             .trim_matches('_')
             .to_string()
+    }
+
+    /// Convert field name to display name (Title Case)
+    fn to_display_name(name: &str) -> String {
+        name.split(['_', '-'])
+            .map(|word| {
+                let mut chars = word.chars();
+                match chars.next() {
+                    None => String::new(),
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// Navigate to a path in a JSON value
+    fn navigate_to_path(value: &serde_json::Value, path: &str) -> Option<serde_json::Value> {
+        let path = path.strip_prefix("$.").unwrap_or(path);
+        let parts: Vec<&str> = path.split('.').collect();
+
+        let mut current = value;
+        for part in parts {
+            if part.is_empty() {
+                continue;
+            }
+            // Handle array indexing like sensors[0]
+            if let Some(bracket_idx) = part.find('[') {
+                let field_name = &part[..bracket_idx];
+                let rest = &part[bracket_idx..];
+
+                // First navigate to the field
+                if let Some(obj) = current.as_object() {
+                    current = obj.get(field_name)?;
+                } else {
+                    return None;
+                }
+
+                // Then handle array indices
+                let mut current_arr = current;
+                for bracket in rest.split(']') {
+                    if bracket.is_empty() || bracket.starts_with('[') {
+                        continue;
+                    }
+                    let idx_str = bracket.trim_start_matches('[');
+                    if let Ok(idx) = idx_str.parse::<usize>() {
+                        if let Some(arr) = current_arr.as_array() {
+                            current_arr = arr.get(idx)?;
+                        } else {
+                            return None;
+                        }
+                    }
+                }
+                current = current_arr;
+            } else {
+                // Simple field access
+                if let Some(obj) = current.as_object() {
+                    current = obj.get(part)?;
+                } else {
+                    return None;
+                }
+            }
+        }
+        Some(current.clone())
+    }
+
+    /// Infer the element type of an array from samples
+    fn infer_array_element_type(samples: &[serde_json::Value]) -> InferredType {
+        use serde_json::Value;
+
+        let mut has_numbers = false;
+        let mut has_strings = false;
+        let mut has_bools = false;
+        let mut has_objects = false;
+        let mut has_arrays = false;
+        let mut total = 0;
+
+        for sample in samples {
+            if let Some(arr) = sample.as_array() {
+                for elem in arr {
+                    total += 1;
+                    match elem {
+                        Value::Number(_) => has_numbers = true,
+                        Value::String(_) => has_strings = true,
+                        Value::Bool(_) => has_bools = true,
+                        Value::Object(_) => has_objects = true,
+                        Value::Array(_) => has_arrays = true,
+                        Value::Null => {}
+                    }
+                }
+            }
+        }
+
+        if total == 0 {
+            return InferredType::Array(Box::new(InferredType::Unknown));
+        }
+
+        // Determine dominant type
+        let num_count = if has_numbers { total } else { 0 };
+        let str_count = if has_strings { total } else { 0 };
+        let bool_count = if has_bools { total } else { 0 };
+        let obj_count = if has_objects { total } else { 0 };
+        let arr_count = if has_arrays { total } else { 0 };
+
+        // Simple heuristic: count unique types seen
+        let type_count = [has_numbers, has_strings, has_bools, has_objects, has_arrays]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+        if type_count == 1 {
+            if has_objects {
+                InferredType::Array(Box::new(InferredType::Object))
+            } else if has_arrays {
+                InferredType::Array(Box::new(InferredType::Array(Box::new(InferredType::Unknown))))
+            } else if has_numbers {
+                // Could be integer or float, use number for now
+                InferredType::Array(Box::new(InferredType::Float))
+            } else if has_strings {
+                InferredType::Array(Box::new(InferredType::String))
+            } else if has_bools {
+                InferredType::Array(Box::new(InferredType::Boolean))
+            } else {
+                InferredType::Array(Box::new(InferredType::Unknown))
+            }
+        } else if type_count > 1 {
+            // Mixed array - use unknown
+            InferredType::Array(Box::new(InferredType::Unknown))
+        } else {
+            InferredType::Array(Box::new(InferredType::Unknown))
+        }
     }
 }
 

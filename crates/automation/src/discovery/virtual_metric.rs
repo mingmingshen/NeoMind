@@ -60,10 +60,7 @@ impl VirtualMetricGenerator {
             // Enhance with semantic inference
             let metric = self.semantic_inference.enhance_path(&path, context).await;
 
-            // Filter out low-confidence metrics
-            if metric.confidence >= 0.5 {
-                metrics.push(metric);
-            }
+            metrics.push(metric);
         }
 
         // Step 3: Deduplicate metrics by semantic type
@@ -173,17 +170,10 @@ impl VirtualMetricGenerator {
         let mut unique = std::collections::HashMap::new();
 
         for metric in metrics {
-            // Key by semantic type - clone to avoid borrow issues
+            // Key by semantic type and path - clone to avoid borrow issues
             let key = (metric.semantic_type.clone(), metric.path.clone());
-            let confidence = metric.confidence;
 
             unique.entry(key)
-                .and_modify(|existing: &mut DiscoveredMetric| {
-                    // Keep the one with higher confidence
-                    if confidence > existing.confidence {
-                        *existing = metric.clone();
-                    }
-                })
                 .or_insert(metric);
         }
 

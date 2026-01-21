@@ -8,6 +8,8 @@
 
 use edge_ai_automation::{AutoOnboardManager, DraftDevice, GeneratedDeviceType, DiscoveredMetric, ProcessingSummary, RegistrationResult};
 use edge_ai_automation::discovery::auto_onboard::AutoOnboardConfig;
+use edge_ai_automation::discovery::types::DataType;
+use edge_ai_automation::SemanticType;
 use edge_ai_core::llm::backend::LlmRuntime;
 use edge_ai_llm::backends::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
 use edge_ai_devices::{DeviceService, DeviceTypeTemplate, MdlMetricDefinition as MetricDefinition, CommandDefinition, DeviceConfig, ConnectionConfig, DeviceTypeMode};
@@ -174,8 +176,18 @@ pub async fn approve_draft_device(
 
     let draft_id = draft.id.clone();
 
+    // Get device name from request (user-provided name for this device instance)
+    let device_instance_name = request.as_ref()
+        .and_then(|r| r.device_name.as_ref())
+        .filter(|n| !n.is_empty())
+        .cloned()
+        .unwrap_or_else(|| format!("Device {}", device_id));
+
     // Check if user wants to reuse an existing type
     let use_existing_type = request.as_ref().and_then(|r| r.existing_type.as_ref());
+
+    // Check if user provided new type details
+    let new_type_info = request.as_ref().and_then(|r| r.new_type.as_ref());
 
     let (device_type, system_device_id, recommended_topic, message) = if let Some(existing_type) = use_existing_type {
         // User wants to reuse an existing type - no need to create a new one
@@ -185,14 +197,16 @@ pub async fn approve_draft_device(
             existing_type
         );
 
-        // Generate a system device_id
-        let new_system_id = format!("dev_{}", uuid::Uuid::new_v4().to_string().split_at(8).0);
-        let topic = format!("device/{}/{}", existing_type, new_system_id);
+        // Use the original MQTT topic as the telemetry topic
+        // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
+        // We cannot change the device's topic, so we subscribe to what it's using
+        // Prefer original_topic if available, otherwise fall back to source
+        let topic = draft.original_topic.clone().unwrap_or_else(|| draft.source.clone());
 
         // Create device config with the existing type
         let device_config = DeviceConfig {
-            device_id: new_system_id.clone(),
-            name: format!("Device {}", new_system_id),
+            device_id: device_id.clone(),
+            name: device_instance_name.clone(),
             device_type: existing_type.clone(),
             adapter_type: "mqtt".to_string(),
             connection_config: ConnectionConfig {
@@ -200,7 +214,7 @@ pub async fn approve_draft_device(
                 json_path: Some("$.value".to_string()),
                 ..Default::default()
             },
-            adapter_id: Some("main-mqtt".to_string()),
+            adapter_id: Some("internal-mqtt".to_string()),
         };
 
         // Register the device
@@ -209,24 +223,48 @@ pub async fn approve_draft_device(
             .await
             .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
 
-        (existing_type.clone(), new_system_id.clone(), topic, format!(
-            "Device '{}' assigned to existing type '{}' with system device_id '{}'",
-            device_id, existing_type, new_system_id
+        (existing_type.clone(), device_id.clone(), topic, format!(
+            "Device '{}' assigned to existing type '{}'",
+            device_id, existing_type
         ))
     } else {
-        // New type - use the generated type from the draft
+        // New type - either use the generated type from draft or user-provided details
         let gen_type = draft.generated_type.as_ref()
             .ok_or_else(|| ErrorResponse::bad_request("Draft device has no generated type. Please analyze it first."))?;
 
-        let type_id = gen_type.device_type.clone();
+        // Use user-provided type info if available, otherwise use generated type
+        let type_id = if let Some(new_info) = new_type_info {
+            new_info.device_type.clone()
+        } else {
+            gen_type.device_type.clone()
+        };
+
+        let type_name = if let Some(new_info) = new_type_info {
+            new_info.name.clone()
+        } else {
+            gen_type.name.clone()
+        };
+
+        let type_description = if let Some(new_info) = new_type_info {
+            new_info.description.clone()
+        } else {
+            gen_type.description.clone()
+        };
 
         // Convert GeneratedDeviceType to DeviceTypeTemplate
+        // Categories are not auto-generated - user can add them later if needed
+        // Use Full mode if metrics were extracted, Simple mode for raw data devices
+        let mode = if gen_type.metrics.is_empty() {
+            DeviceTypeMode::Simple
+        } else {
+            DeviceTypeMode::Full
+        };
         let template = DeviceTypeTemplate {
             device_type: type_id.clone(),
-            name: gen_type.name.clone(),
-            description: gen_type.description.clone(),
-            categories: vec![gen_type.category.display_name().to_string()],
-            mode: DeviceTypeMode::Simple,
+            name: type_name.clone(),
+            description: type_description,
+            categories: Vec::new(), // Empty - not auto-generated
+            mode,
             metrics: convert_metrics_to_template(&gen_type.metrics),
             commands: Vec::new(), // No commands generated yet
             uplink_samples: Vec::new(), // Samples not stored in draft
@@ -240,14 +278,16 @@ pub async fn approve_draft_device(
 
         tracing::info!("Registered device type '{}'", type_id);
 
-        // Generate a system device_id
-        let new_system_id = format!("dev_{}", uuid::Uuid::new_v4().to_string().split_at(8).0);
-        let topic = format!("device/{}/{}", type_id, new_system_id);
+        // Use the original MQTT topic as the telemetry topic
+        // The device publishes to this topic (e.g., "ashuau" - the topic where it was discovered)
+        // We cannot change the device's topic, so we subscribe to what it's using
+        // Prefer original_topic if available, otherwise fall back to source
+        let topic = draft.original_topic.clone().unwrap_or_else(|| draft.source.clone());
 
         // Create device config
         let device_config = DeviceConfig {
-            device_id: new_system_id.clone(),
-            name: gen_type.name.clone(),
+            device_id: device_id.clone(),
+            name: device_instance_name.clone(),
             device_type: type_id.clone(),
             adapter_type: "mqtt".to_string(),
             connection_config: ConnectionConfig {
@@ -255,7 +295,7 @@ pub async fn approve_draft_device(
                 json_path: Some("$.value".to_string()),
                 ..Default::default()
             },
-            adapter_id: Some("main-mqtt".to_string()),
+            adapter_id: Some("internal-mqtt".to_string()),
         };
 
         // Register the device
@@ -264,17 +304,17 @@ pub async fn approve_draft_device(
             .await
             .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
 
-        tracing::info!("Registered device '{}' with type '{}'", new_system_id, type_id);
+        tracing::info!("Registered device '{}' with type '{}'", device_id, type_id);
 
-        (type_id.clone(), new_system_id.clone(), topic.clone(), format!(
-            "Device '{}' approved and registered as type '{}' with system device_id '{}'",
-            device_id, type_id, new_system_id
+        (type_id.clone(), device_id.clone(), topic, format!(
+            "Device '{}' registered as type '{}'",
+            device_id, type_id
         ))
     };
 
-    // Update draft status to Registered
-    manager.set_draft_status(&draft_id, edge_ai_automation::DraftDeviceStatus::Registered)
-        .await
+    // Remove draft completely after successful registration (same behavior as reject)
+    // This allows the device to be re-discovered if needed and keeps the pending list clean
+    manager.remove_draft(&device_id).await
         .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
 
     ok(ApproveDraftResponse {
@@ -321,16 +361,35 @@ fn convert_metrics_to_template(metrics: &[DiscoveredMetric]) -> Vec<MetricDefini
             | SemanticType::Battery
             | SemanticType::Rssi => MetricDataType::String,
 
-            SemanticType::Unknown => MetricDataType::String,
+            SemanticType::Unknown => match m.data_type {
+                DataType::Float => MetricDataType::Float,
+                DataType::Integer => MetricDataType::Integer,
+                DataType::Boolean => MetricDataType::Boolean,
+                DataType::String => MetricDataType::String,
+                DataType::Array => MetricDataType::Array { element_type: None },
+                _ => MetricDataType::String,
+            },
+        };
+
+        // Use path (e.g., "data.temperature") for metric name to support nested JSON
+        // Use name (e.g., "temperature") for display name
+        let metric_name = if !m.path.is_empty() {
+            m.path.clone()
+        } else {
+            m.name.clone()
         };
 
         MetricDefinition {
-            name: m.name.clone(),
-            display_name: m.display_name.clone(),
+            name: metric_name,
+            display_name: if !m.display_name.is_empty() {
+                m.display_name.clone()
+            } else {
+                m.name.clone()
+            },
             data_type,
             unit: m.unit.clone().unwrap_or_default(),
-            min: None,
-            max: None,
+            min: m.value_range.as_ref().map(|r| r.min),
+            max: m.value_range.as_ref().map(|r| r.max),
             required: false,
         }
     }).collect()
@@ -423,7 +482,7 @@ pub async fn enhance_draft_with_llm(
                 m.display_name = enhancement.display_name.clone();
                 m.description = enhancement.description.clone();
                 m.unit = enhancement.unit.clone();
-                m.confidence = (m.confidence + 0.2).min(1.0);
+                // confidence field no longer exists in DiscoveredMetric
             }
             m
         }).collect();
@@ -496,64 +555,62 @@ pub async fn suggest_device_types(
     // Get all device types to find partial matches
     let all_types = device_service.list_templates().await;
 
-    // Build suggestions list
+    // Build suggestions list - include all types with their match scores
     let mut suggestions: Vec<SuggestedType> = Vec::new();
 
-    // Add exact match first (if found)
-    if let Some(type_id) = &exact_match {
-        if let Some(template) = all_types.iter().find(|t| &t.device_type == type_id) {
-            suggestions.push(SuggestedType {
-                device_type: template.device_type.clone(),
-                name: template.name.clone(),
-                description: template.description.clone(),
-                match_score: 100,
-                is_exact_match: true,
-                metric_count: template.metrics.len(),
-            });
-        }
+    // If no types exist at all, return empty list
+    if all_types.is_empty() {
+        return ok(SuggestedTypesResponse {
+            suggestions: vec![],
+            exact_match: exact_match,
+        });
     }
 
-    // Find partial matches based on metric name overlap
-    for template in all_types {
-        // Skip if already added as exact match
-        if suggestions.iter().any(|s| &s.device_type == &template.device_type) {
-            continue;
-        }
+    // Add all types with their match scores (sorted later)
+    for template in &all_types {
+        let is_exact = exact_match.as_ref() == Some(&template.device_type);
 
-        // Calculate overlap score based on metric names
-        let draft_metric_names: std::collections::HashSet<_> = gen_type.metrics
+        // Calculate overlap score based on (semantic_type, data_type) signatures
+        // This matches the logic used in TypeSignature for type matching
+        let draft_signatures: std::collections::HashSet<_> = gen_type.metrics
             .iter()
-            .map(|m| m.name.as_str())
+            .map(|m| (format!("{:?}", m.semantic_type), format!("{:?}", m.data_type)))
             .collect();
 
-        let type_metric_names: std::collections::HashSet<_> = template.metrics
+        let type_signatures: std::collections::HashSet<_> = template.metrics
             .iter()
-            .map(|m| m.name.as_str())
+            // Map data type from template format to semantic inference format
+            .map(|m| {
+                let semantic = infer_semantic_type_from_metric_name(&m.name);
+                let data_type = format!("{:?}", m.data_type);
+                (format!("{:?}", semantic), data_type)
+            })
             .collect();
 
-        // Count matching metric names
-        let intersection = draft_metric_names
-            .intersection(&type_metric_names)
+        // Count matching signatures (intersection over union - Jaccard similarity)
+        let intersection = draft_signatures
+            .intersection(&type_signatures)
             .count();
 
-        let union = draft_metric_names
-            .union(&type_metric_names)
+        let union = draft_signatures
+            .union(&type_signatures)
             .count();
 
-        if union > 0 {
-            let jaccard = (intersection as f64) / (union as f64);
-            if jaccard >= 0.3 {
-                // Only suggest if at least 30% overlap
-                suggestions.push(SuggestedType {
-                    device_type: template.device_type.clone(),
-                    name: template.name.clone(),
-                    description: template.description.clone(),
-                    match_score: (jaccard * 100.0) as u32,
-                    is_exact_match: false,
-                    metric_count: template.metrics.len(),
-                });
-            }
-        }
+        let match_score = if union > 0 {
+            ((intersection as f64) / (union as f64) * 100.0) as u32
+        } else {
+            0
+        };
+
+        // Include all types, but prioritize exact matches and high scores
+        suggestions.push(SuggestedType {
+            device_type: template.device_type.clone(),
+            name: template.name.clone(),
+            description: template.description.clone(),
+            match_score,
+            is_exact_match: is_exact,
+            metric_count: template.metrics.len(),
+        });
     }
 
     // Sort by match score descending
@@ -642,6 +699,7 @@ pub struct DraftDeviceDto {
     pub id: String,
     pub device_id: String,
     pub source: String,
+    pub original_topic: Option<String>,
     pub status: String,
     pub sample_count: usize,
     pub max_samples: usize,
@@ -654,11 +712,23 @@ pub struct DraftDeviceDto {
 
 impl From<edge_ai_automation::DraftDevice> for DraftDeviceDto {
     fn from(draft: edge_ai_automation::DraftDevice) -> Self {
+        // Convert status to snake_case string for API consistency
+        let status_str = match draft.status {
+            edge_ai_automation::DraftDeviceStatus::Collecting => "collecting",
+            edge_ai_automation::DraftDeviceStatus::Analyzing => "analyzing",
+            edge_ai_automation::DraftDeviceStatus::WaitingProcessing => "waiting_processing",
+            edge_ai_automation::DraftDeviceStatus::Registering => "registering",
+            edge_ai_automation::DraftDeviceStatus::Registered => "registered",
+            edge_ai_automation::DraftDeviceStatus::Rejected => "rejected",
+            edge_ai_automation::DraftDeviceStatus::Failed => "failed",
+        };
+
         Self {
             id: draft.id,
             device_id: draft.device_id,
             source: draft.source,
-            status: format!("{:?}", draft.status),
+            original_topic: draft.original_topic,
+            status: status_str.to_string(),
             sample_count: draft.samples.len(),
             max_samples: draft.max_samples,
             generated_type: draft.generated_type.map(GeneratedDeviceTypeDto::from),
@@ -690,7 +760,7 @@ impl From<edge_ai_automation::GeneratedDeviceType> for GeneratedDeviceTypeDto {
             description: gen_type.description,
             category: gen_type.category.display_name().to_string(),
             metrics: gen_type.metrics.into_iter().map(MetricSummaryDto::from).collect(),
-            confidence: gen_type.confidence,
+            confidence: 1.0, // Default confidence
             summary: ProcessingSummaryDto::from(&gen_type.summary),
         }
     }
@@ -713,7 +783,7 @@ impl From<edge_ai_automation::DiscoveredMetric> for MetricSummaryDto {
             path: metric.path,
             semantic_type: metric.semantic_type.display_name().to_string(),
             display_name: metric.display_name,
-            confidence: metric.confidence,
+            confidence: 1.0, // Default confidence
         }
     }
 }
@@ -747,13 +817,13 @@ impl From<&edge_ai_automation::ProcessingSummary> for ProcessingSummaryDto {
 /// Response for device approval
 #[derive(Debug, Serialize)]
 pub struct ApproveDraftResponse {
-    /// Original device_id from MQTT topic/payload
+    /// Original device_id (also used as the registered device_id)
     pub original_device_id: String,
-    /// New system-generated device_id
+    /// The registered device_id (same as original_device_id)
     pub system_device_id: String,
     /// The device type ID
     pub device_type: String,
-    /// Recommended MQTT topic format for this device
+    /// The MQTT topic used for this device
     pub recommended_topic: String,
     /// Whether registration was successful
     pub registered: bool,
@@ -766,6 +836,23 @@ pub struct ApproveDraftResponse {
 pub struct ApproveDraftDeviceRequest {
     /// Optional existing device type to reuse instead of creating a new one
     pub existing_type: Option<String>,
+    /// Optional new type details (when creating a custom new type)
+    pub new_type: Option<NewTypeDetails>,
+    /// Device instance name (user-friendly name for this specific device)
+    #[serde(default)]
+    pub device_name: Option<String>,
+}
+
+/// Details for creating a new device type
+#[derive(Debug, Deserialize)]
+pub struct NewTypeDetails {
+    /// Device type ID (user-specified)
+    pub device_type: String,
+    /// Display name for the device type
+    pub name: String,
+    /// Description of the device type
+    #[serde(default)]
+    pub description: String,
 }
 
 /// Response for type signatures
@@ -838,4 +925,57 @@ pub struct UploadDeviceDataRequest {
     pub source: Option<String>,
     /// Array of data samples (JSON objects)
     pub data: Vec<serde_json::Value>,
+}
+
+/// Helper function to infer semantic type from metric name
+/// This is a simplified version for device type matching
+fn infer_semantic_type_from_metric_name(name: &str) -> SemanticType {
+    let name_lower = name.to_lowercase();
+
+    // Check for temperature-related keywords
+    if name_lower.contains("temp") || name_lower.contains("temperature") {
+        return SemanticType::Temperature;
+    }
+    // Humidity
+    if name_lower.contains("hum") || name_lower.contains("humidity") {
+        return SemanticType::Humidity;
+    }
+    // Pressure
+    if name_lower.contains("press") {
+        return SemanticType::Pressure;
+    }
+    // Light
+    if name_lower.contains("lux") || name_lower.contains("light") || name_lower.contains("illuminance") {
+        return SemanticType::Light;
+    }
+    // Motion
+    if name_lower.contains("motion") || name_lower.contains("occupancy") || name_lower.contains("presence") {
+        return SemanticType::Motion;
+    }
+    // Switch/relay
+    if name_lower.contains("switch") || name_lower.contains("relay") || name_lower.contains("state") {
+        return SemanticType::Switch;
+    }
+    // Power/energy
+    if name_lower.contains("power") || name_lower.contains("energy") || name_lower.contains("watt") {
+        return SemanticType::Power;
+    }
+    // Battery
+    if name_lower.contains("batt") {
+        return SemanticType::Battery;
+    }
+    // Speed
+    if name_lower.contains("speed") || name_lower.contains("rpm") {
+        return SemanticType::Speed;
+    }
+    // CO2
+    if name_lower.contains("co2") || name_lower.contains("carbon") {
+        return SemanticType::Co2;
+    }
+    // PM2.5
+    if name_lower.contains("pm25") || name_lower.contains("pm2.5") || name_lower.contains("pm_2_5") {
+        return SemanticType::Pm25;
+    }
+
+    SemanticType::Unknown
 }

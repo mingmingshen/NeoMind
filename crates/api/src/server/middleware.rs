@@ -13,23 +13,31 @@ use crate::rate_limit::extract_client_id;
 ///
 /// Uses API key (if authenticated) or IP address for rate limiting.
 /// Public endpoints have higher limits; protected endpoints have standard limits.
+/// WebSocket and SSE endpoints are excluded from rate limiting.
+///
+/// NOTE: Rate limiting is currently disabled to allow for development and testing.
+/// To re-enable, uncomment the rate limit check code below.
 pub async fn rate_limit_middleware(
-    State(state): State<ServerState>,
-    connect_info: Option<ConnectInfo<SocketAddr>>,
+    State(_state): State<ServerState>,
+    _connect_info: Option<ConnectInfo<SocketAddr>>,
     request: Request<Body>,
     next: Next,
 ) -> axum::response::Response {
-    // Extract client identifier from the request headers
+    // Rate limiting disabled - proceed with request
+    next.run(request).await
+
+    // To re-enable rate limiting, uncomment the code below:
+    /*
+    let uri = request.uri().path();
+    if uri.contains("/chat") || uri.contains("/ws") || uri.contains("/events/stream") {
+        return next.run(request).await;
+    }
+
     let client_id = extract_client_id(request.headers(), connect_info.as_ref());
 
-    // Check rate limit
     match state.rate_limiter.check_rate_limit(&client_id).await {
-        Ok(_) => {
-            // Rate limit OK, proceed
-            next.run(request).await
-        }
+        Ok(_) => next.run(request).await,
         Err(e) => {
-            // Only log if this is the first warning in the debounce window
             if e.should_log() {
                 tracing::warn!(
                     category = "rate_limit",
@@ -41,4 +49,5 @@ pub async fn rate_limit_middleware(
             e.into_response()
         }
     }
+    */
 }

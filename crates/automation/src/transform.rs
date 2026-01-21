@@ -49,7 +49,7 @@ impl JsTransformExecutor {
     ///
     /// The code has access to:
     /// - `input`: The raw device data (object)
-    /// - Must `return` a value (object, number, string, array)
+    /// - Code can use `return` or simply evaluate to a value (last expression is returned)
     ///
     /// # Example
     /// ```javascript
@@ -59,7 +59,12 @@ impl JsTransformExecutor {
     ///   const cls = item.cls || 'unknown';
     ///   counts[cls] = (counts[cls] || 0) + 1;
     /// }
-    /// return counts;
+    /// counts;  // Last expression is the return value
+    /// ```
+    ///
+    /// Or with explicit return:
+    /// ```javascript
+    /// return (input.items || input.detections || []).length;
     /// ```
     pub fn execute(
         &self,
@@ -91,8 +96,15 @@ impl JsTransformExecutor {
                 message: format!("Failed to set input: {}", e),
             })?;
 
+        // Wrap user code in a function to allow `return` statements
+        // This also makes the last expression the return value if no explicit return
+        let wrapped_code = format!(
+            "(function() {{\n{}\n}})()",
+            code
+        );
+
         // Execute the transformation code
-        let result = context.eval(code)
+        let result = context.eval(&wrapped_code)
             .map_err(|e| AutomationError::TransformError {
                 operation: "JsTransform".to_string(),
                 message: format!("JavaScript execution error: {}", e),
@@ -140,6 +152,9 @@ impl JsTransformExecutor {
     }
 
     /// Convert JSON result to vector of metrics
+    ///
+    /// Uses dot notation for namespacing: user returns {count: 5, fish: 3}
+    /// becomes metrics: "transform.count", "transform.fish"
     fn json_to_metrics(
         &self,
         value: &Value,
@@ -150,15 +165,19 @@ impl JsTransformExecutor {
         let mut metrics = Vec::new();
 
         match value {
-            // Object: create one metric per key
+            // Object: create one metric per key with dot notation namespace
+            // e.g., {count: 5, fish: 3} -> "transform.count", "transform.fish"
             Value::Object(obj) => {
                 for (key, val) in obj.iter() {
-                    let metric_name = format!("{}_{}", output_prefix, key);
+                    // Use dot notation for clearer namespacing
+                    let metric_name = format!("{}.{}", output_prefix, key);
                     let metric_value = value_as_f64(val)
                         .unwrap_or_else(|| {
                             // For non-numeric values, use a hash
                             val.to_string().chars().map(|c| c as u32 as f64).sum::<f64>() % 10000.0
                         });
+
+                    tracing::debug!("Transform generated metric: {} = {} (device: {})", metric_name, metric_value, device_id);
 
                     metrics.push(TransformedMetric {
                         device_id: device_id.to_string(),
@@ -170,10 +189,10 @@ impl JsTransformExecutor {
                 }
             }
 
-            // Array: create indexed metrics
+            // Array: create indexed metrics with dot notation
             Value::Array(arr) => {
                 for (index, val) in arr.iter().enumerate() {
-                    let metric_name = format!("{}_{}", output_prefix, index);
+                    let metric_name = format!("{}.{}", output_prefix, index);
                     let metric_value = value_as_f64(val).unwrap_or(0.0);
 
                     metrics.push(TransformedMetric {
@@ -186,12 +205,12 @@ impl JsTransformExecutor {
                 }
             }
 
-            // Single value: create one metric with the prefix
+            // Single value: create one metric with the prefix as namespace
             Value::Number(n) => {
                 if let Some(f) = n.as_f64() {
                     metrics.push(TransformedMetric {
                         device_id: device_id.to_string(),
-                        metric: output_prefix.to_string(),
+                        metric: format!("{}.value", output_prefix),
                         value: f,
                         timestamp,
                         quality: Some(1.0),
@@ -206,7 +225,7 @@ impl JsTransformExecutor {
                 });
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
-                    metric: output_prefix.to_string(),
+                    metric: format!("{}.value", output_prefix),
                     value,
                     timestamp,
                     quality: Some(1.0),
@@ -217,7 +236,7 @@ impl JsTransformExecutor {
             Value::Bool(b) => {
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
-                    metric: output_prefix.to_string(),
+                    metric: format!("{}.value", output_prefix),
                     value: if *b { 1.0 } else { 0.0 },
                     timestamp,
                     quality: Some(1.0),
@@ -227,7 +246,7 @@ impl JsTransformExecutor {
             _ => {
                 metrics.push(TransformedMetric {
                     device_id: device_id.to_string(),
-                    metric: output_prefix.to_string(),
+                    metric: format!("{}.value", output_prefix),
                     value: 0.0,
                     timestamp,
                     quality: Some(0.0),
@@ -239,7 +258,7 @@ impl JsTransformExecutor {
             // Always return at least one metric
             metrics.push(TransformedMetric {
                 device_id: device_id.to_string(),
-                metric: output_prefix.to_string(),
+                metric: format!("{}.value", output_prefix),
                 value: 0.0,
                 timestamp,
                 quality: Some(0.0),
@@ -371,13 +390,20 @@ impl TransformEngine {
         let mut warnings = Vec::new();
         let timestamp = Utc::now().timestamp();
 
+        // Ensure output_prefix is never empty (use default "transform" if empty)
+        let output_prefix = if transform.output_prefix.is_empty() {
+            "transform"
+        } else {
+            &transform.output_prefix
+        };
+
         // Try JS-based execution first (new AI-native approach)
         if let Some(ref js_code) = transform.js_code
             && !js_code.is_empty() {
                 match self.js_executor.execute(
                     js_code,
                     raw_data,
-                    &transform.output_prefix,
+                    output_prefix,
                     device_id,
                     timestamp,
                 ) {

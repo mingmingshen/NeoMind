@@ -101,9 +101,6 @@ export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBa
       case "rule":
         navigate("/automation")
         break
-      case "workflow":
-        navigate("/automation")
-        break
       case "alert":
         navigate("/alerts")
         break
@@ -114,7 +111,6 @@ export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBa
     const labels = {
       device: "设备",
       rule: "规则",
-      workflow: "工作流",
       alert: "告警",
     }
     return labels[type] || type
@@ -124,7 +120,6 @@ export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBa
     const colors = {
       device: "bg-blue-500",
       rule: "bg-purple-500",
-      workflow: "bg-orange-500",
       alert: "bg-red-500",
     }
     return colors[type] || "bg-gray-500"

@@ -386,6 +386,17 @@ impl WebhookAdapter {
                 MetricValue::Float(f) => edge_ai_core::MetricValue::Float(*f),
                 MetricValue::String(s) => edge_ai_core::MetricValue::String(s.clone()),
                 MetricValue::Boolean(b) => edge_ai_core::MetricValue::Boolean(*b),
+                MetricValue::Array(arr) => {
+                    // Convert array to JSON
+                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                        MetricValue::Integer(i) => serde_json::json!(*i),
+                        MetricValue::Float(f) => serde_json::json!(*f),
+                        MetricValue::String(s) => serde_json::json!(s),
+                        MetricValue::Boolean(b) => serde_json::json!(*b),
+                        _ => serde_json::json!(null),
+                    }).collect();
+                    edge_ai_core::MetricValue::Json(serde_json::json!(json_arr))
+                }
                 MetricValue::Binary(_) => edge_ai_core::MetricValue::Json(serde_json::json!(null)),
                 MetricValue::Null => edge_ai_core::MetricValue::Json(serde_json::json!(null)),
             };
@@ -511,6 +522,10 @@ impl DeviceAdapter for WebhookAdapter {
         let mut devices = self.devices.write().await;
         devices.retain(|d| d != device_id);
         Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

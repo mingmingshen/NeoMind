@@ -112,6 +112,7 @@ pub async fn get_mqtt_status_handler(
                 connected: b.connected,
                 enabled: b.enabled,
                 last_error: b.last_error,
+                subscribe_topics: b.subscribe_topics,
             })
             .collect(),
         Err(_) => Vec::new(),

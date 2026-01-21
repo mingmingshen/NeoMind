@@ -45,7 +45,6 @@ export function EventHistory({ limit = 50, eventType, source }: EventHistoryProp
       alert: "bg-red-500/10 text-red-500 border-red-500/20",
       command: "bg-green-500/10 text-green-500 border-green-500/20",
       decision: "bg-purple-500/10 text-purple-500 border-purple-500/20",
-      workflow: "bg-orange-500/10 text-orange-500 border-orange-500/20",
       system: "bg-gray-500/10 text-gray-500 border-gray-500/20",
     }
     return colors[type] || "bg-gray-500/10 text-gray-500 border-gray-500/20"

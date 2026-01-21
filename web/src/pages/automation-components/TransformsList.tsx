@@ -40,10 +40,22 @@ export function TransformsList({
   const { t } = useTranslation(['common', 'automation'])
 
   const getScopeLabel = (scope: any): string => {
-    if (!scope) return 'global'
-    if (typeof scope === 'string') return scope
+    if (!scope) return t('automation:scopes.global', { defaultValue: 'global' })
+    if (typeof scope === 'string') {
+      return scope === 'global'
+        ? t('automation:scopes.global', { defaultValue: 'global' })
+        : scope
+    }
+    // Handle backend format: { device_type: "xxx" } or { device: "xxx" }
+    if (scope.device_type) {
+      return `${t('automation:scopes.deviceType', { defaultValue: 'Type' })}: ${scope.device_type}`
+    }
+    if (scope.device) {
+      return `${t('automation:scopes.device', { defaultValue: 'Device' })}: ${scope.device}`
+    }
+    // Fallback for type field
     if (scope.type) return scope.type
-    return 'global'
+    return t('automation:scopes.global', { defaultValue: 'global' })
   }
 
   return (

@@ -219,6 +219,21 @@ impl RealDeviceRegistryAdapter {
                                         edge_ai_devices::MetricValue::Float(f) => serde_json::Number::from_f64(*f).map(Value::Number),
                                         edge_ai_devices::MetricValue::Integer(i) => Some(Value::Number(serde_json::Number::from(*i))),
                                         edge_ai_devices::MetricValue::Boolean(b) => Some(Value::Bool(*b)),
+                                        edge_ai_devices::MetricValue::Array(a) => {
+                                            // Convert array to JSON
+                                            let json_arr: Vec<Value> = a.iter().map(|v| match v {
+                                                edge_ai_devices::MetricValue::String(s) => Value::String(s.clone()),
+                                                edge_ai_devices::MetricValue::Integer(i) => Value::Number(serde_json::Number::from(*i)),
+                                                edge_ai_devices::MetricValue::Float(f) => {
+                                                    serde_json::Number::from_f64(*f)
+                                                        .map(Value::Number)
+                                                        .unwrap_or(Value::Null)
+                                                },
+                                                edge_ai_devices::MetricValue::Boolean(b) => Value::Bool(*b),
+                                                _ => Value::Null,
+                                            }).collect();
+                                            Some(Value::Array(json_arr))
+                                        }
                                         edge_ai_devices::MetricValue::Null => Some(Value::Null),
                                         edge_ai_devices::MetricValue::Binary(_) => None, // Skip binary for now
                                     }

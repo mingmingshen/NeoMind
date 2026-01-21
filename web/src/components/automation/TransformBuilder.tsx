@@ -10,14 +10,11 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Loader2,
-  Sparkles,
   Code,
   Play,
-  CheckCircle2,
   Info,
   TestTube,
 } from 'lucide-react'
-import { api } from '@/lib/api'
 import type { TransformAutomation, TransformScope } from '@/types'
 import {
   FullScreenBuilder,
@@ -34,17 +31,27 @@ interface TransformBuilderProps {
   onSave: (data: Partial<TransformAutomation>) => void
 }
 
-type ScopeType = 'global' | 'device_type' | 'device' | 'user'
-type GenerationState = 'idle' | 'generating' | 'success' | 'error'
-type Tab = 'ai' | 'code' | 'test'
+type ScopeType = 'global' | 'device_type' | 'device'
+type Tab = 'code' | 'test'
 
-// Example intents for quick start
-const EXAMPLE_INTENTS = [
-  { zh: '统计 detections 数组中每个 cls 的数量', en: 'Count detections by class' },
-  { zh: '计算数组中所有值的平均值', en: 'Calculate average of array values' },
-  { zh: '过滤置信度低于 0.5 的检测', en: 'Filter detections with confidence < 0.5' },
-  { zh: '16进制字符串转 JSON', en: 'Convert hex string to JSON' },
-  { zh: '提取嵌套字段到根级别', en: 'Extract nested fields to root level' },
+// Example code templates
+const CODE_TEMPLATES = [
+  {
+    name: { zh: '直接使用指标', en: 'Use Extracted Metrics' },
+    code: '// 设备已定义指标时，直接使用 input 中的指标\nreturn {\n  battery: input.battery ?? 0,\n  temp: input.temp ?? input.temperature ?? 0,\n  timestamp: input.ts || Date.now()\n};',
+  },
+  {
+    name: { zh: '使用原始数据', en: 'Use Raw Data' },
+    code: '// 设备未定义指标时，使用 _raw 访问原始数据\nconst raw = input._raw || input;\nconst values = raw.values || raw;\nreturn {\n  battery: values.battery || 0,\n  temp: values.temp || values.temperature || 0,\n  timestamp: raw.ts || Date.now()\n};',
+  },
+  {
+    name: { zh: '兼容写法', en: 'Compatible Approach' },
+    code: '// 同时兼容已定义指标和原始数据\nconst raw = input._raw || input;\nconst values = input.values || raw?.values || raw || {};\nreturn {\n  battery: input.battery || values.battery || 0,\n  temp: input.temp || values.temp || values.temperature || 0,\n  timestamp: input.ts || raw?.ts || Date.now()\n};',
+  },
+  {
+    name: { zh: '计算统计值', en: 'Calculate Statistics' },
+    code: '// 计算多个指标的平均值\nconst metrics = [\'battery\', \'temp\', \'humidity\'];\nconst values = metrics.map(m => input[m] ?? 0).filter(v => v > 0);\nconst avg = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;\nreturn {\n  avg: avg,\n  count: values.length,\n  sum: values.reduce((a, b) => a + b, 0)\n};',
+  },
 ]
 
 export function TransformBuilder({
@@ -64,11 +71,8 @@ export function TransformBuilder({
   const [scopeValue, setScopeValue] = useState('')
   const [outputPrefix, setOutputPrefix] = useState('transform')
 
-  // AI Generation state
-  const [intent, setIntent] = useState('')
-  const [generatedCode, setGeneratedCode] = useState('')
-  const [generationState, setGenerationState] = useState<GenerationState>('idle')
-  const [errorMessage, setErrorMessage] = useState('')
+  // Code state
+  const [jsCode, setJsCode] = useState('')
 
   // Test state
   const [testInput, setTestInput] = useState('')
@@ -76,25 +80,29 @@ export function TransformBuilder({
   const [testRunning, setTestRunning] = useState(false)
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<Tab>('ai')
+  const [activeTab, setActiveTab] = useState<Tab>('code')
 
   // Reset form when transform changes
   useEffect(() => {
     if (open && transform) {
       setName(transform.name)
-      setDescription(transform.description)
+      setDescription(transform.description || '')
       setEnabled(transform.enabled)
-      setScopeType(transform.scope.type as ScopeType)
       setOutputPrefix(transform.output_prefix || 'transform')
-      setIntent(transform.intent || '')
-      setGeneratedCode(transform.js_code || '')
+      setJsCode(transform.js_code || '')
 
-      if (transform.scope.type === 'device_type') {
-        setScopeValue(transform.scope.device_type)
-      } else if (transform.scope.type === 'device') {
-        setScopeValue(transform.scope.device_id)
-      } else if (transform.scope.type === 'user') {
-        setScopeValue(transform.scope.user_id)
+      // Handle new scope format: 'global' | { device_type: string } | { device: string }
+      if (transform.scope === 'global') {
+        setScopeType('global')
+        setScopeValue('')
+      } else if (typeof transform.scope === 'object') {
+        if ('device_type' in transform.scope) {
+          setScopeType('device_type')
+          setScopeValue(transform.scope.device_type || '')
+        } else if ('device' in transform.scope) {
+          setScopeType('device')
+          setScopeValue(transform.scope.device || '')
+        }
       }
     } else if (open) {
       resetForm()
@@ -108,48 +116,11 @@ export function TransformBuilder({
     setScopeType('global')
     setScopeValue('')
     setOutputPrefix('transform')
-    setIntent('')
-    setGeneratedCode('')
-    setGenerationState('idle')
-    setErrorMessage('')
+    setJsCode('')
     setTestInput('')
     setTestOutput('')
-    setActiveTab('ai')
+    setActiveTab('code')
   }, [])
-
-  // Generate code
-  const handleGenerateCode = useCallback(async () => {
-    if (!intent.trim()) return
-
-    setGenerationState('generating')
-    setErrorMessage('')
-
-    try {
-      const result = await api.generateTransformCode({
-        intent,
-        language: t('common:lang', { defaultValue: 'en' }),
-      })
-
-      setGeneratedCode(result.js_code)
-      setGenerationState('success')
-
-      // Auto-fill name if empty
-      if (!name.trim()) {
-        setName(result.suggested_name || intent.slice(0, 50))
-      }
-
-      // Auto-fill output prefix if default
-      if (outputPrefix === 'transform') {
-        setOutputPrefix(result.output_prefix || 'transform')
-      }
-
-      // Switch to code tab to see the result
-      setActiveTab('code')
-    } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : String(err))
-      setGenerationState('error')
-    }
-  }, [intent, name, outputPrefix, t])
 
   // Test code
   const handleTestCode = useCallback(async () => {
@@ -159,10 +130,20 @@ export function TransformBuilder({
     try {
       const inputData = testInput.trim()
         ? JSON.parse(testInput)
-        : { detections: [{ cls: 'fish' }, { cls: 'fish' }, { cls: 'shrimp' }] }
+        : // Default test data: simulates a device with defined metrics + _raw
+          {
+            battery: 85,
+            temp: 23.5,
+            humidity: 60,
+            ts: 1737552000,
+            _raw: {
+              values: { battery: 85, temp: 23.5, humidity: 60 },
+              ts: 1737552000
+            }
+          }
 
-      // Create a function from the generated code
-      const fn = new Function('input', generatedCode)
+      // Create a function from the JS code
+      const fn = new Function('input', jsCode)
       const result = fn(inputData)
       setTestOutput(JSON.stringify(result, null, 2))
     } catch (err) {
@@ -170,7 +151,12 @@ export function TransformBuilder({
     } finally {
       setTestRunning(false)
     }
-  }, [generatedCode, testInput])
+  }, [jsCode, testInput])
+
+  // Apply template
+  const handleApplyTemplate = useCallback((templateCode: string) => {
+    setJsCode(templateCode)
+  }, [])
 
   // Save
   const handleSave = useCallback(() => {
@@ -179,33 +165,35 @@ export function TransformBuilder({
     const scope: TransformScope = (() => {
       switch (scopeType) {
         case 'global':
-          return { type: 'global' }
+          return 'global' as const
         case 'device_type':
-          return { type: 'device_type', device_type: scopeValue }
+          return { device_type: scopeValue }
         case 'device':
-          return { type: 'device', device_id: scopeValue }
-        case 'user':
-          return { type: 'user', user_id: scopeValue }
+          return { device: scopeValue }
+        default:
+          return 'global' as const
       }
     })()
 
+    // Ensure output_prefix is never empty - use "transform" as default
+    const finalOutputPrefix = outputPrefix.trim() || 'transform'
+
     onSave({
       name,
-      description: description || intent,
+      description,
       enabled,
       scope,
-      intent,
-      js_code: generatedCode,
-      output_prefix: outputPrefix,
-      complexity: generatedCode.split('\n').length > 10 ? 3 : 2,
+      js_code: jsCode,
+      output_prefix: finalOutputPrefix,
+      complexity: jsCode.split('\n').length > 10 ? 3 : 2,
     })
-  }, [name, description, enabled, scopeType, scopeValue, intent, generatedCode, outputPrefix, onSave])
+  }, [name, description, enabled, scopeType, scopeValue, jsCode, outputPrefix, onSave])
 
   // Validation
-  const isValid = Boolean(name.trim() && generatedCode.trim())
+  const isValid = Boolean(name.trim() && jsCode.trim())
   const getValidationMessage = () => {
     if (!name.trim()) return t('automation:validation.nameRequired', { defaultValue: '请输入名称' })
-    if (!generatedCode.trim()) return t('automation:validation.codeRequired', { defaultValue: '请生成或输入代码' })
+    if (!jsCode.trim()) return t('automation:validation.codeRequired', { defaultValue: '请输入代码' })
     if (scopeType !== 'global' && !scopeValue.trim()) {
       return t('automation:validation.scopeValueRequired', { defaultValue: '请输入作用域值' })
     }
@@ -227,36 +215,50 @@ export function TransformBuilder({
         })}
       </TipCard>
 
-      {activeTab === 'ai' && (
-        <>
-          <TipCard
-            title={t('automation:tips.aiTitle', { defaultValue: 'AI 生成提示' })}
-            variant="success"
-          >
-            {t('automation:tips.aiTransformDesc', {
-              defaultValue: '用自然语言描述你想要的数据转换，AI 会自动生成 JavaScript 代码。',
-            })}
-          </TipCard>
-
-          <TipCard
-            title={t('automation:tips.scopeTitle', { defaultValue: '作用域说明' })}
-            variant="info"
-          >
-            {t('automation:tips.scopeDesc', {
-              defaultValue: '选择作用域可以限定 Transform 只处理特定设备或设备类型的数据。',
-            })}
-          </TipCard>
-        </>
-      )}
+      <TipCard
+        title={t('automation:tips.scopeTitle', { defaultValue: '作用域说明' })}
+        variant="info"
+      >
+        {t('automation:tips.scopeDesc', {
+          defaultValue: '选择作用域可以限定 Transform 只处理特定设备或设备类型的数据。',
+        })}
+      </TipCard>
 
       {activeTab === 'code' && (
         <TipCard
           title={t('automation:tips.codeTitle', { defaultValue: '代码说明' })}
           variant="info"
         >
-          {t('automation:tips.codeDesc', {
-            defaultValue: 'JavaScript 函数，接收 input 参数，返回处理后的数据。使用 output_prefix 作为输出指标前缀。',
-          })}
+          <div className="space-y-2 text-sm">
+            <p>{t('automation:tips.codeDesc', {
+              defaultValue: 'JavaScript 代码，接收 input 参数，返回处理后的数据。',
+            })}</p>
+            <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+              <li><code>input.battery</code> - 直接访问已定义的设备指标</li>
+              <li><code>input._raw</code> - 访问完整原始数据（未定义指标时使用）</li>
+              <li>返回对象生成多个虚拟指标（如 <code>transform.avg</code>）</li>
+              <li>单值返回生成 <code>transform.value</code> 指标</li>
+            </ul>
+            <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">
+{`// 已定义指标的设备 - 直接使用
+return {
+  battery: input.battery ?? 0,
+  temp: input.temp ?? 0
+};
+
+// 未定义指标的设备 - 使用 _raw
+const raw = input._raw || input;
+return {
+  battery: raw.values?.battery || 0,
+  temp: raw.values?.temp || 0
+};
+
+// 兼容两种情况
+return {
+  battery: input.battery || input._raw?.values?.battery || 0
+};`}
+            </pre>
+          </div>
         </TipCard>
       )}
 
@@ -284,7 +286,7 @@ export function TransformBuilder({
       description={t('automation:transformBuilderDesc', {
         defaultValue: '定义如何处理设备数据，提取有用信息或转换数据格式',
       })}
-      icon={<Sparkles className="h-5 w-5 text-purple-500" />}
+      icon={<Code className="h-5 w-5 text-blue-500" />}
       headerActions={
         <Badge variant={enabled ? 'default' : 'secondary'} className="text-xs">
           {enabled ? t('common:enabled', { defaultValue: '启用' }) : t('common:disabled', { defaultValue: '禁用' })}
@@ -293,7 +295,7 @@ export function TransformBuilder({
       sidePanel={{ content: sidePanelContent, title: t('automation:tips', { defaultValue: '提示' }) }}
       isValid={isValid}
       isDirty={true}
-      isSaving={generationState === 'generating'}
+      isSaving={false}
       saveLabel={t('common:save', { defaultValue: '保存' })}
       onSave={handleSave}
       validationMessage={getValidationMessage()}
@@ -345,7 +347,6 @@ export function TransformBuilder({
                     <SelectItem value="global">{t('automation:scopes.global', { defaultValue: '全局' })}</SelectItem>
                     <SelectItem value="device_type">{t('automation:scopes.deviceType', { defaultValue: '设备类型' })}</SelectItem>
                     <SelectItem value="device">{t('automation:scopes.device', { defaultValue: '设备' })}</SelectItem>
-                    <SelectItem value="user">{t('automation:scopes.user', { defaultValue: '用户' })}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -380,15 +381,6 @@ export function TransformBuilder({
                 </div>
               )}
 
-              {scopeType === 'user' && (
-                <Input
-                  value={scopeValue}
-                  onChange={e => setScopeValue(e.target.value)}
-                  placeholder={t('automation:userId', { defaultValue: '用户 ID' })}
-                  className="flex-1"
-                />
-              )}
-
               {scopeType === 'global' && (
                 <div className="flex-1 text-sm text-muted-foreground">
                   {t('automation:scopes.globalDesc', { defaultValue: '应用于所有设备数据' })}
@@ -411,11 +403,7 @@ export function TransformBuilder({
 
         {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="ai" className="gap-2">
-              <Sparkles className="h-4 w-4" />
-              <span>{t('automation:aiGenerate', { defaultValue: 'AI 生成' })}</span>
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="code" className="gap-2">
               <Code className="h-4 w-4" />
               <span>{t('automation:code', { defaultValue: '代码' })}</span>
@@ -426,80 +414,6 @@ export function TransformBuilder({
             </TabsTrigger>
           </TabsList>
 
-          {/* AI Generate Tab */}
-          <TabsContent value="ai" className="mt-6">
-            <BuilderSection
-              title={t('automation:aiGenerate', { defaultValue: 'AI 智能生成' })}
-              description={t('automation:aiTransformDesc', {
-                defaultValue: '描述你想要的数据转换，AI 会自动生成代码',
-              })}
-              icon={<Sparkles className="h-4 w-4 text-purple-500" />}
-            >
-              <div className="space-y-4">
-                <Textarea
-                  value={intent}
-                  onChange={e => setIntent(e.target.value)}
-                  placeholder={t('automation:aiIntentPlaceholder', {
-                    defaultValue: '例如：统计 detections 数组中每个 cls 的数量',
-                  })}
-                  rows={4}
-                  className="resize-none"
-                />
-
-                <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">
-                    {t('automation:quickSelect', { defaultValue: '快速选择' })}
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    {EXAMPLE_INTENTS.map((ex, i) => (
-                      <Button
-                        key={i}
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => setIntent(t('common:lang') === 'zh' ? ex.zh : ex.en)}
-                        className="h-8 text-xs"
-                      >
-                        {t('common:lang') === 'zh' ? ex.zh : ex.en}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                <Button
-                  className="w-full"
-                  onClick={handleGenerateCode}
-                  disabled={!intent.trim() || generationState === 'generating'}
-                >
-                  {generationState === 'generating' ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {t('automation:generating', { defaultValue: '生成中...' })}
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      {t('automation:generateCode', { defaultValue: '生成代码' })}
-                    </>
-                  )}
-                </Button>
-
-                {errorMessage && (
-                  <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md text-sm text-destructive">
-                    {errorMessage}
-                  </div>
-                )}
-
-                {generationState === 'success' && (
-                  <div className="p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md text-sm text-green-900 dark:text-green-100 flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    {t('automation:codeGenerated', { defaultValue: '代码生成成功！切换到"代码"标签页查看和编辑' })}
-                  </div>
-                )}
-              </div>
-            </BuilderSection>
-          </TabsContent>
-
           {/* Code Tab */}
           <TabsContent value="code" className="mt-6">
             <BuilderSection
@@ -509,12 +423,33 @@ export function TransformBuilder({
               })}
               icon={<Code className="h-4 w-4 text-muted-foreground" />}
             >
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* Quick Templates */}
+                <div className="space-y-2">
+                  <Label className="text-sm text-muted-foreground">
+                    {t('automation:quickSelect', { defaultValue: '快速选择模板' })}
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {CODE_TEMPLATES.map((tpl, i) => (
+                      <Button
+                        key={i}
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={() => handleApplyTemplate(tpl.code)}
+                        className="h-8 text-xs"
+                      >
+                        {t('common:lang') === 'zh' ? tpl.name.zh : tpl.name.en}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
                 <Textarea
-                  value={generatedCode}
-                  onChange={e => setGeneratedCode(e.target.value)}
-                  placeholder={`// 示例：统计数组长度
-return (input.items || input.detections || []).length;`}
+                  value={jsCode}
+                  onChange={e => setJsCode(e.target.value)}
+                  placeholder={`// 示例：统计检测数量
+return (input.detections || []).length;`}
                   rows={16}
                   className="font-mono text-sm"
                   spellCheck={false}
@@ -522,7 +457,7 @@ return (input.items || input.detections || []).length;`}
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{t('automation:availableVars', { defaultValue: '可用变量: input' })}</span>
-                  <span>{generatedCode.split('\n').length} {t('automation:lines', { defaultValue: '行' })}</span>
+                  <span>{jsCode.split('\n').length} {t('automation:lines', { defaultValue: '行' })}</span>
                 </div>
               </div>
             </BuilderSection>
@@ -544,7 +479,7 @@ return (input.items || input.detections || []).length;`}
                     <Textarea
                       value={testInput}
                       onChange={e => setTestInput(e.target.value)}
-                      placeholder='{"detections": [{"cls": "fish"}, {"cls": "fish"}, {"cls": "shrimp"}]}'
+                      placeholder='{"battery": 85, "temp": 23.5, "ts": 1737552000, "_raw": {...}}'
                       rows={8}
                       className="font-mono text-sm"
                     />
@@ -557,7 +492,7 @@ return (input.items || input.detections || []).length;`}
                         size="sm"
                         variant="outline"
                         onClick={handleTestCode}
-                        disabled={!generatedCode || testRunning}
+                        disabled={!jsCode || testRunning}
                       >
                         {testRunning ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

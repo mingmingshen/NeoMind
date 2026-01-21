@@ -20,14 +20,6 @@ import type {
   DecisionListResponse,
   DecisionStatsResponse,
   Rule,
-  Workflow,
-  WorkflowExecution,
-  WorkflowTemplate,
-  TemplatedWorkflow,
-  GeneratedWorkflow,
-  WorkflowResources,
-  WorkflowExport,
-  WorkflowImportResult,
   MemoryEntry,
   Plugin,
   PluginStatsDto,
@@ -66,6 +58,7 @@ import type {
   DraftDevice,
   SuggestedDeviceType,
 } from '@/types'
+import { notifyFromError, notifySuccess } from './notify'
 
 const API_BASE = '/api'
 
@@ -128,13 +121,21 @@ export const tokenManager = {
 interface FetchOptions extends RequestInit {
   skipAuth?: boolean
   skipGlobalError?: boolean
+  skipErrorToast?: boolean  // Skip automatic error toast notification
+  successMessage?: string   // Auto-show success toast with this message
 }
 
 export async function fetchAPI<T>(
   path: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const { skipAuth = false, skipGlobalError = false, ...fetchOptions } = options
+  const {
+    skipAuth = false,
+    skipGlobalError = false,
+    skipErrorToast = false,
+    successMessage,
+    ...fetchOptions
+  } = options
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -157,28 +158,65 @@ export async function fetchAPI<T>(
     headers: finalHeaders,
   })
 
+  // Parse error response to extract meaningful message
+  const parseErrorMessage = async (response: Response): Promise<string> => {
+    try {
+      const text = await response.text()
+      if (!text) return `API Error: ${response.status}`
+
+      const json = JSON.parse(text)
+
+      // Format: { code: "...", message: "..." } - Unified ErrorResponse format
+      if (json.message) {
+        // If there's a code, include it for context but show the message
+        if (json.code && json.code !== 'INTERNAL_ERROR') {
+          return `${json.code}: ${json.message}`
+        }
+        return json.message
+      }
+
+      // Handle different error response formats (legacy)
+      if (json.error) {
+        // Format: { error: { code: "...", message: "..." } }
+        if (typeof json.error === 'object' && json.error.message) {
+          return json.error.message
+        }
+        // Format: { error: "Error message" }
+        if (typeof json.error === 'string') {
+          return json.error
+        }
+      }
+
+      // Format: { detail: "..." }
+      if (json.detail) {
+        return json.detail
+      }
+
+      return text
+    } catch {
+      return `API Error: ${response.status}`
+    }
+  }
+
   // Handle 401 Unauthorized - trigger callbacks and throw error
   if (response.status === 401) {
     if (!skipGlobalError) {
       triggerUnauthorizedCallbacks()
     }
-    // Try to extract error message from response body
-    const text = await response.text()
-    if (text) {
-      try {
-        const json = JSON.parse(text)
-        throw new Error(json.error || text)
-      } catch {
-        throw new Error(text)
-      }
+    const message = await parseErrorMessage(response)
+    if (!skipErrorToast) {
+      notifyFromError(message, 'Unauthorized')
     }
-    throw new Error('UNAUTHORIZED')
+    throw new Error(message)
   }
 
   // Handle other errors
   if (!response.ok) {
-    const text = await response.text()
-    throw new Error(text || `API Error: ${response.status}`)
+    const message = await parseErrorMessage(response)
+    if (!skipErrorToast) {
+      notifyFromError(message)
+    }
+    throw new Error(message)
   }
 
   // Parse JSON response
@@ -188,11 +226,26 @@ export async function fetchAPI<T>(
   // Backend returns: { success: boolean, data: T, error: null, meta: {...} }
   if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
     if (json.success === true && json.data !== null) {
+      // Show success toast if message provided
+      if (successMessage) {
+        notifySuccess(successMessage)
+      }
       return json.data as T
     }
     if (json.success === false && json.error) {
-      throw new Error(json.error.message || json.error.code || 'API Error')
+      const errorMsg = typeof json.error === 'object'
+        ? json.error.message || json.error.code || 'API Error'
+        : json.error
+      if (!skipErrorToast) {
+        notifyFromError(errorMsg)
+      }
+      throw new Error(errorMsg)
     }
+  }
+
+  // Show success toast for non-wrapped responses if message provided
+  if (successMessage && (fetchOptions.method === 'POST' || fetchOptions.method === 'PUT' || fetchOptions.method === 'DELETE')) {
+    notifySuccess(successMessage)
   }
 
   // Return as-is if not an ApiResponse wrapper
@@ -465,9 +518,24 @@ export const api = {
       exact_match: string | null
     }>(`/devices/drafts/${deviceId}/suggest-types`),
 
-  // Approve draft device with optional existing type assignment
-  approveDraftDeviceWithType: (deviceId: string, existingType?: string) =>
-    fetchAPI<{
+  // Approve draft device with optional existing type assignment or new type details
+  approveDraftDeviceWithType: (
+    deviceId: string,
+    existingType?: string,
+    newTypeInfo?: { device_type: string; name: string; description: string },
+    deviceName?: string
+  ) => {
+    const body: Record<string, unknown> = {}
+    if (existingType) {
+      body.existing_type = existingType
+    }
+    if (newTypeInfo) {
+      body.new_type = newTypeInfo
+    }
+    if (deviceName) {
+      body.device_name = deviceName
+    }
+    return fetchAPI<{
       original_device_id: string
       system_device_id: string
       device_type: string
@@ -476,8 +544,9 @@ export const api = {
       message: string
     }>(`/devices/drafts/${deviceId}/approve`, {
       method: 'POST',
-      body: JSON.stringify(existingType ? { existing_type: existingType } : {}),
-    }),
+      body: JSON.stringify(body),
+    })
+  },
 
   // ========== Auto-onboarding Configuration ==========
   // Get auto-onboarding configuration (simplified to 3 fields)
@@ -801,18 +870,7 @@ export const api = {
     }),
   getRuleResources: () =>
     fetchAPI<{ devices: Array<{ id: string; name: string; type: string }>; metrics: Array<string>; alert_channels: Array<string> }>('/rules/resources'),
-  getRuleTemplates: () =>
-    fetchAPI<Array<{ id: string; name: string; category: string; description: string; parameters: Array<{ name: string; label: string; default?: string; required: boolean }> }>>('/rules/templates'),
-  fillRuleTemplate: (templateId: string, parameters: Record<string, string>) =>
-    fetchAPI<{ template_id: string; dsl: string; parameters: Record<string, string> }>('/rules/templates/fill', {
-      method: 'POST',
-      body: JSON.stringify({ template_id: templateId, parameters }),
-    }),
-  generateRule: (description: string, context?: { devices?: Array<{ id: string; name: string; type: string }> }) =>
-    fetchAPI<{ confidence: number; dsl: string; explanation: string; rule: unknown; suggested_edits: Array<{ field: string; current_value: string; suggested_value: string; reason: string }>; warnings: string[] }>('/rules/generate', {
-      method: 'POST',
-      body: JSON.stringify({ description, context }),
-    }),
+
   exportRules: (format?: 'json') =>
     fetchAPI<{ rules: unknown[]; export_date: string; total_count: number }>(`/rules/export${format ? `?format=${format}` : ''}`),
   importRules: (rules: unknown[]) =>
@@ -821,74 +879,10 @@ export const api = {
       body: JSON.stringify({ rules }),
     }),
 
-  // ========== Workflows API ==========
-  listWorkflows: (params?: {
-    status?: string
-    limit?: number
-    offset?: number
-  }) =>
-    fetchAPI<{ workflows: Array<Workflow>; count: number }>(
-      `/workflows${params ? `?${new URLSearchParams(
-        Object.entries(params).reduce((acc, [key, value]) => {
-          if (value !== undefined) acc[key] = String(value)
-          return acc
-        }, {} as Record<string, string>)
-      )}` : ''}`
-    ),
-  getWorkflow: (id: string) => fetchAPI<{ workflow: Workflow }>(`/workflows/${id}`),
-  createWorkflow: (workflow: Omit<Workflow, 'id' | 'created_at' | 'updated_at'>) =>
-    fetchAPI<{ workflow: Workflow; message?: string }>('/workflows', {
-      method: 'POST',
-      body: JSON.stringify(workflow),
-    }),
-  updateWorkflow: (id: string, workflow: Partial<Workflow>) =>
-    fetchAPI<{ workflow: Workflow; message?: string }>(`/workflows/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(workflow),
-    }),
-  deleteWorkflow: (id: string) =>
-    fetchAPI<{ message: string }>(`/workflows/${id}`, {
-      method: 'DELETE',
-    }),
-  executeWorkflow: (id: string, input?: Record<string, unknown>) =>
-    fetchAPI<{ execution_id: string; message: string }>(`/workflows/${id}/execute`, {
-      method: 'POST',
-      body: JSON.stringify({ input }),
-    }),
-  getWorkflowExecutions: (id: string, limit?: number) =>
-    fetchAPI<{ executions: Array<WorkflowExecution> }>(
-      `/workflows/${id}/executions${limit ? `?limit=${limit}` : ''}`
-    ),
-
-  // ========== Workflow Templates API ==========
-  getWorkflowTemplates: () =>
-    fetchAPI<{ templates: Array<WorkflowTemplate>; categories: string[]; count: number }>(
-      '/workflows/templates'
-    ),
-  fillWorkflowTemplate: (templateId: string, parameters: Record<string, string>) =>
-    fetchAPI<TemplatedWorkflow>('/workflows/templates/fill', {
-      method: 'POST',
-      body: JSON.stringify({ template_id: templateId, parameters }),
-    }),
-  generateWorkflow: (description: string) =>
-    fetchAPI<GeneratedWorkflow>('/workflows/generate', {
-      method: 'POST',
-      body: JSON.stringify({ description }),
-    }),
-  exportWorkflows: () =>
-    fetchAPI<WorkflowExport>('/workflows/export'),
-  importWorkflows: (workflows: Workflow[]) =>
-    fetchAPI<WorkflowImportResult>('/workflows/import', {
-      method: 'POST',
-      body: JSON.stringify({ workflows }),
-    }),
-  getWorkflowResources: () =>
-    fetchAPI<WorkflowResources>('/workflows/resources'),
-
   // ========== Unified Automations API ==========
   // Matches backend: crates/api/src/handlers/automations.rs
   listAutomations: (params?: {
-    type?: 'rule' | 'workflow' | 'all'
+    type?: 'rule' | 'transform' | 'all'
     enabled?: boolean
     search?: string
   }) =>
@@ -905,7 +899,7 @@ export const api = {
   createAutomation: (req: {
     name: string
     description?: string
-    type?: 'transform' | 'rule' | 'workflow'
+    type?: 'transform' | 'rule'
     enabled?: boolean
     definition: unknown
   }) =>
@@ -937,7 +931,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ description }),
     }),
-  convertAutomation: (id: string, targetType: 'transform' | 'rule' | 'workflow') =>
+  convertAutomation: (id: string, targetType: 'transform' | 'rule') =>
     fetchAPI<{ automation: import('@/types').Automation; message: string; original_id: string; new_id: string }>(`/automations/${id}/convert`, {
       method: 'POST',
       body: JSON.stringify({ type: targetType }),
@@ -1002,21 +996,6 @@ export const api = {
   // List all virtual metrics generated by transforms
   listVirtualMetrics: () =>
     fetchAPI<{ metrics: Array<{ device_id: string; metric: string; transform_id: string }>; count: number }>('/automations/transforms/metrics'),
-  // Generate transform code using AI
-  generateTransformCode: (req: {
-    intent: string
-    sample_input?: Record<string, unknown>
-    language?: string
-  }) =>
-    fetchAPI<{
-      js_code: string
-      output_prefix: string
-      suggested_name: string
-      explanation: string
-    }>('/automations/generate-code', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
 
   exportAutomations: () =>
     fetchAPI<{ automations: unknown[]; count: number; exported_at: string }>('/automations/export'),
@@ -1055,19 +1034,23 @@ export const api = {
 
   // ========== Events API ==========
   getEvents: (params?: {
-    event_type?: string
-    source?: string
-    start_time?: number
-    end_time?: number
+    event_type?: string | string[]
+    category?: string
+    start?: number
+    end?: number
     limit?: number
+    offset?: number
   }) =>
-    fetchAPI<{ events: Array<Event>; count: number }>(
+    fetchAPI<{ events: Array<Event>; total: number; offset: number; limit: number; has_more: boolean }>(
       `/events${params ? `?${new URLSearchParams(
-        Object.entries(params).reduce((acc, [key, value]) => {
-          if (value !== undefined) acc[key] = String(value)
-          return acc
-        }, {} as Record<string, string>)
-      )}` : ''}`
+        Object.entries(params).flatMap(([key, value]) => {
+          if (value === undefined) return []
+          if (Array.isArray(value)) {
+            return value.map(v => [`${key}[]`, String(v)])
+          }
+          return [[key, String(value)]]
+        })
+      ).toString()}` : ''}`
     ),
   subscribeEvents: () => fetchAPI<{ ws_url: string; subscription_id: string }>('/events/subscribe'),
 
@@ -1341,12 +1324,17 @@ export const api = {
       body: JSON.stringify({ session_ids: ids }),
     }),
   bulkDeleteDevices: (ids: string[]) =>
-    fetchAPI<{ deleted: number }>('/bulk/devices/delete', {
+    fetchAPI<{ deleted?: number; succeeded?: number }>('/bulk/devices/delete', {
       method: 'POST',
       body: JSON.stringify({ device_ids: ids }),
     }),
   bulkDeleteDeviceTypes: (ids: string[]) =>
-    fetchAPI<{ deleted: number }>('/bulk/device-types/delete', {
+    fetchAPI<{
+      deleted?: number
+      succeeded?: number
+      failed?: number
+      results?: Array<{ success: boolean; id?: string; error?: string }>
+    }>('/bulk/device-types/delete', {
       method: 'POST',
       body: JSON.stringify({ type_ids: ids }),
     }),

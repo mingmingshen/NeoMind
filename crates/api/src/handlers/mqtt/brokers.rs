@@ -39,6 +39,8 @@ struct ExternalBrokerDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     last_error: Option<String>,
     updated_at: i64,
+    /// Topics to subscribe to
+    subscribe_topics: Vec<String>,
 }
 
 impl From<ExternalBroker> for ExternalBrokerDto {
@@ -62,6 +64,7 @@ impl From<ExternalBroker> for ExternalBrokerDto {
             connected: Some(b.connected),
             last_error: b.last_error,
             updated_at: b.updated_at,
+            subscribe_topics: b.subscribe_topics,
         }
     }
 }
@@ -91,6 +94,9 @@ pub struct ExternalBrokerRequest {
     pub client_key: Option<String>,
     #[serde(default = "default_external_broker_enabled")]
     pub enabled: bool,
+    /// Topics to subscribe to. Defaults to ["#"] for all topics.
+    #[serde(default)]
+    pub subscribe_topics: Option<Vec<String>>,
 }
 
 fn default_external_broker_port() -> u16 {
@@ -169,6 +175,10 @@ pub async fn create_broker_handler(
     broker.client_cert = req.client_cert.clone();
     broker.client_key = req.client_key.clone();
     broker.enabled = req.enabled;
+    // Use custom subscribe_topics if provided, otherwise keep default
+    if let Some(topics) = &req.subscribe_topics {
+        broker.subscribe_topics = topics.clone();
+    }
 
     // Run security validation
     let warnings = broker.validate_security();
@@ -230,7 +240,7 @@ pub async fn create_broker_handler(
                 topic_prefix: "device".to_string(),
                 command_topic: "downlink".to_string(),
             },
-            subscribe_topics: vec!["device/+/+/uplink".to_string()],
+            subscribe_topics: broker.subscribe_topics.clone(),
             discovery_topic: None,
             discovery_prefix: "neotalk".to_string(),
             auto_discovery: false,
@@ -349,6 +359,10 @@ pub async fn update_broker_handler(
     broker.client_cert = req.client_cert;
     broker.client_key = req.client_key;
     broker.enabled = req.enabled;
+    // Update subscribe_topics if provided
+    if let Some(topics) = req.subscribe_topics {
+        broker.subscribe_topics = topics;
+    }
     broker.touch();
 
     store

@@ -12,9 +12,6 @@ export type EventType =
   | 'RuleEvaluated'
   | 'RuleTriggered'
   | 'RuleExecuted'
-  | 'WorkflowTriggered'
-  | 'WorkflowStepCompleted'
-  | 'WorkflowCompleted'
   | 'AlertCreated'
   | 'AlertAcknowledged'
   | 'PeriodicReviewTriggered'
@@ -35,7 +32,7 @@ export interface CustomEvent extends NeoTalkEvent {
   }
 }
 
-export type EventCategory = 'device' | 'rule' | 'workflow' | 'llm' | 'alert' | 'tool' | 'all'
+export type EventCategory = 'device' | 'rule' | 'llm' | 'alert' | 'tool' | 'all'
 
 export interface NeoTalkEvent {
   id: string
@@ -103,8 +100,7 @@ export class EventsWebSocket {
   private eventSource: EventSource | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectAttempts = 0
-  private maxReconnectAttempts = 5
-  private reconnectInterval = 3000
+  private maxReconnectAttempts = Infinity  // Use infinite retry with backoff
   private eventHandlers: Map<EventType, Set<EventHandler>> = new Map()
   private genericHandlers: Set<EventHandler> = new Set()
   private connectionHandlers: Set<ConnectionHandler> = new Set()
@@ -117,9 +113,6 @@ export class EventsWebSocket {
     this.config = config || {}
     if (this.config.maxReconnectAttempts !== undefined) {
       this.maxReconnectAttempts = this.config.maxReconnectAttempts
-    }
-    if (this.config.reconnectInterval !== undefined) {
-      this.reconnectInterval = this.config.reconnectInterval
     }
   }
 
@@ -156,8 +149,12 @@ export class EventsWebSocket {
     }
 
     // If token changed, force reconnect
-    if (this.lastToken !== currentToken && this.isConnected()) {
-      this.disconnect()
+    if (this.lastToken !== currentToken) {
+      // Reset reconnect attempts when token changes
+      this.reconnectAttempts = 0
+      if (this.isConnected()) {
+        this.disconnect()
+      }
     }
 
     this.lastToken = currentToken
@@ -194,6 +191,8 @@ export class EventsWebSocket {
     const token = tokenManager.getToken()
     if (token) {
       params.set('token', token)
+    } else {
+      console.warn('[WebSocket] No token available, connection may fail')
     }
 
     // Build WebSocket URL
@@ -206,9 +205,16 @@ export class EventsWebSocket {
     }
 
     const wsUrl = `${protocol}//${wsHost}/api/events/ws?${params.toString()}`
-    console.log('[WebSocket] Connecting to:', wsUrl)
+    console.log('[WebSocket] Connecting to:', wsUrl.replace(/token=[^&]+/, 'token=...'))
 
-    this.ws = new WebSocket(wsUrl)
+    try {
+      this.ws = new WebSocket(wsUrl)
+    } catch (e) {
+      console.error('[WebSocket] Failed to create WebSocket:', e)
+      this.notifyError(new Error(`WebSocket creation failed: ${e}`))
+      this.scheduleReconnect()
+      return
+    }
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0
@@ -228,10 +234,21 @@ export class EventsWebSocket {
 
     this.ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as NeoTalkEvent
-        this.notifyEvent(data)
+        const data = JSON.parse(event.data)
+        // Handle error messages from server (e.g., auth failures)
+        if (data.type === 'Error') {
+          console.error('[WebSocket] Server error:', data.message)
+          // If it's an auth error, clear the token and stop reconnecting
+          if (data.message?.includes('token') || data.message?.includes('Authentication') || data.message?.includes('Unauthorized')) {
+            console.warn('[WebSocket] Authentication failed, clearing token')
+            tokenManager.clearToken()
+            this.disconnect()
+            return
+          }
+        }
+        this.notifyEvent(data as NeoTalkEvent)
       } catch {
-        // Silent error handling
+        // Silent error handling for malformed messages
       }
     }
   }
@@ -363,10 +380,11 @@ export class EventsWebSocket {
       return
     }
 
-    const delay = this.reconnectInterval
+    // Exponential backoff with jitter: 2^n * 1000ms, capped at 30s
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+    this.reconnectAttempts++
 
     this.reconnectTimer = setTimeout(() => {
-      this.reconnectAttempts++
       this.connect()
     }, delay)
   }

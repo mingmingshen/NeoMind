@@ -13,7 +13,6 @@ import {
   ChevronUp,
   Cpu,
   Bell,
-  Workflow,
   Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -27,7 +26,7 @@ interface EventsBarProps {
 function getEventIcon(type: string) {
   if (type.toLowerCase().includes("device")) return Cpu
   if (type.toLowerCase().includes("alert")) return Bell
-  if (type.toLowerCase().includes("rule") || type.toLowerCase().includes("workflow")) return Workflow
+  if (type.toLowerCase().includes("rule")) return Activity
   if (type.toLowerCase().includes("llm") || type.toLowerCase().includes("agent")) return Sparkles
   return Activity
 }
@@ -51,10 +50,6 @@ function getEventSummary(event: NeoTalkEvent): string {
       return `新告警: ${data?.title || data?.message || "未知"}`
     case "AlertAcknowledged":
       return `告警已确认: ${data?.title || data?.alert_id || ""}`
-    case "WorkflowTriggered":
-      return `工作流 ${data?.workflow_id || ""} 开始`
-    case "WorkflowCompleted":
-      return `工作流 ${data?.workflow_id || ""} 完成`
     case "LlmResponse":
       return `AI 回复完成`
     default:

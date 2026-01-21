@@ -100,10 +100,7 @@ impl DeviceTypeGenerator {
 
             let metric = self.semantic_inference.enhance_path(path, &context).await;
 
-            // Use configured confidence threshold (default 0.0 = include all)
-            if metric.confidence >= config.min_confidence {
-                metrics.push(metric);
-            }
+            metrics.push(metric);
         }
 
         // Step 4: Infer commands from writable patterns
@@ -111,7 +108,6 @@ impl DeviceTypeGenerator {
 
         // Step 5: Generate device type definition
         let capabilities = self.infer_capabilities(&metrics, &commands);
-        let confidence = self.calculate_confidence(&metrics, &commands, samples.len());
 
         let device_type = GeneratedDeviceType {
             id: format!("auto-generated-{}", device_id),
@@ -122,7 +118,6 @@ impl DeviceTypeGenerator {
             metrics,
             commands,
             capabilities,
-            confidence,
         };
 
         Ok(device_type)
@@ -237,7 +232,6 @@ Respond with a JSON object:
                     display_name: format!("Set {}", field_name.replace("set_", "").replace("_", " ")),
                     description: format!("Command to set {}", field_name),
                     parameters: vec![],
-                    confidence: 0.6,
                 });
             }
 
@@ -248,7 +242,6 @@ Respond with a JSON object:
                     display_name: "Turn On".to_string(),
                     description: "Turn the device on".to_string(),
                     parameters: vec![],
-                    confidence: 0.8,
                 });
 
                 commands.push(DiscoveredCommand {
@@ -256,7 +249,6 @@ Respond with a JSON object:
                     display_name: "Turn Off".to_string(),
                     description: "Turn the device off".to_string(),
                     parameters: vec![],
-                    confidence: 0.8,
                 });
             }
         }
@@ -277,27 +269,6 @@ Respond with a JSON object:
                     SemanticType::Status | SemanticType::Alarm)
             }),
         }
-    }
-
-    /// Calculate confidence in the generated device type
-    fn calculate_confidence(&self, metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand], sample_count: usize) -> f32 {
-        let mut confidence = 0.5f32;
-
-        // More samples = higher confidence
-        confidence += (sample_count as f32).min(10.0) * 0.02;
-
-        // High confidence metrics increase confidence
-        let avg_metric_confidence: f32 = metrics.iter()
-            .map(|m| m.confidence)
-            .sum::<f32>() / metrics.len().max(1) as f32;
-        confidence += avg_metric_confidence * 0.2;
-
-        // Having commands increases confidence
-        if !commands.is_empty() {
-            confidence += 0.1;
-        }
-
-        confidence.min(1.0)
     }
 
     /// Generate a device name
@@ -345,14 +316,6 @@ Respond with a JSON object:
         // Check if device has any metrics
         if device_type.metrics.is_empty() {
             warnings.push("No metrics were discovered. Device may not be usable.".to_string());
-        }
-
-        // Check confidence level
-        if device_type.confidence < 0.5 {
-            warnings.push(format!(
-                "Low confidence ({:.0}%). Consider providing more sample data.",
-                device_type.confidence * 100.0
-            ));
         }
 
         // Check for required fields based on category
@@ -420,7 +383,6 @@ Respond with a JSON object:
             "commands": commands_json,
             "metadata": {
                 "auto_generated": true,
-                "confidence": device_type.confidence,
             }
         });
 
@@ -439,7 +401,6 @@ pub struct GeneratedDeviceType {
     pub metrics: Vec<DiscoveredMetric>,
     pub commands: Vec<DiscoveredCommand>,
     pub capabilities: DeviceCapabilities,
-    pub confidence: f32,
 }
 
 /// Device capabilities
@@ -582,22 +543,5 @@ mod tests {
                     SemanticType::Status | SemanticType::Alarm)
             }),
         }
-    }
-
-    fn calculate_confidence_direct(metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand], sample_count: usize) -> f32 {
-        let mut confidence = 0.5f32;
-
-        confidence += (sample_count as f32).min(10.0) * 0.02;
-
-        let avg_metric_confidence: f32 = metrics.iter()
-            .map(|m| m.confidence)
-            .sum::<f32>() / metrics.len().max(1) as f32;
-        confidence += avg_metric_confidence * 0.2;
-
-        if !commands.is_empty() {
-            confidence += 0.1;
-        }
-
-        confidence.min(1.0)
     }
 }

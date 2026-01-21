@@ -38,7 +38,7 @@ pub mod device_integration;
 pub mod dsl;
 pub mod engine;
 pub mod error;
-pub mod generator;
+
 pub mod history;
 pub mod integration;
 pub mod store;
@@ -58,11 +58,7 @@ pub use engine::{
     RuleStatus, ValueProvider,
 };
 pub use error::{NeoTalkError, RuleError};
-pub use generator::{
-    ExtractedRuleInfo, GeneratedRule, GeneratorConfig, RuleGenerator,
-    RuleTemplate, RuleTemplates, SuggestedEdit, TemplatedRule, TemplateParameter,
-    GeneratorError,
-};
+
 pub use history::{
     HistoryError, HistoryFilter, RuleHistoryEntry, RuleHistoryStats, RuleHistoryStorage,
 };

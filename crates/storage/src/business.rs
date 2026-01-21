@@ -1,9 +1,8 @@
-//! Business data storage for logs, rules, workflows, and alerts.
+//! Business data storage for logs, rules, and alerts.
 //!
 //! Provides storage for:
 //! - Event logs with circular buffer and retention
 //! - Rule execution history
-//! - Workflow execution history with step details
 //! - Alert records with status management
 
 use std::collections::HashMap;
@@ -20,8 +19,6 @@ use crate::Result;
 // Table definitions
 const EVENT_LOG_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("event_log");
 const RULE_HISTORY_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("rule_history");
-const WORKFLOW_HISTORY_TABLE: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("workflow_history");
 const ALERT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("alerts");
 
 // Default retention period: 7 days
@@ -72,8 +69,10 @@ pub struct EventFilter {
     pub start_time: Option<i64>,
     /// End timestamp (inclusive)
     pub end_time: Option<i64>,
-    /// Maximum results
+    /// Maximum results (default: 100, max: 1000)
     pub limit: Option<usize>,
+    /// Skip N results for pagination
+    pub offset: Option<usize>,
 }
 
 impl EventFilter {
@@ -110,6 +109,12 @@ impl EventFilter {
     /// Set result limit.
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
+        self
+    }
+
+    /// Set offset for pagination.
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
         self
     }
 }
@@ -171,24 +176,32 @@ impl EventLogStore {
         };
 
         let cutoff_timestamp = Utc::now().timestamp() - (self.retention_days * 86400);
-        let mut results = Vec::new();
+        let mut all_results = Vec::new();
 
         let start_key = filter.start_time.unwrap_or(cutoff_timestamp).to_string();
         let end_key = filter.end_time.unwrap_or(i64::MAX).to_string();
 
+        // Collect all matching events (within reasonable bounds)
         for result in table.range(&*start_key..=&*end_key)? {
             let (_key, value) = result?;
             if let Ok(event) = serde_json::from_slice::<EventLog>(value.value())
                 && self.matches_filter(&event, filter) {
-                    results.push(event);
-                    if let Some(limit) = filter.limit
-                        && results.len() >= limit {
-                            break;
-                        }
+                    all_results.push(event);
+                    // Safety limit to prevent unbounded memory usage
+                    if all_results.len() >= 10000 {
+                        break;
+                    }
                 }
         }
 
-        Ok(results)
+        // Apply pagination: offset and limit
+        let offset = filter.offset.unwrap_or(0);
+        let limit = filter.limit.unwrap_or(100).min(1000); // Cap at 1000
+
+        let start = offset.min(all_results.len());
+        let end = (start + limit).min(all_results.len());
+
+        Ok(all_results[start..end].to_vec())
     }
 
     /// Get events by type.
@@ -440,203 +453,6 @@ impl RuleHistoryStore {
                     if !matches!(execution.result, RuleExecutionResult::NotTriggered) {
                         count += 1;
                     }
-                }
-            }
-        }
-
-        Ok(count)
-    }
-}
-
-/// Workflow execution history entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowExecution {
-    /// Unique execution ID
-    pub id: String,
-    /// Workflow ID
-    pub workflow_id: String,
-    /// Workflow name
-    pub workflow_name: String,
-    /// Execution timestamp
-    pub timestamp: i64,
-    /// Execution status
-    pub status: WorkflowStatus,
-    /// Trigger source
-    pub trigger_source: String,
-    /// Step executions
-    pub steps: Vec<StepExecution>,
-    /// Input data
-    pub input: Option<serde_json::Value>,
-    /// Output data
-    pub output: Option<serde_json::Value>,
-    /// Error message if failed
-    pub error: Option<String>,
-    /// Duration in milliseconds
-    pub duration_ms: u64,
-}
-
-/// Workflow execution status.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorkflowStatus {
-    /// Running
-    Running,
-    /// Completed successfully
-    Completed,
-    /// Failed
-    Failed,
-    /// Cancelled
-    Cancelled,
-    /// Partially completed
-    Partial,
-}
-
-/// Step execution detail.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepExecution {
-    /// Step ID
-    pub step_id: String,
-    /// Step name
-    pub name: String,
-    /// Step type
-    pub step_type: String,
-    /// Step status
-    pub status: WorkflowStatus,
-    /// Start timestamp
-    pub start_time: i64,
-    /// End timestamp
-    pub end_time: Option<i64>,
-    /// Input data
-    pub input: Option<serde_json::Value>,
-    /// Output data
-    pub output: Option<serde_json::Value>,
-    /// Error message
-    pub error: Option<String>,
-}
-
-/// Workflow history store.
-pub struct WorkflowHistoryStore {
-    db: Arc<Database>,
-}
-
-impl WorkflowHistoryStore {
-    /// Open or create a workflow history store.
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let path_ref = path.as_ref();
-        let db = if path_ref.exists() {
-            Database::open(path_ref)?
-        } else {
-            if let Some(parent) = path_ref.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            Database::create(path_ref)?
-        };
-
-        Ok(Self { db: Arc::new(db) })
-    }
-
-    /// Record a workflow execution.
-    pub fn record_execution(&self, execution: &WorkflowExecution) -> Result<()> {
-        let key = format!("{}:{}", execution.workflow_id, execution.id);
-        let value = serde_json::to_vec(execution)?;
-
-        let txn = self.db.begin_write()?;
-        {
-            let mut table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
-            table.insert(&*key, &*value)?;
-        }
-        txn.commit()?;
-
-        Ok(())
-    }
-
-    /// Update an existing workflow execution.
-    pub fn update_execution(&self, execution: &WorkflowExecution) -> Result<()> {
-        self.record_execution(execution)
-    }
-
-    /// Get execution history for a workflow.
-    pub fn get_history(&self, workflow_id: &str, limit: usize) -> Result<Vec<WorkflowExecution>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
-
-        let start_key = format!("{}:", workflow_id);
-        let end_key = format!("{}:\u{FFFF}", workflow_id);
-
-        let mut results = Vec::new();
-        for result in table.range(&*start_key..=&*end_key)?.rev().take(limit) {
-            let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<WorkflowExecution>(value.value()) {
-                results.push(execution);
-            }
-        }
-
-        Ok(results)
-    }
-
-    /// Get a specific execution by ID.
-    pub fn get_execution(
-        &self,
-        workflow_id: &str,
-        execution_id: &str,
-    ) -> Result<Option<WorkflowExecution>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
-
-        let key = format!("{}:{}", workflow_id, execution_id);
-        match table.get(&*key)? {
-            Some(value) => {
-                let execution = serde_json::from_slice(value.value())?;
-                Ok(Some(execution))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Get running executions.
-    pub fn get_running(&self) -> Result<Vec<WorkflowExecution>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
-
-        let mut results = Vec::new();
-        for result in table.iter()? {
-            let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<WorkflowExecution>(value.value())
-                && execution.status == WorkflowStatus::Running {
-                    results.push(execution);
-                }
-        }
-
-        Ok(results)
-    }
-
-    /// List all workflows.
-    pub fn list_workflows(&self) -> Result<Vec<String>> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
-
-        let mut workflows = std::collections::HashSet::new();
-        for result in table.iter()? {
-            let (key, _) = result?;
-            let key_str = key.value();
-            if let Some(workflow_id) = key_str.split(':').next() {
-                workflows.insert(workflow_id.to_string());
-            }
-        }
-
-        Ok(workflows.into_iter().collect())
-    }
-
-    /// Get count of executions since a given timestamp.
-    pub fn count_since(&self, since_timestamp: i64) -> Result<u64> {
-        let txn = self.db.begin_read()?;
-        let table = txn.open_table(WORKFLOW_HISTORY_TABLE)?;
-
-        let mut count = 0u64;
-        for result in table.iter()? {
-            let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<WorkflowExecution>(value.value()) {
-                if execution.timestamp >= since_timestamp {
-                    count += 1;
                 }
             }
         }

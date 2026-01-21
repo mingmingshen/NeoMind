@@ -170,7 +170,7 @@ impl IntoResponse for RateLimitExceeded {
 }
 
 /// Extract client identifier from request.
-/// Uses API key (if authenticated) or IP address.
+/// Uses API key (if authenticated), session ID (for WebSocket), or IP address.
 pub fn extract_client_id(
     headers: &HeaderMap,
     connect_info: Option<&ConnectInfo<SocketAddr>>,
@@ -181,16 +181,30 @@ pub fn extract_client_id(
         return format!("apikey:_{:x}", hash_string(api_key));
     }
 
+    // Try to get session ID from headers (for WebSocket/chat sessions)
+    if let Some(session_id) = headers.get("x-session-id").and_then(|v| v.to_str().ok()) {
+        return format!("session:{}", hash_string(session_id));
+    }
+
     // Fall back to IP address from ConnectInfo
     if let Some(info) = connect_info {
         let addr = &info.0;
-        return format!("ip:{}", addr);
+        return format!("ip:{}", addr.ip());
     }
 
-    // Ultimate fallback
+    // Ultimate fallback: use a combination of headers to create a stable identifier
+    // This handles cases where ConnectInfo is not available (e.g., some proxy setups)
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+    let accept = headers
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
     format!(
-        "session:{}",
-        hash_string(&std::time::Instant::now().elapsed().as_nanos().to_string())
+        "fallback:{:x}",
+        hash_string(&format!("{}|{}", user_agent, accept))
     )
 }
 

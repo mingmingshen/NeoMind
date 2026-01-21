@@ -22,9 +22,9 @@ import {
 import { Database, Play, Edit, Trash2, Loader2, Sparkles } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
-import { TransformBuilder } from './TransformBuilder'
+import { TransformBuilder as TransformBuilderSplit } from './TransformBuilderSplit'
 import { TransformTestDialog } from './TransformTestDialog'
-import type { TransformAutomation } from '@/types'
+import type { TransformAutomation, TransformScope } from '@/types'
 
 interface DeviceTransformsDialogProps {
   open: boolean
@@ -75,14 +75,14 @@ export function DeviceTransformsDialog({
       const result = await api.listTransforms()
       let filtered = result.transforms || []
 
-      // Filter transforms by scope
+      // Filter transforms by scope - new format: 'global' | { device_type: string } | { device: string } | { user: string }
       if (deviceId) {
         filtered = filtered.filter((tr) =>
-          tr.scope.type === 'device' && tr.scope.device_id === deviceId
+          typeof tr.scope === 'object' && 'device' in tr.scope && tr.scope.device === deviceId
         )
       } else if (deviceTypeId) {
         filtered = filtered.filter((tr) =>
-          tr.scope.type === 'device_type' && tr.scope.device_type === deviceTypeId
+          typeof tr.scope === 'object' && 'device_type' in tr.scope && tr.scope.device_type === deviceTypeId
         )
       }
 
@@ -121,16 +121,28 @@ export function DeviceTransformsDialog({
 
   const handleSaveTransform = async (data: Partial<TransformAutomation>) => {
     try {
+      // Build the transform definition matching backend TransformAutomation structure
+      const now = Math.floor(Date.now() / 1000)
       const definition = {
-        scope: data.scope,
-        device_type_filter: data.device_type_filter,
-        operations: data.operations || [],
+        id: editingTransform?.id || crypto.randomUUID(),
+        name: data.name || '',
+        description: data.description || '',
+        enabled: data.enabled ?? true,
+        scope: data.scope || 'global',
+        js_code: data.js_code || '',
+        output_prefix: data.output_prefix || '',
+        complexity: data.complexity || 2,
+        execution_count: 0,
+        created_at: now,
+        updated_at: now,
+        last_executed: null as number | null,
       }
 
       if (editingTransform) {
         await api.updateAutomation(editingTransform.id, {
           name: data.name || '',
           description: data.description,
+          enabled: data.enabled,
           definition,
         })
       } else {
@@ -152,12 +164,12 @@ export function DeviceTransformsDialog({
   }
 
   const handleCreateNew = () => {
-    // Pre-fill scope based on dialog context
-    const preFilledScope = deviceId
-      ? { type: 'device' as const, device_id: deviceId }
+    // Pre-fill scope based on dialog context - new format: 'global' | { device_type: string } | { device: string } | { user: string }
+    const preFilledScope: TransformScope = deviceId
+      ? { device: deviceId }
       : deviceTypeId
-        ? { type: 'device_type' as const, device_type: deviceTypeId }
-        : { type: 'global' as const }
+        ? { device_type: deviceTypeId }
+        : 'global'
 
     setEditingTransform({
       id: '',
@@ -166,40 +178,49 @@ export function DeviceTransformsDialog({
       enabled: true,
       type: 'transform',
       scope: preFilledScope,
+      output_prefix: '',
       complexity: 1,
       execution_count: 0,
       created_at: 0,
       updated_at: 0,
+      last_executed: null,
     } as TransformAutomation)
     setBuilderOpen(true)
   }
 
   const getScopeBadgeVariant = (scope: TransformAutomation['scope']) => {
-    switch (scope.type) {
-      case 'global':
-        return 'default'
-      case 'device_type':
-        return 'secondary'
-      case 'device':
-        return 'outline'
-      case 'user':
-        return 'destructive' as const
-      default:
-        return 'default'
+    // New scope format: 'global' | { device_type: string } | { device: string } | { user: string }
+    if (scope === 'global') {
+      return 'default'
     }
+    if (typeof scope === 'object') {
+      if ('device_type' in scope) {
+        return 'secondary'
+      }
+      if ('device' in scope) {
+        return 'outline'
+      }
+      if ('user' in scope) {
+        return 'destructive' as const
+      }
+    }
+    return 'default'
   }
 
   const getScopeLabel = (scope: TransformAutomation['scope']) => {
-    switch (scope.type) {
-      case 'global':
-        return t('automation:scopeGlobal', { defaultValue: 'Global' })
-      case 'device_type':
-        return t('automation:scopeDeviceType', { device_type: scope.device_type })
-      case 'device':
-        return t('automation:scopeDevice', { device_id: scope.device_id })
-      case 'user':
-        return t('automation:scopeUser', { user_id: scope.user_id })
+    // New scope format: 'global' | { device_type: string } | { device: string }
+    if (scope === 'global') {
+      return t('automation:scopeGlobal', { defaultValue: 'Global' })
     }
+    if (typeof scope === 'object') {
+      if ('device_type' in scope) {
+        return t('automation:scopeDeviceType', { device_type: scope.device_type })
+      }
+      if ('device' in scope) {
+        return t('automation:scopeDevice', { device_id: scope.device })
+      }
+    }
+    return String(scope)
   }
 
   const title = deviceId
@@ -354,15 +375,13 @@ export function DeviceTransformsDialog({
       </Dialog>
 
       {/* Transform Builder Dialog */}
-      {builderOpen && (
-        <TransformBuilder
-          open={builderOpen}
-          onOpenChange={setBuilderOpen}
-          transform={editingTransform}
-          devices={devices}
-          onSave={handleSaveTransform}
-        />
-      )}
+      <TransformBuilderSplit
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        transform={editingTransform}
+        devices={devices}
+        onSave={handleSaveTransform}
+      />
 
       {/* Transform Test Dialog */}
       {testDialogOpen && testingTransformId && (

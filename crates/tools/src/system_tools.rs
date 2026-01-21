@@ -100,7 +100,7 @@ impl Tool for SystemInfoTool {
                     "service_status": [
                         {"name": "device_service", "status": "running"},
                         {"name": "rule_engine", "status": "running"},
-                        {"name": "workflow_engine", "status": "running"}
+                        {"name": "transform_engine", "status": "running"}
                     ]
                 }),
                 description: "获取系统状态信息".to_string(),
@@ -348,7 +348,7 @@ impl ServiceRestartTool {
             allowed_services: vec![
                 "device_service".to_string(),
                 "rule_engine".to_string(),
-                "workflow_engine".to_string(),
+                "transform_engine".to_string(),
                 "alert_service".to_string(),
             ],
         }
@@ -378,13 +378,13 @@ impl Tool for ServiceRestartTool {
 ## 使用场景
 - 重启设备服务以应用新配置
 - 重启规则引擎以加载新规则
-- 重启工作流引擎
+- 重启数据转换引擎
 - 服务异常后重启恢复
 
 ## 可重启的服务
 - device_service: 设备管理服务
 - rule_engine: 规则引擎
-- workflow_engine: 工作流引擎
+- transform_engine: 数据转换引擎
 - alert_service: 告警服务
 
 ## 注意事项
@@ -1437,7 +1437,7 @@ fn get_service_status() -> Vec<Value> {
     vec![
         serde_json::json!({"name": "device_service", "status": "running", "uptime": 86400}),
         serde_json::json!({"name": "rule_engine", "status": "running", "uptime": 86400}),
-        serde_json::json!({"name": "workflow_engine", "status": "running", "uptime": 86400}),
+        serde_json::json!({"name": "transform_engine", "status": "running", "uptime": 86400}),
         serde_json::json!({"name": "alert_service", "status": "running", "uptime": 86400}),
         serde_json::json!({"name": "api_server", "status": "running", "uptime": 86400}),
     ]

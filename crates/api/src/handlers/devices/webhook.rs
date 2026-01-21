@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 use serde_json::Value;
 use tracing::{debug, info, warn};
@@ -43,8 +43,12 @@ pub struct WebhookPayload {
 
 /// Handle webhook POST from device.
 ///
-/// Endpoint: POST /api/devices/webhook/:device_id
+/// Endpoint: POST /api/devices/webhook/:device_id?source=mqtt:topic_name
 /// OR: POST /api/devices/webhook (with device_id in body)
+///
+/// Query parameters:
+/// - source: Optional data source identifier (e.g., "mqtt:device999", "webhook")
+///          Default: "webhook"
 ///
 /// Device can POST data like:
 /// ```json
@@ -69,8 +73,11 @@ pub struct WebhookPayload {
 pub async fn webhook_handler(
     State(state): State<ServerState>,
     Path(device_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     Json(payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
+    // Get source from query params, default to "webhook"
+    let source = params.get("source").cloned().unwrap_or_else(|| "webhook".to_string());
     // Check if device exists
     let device_opt = state.device_service.get_device(&device_id).await;
 
@@ -117,9 +124,9 @@ pub async fn webhook_handler(
 
             // Trigger auto-onboarding analysis
             // This will create a draft device if enough samples are collected
-            let source = "webhook";  // Data source identifier
+            // Source indicates where the data came from (e.g., "mqtt:device999", "webhook")
             // Webhook data is typically JSON
-            let _ = manager.process_unknown_device(&device_id, source, &sample, false).await;
+            let _ = manager.process_unknown_device(&device_id, &source, &sample, false).await;
 
             info!(
                 device_id = %device_id,
@@ -373,14 +380,125 @@ async fn process_device_transforms(
 /// This allows devices to POST to /api/devices/webhook with device_id in the body.
 pub async fn webhook_generic_handler(
     State(state): State<ServerState>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     Json(mut payload): Json<WebhookPayload>,
 ) -> HandlerResult<serde_json::Value> {
     let device_id = payload.device_id.take().ok_or_else(|| {
         ErrorResponse::bad_request("device_id is required in request body")
     })?;
 
-    // Delegate to the main handler
-    webhook_handler(State(state), Path(device_id), Json(payload)).await
+    // Get source from query params, default to "webhook"
+    let source = params.get("source").cloned().unwrap_or_else(|| "webhook".to_string());
+
+    // Check if device exists
+    let device_opt = state.device_service.get_device(&device_id).await;
+
+    let device = match device_opt {
+        Some(d) => d,
+        None => {
+            // Device not registered - trigger auto-onboarding
+            info!(
+                device_id = %device_id,
+                "Unknown device, triggering auto-onboarding"
+            );
+
+            // Get or create auto-onboard manager (lazy initialization)
+            let mut manager_guard = state.auto_onboard_manager.write().await;
+            let manager = if let Some(m) = manager_guard.as_ref() {
+                m.clone()
+            } else {
+                // Create manager on first use
+                use edge_ai_llm::backends::{OllamaConfig, OllamaRuntime};
+                let llm = OllamaConfig::new("qwen2.5:3b")
+                    .with_endpoint("http://localhost:11434")
+                    .with_timeout_secs(120);
+                let runtime = OllamaRuntime::new(llm)
+                    .map_err(|e| ErrorResponse::internal(&format!("Failed to create LLM runtime: {}", e)))?;
+                let event_bus = state.event_bus.as_ref()
+                    .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
+                    .clone();
+                let mgr = edge_ai_automation::AutoOnboardManager::new(
+                    Arc::new(runtime) as Arc<dyn edge_ai_core::llm::backend::LlmRuntime>,
+                    event_bus,
+                );
+                let mgr = Arc::new(mgr);
+                *manager_guard = Some(mgr.clone());
+                drop(manager_guard);
+                mgr
+            };
+
+            // Convert payload to sample format for auto-onboarding
+            let sample = serde_json::json!({
+                "device_id": device_id,
+                "timestamp": payload.timestamp.unwrap_or_else(|| chrono::Utc::now().timestamp()),
+                "data": payload.data
+            });
+
+            // Trigger auto-onboarding analysis
+            let _ = manager.process_unknown_device(&device_id, &source, &sample, false).await;
+
+            info!(
+                device_id = %device_id,
+                "Auto-onboarding triggered, device will appear in Pending Devices after analysis"
+            );
+
+            return ok(serde_json::json!({
+                "success": true,
+                "device_id": device_id,
+                "status": "pending_registration",
+                "message": "Device is being analyzed. Check Pending Devices tab for status."
+            }));
+        }
+    };
+
+    // Only allow webhook for devices with webhook adapter type
+    if device.adapter_type != "webhook" {
+        warn!(
+            device_id = %device_id,
+            adapter_type = %device.adapter_type,
+            "Webhook received for non-webhook device"
+        );
+        return Err(ErrorResponse::bad_request(format!(
+            "Device {} is not configured for webhook (adapter_type: {})",
+            device_id, device.adapter_type
+        )));
+    }
+
+    let timestamp = payload.timestamp.unwrap_or_else(|| {
+        chrono::Utc::now().timestamp()
+    });
+
+    // Process the data and publish events
+    let mut metrics_count = 0;
+
+    if let Some(obj) = payload.data.as_object() {
+        for (key, value) in obj {
+            let metric_value = convert_json_to_metric_value(value);
+            publish_metric_event(
+                &state,
+                &device_id,
+                key,
+                metric_value,
+                timestamp,
+                payload.quality,
+            ).await;
+            metrics_count += 1;
+        }
+    }
+
+    debug!(
+        device_id = %device_id,
+        metrics_count = %metrics_count,
+        source = %source,
+        "Webhook received from device"
+    );
+
+    ok(serde_json::json!({
+        "success": true,
+        "device_id": device_id,
+        "metrics_processed": metrics_count,
+        "source": source
+    }))
 }
 
 /// Get webhook URL for a device.

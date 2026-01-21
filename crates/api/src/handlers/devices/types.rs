@@ -175,7 +175,8 @@ pub async fn validate_device_type_handler(
             | edge_ai_devices::MetricDataType::String
             | edge_ai_devices::MetricDataType::Boolean
             | edge_ai_devices::MetricDataType::Binary
-            | edge_ai_devices::MetricDataType::Enum { .. } => {}
+            | edge_ai_devices::MetricDataType::Enum { .. }
+            | edge_ai_devices::MetricDataType::Array { .. } => {}
         }
         // Validate min/max for numeric types
         if matches!(
@@ -481,7 +482,7 @@ pub async fn generate_device_type_from_samples_handler(
             unit: m.unit,
             readable: m.is_readable,
             writable: m.is_writable,
-            confidence: m.confidence,
+            confidence: 1.0, // Default confidence
         }).collect(),
         commands: generated.commands.into_iter().map(|c| GeneratedCommandDto {
             name: c.name,
@@ -492,9 +493,9 @@ pub async fn generate_device_type_from_samples_handler(
                 type_: format!("{:?}", p.param_type),
                 required: p.required,
             }).collect(),
-            confidence: c.confidence,
+            confidence: 1.0, // Default confidence
         }).collect(),
-        confidence: generated.confidence,
+        confidence: 1.0, // Default confidence
     };
 
     ok(response)

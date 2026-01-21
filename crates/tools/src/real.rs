@@ -15,7 +15,7 @@ pub type ToolResult<T> = std::result::Result<T, ToolError>;
 
 use edge_ai_devices::{DeviceService, TimeSeriesStorage};
 use edge_ai_rules::RuleEngine;
-use edge_ai_workflow::WorkflowEngine;
+
 
 /// Tool for querying time series data using real storage.
 pub struct QueryDataTool {
@@ -698,119 +698,6 @@ impl Tool for ListRulesTool {
     }
 }
 
-/// Tool for triggering workflows using real workflow engine.
-pub struct TriggerWorkflowTool {
-    engine: Arc<WorkflowEngine>,
-}
-
-impl TriggerWorkflowTool {
-    /// Create a new trigger workflow tool with real engine.
-    pub fn new(engine: Arc<WorkflowEngine>) -> Self {
-        Self { engine }
-    }
-}
-
-#[async_trait]
-impl Tool for TriggerWorkflowTool {
-    fn name(&self) -> &str {
-        "trigger_workflow"
-    }
-
-    fn description(&self) -> &str {
-        r#"手动触发一个工作流执行。
-
-## 使用场景
-- 手动启动预定义的工作流
-- 执行复杂的多步骤自动化任务
-- 批量操作多个设备
-- 定时任务的即时执行
-
-## 工作流类型
-- 数据采集工作流：批量采集多个设备数据
-- 报告生成工作流：生成数据统计报告
-- 批量控制工作流：同时控制多个设备
-- 数据清理工作流：清理历史数据
-
-## 注意事项
-- 需要先在系统中创建工作流
-- 可选参数会传递给工作流步骤使用
-- 执行是异步的，返回execution_id用于追踪状态"#
-    }
-
-    fn parameters(&self) -> Value {
-        object_schema(
-            serde_json::json!({
-                "workflow_id": string_property("要触发的工作流ID，例如：daily_backup、data_collection")
-            }),
-            vec!["workflow_id".to_string()],
-        )
-    }
-
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: self.name().to_string(),
-            description: self.description().to_string(),
-            parameters: self.parameters(),
-            example: Some(ToolExample {
-                arguments: serde_json::json!({
-                    "workflow_id": "daily_backup",
-                    "parameters": {"mode": "full"}
-                }),
-                result: serde_json::json!({
-                    "workflow_id": "daily_backup",
-                    "execution_id": "exec_abc123",
-                    "status": "triggered"
-                }),
-                description: "触发日常备份工作流".to_string(),
-            }),
-            category: edge_ai_core::tools::ToolCategory::Workflow,
-            scenarios: vec![],
-            relationships: edge_ai_core::tools::ToolRelationships::default(),
-            deprecated: false,
-            replaced_by: None,
-            version: "1.0.0".to_string(),
-            examples: vec![ToolExample {
-                arguments: serde_json::json!({
-                    "workflow_id": "daily_backup"
-                }),
-                result: serde_json::json!({
-                    "workflow_id": "daily_backup",
-                    "execution_id": "exec_abc123",
-                    "status": "triggered"
-                }),
-                description: "触发工作流".to_string(),
-            }],
-            response_format: Some("concise".to_string()),
-            namespace: Some("workflow".to_string()),
-        }
-    }
-
-    fn namespace(&self) -> Option<&str> {
-        Some("workflow")
-    }
-
-    async fn execute(&self, args: Value) -> Result<ToolOutput> {
-        self.validate_args(&args)?;
-
-        let workflow_id = args["workflow_id"].as_str().ok_or_else(|| {
-            ToolError::InvalidArguments("workflow_id must be a string".to_string())
-        })?;
-
-        // Trigger the workflow
-        let result = self
-            .engine
-            .execute_workflow(workflow_id)
-            .await
-            .map_err(|e| ToolError::Execution(format!("Failed to trigger workflow: {}", e)))?;
-
-        Ok(ToolOutput::success(serde_json::json!({
-            "workflow_id": workflow_id,
-            "execution_id": result.execution_id,
-            "status": "triggered"
-        })))
-    }
-}
-
 /// Tool for querying rule execution history.
 pub struct QueryRuleHistoryTool {
     history: Arc<edge_ai_rules::RuleHistoryStorage>,
@@ -1093,6 +980,17 @@ impl Tool for GetDeviceDataTool {
                             }
                         }
                         edge_ai_devices::MetricValue::Boolean(v) => serde_json::json!(v),
+                        edge_ai_devices::MetricValue::Array(ref a) => {
+                            // Convert array to JSON
+                            let json_arr: Vec<serde_json::Value> = a.iter().map(|v| match v {
+                                edge_ai_devices::MetricValue::String(s) => serde_json::json!(s),
+                                edge_ai_devices::MetricValue::Integer(i) => serde_json::json!(i),
+                                edge_ai_devices::MetricValue::Float(f) => serde_json::json!(f),
+                                edge_ai_devices::MetricValue::Boolean(b) => serde_json::json!(b),
+                                _ => serde_json::json!(null),
+                            }).collect();
+                            serde_json::json!(json_arr)
+                        }
                         edge_ai_devices::MetricValue::Binary(ref v) => {
                             serde_json::json!(general_purpose::STANDARD.encode(v))
                         }
@@ -1141,6 +1039,19 @@ impl Tool for GetDeviceDataTool {
                                 edge_ai_devices::MetricValue::Binary(ref v) => {
                                     serde_json::json!(general_purpose::STANDARD.encode(v))
                                 }
+                                edge_ai_devices::MetricValue::Array(ref arr) => {
+                                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                                        edge_ai_devices::MetricValue::Float(f) => serde_json::json!(f),
+                                        edge_ai_devices::MetricValue::Integer(i) => serde_json::json!(i),
+                                        edge_ai_devices::MetricValue::String(s) => serde_json::json!(s),
+                                        edge_ai_devices::MetricValue::Boolean(b) => serde_json::json!(b),
+                                        edge_ai_devices::MetricValue::Null => serde_json::json!(null),
+                                        edge_ai_devices::MetricValue::Array(_) | edge_ai_devices::MetricValue::Binary(_) => {
+                                            serde_json::json!(null)
+                                        }
+                                    }).collect();
+                                    serde_json::json!(json_arr)
+                                }
                                 edge_ai_devices::MetricValue::Null => serde_json::json!(null),
                             };
 
@@ -1173,176 +1084,6 @@ impl Tool for GetDeviceDataTool {
             "device_type": device_config.device_type,
             "metrics": metrics_data,
             "metric_count": metrics_data.len()
-        })))
-    }
-}
-
-/// Tool for querying workflow execution status.
-pub struct QueryWorkflowStatusTool {
-    tracker: Arc<edge_ai_workflow::ExecutionTracker>,
-}
-
-impl QueryWorkflowStatusTool {
-    /// Create a new query workflow status tool.
-    pub fn new(tracker: Arc<edge_ai_workflow::ExecutionTracker>) -> Self {
-        Self { tracker }
-    }
-}
-
-#[async_trait]
-impl Tool for QueryWorkflowStatusTool {
-    fn name(&self) -> &str {
-        "query_workflow_status"
-    }
-
-    fn description(&self) -> &str {
-        r#"查询工作流的执行状态。
-
-## 使用场景
-- 查看正在运行的工作流
-- 检查工作流执行结果
-- 追踪工作流执行进度
-- 查看工作流执行历史
-
-## 返回信息
-- 执行ID：唯一标识符
-- 工作流ID：被执行的工作流
-- 执行状态：running（运行中）、completed（完成）、failed（失败）、cancelled（取消）
-- 开始时间：执行开始时间戳
-- 当前步骤：执行到的步骤名称
-- 错误信息：失败时的错误描述
-
-## 筛选选项
-- execution_id: 按执行ID筛选
-- workflow_id: 按工作流ID筛选
-- limit: 限制返回条数，默认10条"#
-    }
-
-    fn parameters(&self) -> Value {
-        object_schema(
-            serde_json::json!({
-                "execution_id": string_property("可选，按执行ID筛选"),
-                "workflow_id": string_property("可选，按工作流ID筛选"),
-                "limit": number_property("可选，返回的最大条数，默认10条")
-            }),
-            vec![],
-        )
-    }
-
-    fn definition(&self) -> ToolDefinition {
-        ToolDefinition {
-            name: self.name().to_string(),
-            description: self.description().to_string(),
-            parameters: self.parameters(),
-            example: Some(ToolExample {
-                arguments: serde_json::json!({
-                    "workflow_id": "daily_backup",
-                    "limit": 5
-                }),
-                result: serde_json::json!({
-                    "count": 2,
-                    "executions": [
-                        {"execution_id": "exec_1", "workflow_id": "daily_backup", "status": "completed", "started_at": 1735804800}
-                    ]
-                }),
-                description: "查询指定工作流的执行状态".to_string(),
-            }),
-            category: edge_ai_core::tools::ToolCategory::Workflow,
-            scenarios: vec![],
-            relationships: edge_ai_core::tools::ToolRelationships::default(),
-            deprecated: false,
-            replaced_by: None,
-            version: "1.0.0".to_string(),
-            examples: vec![ToolExample {
-                arguments: serde_json::json!({
-                    "workflow_id": "daily_backup",
-                    "limit": 5
-                }),
-                result: serde_json::json!({
-                    "count": 2,
-                    "executions": [
-                        {"execution_id": "exec_1", "workflow_id": "daily_backup", "status": "completed", "started_at": 1735804800}
-                    ]
-                }),
-                description: "查询工作流执行状态".to_string(),
-            }],
-            response_format: Some("concise".to_string()),
-            namespace: Some("workflow".to_string()),
-        }
-    }
-
-    fn namespace(&self) -> Option<&str> {
-        Some("workflow")
-    }
-
-    async fn execute(&self, args: Value) -> Result<ToolOutput> {
-        use edge_ai_workflow::ExecutionStatus;
-
-        let limit = args["limit"].as_u64().unwrap_or(10) as usize;
-
-        // Get running executions
-        let mut running = self.tracker.list_running().await;
-
-        // Get completed executions from history
-        let mut history = self.tracker.list_history(limit).await;
-
-        // If execution_id is specified, filter for that specific execution
-        if let Some(exec_id) = args["execution_id"].as_str() {
-            running.retain(|e| e.id.starts_with(exec_id));
-            history.retain(|e| e.id.starts_with(exec_id));
-        }
-
-        // If workflow_id is specified, use the dedicated method
-        if let Some(workflow_id) = args["workflow_id"].as_str() {
-            // Use the dedicated method for workflow-specific executions
-            let workflow_executions = self.tracker.get_workflow_executions(workflow_id).await;
-            running = workflow_executions
-                .into_iter()
-                .filter(|e| e.is_running())
-                .collect();
-            history = self
-                .tracker
-                .list_history(limit * 2)
-                .await
-                .into_iter()
-                .filter(|e| e.workflow_id == workflow_id)
-                .take(limit)
-                .collect();
-        }
-
-        let status_list: Vec<Value> = running
-            .into_iter()
-            .map(|state| {
-                serde_json::json!({
-                    "execution_id": state.id,
-                    "workflow_id": state.workflow_id,
-                    "status": "running",
-                    "started_at": state.started_at,
-                    "current_step": state.current_step,
-                })
-            })
-            .chain(history.into_iter().take(limit).map(|state| {
-                serde_json::json!({
-                    "execution_id": state.id,
-                    "workflow_id": state.workflow_id,
-                    "status": match state.status {
-                        ExecutionStatus::Running => "running",
-                        ExecutionStatus::Completed => "completed",
-                        ExecutionStatus::Failed => "failed",
-                        ExecutionStatus::Cancelled => "cancelled",
-                        ExecutionStatus::Compensating => "compensating",
-                    },
-                    "started_at": state.started_at,
-                    "completed_at": state.completed_at,
-                    "current_step": state.current_step,
-                    "error": state.error,
-                })
-            }))
-            .collect();
-
-        Ok(ToolOutput::success(serde_json::json!({
-            "count": status_list.len(),
-            "executions": status_list
         })))
     }
 }

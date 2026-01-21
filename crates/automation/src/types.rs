@@ -198,8 +198,6 @@ pub enum TransformScope {
     DeviceType(String),
     /// Device instance scope - applies to a specific device
     Device(String),
-    /// User scope - custom user-defined transforms
-    User(String),
 }
 
 impl TransformScope {
@@ -208,7 +206,6 @@ impl TransformScope {
             TransformScope::Global => "global".to_string(),
             TransformScope::DeviceType(t) => format!("device_type:{}", t),
             TransformScope::Device(d) => format!("device:{}", d),
-            TransformScope::User(u) => format!("user:{}", u),
         }
     }
 
@@ -218,7 +215,6 @@ impl TransformScope {
             TransformScope::Global => 0,
             TransformScope::DeviceType(_) => 1,
             TransformScope::Device(_) => 2,
-            TransformScope::User(_) => 3,
         }
     }
 }
@@ -829,7 +825,6 @@ impl TransformAutomation {
                 }
             }
             TransformScope::Device(d) => d == device_id,
-            TransformScope::User(_) => true, // User scope applies to all if enabled
         }
     }
 }

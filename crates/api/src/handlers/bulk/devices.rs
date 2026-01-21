@@ -32,23 +32,14 @@ pub async fn bulk_delete_device_types_handler(
                 });
                 succeeded += 1;
             }
-            Err(_) => {
-                // Check if template exists
-                if state.device_service.get_template(&type_id).await.is_none() {
-                    results.push(BulkOperationResult {
-                        index,
-                        success: false,
-                        id: Some(type_id.clone()),
-                        error: Some("Device type not found".to_string()),
-                    });
-                } else {
-                    results.push(BulkOperationResult {
-                        index,
-                        success: false,
-                        id: Some(type_id.clone()),
-                        error: Some("Failed to unregister device type".to_string()),
-                    });
-                }
+            Err(e) => {
+                // Use the actual error message to help users understand why deletion failed
+                results.push(BulkOperationResult {
+                    index,
+                    success: false,
+                    id: Some(type_id.clone()),
+                    error: Some(e.to_string()),
+                });
                 failed += 1;
             }
         }
@@ -57,6 +48,7 @@ pub async fn bulk_delete_device_types_handler(
     ok(json!({
         "total": results.len(),
         "succeeded": succeeded,
+        "deleted": succeeded,
         "failed": failed,
         "results": results,
     }))
@@ -111,6 +103,7 @@ pub async fn bulk_delete_devices_handler(
     ok(json!({
         "total": results.len(),
         "succeeded": succeeded,
+        "deleted": succeeded,
         "failed": failed,
         "results": results,
     }))
@@ -169,6 +162,17 @@ pub async fn bulk_device_command_handler(
                 MetricValue::String(s) => serde_json::Value::String(s),
                 MetricValue::Boolean(b) => serde_json::Value::Bool(b),
                 MetricValue::Binary(_) => serde_json::Value::String("binary".to_string()),
+                MetricValue::Array(arr) => {
+                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                        MetricValue::Integer(i) => serde_json::json!(*i),
+                        MetricValue::Float(f) => serde_json::json!(*f),
+                        MetricValue::String(s) => serde_json::json!(s),
+                        MetricValue::Boolean(b) => serde_json::json!(*b),
+                        MetricValue::Null => serde_json::json!(null),
+                        MetricValue::Array(_) | MetricValue::Binary(_) => serde_json::json!(null),
+                    }).collect();
+                    serde_json::Value::Array(json_arr)
+                }
                 MetricValue::Null => serde_json::Value::Null,
             };
             (k, json_val)

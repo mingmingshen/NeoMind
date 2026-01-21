@@ -21,7 +21,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         alert_channels, alerts, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
         decisions, devices, events, extensions, llm_backends, memory, mqtt, plugins, rules,
-        search, sessions, settings, stats, test_data, tools, workflows,
+        search, sessions, settings, stats, test_data, tools,
     };
 
     // Public routes (no authentication required)
@@ -276,9 +276,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/rules/import", post(rules::import_rules_handler))
         .route("/api/rules/resources", get(rules::get_resources_handler))
         .route("/api/rules/validate", post(rules::validate_rule_handler))
-        .route("/api/rules/templates", get(rules::get_templates_handler))
-        .route("/api/rules/templates/fill", post(rules::fill_template_handler))
-        .route("/api/rules/generate", post(rules::generate_rule_handler))
+
         .route("/api/rules/:id", get(rules::get_rule_handler))
         .route("/api/rules/:id", put(rules::update_rule_handler))
         .route("/api/rules/:id", delete(rules::delete_rule_handler))
@@ -305,41 +303,12 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/alert-channels/:name/test", post(alert_channels::test_channel_handler))
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
-        // Workflows API
-        .route("/api/workflows", get(workflows::list_workflows_handler))
-        .route("/api/workflows", post(workflows::create_workflow_handler))
-        .route("/api/workflows/:id", get(workflows::get_workflow_handler))
-        .route(
-            "/api/workflows/:id",
-            put(workflows::update_workflow_handler),
-        )
-        .route(
-            "/api/workflows/:id",
-            delete(workflows::delete_workflow_handler),
-        )
-        .route(
-            "/api/workflows/:id/enable",
-            post(workflows::set_workflow_status_handler),
-        )
-        .route(
-            "/api/workflows/:id/execute",
-            post(workflows::execute_workflow_handler),
-        )
-        .route(
-            "/api/workflows/:id/executions",
-            get(workflows::get_workflow_executions_handler),
-        )
-        .route(
-            "/api/workflows/:id/executions/:exec_id",
-            get(workflows::get_execution_handler),
-        )
         // Unified Automations API
         .route("/api/automations", get(automations::list_automations_handler))
         .route("/api/automations", post(automations::create_automation_handler))
         .route("/api/automations/export", get(automations::export_automations_handler))
         .route("/api/automations/import", post(automations::import_automations_handler))
         .route("/api/automations/analyze-intent", post(automations::analyze_intent_handler))
-        .route("/api/automations/generate-code", post(automations::generate_transform_code_handler))
         .route("/api/automations/templates", get(automations::list_templates_handler))
         .route("/api/automations/:id", get(automations::get_automation_handler))
         .route("/api/automations/:id", put(automations::update_automation_handler))

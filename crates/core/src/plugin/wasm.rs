@@ -355,7 +355,6 @@ impl WasmPluginLoader {
             "integration" => PluginType::Integration,
             "alert_channel" => PluginType::AlertChannel,
             "rule_engine" => PluginType::RuleEngine,
-            "workflow_engine" => PluginType::WorkflowEngine,
             _ => PluginType::Custom(s.to_string()),
         }
     }

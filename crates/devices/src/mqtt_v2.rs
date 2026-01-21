@@ -19,6 +19,7 @@ use super::mdl::{
     ConnectionStatus, DeviceError, DeviceId, MetricValue,
 };
 use super::mdl_format::{DeviceInstance, DeviceTypeDefinition, MdlRegistry, MdlStorage};
+use super::registry::DeviceRegistry;
 use super::telemetry::{DataPoint, TimeSeriesStorage};
 use edge_ai_core::EventBus;
 
@@ -243,8 +244,15 @@ pub struct MqttDeviceManager {
     /// MDL Registry for device type definitions
     mdl_registry: Arc<MdlRegistry>,
 
+    /// Device registry for looking up device configurations (including custom telemetry topics)
+    device_registry: Option<Arc<DeviceRegistry>>,
+
     /// Device instances indexed by device_id
     devices: Arc<RwLock<HashMap<String, DeviceInstance>>>,
+
+    /// Mapping from telemetry topic to device_id
+    /// This handles custom topics like "ashuau" that don't match the standard pattern
+    topic_to_device: Arc<RwLock<HashMap<String, String>>>,
 
     /// MQTT client (when connected)
     mqtt_client: Arc<RwLock<Option<MqttClientInner>>>,
@@ -297,7 +305,9 @@ impl MqttDeviceManager {
             broker_id,
             config,
             mdl_registry: Arc::new(MdlRegistry::new()),
+            device_registry: None,
             devices: Arc::new(RwLock::new(HashMap::new())),
+            topic_to_device: Arc::new(RwLock::new(HashMap::new())),
             mqtt_client: Arc::new(RwLock::new(None)),
             connection_status: Arc::new(RwLock::new(ConnectionStatus::Disconnected)),
             metric_cache: Arc::new(RwLock::new(HashMap::new())),
@@ -310,6 +320,12 @@ impl MqttDeviceManager {
             timeout_monitor_handle: Arc::new(RwLock::new(None)),
             event_bus: None,
         }
+    }
+
+    /// Set the device registry for looking up device configurations
+    pub fn with_device_registry(mut self, registry: Arc<DeviceRegistry>) -> Self {
+        self.device_registry = Some(registry);
+        self
     }
 
     /// Set the event bus for publishing device events
@@ -568,6 +584,32 @@ impl MqttDeviceManager {
 
         *self.connection_status.write().await = ConnectionStatus::Connected;
 
+        // Restore topic_to_device mappings from device registry
+        // This is critical for server restart - devices must be able to receive data
+        if let Some(registry) = &self.device_registry {
+            let devices = registry.list_devices().await;
+            let mut mapping = self.topic_to_device.write().await;
+            let mut restored_count = 0;
+
+            for device in devices {
+                if let Some(telemetry_topic) = &device.connection_config.telemetry_topic {
+                    mapping.insert(telemetry_topic.clone(), device.device_id.clone());
+                    restored_count += 1;
+                    tracing::debug!(
+                        "Restored topic mapping: '{}' -> '{}'",
+                        telemetry_topic,
+                        device.device_id
+                    );
+                }
+            }
+
+            drop(mapping);
+            tracing::info!(
+                "Restored {} topic-to-device mappings from device registry",
+                restored_count
+            );
+        }
+
         // Restore HASS state topic mappings and re-subscribe (must be after client is set)
         let _ = self.restore_hass_state_topic_mappings().await;
 
@@ -587,6 +629,8 @@ impl MqttDeviceManager {
         running: Arc<RwLock<bool>>,
     ) {
         let devices = self.devices.clone();
+        let topic_to_device = self.topic_to_device.clone();
+        let device_registry = self.device_registry.clone();
         let mdl_registry = self.mdl_registry.clone();
         let metric_cache = self.metric_cache.clone();
         let discovery_prefix = self.config.discovery_prefix.clone();
@@ -611,6 +655,8 @@ impl MqttDeviceManager {
                                 Self::handle_packet(
                                     packet,
                                     &devices,
+                                    &topic_to_device,
+                                    &device_registry,
                                     &mdl_registry,
                                     &metric_cache,
                                     &discovery_prefix,
@@ -701,6 +747,8 @@ impl MqttDeviceManager {
     async fn handle_packet(
         packet: rumqttc::Packet,
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
+        topic_to_device: &Arc<RwLock<HashMap<String, String>>>,
+        device_registry: &Option<Arc<DeviceRegistry>>,
         mdl_registry: &MdlRegistry,
         metric_cache: &Arc<
             RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
@@ -753,10 +801,13 @@ impl MqttDeviceManager {
 
                 // Try to match to a registered device
                 // This handles our standard topic format: device/{device_type}/{device_id}/uplink
+                // And custom telemetry topics registered via auto-onboarding
                 let device_matched = Self::try_handle_registered_device(
                     &topic,
                     &payload,
                     devices,
+                    topic_to_device,
+                    device_registry,
                     mdl_registry,
                     metric_cache,
                     time_series_storage,
@@ -787,10 +838,17 @@ impl MqttDeviceManager {
     /// Try to handle message for a registered device
     ///
     /// Returns true if the device was matched and handled, false otherwise
+    ///
+    /// This handles three cases:
+    /// 1. Custom telemetry topic mappings in topic_to_device (manually registered)
+    /// 2. Custom telemetry topics in device_registry (from auto-onboarding)
+    /// 3. Standard topic format: device/{device_type}/{device_id}/uplink
     async fn try_handle_registered_device(
         topic: &str,
         payload: &[u8],
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
+        topic_to_device: &Arc<RwLock<HashMap<String, String>>>,
+        device_registry: &Option<Arc<DeviceRegistry>>,
         mdl_registry: &MdlRegistry,
         metric_cache: &Arc<
             RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
@@ -799,6 +857,159 @@ impl MqttDeviceManager {
         storage: &Arc<RwLock<Option<Arc<MdlStorage>>>>,
         event_bus: &Option<Arc<EventBus>>,
     ) -> bool {
+        // Case 1: Check manually registered topic mappings
+        if let Some(device_id) = topic_to_device.read().await.get(topic).cloned() {
+            // Get device type from device instances
+            let device_type_name = {
+                let devices_guard = devices.read().await;
+                devices_guard.get(&device_id).map(|d| d.device_type.clone())
+            };
+
+            if let Some(device_type_name) = device_type_name {
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
+                    // Process device data inline
+                    let now = chrono::Utc::now();
+
+                    // Update metric cache
+                    if let Some(obj) = json_value.as_object() {
+                        let mut cache = metric_cache.write().await;
+                        for (key, value) in obj {
+                            let metric_value = match value {
+                                serde_json::Value::Number(n) => {
+                                    if let Some(i) = n.as_i64() {
+                                        MetricValue::Integer(i)
+                                    } else if let Some(f) = n.as_f64() {
+                                        MetricValue::Float(f)
+                                    } else {
+                                        MetricValue::Null
+                                    }
+                                }
+                                serde_json::Value::String(s) => MetricValue::String(s.clone()),
+                                serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+                                _ => MetricValue::Null,
+                            };
+                            cache.entry(device_id.clone())
+                                .or_insert_with(HashMap::new)
+                                .insert(key.clone(), (metric_value, now));
+                        }
+                    }
+
+                    // Publish event
+                    if let Some(bus) = event_bus {
+                        use edge_ai_core::MetricValue as CoreMetricValue;
+
+                        if let Some(obj) = json_value.as_object() {
+                            for (key, value) in obj {
+                                let core_value = match value {
+                                    serde_json::Value::Number(n) => {
+                                        if let Some(i) = n.as_i64() {
+                                            CoreMetricValue::Integer(i)
+                                        } else if let Some(f) = n.as_f64() {
+                                            CoreMetricValue::Float(f)
+                                        } else {
+                                            CoreMetricValue::String("null".to_string())
+                                        }
+                                    }
+                                    serde_json::Value::String(s) => CoreMetricValue::String(s.clone()),
+                                    serde_json::Value::Bool(b) => CoreMetricValue::Boolean(*b),
+                                    _ => CoreMetricValue::String("null".to_string()),
+                                };
+                                let _ = bus.publish(edge_ai_core::NeoTalkEvent::DeviceMetric {
+                                    device_id: device_id.clone(),
+                                    metric: key.clone(),
+                                    value: core_value,
+                                    timestamp: now.timestamp(),
+                                    quality: None,
+                                }).await;
+                            }
+                        }
+
+                        let _ = bus.publish(edge_ai_core::NeoTalkEvent::DeviceOnline {
+                            device_id: device_id.clone(),
+                            device_type: device_type_name.clone(),
+                            timestamp: now.timestamp(),
+                        }).await;
+                    }
+
+                    return true;
+                }
+            }
+        }
+
+        // Case 2: Check device registry for custom telemetry topics (auto-onboarding)
+        if let Some(registry) = device_registry {
+            if let Some((device_id, config)) = registry.find_device_by_telemetry_topic(topic).await {
+                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
+                    // Process device data inline
+                    let now = chrono::Utc::now();
+
+                    // Update metric cache
+                    if let Some(obj) = json_value.as_object() {
+                        let mut cache = metric_cache.write().await;
+                        for (key, value) in obj {
+                            let metric_value = match value {
+                                serde_json::Value::Number(n) => {
+                                    if let Some(i) = n.as_i64() {
+                                        MetricValue::Integer(i)
+                                    } else if let Some(f) = n.as_f64() {
+                                        MetricValue::Float(f)
+                                    } else {
+                                        MetricValue::Null
+                                    }
+                                }
+                                serde_json::Value::String(s) => MetricValue::String(s.clone()),
+                                serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+                                _ => MetricValue::Null,
+                            };
+                            cache.entry(device_id.clone())
+                                .or_insert_with(HashMap::new)
+                                .insert(key.clone(), (metric_value, now));
+                        }
+                    }
+
+                    // Publish event
+                    if let Some(bus) = event_bus {
+                        use edge_ai_core::MetricValue as CoreMetricValue;
+
+                        if let Some(obj) = json_value.as_object() {
+                            for (key, value) in obj {
+                                let core_value = match value {
+                                    serde_json::Value::Number(n) => {
+                                        if let Some(i) = n.as_i64() {
+                                            CoreMetricValue::Integer(i)
+                                        } else if let Some(f) = n.as_f64() {
+                                            CoreMetricValue::Float(f)
+                                        } else {
+                                            CoreMetricValue::String("null".to_string())
+                                        }
+                                    }
+                                    serde_json::Value::String(s) => CoreMetricValue::String(s.clone()),
+                                    serde_json::Value::Bool(b) => CoreMetricValue::Boolean(*b),
+                                    _ => CoreMetricValue::String("null".to_string()),
+                                };
+                                let _ = bus.publish(edge_ai_core::NeoTalkEvent::DeviceMetric {
+                                    device_id: device_id.clone(),
+                                    metric: key.clone(),
+                                    value: core_value,
+                                    timestamp: now.timestamp(),
+                                    quality: None,
+                                }).await;
+                            }
+                        }
+
+                        let _ = bus.publish(edge_ai_core::NeoTalkEvent::DeviceOnline {
+                            device_id: device_id.clone(),
+                            device_type: config.device_type.clone(),
+                            timestamp: now.timestamp(),
+                        }).await;
+                    }
+
+                    return true;
+                }
+            }
+        }
+
+        // Case 3: Fall back to standard topic format: device/{device_type}/{device_id}/uplink
         // Our standard topic format: device/{device_type}/{device_id}/uplink
         let parts: Vec<&str> = topic.split('/').collect();
         if parts.len() < 4 || parts[0] != "device" {
@@ -929,7 +1140,7 @@ impl MqttDeviceManager {
                 event_type: "unknown_device_data".to_string(),
                 data: serde_json::json!({
                     "device_id": device_id,
-                    "source": "mqtt",
+                    "source": topic,  // Use actual topic as source (e.g., "device999")
                     "original_topic": topic,
                     "sample": sample
                 }),
@@ -1230,6 +1441,17 @@ impl MqttDeviceManager {
                 super::mdl::MetricValue::Float(f) => CoreMetricValue::Float(*f),
                 super::mdl::MetricValue::String(s) => CoreMetricValue::String(s.clone()),
                 super::mdl::MetricValue::Boolean(b) => CoreMetricValue::Boolean(*b),
+                super::mdl::MetricValue::Array(arr) => {
+                    // Convert array to JSON
+                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                        super::mdl::MetricValue::Integer(i) => json!(*i),
+                        super::mdl::MetricValue::Float(f) => json!(*f),
+                        super::mdl::MetricValue::String(s) => json!(s),
+                        super::mdl::MetricValue::Boolean(b) => json!(*b),
+                        _ => json!(null),
+                    }).collect();
+                    CoreMetricValue::Json(json!(json_arr))
+                }
                 super::mdl::MetricValue::Binary(_) => CoreMetricValue::Json(json!(null)),
                 super::mdl::MetricValue::Null => CoreMetricValue::Json(json!(null)),
             };
@@ -1373,7 +1595,7 @@ impl MqttDeviceManager {
                             event_type: "unknown_device_data".to_string(),
                             data: serde_json::json!({
                                 "device_id": device_id,
-                                "source": "mqtt",
+                                "source": topic,  // Use actual topic as source
                                 "original_topic": topic,
                                 "inferred_type": device_type_name,
                                 "sample": sample
@@ -1559,6 +1781,17 @@ impl MqttDeviceManager {
                                     }
                                     super::mdl::MetricValue::Boolean(b) => {
                                         CoreMetricValue::Boolean(*b)
+                                    }
+                                    super::mdl::MetricValue::Array(arr) => {
+                                        // Convert array to JSON
+                                        let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                                            super::mdl::MetricValue::Integer(i) => json!(*i),
+                                            super::mdl::MetricValue::Float(f) => json!(*f),
+                                            super::mdl::MetricValue::String(s) => json!(s),
+                                            super::mdl::MetricValue::Boolean(b) => json!(*b),
+                                            _ => json!(null),
+                                        }).collect();
+                                        CoreMetricValue::Json(json!(json_arr))
                                     }
                                     super::mdl::MetricValue::Binary(_) => {
                                         CoreMetricValue::Json(json!(null))
@@ -1844,6 +2077,32 @@ impl MqttDeviceManager {
         // This is kept for API compatibility but does nothing
         let _ = device_id;
         Ok(())
+    }
+
+    /// Register a custom telemetry topic for a device
+    /// This is used for devices registered via auto-onboarding that use custom topics
+    /// (e.g., "ashuau") instead of the standard "device/{type}/{id}/uplink" format
+    pub async fn register_custom_topic(&self, device_id: &str, telemetry_topic: &str) -> Result<(), DeviceError> {
+        let mut mapping = self.topic_to_device.write().await;
+        mapping.insert(telemetry_topic.to_string(), device_id.to_string());
+        tracing::info!(
+            "Registered custom topic mapping: '{}' -> device '{}'",
+            telemetry_topic, device_id
+        );
+        Ok(())
+    }
+
+    /// Unregister a custom telemetry topic for a device
+    pub async fn unregister_custom_topic(&self, telemetry_topic: &str) -> Result<(), DeviceError> {
+        let mut mapping = self.topic_to_device.write().await;
+        mapping.remove(telemetry_topic);
+        tracing::info!("Unregistered custom topic mapping: '{}'", telemetry_topic);
+        Ok(())
+    }
+
+    /// Get all custom topic mappings (for debugging/monitoring)
+    pub async fn get_topic_mappings(&self) -> HashMap<String, String> {
+        self.topic_to_device.read().await.clone()
     }
 
     /// Start HASS (Home Assistant) MQTT discovery

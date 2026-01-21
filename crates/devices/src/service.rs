@@ -339,6 +339,7 @@ impl DeviceService {
         let telemetry_storage = self.telemetry_storage.clone();
 
         tokio::spawn(async move {
+            let event_bus_for_publish = event_bus.clone();
             // Filter for device-related events
             let filter = |event: &edge_ai_core::NeoTalkEvent| -> bool {
                 matches!(
@@ -373,8 +374,19 @@ impl DeviceService {
                         if entry.status == ConnectionStatus::Disconnected {
                             entry.status = ConnectionStatus::Connected;
                             tracing::info!("Device {} marked as connected due to metric activity", device_id);
+                            drop(status);
+                            // Publish DeviceOnline event so frontend can refresh
+                            let device_type = "_unknown".to_string(); // Will be looked up by frontend
+                            event_bus_for_publish.publish(
+                                edge_ai_core::NeoTalkEvent::DeviceOnline {
+                                    device_id: device_id.clone(),
+                                    device_type,
+                                    timestamp: chrono::Utc::now().timestamp(),
+                                }
+                            ).await;
+                        } else {
+                            drop(status);
                         }
-                        drop(status);
 
                         // Write to telemetry storage if available
                         let ts_storage = telemetry_storage.read().await;
@@ -689,7 +701,24 @@ impl DeviceService {
 
     /// Register a device type template
     pub async fn register_template(&self, template: DeviceTypeTemplate) -> Result<(), DeviceError> {
-        self.registry.register_template(template).await
+        let device_type = template.device_type.clone();
+        self.registry.register_template(template).await?;
+
+        // Publish event for UI refresh
+        tokio::spawn({
+            let event_bus = self.event_bus.clone();
+            async move {
+                let _ = event_bus.publish(edge_ai_core::NeoTalkEvent::Custom {
+                    event_type: "DeviceTypeRegistered".to_string(),
+                    data: serde_json::json!({
+                        "device_type": device_type,
+                        "timestamp": chrono::Utc::now().timestamp(),
+                    }),
+                }).await;
+            }
+        });
+
+        Ok(())
     }
 
     /// Get a device type template
@@ -704,7 +733,24 @@ impl DeviceService {
 
     /// Unregister a device type template
     pub async fn unregister_template(&self, device_type: &str) -> Result<(), DeviceError> {
-        self.registry.unregister_template(device_type).await
+        self.registry.unregister_template(device_type).await?;
+
+        // Publish event for UI refresh
+        tokio::spawn({
+            let event_bus = self.event_bus.clone();
+            let device_type = device_type.to_string();
+            async move {
+                let _ = event_bus.publish(edge_ai_core::NeoTalkEvent::Custom {
+                    event_type: "DeviceTypeUnregistered".to_string(),
+                    data: serde_json::json!({
+                        "device_type": device_type,
+                        "timestamp": chrono::Utc::now().timestamp(),
+                    }),
+                }).await;
+            }
+        });
+
+        Ok(())
     }
 
     // ========== Device Configuration Management ==========
@@ -713,6 +759,7 @@ impl DeviceService {
     /// This will also notify the appropriate adapter to subscribe to the device's telemetry topic
     pub async fn register_device(&self, config: DeviceConfig) -> Result<(), DeviceError> {
         let device_id = config.device_id.clone();
+        let device_type = config.device_type.clone();
         let adapter_type = config.adapter_type.clone();
 
         // First register the device in the registry
@@ -734,6 +781,21 @@ impl DeviceService {
                 break;
             }
         }
+
+        // Publish event for UI refresh
+        tokio::spawn({
+            let event_bus = self.event_bus.clone();
+            async move {
+                let _ = event_bus.publish(edge_ai_core::NeoTalkEvent::Custom {
+                    event_type: "DeviceRegistered".to_string(),
+                    data: serde_json::json!({
+                        "device_id": device_id,
+                        "device_type": device_type,
+                        "timestamp": chrono::Utc::now().timestamp(),
+                    }),
+                }).await;
+            }
+        });
 
         Ok(())
     }
@@ -773,6 +835,25 @@ impl DeviceService {
         self.registry.list_devices().await
     }
 
+    /// Find a device by its telemetry topic
+    /// This is used by MQTT adapters to route messages from custom topics
+    pub async fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
+        let devices = self.list_devices().await;
+        for device in devices {
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
+                if telemetry_topic == topic {
+                    return Some((device.device_id.clone(), device));
+                }
+            }
+        }
+        None
+    }
+
+    /// Get the device registry (for sharing with adapters)
+    pub async fn get_registry(&self) -> Arc<DeviceRegistry> {
+        self.registry.clone()
+    }
+
     /// List devices by type
     pub async fn list_devices_by_type(&self, device_type: &str) -> Vec<DeviceConfig> {
         self.registry.list_devices_by_type(device_type).await
@@ -780,7 +861,24 @@ impl DeviceService {
 
     /// Unregister a device configuration
     pub async fn unregister_device(&self, device_id: &str) -> Result<(), DeviceError> {
-        self.registry.unregister_device(device_id).await
+        self.registry.unregister_device(device_id).await?;
+
+        // Publish event for UI refresh
+        tokio::spawn({
+            let event_bus = self.event_bus.clone();
+            let device_id = device_id.to_string();
+            async move {
+                let _ = event_bus.publish(edge_ai_core::NeoTalkEvent::Custom {
+                    event_type: "DeviceUnregistered".to_string(),
+                    data: serde_json::json!({
+                        "device_id": device_id,
+                        "timestamp": chrono::Utc::now().timestamp(),
+                    }),
+                }).await;
+            }
+        });
+
+        Ok(())
     }
 
     /// Update a device configuration
@@ -987,6 +1085,11 @@ impl DeviceService {
                 MetricValue::Float(f) => f.to_string(),
                 MetricValue::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
                 MetricValue::Boolean(b) => b.to_string(),
+                MetricValue::Array(_) => {
+                    return Err(DeviceError::InvalidParameter(
+                        "Array values not supported in command payloads".into(),
+                    ));
+                }
                 MetricValue::Binary(_) => {
                     return Err(DeviceError::InvalidParameter(
                         "Binary values not supported in command payloads".into(),
@@ -1013,12 +1116,24 @@ impl DeviceService {
         // Get device config and template
         let (_config, template) = self.get_device_with_template(device_id).await?;
 
-        // Validate metric exists in template (skip validation in simple mode where no metrics are defined)
-        if !template.metrics.is_empty() && !template.metrics.iter().any(|m| m.name == metric_name) {
+        // Check if this is a virtual metric (generated by transforms)
+        // Virtual metrics use dot notation: transform.count, virtual.avg, etc.
+        let is_virtual_metric = metric_name.starts_with("transform.")
+            || metric_name.starts_with("virtual.")
+            || metric_name.starts_with("computed.")
+            || metric_name.starts_with("derived.")
+            || metric_name.starts_with("aggregated.");
+
+        // Validate metric exists in template (skip validation in simple mode or for virtual metrics)
+        if !is_virtual_metric && !template.metrics.is_empty() && !template.metrics.iter().any(|m| m.name == metric_name) {
             return Err(DeviceError::InvalidMetric(format!(
                 "Metric '{}' not found in template '{}'",
                 metric_name, template.device_type
             )));
+        }
+
+        if is_virtual_metric {
+            tracing::debug!("Querying virtual metric {} for device {}", metric_name, device_id);
         }
 
         // Query from telemetry storage

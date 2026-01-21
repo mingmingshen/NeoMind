@@ -17,14 +17,13 @@ import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, Sparkles, Wand2, CheckCircle2, AlertTriangle, Zap, Workflow as WorkflowIcon } from 'lucide-react'
+import { Loader2, Sparkles, Zap, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import type {
   AutomationType,
   CreateAutomationRequest,
-  IntentResult,
   AutomationTemplate,
 } from '@/types'
 
@@ -36,7 +35,7 @@ export interface AutomationCreatorDialogProps {
   suggestedType?: AutomationType
 }
 
-type TabValue = 'describe' | 'templates' | 'manual'
+type TabValue = 'templates' | 'manual'
 
 export function AutomationCreatorDialog({
   open,
@@ -47,14 +46,13 @@ export function AutomationCreatorDialog({
 }: AutomationCreatorDialogProps) {
   const { t } = useTranslation(['common', 'automation', 'devices'])
   const { toast } = useToast()
-  const [activeTab, setActiveTab] = useState<TabValue>('describe')
+  const [activeTab, setActiveTab] = useState<TabValue>('manual')
 
-  // Describe tab state
+  // Manual tab state
   const [description, setDescription] = useState(initialDescription)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [intentResult, setIntentResult] = useState<IntentResult | null>(null)
   const [selectedType, setSelectedType] = useState<AutomationType | null>(null)
   const [automationName, setAutomationName] = useState('')
+  const [enabled, setEnabled] = useState(true)
   const [creating, setCreating] = useState(false)
 
   // Templates tab state
@@ -70,15 +68,11 @@ export function AutomationCreatorDialog({
   useEffect(() => {
     if (open) {
       setDescription(initialDescription)
-      setSelectedType(suggestedType || null)
+      setSelectedType(suggestedType || 'rule')
       setAutomationName('')
-      setIntentResult(null)
+      setEnabled(true)
       setSelectedTemplate(null)
       setTemplateParams({})
-      // If initial description is provided, analyze it automatically
-      if (initialDescription) {
-        analyzeIntent()
-      }
     }
   }, [open, initialDescription, suggestedType])
 
@@ -88,33 +82,6 @@ export function AutomationCreatorDialog({
       loadResources()
     }
   }, [open, activeTab])
-
-  const analyzeIntent = async () => {
-    if (!description.trim()) return
-
-    setAnalyzing(true)
-    try {
-      const result = await api.analyzeAutomationIntent(description)
-      setIntentResult(result)
-      if (result.recommended_type) {
-        setSelectedType(result.recommended_type)
-      }
-      // Generate a name from the description
-      if (!automationName) {
-        const words = description.split(' ').slice(0, 4)
-        setAutomationName(words.join(' ').replace(/[^a-zA-Z0-9\s]/g, '').trim())
-      }
-    } catch (error) {
-      console.error('Failed to analyze intent:', error)
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    } finally {
-      setAnalyzing(false)
-    }
-  }
 
   const loadResources = async () => {
     setLoadingTemplates(true)
@@ -137,7 +104,7 @@ export function AutomationCreatorDialog({
     }
   }
 
-  const handleCreateFromIntent = async () => {
+  const handleCreateManual = async () => {
     if (!selectedType || !automationName.trim()) {
       toast({
         title: t('automation:nameRequired', { defaultValue: 'Automation name is required' }),
@@ -148,14 +115,12 @@ export function AutomationCreatorDialog({
 
     setCreating(true)
     try {
-      // Create automation based on analyzed intent
-      const definition = generateDefinitionFromIntent()
       const request: CreateAutomationRequest = {
         name: automationName,
         description: description,
         type: selectedType,
-        enabled: true,
-        definition,
+        enabled,
+        definition: {},
       }
       await api.createAutomation(request)
       toast({
@@ -176,48 +141,6 @@ export function AutomationCreatorDialog({
     }
   }
 
-  const generateDefinitionFromIntent = (): Record<string, unknown> => {
-    // Generate a basic automation definition from the intent
-    if (selectedType === 'transform') {
-      return {
-        scope: { type: 'global' },
-        operations: [
-          {
-            type: 'single',
-            json_path: '$.value',
-            output_metric: 'processed_value',
-          },
-        ],
-      }
-    } else if (selectedType === 'rule') {
-      return {
-        trigger: { type: 'manual' },
-        condition: null, // Will be filled by AI
-        actions: [
-          {
-            type: 'Notify',
-            message: description,
-          },
-        ],
-      }
-    } else {
-      return {
-        triggers: [{ type: 'manual', config: {} }],
-        steps: [
-          {
-            id: 'step-1',
-            name: 'Notification',
-            type: 'notification',
-            config: {
-              message: description,
-            },
-          },
-        ],
-        variables: {},
-      }
-    }
-  }
-
   const handleSelectTemplate = (template: AutomationTemplate) => {
     setSelectedTemplate(template)
     // Initialize params with defaults
@@ -231,6 +154,59 @@ export function AutomationCreatorDialog({
     // Generate name from template
     if (!automationName) {
       setAutomationName(template.name)
+    }
+    setSelectedType(template.automation_type as AutomationType)
+  }
+
+  const handleCreateFromTemplate = async () => {
+    if (!selectedTemplate || !automationName.trim()) {
+      toast({
+        title: t('automation:nameRequired', { defaultValue: 'Automation name is required' }),
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setCreating(true)
+    try {
+      // Validate required params
+      for (const param of selectedTemplate.parameters) {
+        if (param.required && !templateParams[param.name]) {
+          toast({
+            title: t('common:failed'),
+            description: `${param.label} is required`,
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+
+      const request: CreateAutomationRequest = {
+        name: automationName,
+        description: selectedTemplate.description,
+        type: selectedTemplate.automation_type as AutomationType,
+        enabled: true,
+        definition: {
+          template_id: selectedTemplate.id,
+          parameters: templateParams,
+        },
+      }
+      await api.createAutomation(request)
+      toast({
+        title: t('common:success'),
+        description: t('automation:automationCreated', { defaultValue: 'Automation created successfully' }),
+      })
+      onOpenChange(false)
+      onAutomationCreated()
+    } catch (error) {
+      console.error('Failed to create automation:', error)
+      toast({
+        title: t('common:failed'),
+        description: (error as Error).message,
+        variant: 'destructive',
+      })
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -258,11 +234,7 @@ export function AutomationCreatorDialog({
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)} className="flex-1 min-h-0 overflow-hidden flex flex-col">
           <div className="px-6 pt-4 pb-2 shrink-0">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="describe" className="flex items-center gap-2">
-                <Wand2 className="h-4 w-4" />
-                {t('automation:naturalLanguage')}
-              </TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="templates" className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4" />
                 {t('automation:templates')}
@@ -273,119 +245,6 @@ export function AutomationCreatorDialog({
               </TabsTrigger>
             </TabsList>
           </div>
-
-          {/* Describe Tab - AI-powered creation */}
-          <TabsContent value="describe" className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="automation-description">{t('automation:describeAutomation')}</Label>
-                <Textarea
-                  id="automation-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder={t('automation:automationDescriptionPlaceholder')}
-                  className="min-h-[120px] mt-2"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {t('automation:automationDescriptionHint')}
-                </p>
-              </div>
-
-              <Button
-                onClick={analyzeIntent}
-                disabled={!description.trim() || analyzing}
-                variant="outline"
-                className="w-full"
-              >
-                {analyzing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    {t('automation:analyzing')}
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="h-4 w-4 mr-2" />
-                    {t('automation:analyzeIntent')}
-                  </>
-                )}
-              </Button>
-
-              {intentResult && (
-                <Card className="p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <span className="font-medium">{t('automation:analysisComplete')}</span>
-                    <Badge variant="outline">
-                      {intentResult.confidence}% {t('automation:confidence')}
-                    </Badge>
-                  </div>
-
-                  <div className="text-sm">
-                    <p className="text-muted-foreground">{intentResult.reasoning}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Label>{t('automation:recommendedType')}:</Label>
-                    <Badge
-                      variant={intentResult.recommended_type === 'rule' ? 'default' : 'secondary'}
-                      className={cn(
-                        intentResult.recommended_type === 'rule' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'
-                      )}
-                    >
-                      {intentResult.recommended_type === 'rule' ? (
-                        <>
-                          <Zap className="h-3 w-3 mr-1 inline" />
-                          {t('automation:rule')}
-                        </>
-                      ) : (
-                        <>
-                          <WorkflowIcon className="h-3 w-3 mr-1 inline" />
-                          {t('automation:workflow')}
-                        </>
-                      )}
-                    </Badge>
-                  </div>
-
-                  {intentResult.warnings.length > 0 && (
-                    <div className="space-y-1">
-                      {intentResult.warnings.map((warning, i) => (
-                        <div key={i} className="flex items-center gap-2 text-sm text-amber-600">
-                          <AlertTriangle className="h-3 w-3" />
-                          {warning}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="automation-name">{t('automation:automationName')}</Label>
-                    <Input
-                      id="automation-name"
-                      value={automationName}
-                      onChange={(e) => setAutomationName(e.target.value)}
-                      placeholder={t('automation:automationNamePlaceholder')}
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="auto-enable">{t('automation:enableAfterCreate')}</Label>
-                    <Switch id="auto-enable" defaultChecked />
-                  </div>
-
-                  <Button onClick={handleCreateFromIntent} disabled={creating || !automationName.trim()} className="w-full">
-                    {creating ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        {t('automation:creating')}
-                      </>
-                    ) : (
-                      t('automation:createAutomation')
-                    )}
-                  </Button>
-                </Card>
-              )}
-            </div>
-          </TabsContent>
 
           {/* Templates Tab */}
           <TabsContent value="templates" className="flex-1 min-h-0 overflow-hidden flex flex-col px-6 py-4">
@@ -427,11 +286,7 @@ export function AutomationCreatorDialog({
                                         : 'bg-purple-500/10 text-purple-500'
                                     )}
                                   >
-                                    {template.automation_type === 'rule' ? (
-                                      <Zap className="h-3 w-3 mr-1" />
-                                    ) : (
-                                      <WorkflowIcon className="h-3 w-3 mr-1" />
-                                    )}
+                                    <Zap className="h-3 w-3 mr-1" />
                                     {template.automation_type}
                                   </Badge>
                                   <span className="font-medium">{template.name}</span>
@@ -497,7 +352,7 @@ export function AutomationCreatorDialog({
                                 <SelectValue placeholder={t('automation:selectPlaceholder')} />
                               </SelectTrigger>
                               <SelectContent>
-                                {param.options.map((option) => (
+                                {param.options.map((option: string) => (
                                   <SelectItem key={option} value={option}>
                                     {option}
                                   </SelectItem>
@@ -549,6 +404,21 @@ export function AutomationCreatorDialog({
                         placeholder={t('automation:automationNamePlaceholder')}
                       />
                     </div>
+
+                    <Button
+                      onClick={handleCreateFromTemplate}
+                      disabled={creating || !automationName.trim()}
+                      className="w-full"
+                    >
+                      {creating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          {t('automation:creating')}
+                        </>
+                      ) : (
+                        t('automation:createAutomation')
+                      )}
+                    </Button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -559,86 +429,96 @@ export function AutomationCreatorDialog({
             </div>
           </TabsContent>
 
-          {/* Manual Tab - Advanced */}
+          {/* Manual Tab */}
           <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                {t('automation:manualCreationDesc')}
-              </p>
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-muted-foreground" />
+                <h3 className="font-medium">基本信息</h3>
+              </div>
 
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <Label>{t('automation:automationType')}</Label>
-                  <Select
-                    value={selectedType || ''}
-                    onValueChange={(v) => setSelectedType(v as AutomationType)}
-                  >
-                    <SelectTrigger className="mt-2">
-                      <SelectValue placeholder={t('automation:selectType')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rule">
-                        <div className="flex items-center gap-2">
-                          <Zap className="h-4 w-4" />
-                          {t('automation:rule')}
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="workflow">
-                        <div className="flex items-center gap-2">
-                          <WorkflowIcon className="h-4 w-4" />
-                          {t('automation:workflow')}
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="manual-name">{t('automation:automationName')} *</Label>
+                  <Input
+                    id="manual-name"
+                    value={automationName}
+                    onChange={(e) => setAutomationName(e.target.value)}
+                    placeholder={t('automation:automationNamePlaceholder')}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="auto-enable"
+                    checked={enabled}
+                    onCheckedChange={setEnabled}
+                  />
+                  <Label htmlFor="auto-enable" className="text-sm cursor-pointer">
+                    {t('automation:enableAfterCreate')}
+                  </Label>
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="manual-name">{t('automation:automationName')}</Label>
-                <Input
-                  id="manual-name"
-                  value={automationName}
-                  onChange={(e) => setAutomationName(e.target.value)}
-                  placeholder={t('automation:automationNamePlaceholder')}
-                  className="mt-2"
-                />
-              </div>
-
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="manual-description">{t('common:description')}</Label>
                 <Textarea
                   id="manual-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={t('automation:descriptionPlaceholder')}
-                  className="mt-2 min-h-[80px]"
+                  className="min-h-[80px]"
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label>{t('automation:automationType')}</Label>
+                <Select
+                  value={selectedType || ''}
+                  onValueChange={(v) => setSelectedType(v as AutomationType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('automation:selectType')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rule">
+                      <div className="flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        {t('automation:rule')}
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="transform">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        {t('automation:transform')}
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="p-4 bg-muted rounded-md">
-                <p className="text-sm font-medium mb-2">{t('automation:manualCreationNote')}</p>
+                <p className="text-sm font-medium mb-2">提示</p>
                 <p className="text-xs text-muted-foreground">
-                  {t('automation:manualCreationHint')}
+                  选择自动化类型后，系统将打开详细配置页面进行规则或转换的完整设置。
                 </p>
               </div>
 
               <Button
-                onClick={() => {
-                  // Switch to legacy creation based on type
-                  if (selectedType === 'rule') {
-                    // Navigate to rules creation
-                    window.location.hash = '#automation?tab=rules&action=create'
-                  } else {
-                    // Navigate to workflows creation
-                    window.location.hash = '#automation?tab=workflows&action=create'
-                  }
-                  onOpenChange(false)
-                }}
-                disabled={!selectedType}
+                onClick={handleCreateManual}
+                disabled={!selectedType || !automationName.trim() || creating}
                 className="w-full"
               >
-                {t('automation:continueToManual')}
+                {creating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {t('automation:creating')}
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4 mr-2" />
+                    继续配置
+                  </>
+                )}
               </Button>
             </div>
           </TabsContent>

@@ -208,6 +208,8 @@ fn convert_metric_data_type_to_storage(local_type: MetricDataType) -> StorageMet
         MetricDataType::Boolean => StorageMetricDataType::Boolean,
         MetricDataType::String => StorageMetricDataType::String,
         MetricDataType::Binary => StorageMetricDataType::Binary,
+        // For Array types, store as String (JSON serialized)
+        MetricDataType::Array { .. } => StorageMetricDataType::String,
         MetricDataType::Enum { options } => StorageMetricDataType::Enum { options },
     }
 }
@@ -230,6 +232,7 @@ fn convert_metric_value_to_storage(local_value: MetricValue) -> Option<StorageMe
         MetricValue::Float(f) => Some(StorageMetricValue::Float(f)),
         MetricValue::String(s) => Some(StorageMetricValue::String(s)),
         MetricValue::Boolean(b) => Some(StorageMetricValue::Boolean(b)),
+        MetricValue::Array(_) => None, // Array not supported for parameter defaults
         MetricValue::Null => Some(StorageMetricValue::Null),
         MetricValue::Binary(_) => None, // Binary not supported for parameter defaults
     }
@@ -795,6 +798,20 @@ impl DeviceRegistry {
     pub async fn list_devices(&self) -> Vec<DeviceConfig> {
         let devices = self.devices.read().await;
         devices.values().cloned().collect()
+    }
+
+    /// Find a device by its telemetry topic
+    /// This is used by MQTT adapters to route messages from custom topics
+    pub async fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
+        let devices = self.devices.read().await;
+        for (device_id, config) in devices.iter() {
+            if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic {
+                if telemetry_topic == topic {
+                    return Some((device_id.clone(), config.clone()));
+                }
+            }
+        }
+        None
     }
 
     /// List devices by type

@@ -65,6 +65,9 @@ pub struct ExternalBrokerConnectionDto {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// Topics this broker is subscribed to
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub subscribe_topics: Vec<String>,
 }
 
 /// DTO for MQTT subscription.

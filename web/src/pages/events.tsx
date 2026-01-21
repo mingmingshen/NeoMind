@@ -1,15 +1,16 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Activity,
   Cpu,
   Sparkles,
-  Workflow,
   Bell,
   Brain,
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
+  ChevronRight as ChevronRightIcon,
 } from 'lucide-react'
 import { PageLayout } from '@/components/layout/PageLayout'
 import { api } from '@/lib/api'
@@ -25,16 +26,32 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { EmptyStateInline } from '@/components/shared'
-import { useApiData } from '@/hooks/useApiData'
 import { formatTimestamp } from '@/lib/utils/format'
 import type { Event as SystemEvent } from '@/types'
 import { cn } from '@/lib/utils'
 
-type EventFilter = 'all' | 'device' | 'rule' | 'workflow' | 'alert' | 'llm'
+type EventFilter = 'all' | 'device' | 'rule' | 'alert' | 'llm'
 
-const fetchEvents = async (): Promise<SystemEvent[]> => {
-  const response = await api.getEvents({ limit: 200 }) as unknown as { events: SystemEvent[]; count: number }
-  return response.events || []
+const PAGE_SIZE = 50
+
+interface EventsResponse {
+  events: SystemEvent[]
+  total: number
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
+const fetchEvents = async (category: string = 'all', offset: number = 0): Promise<EventsResponse> => {
+  const params: { category?: string; limit: number; offset: number } = {
+    limit: PAGE_SIZE,
+    offset,
+  }
+  if (category !== 'all') {
+    params.category = category
+  }
+  const response = await api.getEvents(params) as unknown as EventsResponse
+  return response
 }
 
 // Event type configuration with icons
@@ -42,7 +59,6 @@ const EVENT_FILTERS_CONFIG = [
   { value: 'all' as EventFilter, labelKey: 'all', icon: Activity },
   { value: 'device' as EventFilter, labelKey: 'device', icon: Cpu },
   { value: 'rule' as EventFilter, labelKey: 'rule', icon: Sparkles },
-  { value: 'workflow' as EventFilter, labelKey: 'workflow', icon: Workflow },
   { value: 'alert' as EventFilter, labelKey: 'alert', icon: Bell },
   { value: 'llm' as EventFilter, labelKey: 'llm', icon: Brain },
 ]
@@ -56,9 +72,6 @@ function getEventCategory(eventType: string): EventFilter {
   }
   if (type.includes('rule') || type.includes('trigger') || type.includes('evaluated')) {
     return 'rule'
-  }
-  if (type.includes('workflow') || type.includes('step')) {
-    return 'workflow'
   }
   if (type.includes('alert')) {
     return 'alert'
@@ -85,12 +98,6 @@ function getEventDisplayInfo(eventType: string) {
       color: 'text-yellow-600 dark:text-yellow-400',
       bgColor: 'bg-yellow-50 dark:bg-yellow-950/30',
       borderColor: 'border-yellow-200 dark:border-yellow-800',
-      badgeVariant: 'outline' as const,
-    },
-    workflow: {
-      color: 'text-purple-600 dark:text-purple-400',
-      bgColor: 'bg-purple-50 dark:bg-purple-950/30',
-      borderColor: 'border-purple-200 dark:border-purple-800',
       badgeVariant: 'outline' as const,
     },
     alert: {
@@ -123,13 +130,62 @@ export function EventsPage() {
   const { t } = useTranslation(['common', 'events'])
   const [activeFilter, setActiveFilter] = useState<EventFilter>('all')
   const [expandedDataCells, setExpandedDataCells] = useState<Set<string>>(new Set())
+  const [page, setPage] = useState(0)
+  const [eventsData, setEventsData] = useState<EventsResponse | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const { data: events, loading, refetch } = useApiData(
-    () => fetchEvents(),
-    { deps: [] }
-  )
+  // Fetch events with category filter and pagination
+  const loadEvents = useCallback(async (category: EventFilter, pageNum: number) => {
+    setLoading(true)
+    try {
+      const offset = pageNum * PAGE_SIZE
+      const response = await fetchEvents(category, offset)
+      setEventsData(response)
+    } catch (error) {
+      console.error('Failed to load events:', error)
+      setEventsData({ events: [], total: 0, offset: 0, limit: PAGE_SIZE, has_more: false })
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-  const displayEvents = events || []
+  // Initial load and refetch
+  const refetch = useCallback(() => {
+    loadEvents(activeFilter, page)
+  }, [loadEvents, activeFilter, page])
+
+  // Load on mount
+  useEffect(() => {
+    loadEvents(activeFilter, page)
+  }, []) // Only run on mount
+
+  // Reset page when filter changes
+  const handleFilterChange = (filter: EventFilter) => {
+    setActiveFilter(filter)
+    setPage(0)
+    loadEvents(filter, 0)
+  }
+
+  // Handle page navigation
+  const handlePrevPage = () => {
+    if (page > 0) {
+      const newPage = page - 1
+      setPage(newPage)
+      loadEvents(activeFilter, newPage)
+    }
+  }
+
+  const handleNextPage = () => {
+    if (eventsData?.has_more) {
+      const newPage = page + 1
+      setPage(newPage)
+      loadEvents(activeFilter, newPage)
+    }
+  }
+
+  const displayEvents = eventsData?.events || []
+  const hasMore = eventsData?.has_more || false
+  const totalCount = eventsData?.total || 0
 
   // Toggle data cell expansion
   const toggleDataCell = (eventId: string) => {
@@ -144,23 +200,14 @@ export function EventsPage() {
     })
   }
 
-  // Filter events by category
-  const filteredEvents = useMemo(() => {
-    if (!displayEvents) return []
-    if (activeFilter === 'all') return displayEvents
-    return displayEvents.filter(event => getEventCategory(event.event_type) === activeFilter)
-  }, [displayEvents, activeFilter])
+  // No client-side filtering - done server-side
+  const filteredEvents = displayEvents
 
-  // Get count for each filter
+  // Get count for each filter (using server total)
   const filterCounts = useMemo(() => {
-    if (!displayEvents) return {}
-    const counts: Record<string, number> = { all: displayEvents.length }
-    for (const event of displayEvents) {
-      const category = getEventCategory(event.event_type)
-      counts[category] = (counts[category] || 0) + 1
-    }
-    return counts
-  }, [displayEvents])
+    // For now, just use current page count since we don't have separate counts per category
+    return { all: totalCount, [activeFilter]: displayEvents.length }
+  }, [totalCount, displayEvents.length, activeFilter])
 
   return (
     <PageLayout
@@ -180,7 +227,7 @@ export function EventsPage() {
               key={filter.value}
               variant={isActive ? 'default' : 'outline'}
               size="sm"
-              onClick={() => setActiveFilter(filter.value)}
+              onClick={() => handleFilterChange(filter.value)}
               className={cn(
                 "gap-2 rounded-lg",
                 !isActive && "bg-background hover:bg-muted"
@@ -200,13 +247,41 @@ export function EventsPage() {
 
         <div className="flex-1" />
 
+        {/* Pagination Controls */}
+        <div className="flex items-center gap-2 mr-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrevPage}
+            disabled={page === 0 || loading}
+            className="gap-1"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            {t('common:previous')}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {page + 1}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleNextPage}
+            disabled={!hasMore || loading}
+            className="gap-1"
+          >
+            {t('common:next')}
+            <ChevronRightIcon className="h-4 w-4" />
+          </Button>
+        </div>
+
         <Button
           variant="outline"
           size="sm"
           onClick={refetch}
+          disabled={loading}
           className="gap-2"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
           {t('common:refresh')}
         </Button>
       </div>
@@ -246,7 +321,11 @@ export function EventsPage() {
                   <TableRow key={event.id} className="group">
                     <TableCell>
                       <span className="font-mono text-xs text-muted-foreground truncate block" title={event.id}>
-                        {event.id.slice(0, 8)}
+                        {(() => {
+                          const parts = event.id.split(':');
+                          const uuidPart = parts.length > 1 ? parts[1] : parts[0];
+                          return uuidPart.slice(0, 8);
+                        })()}
                       </span>
                     </TableCell>
                     <TableCell>

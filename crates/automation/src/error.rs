@@ -120,8 +120,3 @@ impl From<edge_ai_rules::RuleError> for AutomationError {
     }
 }
 
-impl From<edge_ai_workflow::WorkflowError> for AutomationError {
-    fn from(err: edge_ai_workflow::WorkflowError) -> Self {
-        AutomationError::InvalidDefinition(format!("Workflow error: {}", err))
-    }
-}

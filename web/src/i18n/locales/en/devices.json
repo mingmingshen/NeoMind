@@ -183,6 +183,7 @@
   "types": {
     "confirmDeleteSelected": "Are you sure you want to delete {{count}} selected device types?",
     "deletedCount": "Deleted {{count}} device types",
+    "deleteFailed": "device type(s) deletion failed",
     "partialDeleteFailed": "Partial or complete device type deletion failed",
     "bulkDeleteFailed": "Bulk delete device types failed",
     "loading": "Loading device types...",
@@ -208,7 +209,11 @@
       "description": "Description",
       "metrics": "Metrics",
       "commands": "Commands",
-      "actions": "Actions"
+      "actions": "Actions",
+      "path": "Path",
+      "displayName": "Display Name",
+      "dataType": "Data Type",
+      "unit": "Unit"
     },
     "add": {
       "title": "Add Device Type",
@@ -351,7 +356,6 @@
       "seconds": "seconds"
     },
     "generator": {
-      "button": "AI Generate",
       "title": "AI Device Type Generator",
       "description": "Paste device data samples and AI will automatically generate the device type definition",
       "tabs": {
@@ -452,10 +456,12 @@
     "cleaned": "Cleaned {{count}} old pending records",
     "cleanupFailed": "Cleanup failed",
     "viewDetails": "View details",
+    "approveTitle": "Device Registration",
+    "deviceInfo": "Device Information",
     "triggerAnalysis": "Trigger analysis",
     "approve": "Approve",
     "reject": "Reject",
-    "rejectReason": "Enter rejection reason:",
+    "rejectConfirm": "Are you sure you want to reject device {{deviceId}}? The device will be deleted and can be re-discovered when it sends data again.",
     "approved": "Device {{deviceId}} approved",
     "approveFailed": "Approval failed",
     "rejected": "Device {{deviceId}} rejected",
@@ -467,7 +473,10 @@
     "enhanceFailed": "AI enhancement failed",
     "detailDesc": "Pending device details from auto-discovery",
     "process": "Process",
+    "typeSelection": "Type Selection",
     "confirmRegister": "Confirm Register",
+    "exactMatch": "Exact Match",
+    "noMatchingTypes": "No matching device types found",
     "status": {
       "collecting": "Collecting",
       "analyzing": "Analyzing",
@@ -547,7 +556,29 @@
       "cleaned": "Cleaned {{count}} old records",
       "failed": "Cleanup failed"
     },
-    "hours": "hours"
+    "hours": "hours",
+    "noDeviceTypes": "No device types",
+    "createTypeFirstHint": "Please create a device type first",
+    "selectOrCreateType": "Device Type",
+    "typeInputPlaceholder": "Enter existing type name or create new...",
+    "deviceTypeName": "Device Type Name",
+    "pleaseSelectType": "Please select a device type",
+    "pleaseEnterDeviceName": "Please enter a device name",
+    "pleaseEnterTypeName": "Please enter a type name",
+    "typeNamePlaceholder": "e.g. Temperature & Humidity Sensor",
+    "typeDescPlaceholder": "Describe the purpose of this device type...",
+    "newType": "New Type",
+    "creatingNewType": "Creating new type: {{type}}",
+    "creatingNewTypeHint": "Will create a new device type, please fill in name and description above",
+    "selectExistingTypeHint": "Will use an existing device type",
+    "willCreateNewType": "Will create new type: {{type}}",
+    "usingExistingType": "Using existing type: {{type}}",
+    "toBeFilled": "To be filled",
+    "deviceInfo": "Device Information",
+    "deviceName": "Device Name",
+    "deviceNamePlaceholder": "e.g. Temperature Sensor 01",
+    "deviceTypeSelection": "Device Type Selection",
+    "deviceTypeId": "Device Type ID"
   },
   "id": {
     "autoGenerate": "Auto-generate 10-char random ID",
@@ -684,5 +715,48 @@
       "AlertCreated": "Alert Created",
       "AlertAcknowledged": "Alert Acknowledged"
     }
+  },
+  "semanticType": {
+    "temperature": "Temperature",
+    "humidity": "Humidity",
+    "pressure": "Pressure",
+    "light": "Light",
+    "motion": "Motion",
+    "switch": "Switch",
+    "dimmer": "Dimmer",
+    "color": "Color",
+    "power": "Power",
+    "energy": "Energy",
+    "co2": "CO2",
+    "pm25": "PM2.5",
+    "voc": "VOC",
+    "speed": "Speed",
+    "flow": "Flow",
+    "level": "Level",
+    "status": "Status",
+    "error": "Error",
+    "alarm": "Alarm",
+    "battery": "Battery",
+    "rssi": "Signal",
+    "unknown": "Unknown"
+  },
+  "category": {
+    "temperature_sensor": "Temperature Sensor",
+    "humidity_sensor": "Humidity Sensor",
+    "multi_sensor": "Multi-Sensor",
+    "motion_sensor": "Motion Sensor",
+    "light_sensor": "Light Sensor",
+    "switch": "Switch",
+    "dimmer": "Dimmer",
+    "thermostat": "Thermostat",
+    "camera": "Camera",
+    "energy_monitor": "Energy Monitor",
+    "gateway": "Gateway",
+    "controller": "Controller",
+    "actuator": "Actuator",
+    "display": "Display",
+    "alarm": "Alarm",
+    "lock": "Lock",
+    "unknown": "Unknown Device"
   }
 }

@@ -268,10 +268,6 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::builtin::ListRulesTool::mock()))
     }
 
-    /// Add the trigger workflow tool (mock).
-    pub fn with_trigger_workflow_tool(self) -> Self {
-        self.with_tool(Arc::new(super::builtin::TriggerWorkflowTool::mock()))
-    }
 
     /// Add the get device metrics tool (mock).
     pub fn with_get_device_metrics_tool(self) -> Self {
@@ -372,13 +368,6 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::real::DeviceAnalyzeTool::new(service, storage)))
     }
 
-    /// Add the trigger workflow tool with real workflow engine.
-    pub fn with_real_trigger_workflow_tool(
-        self,
-        engine: Arc<edge_ai_workflow::WorkflowEngine>,
-    ) -> Self {
-        self.with_tool(Arc::new(super::real::TriggerWorkflowTool::new(engine)))
-    }
 
     /// Add the get device data tool with real device service and storage (simplified interface).
     pub fn with_real_get_device_data_tool(

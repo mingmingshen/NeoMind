@@ -30,7 +30,6 @@ import {
   Check,
   AlertCircle,
   Sparkles,
-  Wand2,
   FileText,
   ArrowDown,
   Settings,
@@ -68,10 +67,8 @@ interface AddDeviceTypeDialogProps {
   onOpenChange: (open: boolean) => void
   onAdd: (definition: DeviceType) => Promise<boolean>
   onValidate: (definition: DeviceType) => Promise<ValidationResult>
-  onGenerateMDL: (deviceName: string, description: string, metricsExample: string, commandsExample: string) => Promise<string>
   adding: boolean
   validating: boolean
-  generating: boolean
   // Optional: When provided, dialog operates in edit mode
   editDeviceType?: DeviceType | null
 }
@@ -87,10 +84,8 @@ export function AddDeviceTypeDialog({
   onOpenChange,
   onAdd,
   onValidate,
-  onGenerateMDL,
   adding,
   validating,
-  generating,
   editDeviceType,
 }: AddDeviceTypeDialogProps) {
   const { t } = useTranslation(['common', 'devices'])
@@ -115,10 +110,6 @@ export function AddDeviceTypeDialog({
   // UI states
   const [formErrors, setFormErrors] = useState<FormErrors>({})
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null)
-
-  // AI generation states
-  const [aiMetricsExample, setAiMetricsExample] = useState("")
-  const [aiCommandsExample, setAiCommandsExample] = useState("")
 
   // Reset when dialog opens or editDeviceType changes
   useEffect(() => {
@@ -145,8 +136,6 @@ export function AddDeviceTypeDialog({
 
       setFormErrors({})
       setValidationResult(null)
-      setAiMetricsExample("")
-      setAiCommandsExample("")
     }
   }, [open, editDeviceType])
 
@@ -232,91 +221,6 @@ export function AddDeviceTypeDialog({
     const currentIndex = steps.indexOf(currentStep)
     if (currentIndex < steps.length - 1) {
       setCurrentStep(steps[currentIndex + 1])
-    }
-  }
-
-  // Generate metrics from AI
-  const handleGenerateMetrics = async () => {
-    if (!aiMetricsExample.trim()) {
-      toast({
-        title: t('devices:types.validationError'),
-        description: "Please paste sample data first",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const result = await onGenerateMDL(
-        formData.name || "device",
-        formData.description || "",
-        aiMetricsExample,
-        "" // No commands for metrics generation
-      )
-      const parsed = JSON.parse(result)
-
-      setFormData(prev => ({
-        ...prev,
-        metrics: parsed.uplink?.metrics || parsed.metrics || [],
-      }))
-
-      toast({
-        title: t('common:success'),
-        description: `Generated ${parsed.metrics?.length || 0} metrics`,
-      })
-    } catch (e) {
-      toast({
-        title: t('devices:types.generate.failed'),
-        description: (e as Error).message,
-        variant: "destructive",
-      })
-    }
-  }
-
-  // Generate single command from AI (adds to existing commands)
-  const handleGenerateCommand = async (jsonExample: string) => {
-    if (!jsonExample.trim()) {
-      toast({
-        title: t('devices:types.validationError'),
-        description: "Please paste a JSON example",
-        variant: "destructive",
-      })
-      return
-    }
-
-    try {
-      const result = await onGenerateMDL(
-        formData.name || "device",
-        formData.description || "",
-        "", // No metrics for command generation
-        jsonExample
-      )
-      const parsed = JSON.parse(result)
-
-      // Get the first command from the result
-      const newCommand = parsed.downlink?.commands?.[0] || parsed.commands?.[0]
-      if (newCommand) {
-        setFormData(prev => ({
-          ...prev,
-          commands: [...(prev.commands || []), newCommand],
-        }))
-        toast({
-          title: t('common:success'),
-          description: "Generated 1 command",
-        })
-      } else {
-        toast({
-          title: 'Generation Failed',
-          description: 'No command generated from AI',
-          variant: "destructive",
-        })
-      }
-    } catch (e) {
-      toast({
-        title: t('devices:types.generate.failed'),
-        description: (e as Error).message,
-        variant: "destructive",
-      })
     }
   }
 
@@ -416,10 +320,6 @@ export function AddDeviceTypeDialog({
               data={formData}
               onChange={updateField}
               errors={formErrors}
-              onGenerateMetrics={handleGenerateMetrics}
-              aiExample={aiMetricsExample}
-              onAiExampleChange={setAiMetricsExample}
-              generating={generating}
             />
           )}
 
@@ -428,10 +328,6 @@ export function AddDeviceTypeDialog({
               data={formData}
               onChange={setFormData}
               errors={formErrors}
-              onGenerateCommand={handleGenerateCommand}
-              aiExample={aiCommandsExample}
-              onAiExampleChange={setAiCommandsExample}
-              generating={generating}
             />
           )}
 
@@ -650,20 +546,12 @@ interface DataDefinitionStepProps {
   data: Partial<DeviceType>
   onChange: <K extends keyof DeviceType>(field: K, value: DeviceType[K]) => void
   errors: FormErrors
-  onGenerateMetrics: () => void
-  aiExample: string
-  onAiExampleChange: (value: string) => void
-  generating: boolean
 }
 
 function DataDefinitionStep({
   data,
   onChange,
   errors,
-  onGenerateMetrics,
-  aiExample,
-  onAiExampleChange,
-  generating,
 }: DataDefinitionStepProps) {
   const isRawMode = data.mode === 'simple'
 
@@ -767,40 +655,6 @@ function DataDefinitionStep({
       {/* Define Metrics Mode */}
       {!isRawMode && (
         <div className="flex flex-col h-full space-y-4">
-          {/* Toolbar: AI Generate */}
-          <div className="flex flex-wrap items-center gap-3 p-4 rounded-lg border bg-muted/30">
-            <div className="flex items-center gap-2 text-sm shrink-0">
-              <Sparkles className="h-4 w-4 text-purple-500" />
-              <span className="font-medium">AI Generate:</span>
-            </div>
-            <Textarea
-              value={aiExample}
-              onChange={(e) => onAiExampleChange(e.target.value)}
-              placeholder='{"temperature": 25.5, "humidity": 60}'
-              rows={2}
-              className="flex-1 min-w-[200px] font-mono text-sm h-auto max-h-20"
-            />
-            <Button
-              onClick={onGenerateMetrics}
-              disabled={!aiExample.trim() || generating}
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-            >
-              {generating ? (
-                <>
-                  <Sparkles className="mr-2 h-4 w-4 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Wand2 className="mr-2 h-4 w-4" />
-                  Generate
-                </>
-              )}
-            </Button>
-          </div>
-
           {/* Manual Entry List */}
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3">
@@ -822,7 +676,7 @@ function DataDefinitionStep({
                 <div className="text-center py-12">
                   <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">No metrics defined</p>
-                  <p className="text-xs text-muted-foreground mt-1">Use AI Generate above or add metrics manually</p>
+                  <p className="text-xs text-muted-foreground mt-1">Add metrics manually or import from JSON</p>
                 </div>
               </div>
             ) : (
@@ -871,20 +725,12 @@ interface CommandsStepProps {
   data: Partial<DeviceType>
   onChange: (data: Partial<DeviceType>) => void
   errors: FormErrors
-  onGenerateCommand: (jsonExample: string) => void
-  aiExample: string
-  onAiExampleChange: (value: string) => void
-  generating: boolean
 }
 
 function CommandsStep({
   data,
   onChange,
   errors,
-  onGenerateCommand,
-  aiExample,
-  onAiExampleChange,
-  generating,
 }: CommandsStepProps) {
   // Add command
   const addCommand = () => {
@@ -929,8 +775,11 @@ function CommandsStep({
 
   // Import from JSON
   const importFromJson = () => {
+    const jsonInput = prompt('Paste JSON to import commands:')
+    if (!jsonInput) return
+
     try {
-      const imported = JSON.parse(aiExample)
+      const imported = JSON.parse(jsonInput)
       const commandsToAdd = Array.isArray(imported) ? imported : [imported]
 
       // Convert to CommandDefinition format
@@ -950,8 +799,6 @@ function CommandsStep({
         title: 'Import Successful',
         description: `Added ${newCommands.length} command${newCommands.length > 1 ? 's' : ''}`,
       })
-
-      onAiExampleChange('')
     } catch {
       toast({
         title: 'Import Failed',
@@ -1012,40 +859,6 @@ function CommandsStep({
         <p className="text-sm text-muted-foreground">Define commands that can be sent to the device</p>
       </div>
 
-      {/* AI Generate Toolbar */}
-      <div className="flex flex-wrap items-center gap-3 p-4 rounded-lg border bg-muted/30">
-        <div className="flex items-center gap-2 text-sm shrink-0">
-          <Sparkles className="h-4 w-4 text-purple-500" />
-          <span className="font-medium">AI Generate:</span>
-        </div>
-        <Textarea
-          value={aiExample}
-          onChange={(e) => onAiExampleChange(e.target.value)}
-          placeholder='{"action": "set_interval", "interval": 60}'
-          rows={2}
-          className="flex-1 min-w-[200px] font-mono text-sm h-auto max-h-20"
-        />
-        <Button
-          onClick={() => onGenerateCommand(aiExample)}
-          disabled={!aiExample.trim() || generating}
-          variant="secondary"
-          size="sm"
-          className="shrink-0"
-        >
-          {generating ? (
-            <>
-              <Sparkles className="mr-2 h-4 w-4 animate-spin" />
-              Generating...
-            </>
-          ) : (
-            <>
-              <Wand2 className="mr-2 h-4 w-4" />
-              Generate
-            </>
-          )}
-        </Button>
-      </div>
-
       {/* Manual Entry List */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -1067,9 +880,9 @@ function CommandsStep({
                 Empty Command
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={importFromJson} disabled={!aiExample.trim()}>
+              <DropdownMenuItem onClick={importFromJson}>
                 <Code className="mr-2 h-3 w-3" />
-                Import from JSON Input
+                Import from JSON
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
                 <Database className="mr-2 h-3 w-3" />
@@ -1091,7 +904,7 @@ function CommandsStep({
             <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
             <p className="text-sm text-muted-foreground">No commands defined</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Use AI Generate above or add commands manually
+              Add commands manually or import from JSON
             </p>
           </div>
         ) : (
@@ -1638,23 +1451,15 @@ interface EditDeviceTypeDialogProps {
   deviceType: DeviceType | null
   onEdit: (data: DeviceType) => Promise<boolean>
   editing: boolean
-  onGenerateMDL?: (name: string, description: string, uplinkSample: string, downlinkSample: string) => Promise<string>
 }
 
 // Reuse AddDeviceTypeDialog with editDeviceType prop
-export function EditDeviceTypeDialog({ open, onOpenChange, deviceType, onEdit, editing, onGenerateMDL }: EditDeviceTypeDialogProps) {
+export function EditDeviceTypeDialog({ open, onOpenChange, deviceType, onEdit, editing }: EditDeviceTypeDialogProps) {
   // Default no-op validator for edit mode
   const handleValidate = async (): Promise<ValidationResult> => ({
     valid: true,
     message: "Ready to save"
   })
-
-  // Default MDL generator if not provided
-  const defaultGenerateMDL = async (): Promise<string> => {
-    return JSON.stringify({ metrics: [], commands: [] })
-  }
-
-  const effectiveGenerateMDL = onGenerateMDL || defaultGenerateMDL
 
   return (
     <AddDeviceTypeDialog
@@ -1662,10 +1467,8 @@ export function EditDeviceTypeDialog({ open, onOpenChange, deviceType, onEdit, e
       onOpenChange={onOpenChange}
       onAdd={onEdit}
       onValidate={handleValidate}
-      onGenerateMDL={effectiveGenerateMDL}
       adding={editing}
       validating={false}
-      generating={false}
       editDeviceType={deviceType}
     />
   )

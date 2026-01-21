@@ -242,16 +242,6 @@ export function useRuleEvents(options?: Omit<UseEventsOptions, 'category'>) {
 }
 
 /**
- * useWorkflowEvents - Hook specifically for workflow events
- */
-export function useWorkflowEvents(options?: Omit<UseEventsOptions, 'category'>) {
-  return useEvents({
-    ...options,
-    category: 'workflow',
-  })
-}
-
-/**
  * useLlmEvents - Hook specifically for LLM/agent events
  */
 export function useLlmEvents(options?: Omit<UseEventsOptions, 'category'>) {

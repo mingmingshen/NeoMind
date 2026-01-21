@@ -14,7 +14,7 @@ use edge_ai_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
 use edge_ai_rules::{InMemoryValueProvider, RuleEngine};
 use edge_ai_storage::business::EventLogStore;
 use edge_ai_storage::decisions::DecisionStore;
-use edge_ai_workflow::WorkflowEngine;
+
 use edge_ai_automation::{AutoOnboardManager, store::SharedAutomationStore, intent::IntentAnalyzer, transform::TransformEngine};
 
 use crate::auth::AuthState;
@@ -52,8 +52,6 @@ pub struct ServerState {
     pub rule_engine: Arc<RuleEngine>,
     /// Alert manager.
     pub alert_manager: Arc<AlertManager>,
-    /// Workflow engine (initialized asynchronously).
-    pub workflow_engine: Arc<tokio::sync::RwLock<Option<Arc<WorkflowEngine>>>>,
     /// Automation store for unified automations.
     pub automation_store: Option<Arc<SharedAutomationStore>>,
     /// Intent analyzer for automation type recommendations.
@@ -91,8 +89,6 @@ pub struct ServerState {
     pub auto_onboard_manager: Arc<tokio::sync::RwLock<Option<Arc<AutoOnboardManager>>>>,
     /// Rule history store for statistics.
     pub rule_history_store: Option<Arc<edge_ai_storage::business::RuleHistoryStore>>,
-    /// Workflow history store for statistics.
-    pub workflow_history_store: Option<Arc<edge_ai_storage::business::WorkflowHistoryStore>>,
     /// Alert store for statistics.
     pub alert_store: Option<Arc<edge_ai_storage::business::AlertStore>>,
     /// Server start timestamp.
@@ -115,6 +111,9 @@ impl ServerState {
 
         // Create event bus FIRST (needed for adapters to publish events)
         let event_bus = Arc::new(EventBus::new());
+
+        // Create device status broadcast channel
+        let device_update_tx: broadcast::Sender<DeviceStatusUpdate> = broadcast::channel(100).0;
 
         // Ensure data directory exists
         if let Err(e) = std::fs::create_dir_all("data") {
@@ -154,11 +153,9 @@ impl ServerState {
             }
         });
 
-        // Create in-memory workflow engine
-        let workflow_engine = std::sync::Arc::new(tokio::sync::RwLock::new(None));
 
         // Create device status broadcast channel
-        let device_update_tx = broadcast::channel(100).0;
+        let device_update_tx: broadcast::Sender<DeviceStatusUpdate> = broadcast::channel(100).0;
 
         // Create command manager
         let command_queue = Arc::new(CommandQueue::new(1000));
@@ -270,7 +267,6 @@ impl ServerState {
             time_series_storage,
             rule_engine: Arc::new(RuleEngine::new(value_provider)),
             alert_manager: Arc::new(AlertManager::new()),
-            workflow_engine,
             automation_store,
             intent_analyzer,
             transform_engine,
@@ -302,19 +298,6 @@ impl ServerState {
                     }
                 }
             },
-            workflow_history_store: {
-                use edge_ai_storage::business::WorkflowHistoryStore;
-                match WorkflowHistoryStore::open("data/workflow_history.redb") {
-                    Ok(store) => {
-                        tracing::info!("Workflow history store initialized at data/workflow_history.redb");
-                        Some(Arc::new(store))
-                    }
-                    Err(e) => {
-                        tracing::warn!(category = "storage", error = %e, "Failed to open workflow history store, statistics will be limited");
-                        None
-                    }
-                }
-            },
             alert_store: {
                 use edge_ai_storage::business::AlertStore;
                 match AlertStore::open("data/alerts.redb") {
@@ -340,32 +323,6 @@ impl ServerState {
 
         // Device registry storage is initialized automatically on first use
         tracing::info!(category = "storage", "Data directory created/verified");
-    }
-
-    /// Initialize workflow engine with persistent storage.
-    pub async fn init_workflow_engine(&self) {
-        use edge_ai_workflow::WorkflowEngine;
-
-        let engine = match WorkflowEngine::new("data/workflows").await {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(category = "workflow", error = %e, "Failed to create WorkflowEngine with storage, using in-memory");
-                match WorkflowEngine::new("/tmp/workflows_neotalk").await {
-                    Ok(e) => e,
-                    Err(_) => {
-                        tracing::warn!(
-                            category = "workflow",
-                            "Failed to create in-memory workflow engine, using empty path"
-                        );
-                        WorkflowEngine::new("")
-                            .await
-                            .expect("Failed to create workflow engine")
-                    }
-                }
-            }
-        };
-
-        *self.workflow_engine.write().await = Some(Arc::new(engine));
     }
 
     /// Initialize LLM backend using the unified config loader.
@@ -477,6 +434,12 @@ impl ServerState {
                 // Set telemetry storage for the MQTT adapter so it can write metrics
                 mqtt_adapter.set_telemetry_storage(self.time_series_storage.clone());
 
+                // Try to set the shared device registry on the MQTT adapter
+                // This allows the adapter to look up devices by custom telemetry topics
+                if let Some(mqtt) = mqtt_adapter.as_any().downcast_ref::<edge_ai_devices::adapters::mqtt::MqttAdapter>() {
+                    mqtt.set_shared_device_registry(self.device_service.get_registry().await).await;
+                }
+
                 // Register adapter with device service
                 self.device_service
                     .register_adapter("internal-mqtt".to_string(), mqtt_adapter.clone())
@@ -502,14 +465,8 @@ impl ServerState {
         use edge_ai_tools::{ToolRegistryBuilder, real};
         use std::sync::Arc;
 
-        // Check if workflow engine is initialized first
-        let workflow_engine_read = self.workflow_engine.read().await;
-        let _has_workflow = workflow_engine_read.as_ref().is_some();
-        let workflow_engine_clone = workflow_engine_read.as_ref().cloned();
-        drop(workflow_engine_read);
-
         // Build tool registry with real implementations that connect to actual services
-        let mut builder = ToolRegistryBuilder::new()
+        let builder = ToolRegistryBuilder::new()
             // Real implementations
             .with_real_query_data_tool(self.time_series_storage.clone())
             .with_real_get_device_data_tool(self.device_service.clone(), self.time_series_storage.clone())
@@ -519,29 +476,15 @@ impl ServerState {
             .with_real_create_rule_tool(self.rule_engine.clone())
             .with_real_list_rules_tool(self.rule_engine.clone());
 
-        // Add trigger workflow tool if workflow engine is initialized
-        if let Some(engine) = workflow_engine_clone {
-            builder = builder.with_tool(Arc::new(real::TriggerWorkflowTool::new(engine)));
-            let tool_registry = Arc::new(builder.build());
-            self.session_manager
-                .set_tool_registry(tool_registry.clone())
-                .await;
-            tracing::info!(
-                category = "ai",
-                "Tool registry initialized with {} tools (including workflow)",
-                tool_registry.len()
-            );
-        } else {
-            let tool_registry = Arc::new(builder.build());
-            self.session_manager
-                .set_tool_registry(tool_registry.clone())
-                .await;
-            tracing::info!(
-                category = "ai",
-                "Tool registry initialized with {} tools (workflow engine not available)",
-                tool_registry.len()
-            );
-        }
+        let tool_registry = Arc::new(builder.build());
+        self.session_manager
+            .set_tool_registry(tool_registry.clone())
+            .await;
+        tracing::info!(
+            category = "ai",
+            "Tool registry initialized with {} tools",
+            tool_registry.len()
+        );
     }
 
     /// Initialize event persistence service.
@@ -684,6 +627,7 @@ impl ServerState {
 
         let manager = auto_onboard_manager.clone();
         let event_bus_clone = event_bus.clone();
+        let device_service_clone = self.device_service.clone();
 
         tokio::spawn(async move {
             let mut rx = event_bus_clone.subscribe();
@@ -703,6 +647,15 @@ impl ServerState {
                                     .and_then(|v| v.as_bool())
                                     .unwrap_or(false);
 
+                                // Check if device is already registered - skip auto-onboarding if it is
+                                if device_service_clone.get_device(device_id).await.is_some() {
+                                    tracing::debug!(
+                                        "Device {} already registered, skipping auto-onboarding",
+                                        device_id
+                                    );
+                                    continue;
+                                }
+
                                 tracing::info!(
                                     "Processing unknown device data from MQTT: device_id={}, is_binary={}",
                                     device_id, is_binary
@@ -713,8 +666,19 @@ impl ServerState {
                                     .unwrap_or("mqtt")
                                     .to_string();
 
+                                // Extract original_topic if available (for MQTT devices)
+                                let original_topic = data.get("original_topic")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
+
                                 // Process the payload data through auto-onboarding
-                                match manager.process_unknown_device(device_id, &source, payload_data, is_binary).await {
+                                match manager.process_unknown_device_with_topic(
+                                    device_id,
+                                    &source,
+                                    payload_data,
+                                    is_binary,
+                                    original_topic,
+                                ).await {
                                     Ok(true) => {
                                         tracing::info!(
                                             "Successfully processed unknown device data: {}",
@@ -750,6 +714,44 @@ impl ServerState {
         crate::config::save_llm_settings(&settings)
             .await
             .map_err(|e| std::io::Error::other(format!("{}", e)))
+    }
+
+    /// Initialize transform event service.
+    ///
+    /// Starts a background task that subscribes to DeviceMetric events on the EventBus
+    /// and processes transforms to generate virtual metrics.
+    pub async fn init_transform_event_service(&self) {
+        use crate::event_persistence::TransformEventService;
+
+        let (event_bus, transform_engine, automation_store) = match (
+            &self.event_bus,
+            &self.transform_engine,
+            &self.automation_store,
+        ) {
+            (Some(bus), Some(engine), Some(store)) => (bus.clone(), engine.clone(), store.clone()),
+            _ => {
+                tracing::warn!("Transform event service not started: required components not available");
+                return;
+            }
+        };
+
+        let service = TransformEventService::new(
+            event_bus,
+            transform_engine,
+            automation_store,
+            self.time_series_storage.clone(),
+            self.device_registry.clone(),
+        );
+
+        let running = service.start();
+        if running.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::info!(
+                category = "transform",
+                "Transform event service started - virtual metrics will be generated from transforms"
+            );
+        } else {
+            tracing::warn!("Transform event service failed to start");
+        }
     }
 }
 

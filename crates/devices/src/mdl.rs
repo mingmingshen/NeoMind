@@ -107,6 +107,8 @@ pub enum MetricValue {
     Float(f64),
     String(String),
     Boolean(bool),
+    /// Array of values (heterogeneous arrays supported)
+    Array(Vec<MetricValue>),
     /// Binary data serialized as base64 string
     #[serde(with = "metric_value_serde")]
     Binary(Vec<u8>),
@@ -150,6 +152,7 @@ impl MetricValue {
             Self::Float(_) => "float",
             Self::String(_) => "string",
             Self::Boolean(_) => "boolean",
+            Self::Array(_) => "array",
             Self::Binary(_) => "binary",
             Self::Null => "null",
         }
@@ -215,6 +218,12 @@ pub enum MetricDataType {
     #[default]
     String,
     Boolean,
+    /// Array type (optionally with element type hint)
+    Array {
+        /// Element type hint (for homogeneous arrays)
+        #[serde(default)]
+        element_type: Option<Box<MetricDataType>>,
+    },
     Binary,
     /// Enum type with fixed set of string options
     Enum {

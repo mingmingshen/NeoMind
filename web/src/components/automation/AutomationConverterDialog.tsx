@@ -57,11 +57,11 @@ export function AutomationConverterDialog({
   const [loading, setLoading] = useState(false)
   const [converting, setConverting] = useState(false)
   const [conversionInfo, setConversionInfo] = useState<ConversionInfo | null>(null)
-  const [selectedTargetType, setSelectedTargetType] = useState<AutomationType>('workflow')
+  const [selectedTargetType, setSelectedTargetType] = useState<AutomationType>('transform')
   const [error, setError] = useState<string | null>(null)
 
   // Determine target type based on current type
-  const targetType: AutomationType = currentType === 'rule' ? 'workflow' : 'rule'
+  const targetType: AutomationType = currentType === 'rule' ? 'transform' : currentType === 'transform' ? 'rule' : 'transform'
 
   useEffect(() => {
     if (open) {
@@ -99,13 +99,11 @@ export function AutomationConverterDialog({
 
   const getTypeLabel = (type: AutomationType) =>
     type === 'transform' ? t('automation:transforms', { defaultValue: 'Transforms' })
-    : type === 'rule' ? t('automation:rules', { defaultValue: 'Rules' })
-    : t('automation:workflows', { defaultValue: 'Workflows' })
+    : t('automation:rules', { defaultValue: 'Rules' })
 
   const getTypeColor = (type: AutomationType) =>
     type === 'transform' ? 'bg-green-100 text-green-700 border-green-200'
-    : type === 'rule' ? 'bg-blue-100 text-blue-700 border-blue-200'
-    : 'bg-purple-100 text-purple-700 border-purple-200'
+    : 'bg-blue-100 text-blue-700 border-blue-200'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -238,6 +238,30 @@ impl MqttDevice {
                         .unwrap_or_else(|_| String::from_utf8_lossy(payload).to_string()),
                 ),
                 MetricDataType::Binary => MetricValue::Binary(payload.to_vec()),
+                // For Array types, try to parse as JSON array
+                MetricDataType::Array { .. } => {
+                    if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(payload) {
+                        if let Some(arr) = json_val.as_array() {
+                            let converted: Vec<MetricValue> = arr.iter().map(|v| match v {
+                                serde_json::Value::Number(n) => {
+                                    if let Some(i) = n.as_i64() {
+                                        MetricValue::Integer(i)
+                                    } else {
+                                        MetricValue::Float(n.as_f64().unwrap_or(0.0))
+                                    }
+                                }
+                                serde_json::Value::String(s) => MetricValue::String(s.clone()),
+                                serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+                                _ => MetricValue::Null,
+                            }).collect();
+                            MetricValue::Array(converted)
+                        } else {
+                            MetricValue::String(String::from_utf8_lossy(payload).to_string())
+                        }
+                    } else {
+                        MetricValue::String(String::from_utf8_lossy(payload).to_string())
+                    }
+                }
                 // For Enum types, treat as String
                 MetricDataType::Enum { .. } => MetricValue::String(
                     String::from_utf8(payload.to_vec())

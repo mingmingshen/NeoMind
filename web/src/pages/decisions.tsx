@@ -38,7 +38,7 @@ export function DecisionsPage() {
   const [selectedDecision, setSelectedDecision] = useState<DecisionDto | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [automationDialogOpen, setAutomationDialogOpen] = useState(false)
-  const [automationFromDecision, setAutomationFromDecision] = useState<{ description: string; suggestedType?: 'rule' | 'workflow' } | null>(null)
+  const [automationFromDecision, setAutomationFromDecision] = useState<{ description: string; suggestedType?: 'rule' | 'transform' } | null>(null)
   const { toast } = useToast()
 
   const { data: decisions, loading, refetch } = useApiData(
@@ -117,11 +117,11 @@ export function DecisionsPage() {
     }
 
     // Determine suggested type based on decision type
-    let suggestedType: 'rule' | 'workflow' | undefined
+    let suggestedType: 'rule' | 'transform' | undefined
     if (decision.decision_type === 'automation_recommendation') {
       // Check action complexity to suggest type
       const hasMultipleActions = decision.actions && decision.actions.length > 1
-      suggestedType = hasMultipleActions ? 'workflow' : 'rule'
+      suggestedType = hasMultipleActions ? 'transform' : 'rule'
     }
 
     setAutomationFromDecision({ description, suggestedType })

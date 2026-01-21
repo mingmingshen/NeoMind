@@ -362,6 +362,15 @@ fn json_value_to_metric(
             }
         }
 
+        // Array type - convert JSON array to MetricValue::Array
+        (serde_json::Value::Array(arr), MetricDataType::Array { .. }) => {
+            let mut result = Vec::new();
+            for item in arr {
+                result.push(json_value_to_metric(item, &MetricDataType::String)?);
+            }
+            Ok(MetricValue::Array(result))
+        }
+
         // Any value to string conversion
         (v, MetricDataType::String) => Ok(MetricValue::String(v.to_string())),
 
@@ -577,6 +586,30 @@ impl MdlRegistry {
             }
             MetricDataType::String => Ok(MetricValue::String(payload_str.to_string())),
             MetricDataType::Binary => Ok(MetricValue::Binary(payload.to_vec())),
+            MetricDataType::Array { .. } => {
+                // Try to parse as JSON array
+                if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(payload) {
+                    if let Some(arr) = json_val.as_array() {
+                        let converted: Vec<MetricValue> = arr.iter().map(|v| match v {
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    MetricValue::Integer(i)
+                                } else {
+                                    MetricValue::Float(n.as_f64().unwrap_or(0.0))
+                                }
+                            }
+                            serde_json::Value::String(s) => MetricValue::String(s.clone()),
+                            serde_json::Value::Bool(b) => MetricValue::Boolean(*b),
+                            _ => MetricValue::Null,
+                        }).collect();
+                        Ok(MetricValue::Array(converted))
+                    } else {
+                        Ok(MetricValue::String(payload_str.to_string()))
+                    }
+                } else {
+                    Ok(MetricValue::String(payload_str.to_string()))
+                }
+            }
             // For Enum types, treat as String
             MetricDataType::Enum { .. } => Ok(MetricValue::String(payload_str.to_string())),
         }
@@ -598,6 +631,11 @@ impl MdlRegistry {
                 MetricValue::Float(v) => v.to_string(),
                 MetricValue::String(v) => format!("\"{}\"", v),
                 MetricValue::Boolean(v) => v.to_string(),
+                MetricValue::Array(_) => {
+                    return Err(DeviceError::InvalidParameter(
+                        "Array values not supported in command payload".into(),
+                    ));
+                }
                 MetricValue::Binary(_) => {
                     return Err(DeviceError::InvalidParameter(
                         "Binary values not supported in command payload".into(),

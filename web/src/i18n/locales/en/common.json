@@ -37,6 +37,7 @@
   "loading": "Loading...",
   "success": "Success",
   "failed": "Failed",
+  "warning": "Warning",
   "error": "Error",
   "optional": "Optional",
   "required": "Required",

@@ -310,7 +310,7 @@ impl Agent {
 
     /// Configure the LLM backend.
     pub async fn configure_llm(&self, backend: LlmBackend) -> Result<()> {
-        eprintln!("Agent::configure_llm called with backend: {:?}", backend);
+        tracing::debug!(backend = ?backend, "Agent::configure_llm called");
 
         // Load timeout from environment variable (or use defaults)
         let ollama_timeout = agent_env_vars::ollama_timeout_secs();
@@ -324,9 +324,9 @@ impl Agent {
 
         let (llm, model_name) = match backend {
             LlmBackend::Ollama { endpoint, model } => {
-                eprintln!(
-                    "Creating OllamaRuntime: endpoint={}, model={}, timeout={}s",
-                    endpoint, model, ollama_timeout
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = ollama_timeout,
+                    "Creating OllamaRuntime"
                 );
                 let config = OllamaConfig::new(&model)
                     .with_endpoint(&endpoint)
@@ -340,9 +340,9 @@ impl Agent {
                 endpoint,
                 model,
             } => {
-                eprintln!(
-                    "Creating CloudRuntime for OpenAI: endpoint={}, model={}, timeout={}s",
-                    endpoint, model, cloud_timeout
+                tracing::info!(
+                    endpoint = %endpoint, model = %model, timeout = cloud_timeout,
+                    "Creating CloudRuntime for OpenAI"
                 );
                 let config = CloudConfig::openai(&api_key)
                     .with_timeout_secs(cloud_timeout);
@@ -674,7 +674,7 @@ impl Agent {
     /// Process a user message with real LLM.
     /// Uses session-level lock to prevent concurrent requests on the same session.
     pub async fn process(&self, user_message: &str) -> Result<AgentResponse> {
-        println!("[Agent::process] Starting with message: {}", user_message);
+        tracing::debug!(message = %user_message, "Agent::process starting");
 
         // === FAST PATH: Try simple responses WITHOUT acquiring lock ===
         if let Some(response) = self.try_fast_path(user_message) {
@@ -817,7 +817,7 @@ impl Agent {
             }
             Err(e) => {
                 // On error, fall back to simple response
-                eprintln!("LLM error: {}, using fallback", e);
+                tracing::error!(error = %e, "LLM error, using fallback");
                 let (message, tool_calls, tools_used) =
                     process_fallback(&self.tools, &self.fallback_rules, user_message).await;
                 let processing_time = start.elapsed().as_millis() as u64;
@@ -845,7 +845,7 @@ impl Agent {
     /// - Tool result clearing for old messages (Anthropic-style)
     /// - Token limit configured in ChatConfig
     async fn process_with_llm(&self, user_message: &str) -> Result<AgentResponse> {
-        println!("[process_with_llm] Starting with message: {}", user_message);
+        tracing::debug!(message = %user_message, "process_with_llm starting");
         use tool_parser::parse_tool_calls;
 
         // Get existing history (user message already added by caller in `process`)
@@ -912,11 +912,11 @@ impl Agent {
             .map_err(|e| super::error::AgentError::Llm(e.to_string()))?;
 
         // Parse response for tool calls
-        eprintln!("[DEBUG] LLM response text: {}", chat_response.text);
+        tracing::debug!(response_text = %chat_response.text, "LLM response received");
         let (content, mut tool_calls) = parse_tool_calls(&chat_response.text)?;
-        eprintln!("[DEBUG] Parsed tool calls: {} tool(s)", tool_calls.len());
+        tracing::debug!(count = tool_calls.len(), "Parsed tool calls");
         for tc in &tool_calls {
-            eprintln!("[DEBUG]   - name: {}, args: {}", tc.name, tc.arguments);
+            tracing::debug!(name = %tc.name, args = %tc.arguments, "  tool call");
         }
 
         // Extract thinking content if present
@@ -1025,11 +1025,11 @@ impl Agent {
 
         // Process results in original order
         for (name, id, arguments, result) in results {
-            eprintln!("[DEBUG] Tool result: name={}, result={:?}", name, result);
+            tracing::debug!(name = %name, result = ?result, "Tool execution result");
             match result {
                 Ok(ok_result) => {
                     tools_used.push(name.clone());
-                    eprintln!("[DEBUG] Added to tools_used: {}, now have {} tools", name, tools_used.len());
+                    tracing::debug!(name = %name, count = tools_used.len(), "Added to tools_used");
                     tool_results.push((name.clone(), ok_result.clone()));
                     tool_calls_with_results.push(ToolCall {
                         name,
@@ -1051,7 +1051,7 @@ impl Agent {
             }
         }
 
-        eprintln!("[DEBUG] Before format_tool_results: tools_used={:?}", tools_used);
+        tracing::debug!(tools_used = ?tools_used, "Before format_tool_results");
 
         // Format tool results directly (without calling LLM again)
         // This prevents excessive thinking and model looping
@@ -1479,7 +1479,7 @@ END"#)
             Ok(stream) => Ok(stream),
             Err(e) => {
                 // On error, fall back to simple response
-                eprintln!("LLM stream error: {}, using fallback", e);
+                tracing::error!(error = %e, "LLM stream error, using fallback");
                 let (message, _, _) =
                     process_fallback(&self.tools, &self.fallback_rules, user_message).await;
                 self.internal_state

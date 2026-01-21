@@ -171,7 +171,7 @@ export function ConditionBuilder({
               />
               {selectedDevice && (
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {getUnitForMetric(condition.metric)}
+                  {getUnitForMetric(condition.metric || 'value')}
                 </span>
               )}
             </div>

@@ -12,13 +12,13 @@ members = [
     "crates/memory",
     "crates/tools",
     "crates/agent",
-    "crates/workflow",
     "crates/commands",
     "crates/integrations",
     "crates/plugin-sdk",
     "crates/automation",
 ]
 resolver = "2"
+default-run = "edge-ai"
 
 [workspace.package]
 version = "0.1.0"
@@ -42,7 +42,6 @@ toml = "0.8"
 # candle-core = { version = "0.7", optional = true }
 # candle-transformers = { version = "0.7", optional = true }
 # candle-nn = { version = "0.7", optional = true }
-tokenizers = "0.20"
 
 # UI (Web)
 axum = "0.7"

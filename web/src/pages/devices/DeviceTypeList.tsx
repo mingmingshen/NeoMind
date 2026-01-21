@@ -83,9 +83,30 @@ export function DeviceTypeList({
     setBulkProcessing(true)
     try {
       const response = await api.bulkDeleteDeviceTypes(Array.from(selectedIds))
-      toast({ title: t('common:success'), description: t('devices:types.deletedCount', { count: response.deleted }) })
-      setSelectedIds(new Set())
-      onRefresh()
+      const deleted = response.deleted ?? response.succeeded ?? 0
+      const failed = response.failed ?? 0
+
+      if (failed > 0) {
+        // Show detailed error message for partial or complete failures
+        const errorDetails = response.results
+          ?.filter((r: { success: boolean }) => !r.success)
+          .map((r: { error?: string }) => r.error)
+          .filter(Boolean) as string[] || []
+
+        toast({
+          title: t('common:failed'),
+          description: errorDetails.length > 0
+            ? `${failed} ${t('devices:types.deleteFailed')}: ${errorDetails[0]}`
+            : `${failed} ${t('devices:types.deleteFailed')}`,
+          variant: "destructive"
+        })
+      }
+
+      if (deleted > 0) {
+        toast({ title: t('common:success'), description: t('devices:types.deletedCount', { count: deleted }) })
+        setSelectedIds(new Set())
+        onRefresh()
+      }
     } catch (error) {
       toast({ title: t('common:failed'), description: t('devices:types.bulkDeleteFailed'), variant: "destructive" })
     } finally {
@@ -184,7 +205,7 @@ export function DeviceTypeList({
               <TableHead>{t('devices:types.headers.description')}</TableHead>
               <TableHead align="center">{t('devices:types.headers.metrics')}</TableHead>
               <TableHead align="center">{t('devices:types.headers.commands')}</TableHead>
-              <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms' })}</TableHead>
+              <TableHead align="center">{t('automation:transforms', { defaultValue: 'Transforms Data' })}</TableHead>
               <TableHead align="right">{t('devices:types.headers.actions')}</TableHead>
             </TableRow>
           </TableHeader>

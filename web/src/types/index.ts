@@ -93,11 +93,13 @@ export interface DeviceType {
 export interface MetricDefinition {
   name: string
   display_name: string
-  data_type: 'integer' | 'float' | 'string' | 'boolean' | 'binary'
+  data_type: 'integer' | 'float' | 'string' | 'boolean' | 'binary' | 'array'
   unit?: string
   min?: number
   max?: number
   required?: boolean
+  // For array types: optional element type hint
+  element_type?: 'integer' | 'float' | 'string' | 'boolean' | 'array'
   // Legacy fields for backward compatibility
   topic?: string
   value_template?: string
@@ -134,6 +136,7 @@ export type MetricValue =
   | { Float: number }
   | { String: string }
   | { Boolean: boolean }
+  | { Array: MetricValue[] }
   | { Null: null }
 
 // Alert type - must match backend AlertDto (crates/api/src/handlers/alerts.rs)
@@ -333,6 +336,7 @@ export interface ExternalBroker {
   connected?: boolean
   last_error?: string
   updated_at: number
+  subscribe_topics?: string[]
 }
 
 // Data Source Types
@@ -356,6 +360,7 @@ export interface ExternalBrokerConnection {
   connected: boolean
   enabled: boolean
   last_error?: string
+  subscribe_topics?: string[]
 }
 
 export interface ApiResponse<T> {
@@ -401,7 +406,7 @@ export interface TelemetryDataResponse {
 
 export interface TelemetryPoint {
   timestamp: number
-  value: number | string | boolean | null
+  value: number | string | boolean | null | unknown[]
 }
 
 export interface TelemetrySummaryResponse {
@@ -414,8 +419,8 @@ export interface TelemetrySummaryResponse {
 export interface TelemetryMetricSummary {
   display_name: string
   unit: string
-  data_type: 'integer' | 'float' | 'string' | 'boolean' | 'binary'
-  current: number | string | boolean | null
+  data_type: 'integer' | 'float' | 'string' | 'boolean' | 'binary' | 'array'
+  current: number | string | boolean | null | unknown[]
   current_timestamp: number | null
   avg: number | null
   min: number | null
@@ -580,301 +585,29 @@ export type RuleTrigger =
   | { type: 'manual' }
   | { type: 'event'; event_type: string; filters?: Record<string, unknown> }
 
+// Rule condition - supports simple, range, and logical (AND/OR/NOT) conditions
 export interface RuleCondition {
-  device_id: string
-  metric: string
-  operator: string
-  threshold: number
+  // Simple condition properties
+  device_id?: string
+  metric?: string
+  operator?: string
+  threshold?: number
+
+  // Range condition properties
+  range_min?: number
+
+  // Logical condition properties
+  conditions?: RuleCondition[]
 }
 
 export type RuleAction =
   | { type: 'Notify'; message: string }
   | { type: 'Execute'; device_id: string; command: string; params: Record<string, unknown> }
   | { type: 'Log'; level: string; message: string }
-
-// ========== Workflows Types ==========
-// Must match backend WorkflowDto (crates/api/src/handlers/workflows.rs)
-
-export interface Workflow {
-  id: string
-  name: string
-  description: string
-  enabled: boolean
-  status: string  // 'active' | 'paused' | 'disabled' | 'failed'
-  step_count: number
-  trigger_count: number
-  // Backend sends ISO 8601 strings, frontend may also use number timestamps
-  created_at: string | number
-  updated_at: string | number
-  // For detailed view (not from basic DTO)
-  triggers?: WorkflowTrigger[]
-  steps?: WorkflowStep[]
-  variables?: Record<string, unknown>
-  timeout_seconds?: number
-  // UI may expect this field
-  execution_count?: number
-}
-
-// ========== Workflow Types ==========
-
-// Workflow step types matching backend Rust enum
-export type WorkflowStepType =
-  | 'device_query'
-  | 'condition'
-  | 'send_alert'
-  | 'send_command'
-  | 'wait_for_device_state'
-  | 'execute_wasm'
-  | 'parallel'
-  | 'delay'
-  | 'http_request'
-  | 'image_process'
-  | 'data_query'
-  | 'log'
-
-// Workflow trigger types matching backend Rust enum
-export type WorkflowTriggerType = 'cron' | 'event' | 'manual' | 'device'
-
-// Base workflow step interface
-export interface WorkflowStepBase {
-  id: string
-  type: WorkflowStepType
-}
-
-// Device Query Step
-export interface DeviceQueryStep extends WorkflowStepBase {
-  type: 'device_query'
-  device_id: string
-  metric: string
-  aggregation?: string
-}
-
-// Condition Step with branching
-export interface ConditionStep extends WorkflowStepBase {
-  type: 'condition'
-  condition: string
-  then_steps: WorkflowStep[]
-  else_steps?: WorkflowStep[]
-}
-
-// Send Alert Step
-export interface SendAlertStep extends WorkflowStepBase {
-  type: 'send_alert'
-  severity: 'info' | 'warning' | 'error' | 'critical'
-  title: string
-  message: string
-  channels?: string[]
-}
-
-// Send Command Step
-export interface SendCommandStep extends WorkflowStepBase {
-  type: 'send_command'
-  device_id: string
-  command: string
-  parameters?: Record<string, unknown>
-}
-
-// Wait For Device State Step
-export interface WaitForDeviceStateStep extends WorkflowStepBase {
-  type: 'wait_for_device_state'
-  device_id: string
-  metric: string
-  expected_value: number
-  tolerance?: number
-  timeout_seconds?: number
-  poll_interval_seconds?: number
-}
-
-// Execute WASM Step
-export interface ExecuteWasmStep extends WorkflowStepBase {
-  type: 'execute_wasm'
-  module_id: string
-  function: string
-  arguments?: Record<string, unknown>
-}
-
-// Parallel Execution Step
-export interface ParallelStep extends WorkflowStepBase {
-  type: 'parallel'
-  steps: WorkflowStep[]
-  max_parallel?: number
-}
-
-// Delay Step
-export interface DelayStep extends WorkflowStepBase {
-  type: 'delay'
-  duration_seconds: number
-}
-
-// HTTP Request Step
-export interface HttpRequestStep extends WorkflowStepBase {
-  type: 'http_request'
-  url: string
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
-  headers?: Record<string, string>
-  body?: string
-}
-
-// Image Process Step
-export interface ImageProcessStep extends WorkflowStepBase {
-  type: 'image_process'
-  image_source: string
-  operations: ImageOperation[]
-  output_format: string
-}
-
-// Data Query Step
-export interface DataQueryStep extends WorkflowStepBase {
-  type: 'data_query'
-  query_type: 'telemetry' | 'history' | 'aggregate'
-  parameters?: Record<string, unknown>
-}
-
-// Log Step
-export interface LogStep extends WorkflowStepBase {
-  type: 'log'
-  message: string
-  level?: 'debug' | 'info' | 'warn' | 'error'
-}
-
-// Union type for all workflow steps
-export type WorkflowStep =
-  | DeviceQueryStep
-  | ConditionStep
-  | SendAlertStep
-  | SendCommandStep
-  | WaitForDeviceStateStep
-  | ExecuteWasmStep
-  | ParallelStep
-  | DelayStep
-  | HttpRequestStep
-  | ImageProcessStep
-  | DataQueryStep
-  | LogStep
-
-// Image operation types
-export interface ImageOperation {
-  operation: 'resize' | 'crop' | 'rotate' | 'filter' | 'annotate'
-  parameters: Record<string, unknown>
-}
-
-// Workflow Triggers
-export interface WorkflowTriggerBase {
-  id: string
-}
-
-export interface CronTrigger extends WorkflowTriggerBase {
-  type: 'cron'
-  expression: string
-  timezone?: string
-}
-
-export interface EventTrigger extends WorkflowTriggerBase {
-  type: 'event'
-  event_type: string
-  filters?: Record<string, unknown>
-}
-
-export interface ManualTrigger extends WorkflowTriggerBase {
-  type: 'manual'
-}
-
-export interface DeviceTrigger extends WorkflowTriggerBase {
-  type: 'device'
-  device_id: string
-  metric: string
-  condition: string
-}
-
-export type WorkflowTrigger =
-  | CronTrigger
-  | EventTrigger
-  | ManualTrigger
-  | DeviceTrigger
-
-// Legacy types for backward compatibility
-export interface WorkflowTriggerLegacy {
-  type: 'event' | 'schedule' | 'manual' | 'device_state'
-  config: Record<string, unknown>
-}
-
-export interface WorkflowStepLegacy {
-  id: string
-  name: string
-  type: 'command' | 'condition' | 'delay' | 'notification' | 'llm'
-  config: Record<string, unknown>
-  next_steps?: string[]
-}
-
-export interface WorkflowExecution {
-  id: string
-  workflow_id: string
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
-  started_at: number
-  completed_at?: number
-  input: Record<string, unknown>
-  output?: Record<string, unknown>
-  error?: string
-}
-
-// ========== Workflow Template Types ==========
-
-export type TemplateParameterType = 'string' | 'number' | 'boolean' | 'device' | 'metric' | 'enum'
-
-export interface TemplateParameter {
-  name: string
-  label: string
-  param_type: TemplateParameterType
-  default?: string | null
-  required: boolean
-  options: string[]
-}
-
-export interface WorkflowTemplate {
-  id: string
-  name: string
-  category: string
-  description: string
-  parameters: TemplateParameter[]
-}
-
-export interface TemplatedWorkflow {
-  template_id: string
-  workflow_json: string
-  parameters: Record<string, string>
-}
-
-export interface GeneratedWorkflow {
-  workflow_json: string
-  explanation: string
-  confidence: number
-  suggested_edits: SuggestedEdit[]
-  warnings: string[]
-}
-
-export interface SuggestedEdit {
-  description: string
-  reason: string
-  step_id?: string
-}
-
-export interface WorkflowResources {
-  devices: Array<{ id: string; name: string; type: string }>
-  metrics: string[]
-  alert_channels: AlertChannel[]
-}
-
-export interface WorkflowExport {
-  workflows: Workflow[]
-  export_date: string
-  total_count: number
-}
-
-export interface WorkflowImportResult {
-  imported: number
-  skipped: number
-  errors: Array<{ workflow: { name: string }; error: string }>
-}
+  | { type: 'Set'; device_id: string; property: string; value: unknown }
+  | { type: 'Delay'; duration: number }
+  | { type: 'CreateAlert'; title: string; message: string; severity: 'info' | 'warning' | 'error' | 'critical' }
+  | { type: 'HttpRequest'; method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; url: string }
 
 // ========== Memory Types ==========
 
@@ -925,7 +658,6 @@ export enum PluginTypeEnum {
   Integration = 'integration',
   AlertChannel = 'alert_channel',
   RuleEngine = 'rule_engine',
-  WorkflowEngine = 'workflow_engine',
   Custom = 'custom',
 }
 
@@ -1160,7 +892,7 @@ export interface ToolExecutionResult {
 // ========== Search Types ==========
 
 export interface SearchResult {
-  type: 'device' | 'rule' | 'workflow' | 'alert'
+  type: 'device' | 'rule' | 'alert'
   id: string
   title: string
   description?: string
@@ -1363,16 +1095,19 @@ export interface DeviceAdapterPlugin extends AdapterPluginDto {
 /**
  * Automation type enumeration
  */
-export type AutomationType = 'transform' | 'rule' | 'workflow'
+export type AutomationType = 'transform' | 'rule'
 
 /**
  * Transform scope - determines what data the transform applies to
+ * Matches backend Rust enum format with serde(rename_all = "snake_case")
+ * - Global: "global" (string)
+ * - DeviceType: { device_type: string }
+ * - Device: { device: string }
  */
 export type TransformScope =
-  | { type: 'global' }
-  | { type: 'device_type'; device_type: string }
-  | { type: 'device'; device_id: string }
-  | { type: 'user'; user_id: string }
+  | 'global'
+  | { device_type: string }
+  | { device: string }
 
 /**
  * Aggregation function for transforms
@@ -1471,9 +1206,9 @@ export interface TransformAutomation extends BaseAutomation {
 }
 
 /**
- * Unified Automation type - can be Transform, Rule, or Workflow
+ * Unified Automation type - can be Transform or Rule
  */
-export type Automation = TransformAutomation | RuleAutomation | WorkflowAutomation
+export type Automation = TransformAutomation | RuleAutomation
 
 /**
  * Base automation interface with common fields
@@ -1498,17 +1233,6 @@ export interface RuleAutomation extends BaseAutomation {
   trigger: RuleTrigger
   condition: RuleCondition
   actions: RuleAction[]
-  complexity: number // 1-5
-}
-
-/**
- * Workflow automation - complex multi-step sequences
- */
-export interface WorkflowAutomation extends BaseAutomation {
-  type: 'workflow'
-  triggers: WorkflowTrigger[]
-  steps: WorkflowStep[]
-  variables: Record<string, unknown>
   complexity: number // 1-5
 }
 
@@ -1603,10 +1327,22 @@ export interface AutomationTemplate {
 }
 
 /**
+ * Template parameter for automation templates
+ */
+export interface TemplateParameter {
+  name: string
+  label: string
+  param_type: 'string' | 'number' | 'boolean' | 'device' | 'metric' | 'enum'
+  default?: string | null
+  required: boolean
+  options: string[]
+}
+
+/**
  * Automation filter parameters
  */
 export interface AutomationFilter {
-  type?: 'transform' | 'rule' | 'workflow' | 'all'
+  type?: 'transform' | 'rule' | 'all'
   enabled?: boolean
   search?: string
 }

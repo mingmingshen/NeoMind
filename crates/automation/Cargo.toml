@@ -7,7 +7,6 @@ edition.workspace = true
 edge-ai-core = { path = "../core" }
 edge-ai-llm = { path = "../llm" }
 edge-ai-rules = { path = "../rules" }
-edge-ai-workflow = { path = "../workflow" }
 edge-ai-devices = { path = "../devices" }
 edge-ai-alerts = { path = "../alerts" }
 

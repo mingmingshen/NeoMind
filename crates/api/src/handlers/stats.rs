@@ -16,8 +16,6 @@ pub struct SystemStats {
     pub devices: DeviceStats,
     /// Rule statistics
     pub rules: RuleStats,
-    /// Workflow statistics
-    pub workflows: WorkflowStats,
     /// Alert statistics
     pub alerts: AlertStats,
     /// Command statistics
@@ -52,17 +50,6 @@ pub struct RuleStats {
     pub disabled_rules: usize,
     /// Rules triggered today
     pub triggered_today: usize,
-}
-
-/// Workflow statistics.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct WorkflowStats {
-    /// Total workflows
-    pub total_workflows: usize,
-    /// Active workflows
-    pub active_workflows: usize,
-    /// Executions today
-    pub executions_today: usize,
 }
 
 /// Alert statistics.
@@ -100,6 +87,17 @@ pub struct DecisionStats {
     pub executed_decisions: usize,
     /// Average confidence
     pub avg_confidence: f32,
+}
+
+/// Workflow statistics (placeholder - workflow module removed).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct WorkflowStats {
+    /// Total workflows
+    pub total_workflows: usize,
+    /// Active workflows
+    pub active_workflows: usize,
+    /// Executions today
+    pub executions_today: usize,
 }
 
 /// GPU information.
@@ -198,27 +196,6 @@ pub async fn get_system_stats_handler(
             .filter(|r| matches!(r.status, edge_ai_rules::RuleStatus::Disabled))
             .count(),
         triggered_today,
-    };
-
-    // Get workflow stats
-    let workflow_stats = if let Some(engine) = state.workflow_engine.read().await.as_ref() {
-        let workflows = engine.list_workflows().await.unwrap_or_default();
-        let executions_today = if let Some(store) = &state.workflow_history_store {
-            store.count_since(start_of_today).unwrap_or(0) as usize
-        } else {
-            0
-        };
-        WorkflowStats {
-            total_workflows: workflows.len(),
-            active_workflows: workflows.iter().filter(|w| w.enabled).count(),
-            executions_today,
-        }
-    } else {
-        WorkflowStats {
-            total_workflows: 0,
-            active_workflows: 0,
-            executions_today: 0,
-        }
     };
 
     // Get alert stats
@@ -359,7 +336,6 @@ pub async fn get_system_stats_handler(
     let stats = SystemStats {
         devices: device_stats,
         rules: rule_stats,
-        workflows: workflow_stats,
         alerts: alert_stats,
         commands: command_stats,
         decisions: decision_stats,
@@ -604,11 +580,6 @@ mod tests {
                 enabled_rules: 3,
                 disabled_rules: 2,
                 triggered_today: 10,
-            },
-            workflows: WorkflowStats {
-                total_workflows: 2,
-                active_workflows: 1,
-                executions_today: 5,
             },
             alerts: AlertStats {
                 active_alerts: 1,

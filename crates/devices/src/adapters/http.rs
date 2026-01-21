@@ -698,6 +698,10 @@ impl DeviceAdapter for HttpAdapter {
         info!("HTTP adapter: unsubscribed from device '{}'", device_id);
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 // Implement Clone for HttpAdapter

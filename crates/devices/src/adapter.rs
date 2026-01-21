@@ -175,11 +175,23 @@ impl DeviceEvent {
 
 /// Convert MDL MetricValue to core MetricValue.
 fn convert_metric_value(value: MetricValue) -> edge_ai_core::MetricValue {
+    use serde_json::json;
     match value {
         MetricValue::Integer(v) => edge_ai_core::MetricValue::Integer(v),
         MetricValue::Float(v) => edge_ai_core::MetricValue::Float(v),
         MetricValue::String(v) => edge_ai_core::MetricValue::String(v),
         MetricValue::Boolean(v) => edge_ai_core::MetricValue::Boolean(v),
+        MetricValue::Array(arr) => {
+            // Convert array to JSON for core metric value
+            let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
+                MetricValue::Integer(i) => json!(*i),
+                MetricValue::Float(f) => json!(*f),
+                MetricValue::String(s) => json!(s),
+                MetricValue::Boolean(b) => json!(*b),
+                _ => json!(null),
+            }).collect();
+            edge_ai_core::MetricValue::Json(json!(json_arr))
+        }
         MetricValue::Binary(_) => edge_ai_core::MetricValue::String("<binary>".to_string()),
         MetricValue::Null => edge_ai_core::MetricValue::String("null".to_string()),
     }
@@ -309,6 +321,9 @@ pub trait DeviceAdapter: Send + Sync {
 
     /// Get a list of device IDs managed by this adapter.
     fn list_devices(&self) -> Vec<String>;
+
+    /// Get this adapter as `Any` for downcasting
+    fn as_any(&self) -> &dyn std::any::Any;
 
     /// Send a command to a device via this adapter.
     ///
@@ -569,6 +584,10 @@ impl DeviceAdapter for MockAdapter {
     async fn unsubscribe_device(&self, _device_id: &str) -> AdapterResult<()> {
         // Mock adapter always succeeds
         Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 

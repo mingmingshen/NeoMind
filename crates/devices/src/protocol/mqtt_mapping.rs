@@ -215,8 +215,16 @@ impl MqttMapping {
                 }
             }
             serde_json::Value::String(s) => Ok(MetricValue::String(s.clone())),
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-                // Serialize complex types as JSON string
+            serde_json::Value::Array(arr) => {
+                // Convert array recursively
+                let mut result = Vec::new();
+                for item in arr {
+                    result.push(Self::json_value_to_metric(item)?);
+                }
+                Ok(MetricValue::Array(result))
+            }
+            serde_json::Value::Object(_) => {
+                // Serialize objects as JSON string
                 serde_json::to_string(value)
                     .map(MetricValue::String)
                     .map_err(|e| MappingError::SerializationError(format!("{}", e)))
@@ -355,6 +363,17 @@ impl MqttMapping {
                 MetricValue::Integer(i) => i.to_string(),
                 MetricValue::Float(f) => f.to_string(),
                 MetricValue::Boolean(b) => b.to_string(),
+                MetricValue::Array(a) => {
+                    // Convert array to JSON string representation
+                    let json_arr: Vec<String> = a.iter().map(|v| match v {
+                        MetricValue::String(s) => format!("\"{}\"", s),
+                        MetricValue::Integer(i) => i.to_string(),
+                        MetricValue::Float(f) => f.to_string(),
+                        MetricValue::Boolean(b) => b.to_string(),
+                        _ => "null".to_string(),
+                    }).collect();
+                    format!("[{}]", json_arr.join(", "))
+                }
                 MetricValue::Null => "null".to_string(),
                 MetricValue::Binary(_) => "\"<binary>\"".to_string(),
             };

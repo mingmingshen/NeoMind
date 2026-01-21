@@ -77,7 +77,7 @@ pub use builtin::{
     DeviceTypeSchema, GetDeviceMetricsTool, GetDeviceTypeSchemaTool, ListDeviceTypesTool,
     ListDevicesTool, ListRulesTool, MetricDataPoint, MetricInfo, MockDeviceManager,
     MockDeviceTypeRegistry, MockRuleEngine, MockTimeSeriesStore, QueryDataTool, RuleInfo,
-    TriggerWorkflowTool,
+
     // New tools
     DeleteRuleTool, EnableRuleTool, DisableRuleTool, UpdateRuleTool,
     QueryDeviceStatusTool, GetDeviceConfigTool, SetDeviceConfigTool, BatchControlDevicesTool,
@@ -121,8 +121,7 @@ pub use real::{
     ControlDeviceTool as RealControlDeviceTool, CreateRuleTool as RealCreateRuleTool,
     GetDeviceDataTool as RealGetDeviceDataTool,
     ListDevicesTool as RealListDevicesTool, ListRulesTool as RealListRulesTool,
-    QueryDataTool as RealQueryDataTool, QueryRuleHistoryTool, QueryWorkflowStatusTool,
-    TriggerWorkflowTool as RealTriggerWorkflowTool,
+    QueryDataTool as RealQueryDataTool, QueryRuleHistoryTool,
 };
 
 /// Version information
