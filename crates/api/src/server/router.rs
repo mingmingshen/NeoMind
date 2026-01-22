@@ -19,7 +19,7 @@ pub async fn create_router() -> Router {
 /// Create the application router with a specific state.
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
-        alert_channels, alerts, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
+        alert_channels, alerts, agents, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
         decisions, devices, events, extensions, llm_backends, memory, mqtt, plugins, rules,
         search, sessions, settings, stats, test_data, tools,
     };
@@ -334,6 +334,19 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/automations/transforms/metrics",
             get(automations::list_virtual_metrics_handler),
         )
+        // AI Agents API - User-defined automation agents
+        .route("/api/agents", get(agents::list_agents))
+        .route("/api/agents", post(agents::create_agent))
+        .route("/api/agents/:id", get(agents::get_agent))
+        .route("/api/agents/:id", put(agents::update_agent))
+        .route("/api/agents/:id", delete(agents::delete_agent))
+        .route("/api/agents/:id/execute", post(agents::execute_agent))
+        .route("/api/agents/:id/status", post(agents::set_agent_status))
+        .route("/api/agents/:id/executions", get(agents::get_agent_executions))
+        .route("/api/agents/:id/executions/:execution_id", get(agents::get_execution))
+        .route("/api/agents/:id/memory", get(agents::get_agent_memory))
+        .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
+        .route("/api/agents/:id/stats", get(agents::get_agent_stats))
         // Memory API
         .route("/api/memory/stats", get(memory::get_memory_stats_handler))
         .route("/api/memory/query", get(memory::query_memory_handler))

@@ -35,6 +35,7 @@
 //! ```
 
 pub mod agent;
+pub mod ai_agent;
 pub mod autonomous;
 pub mod concurrency;
 pub mod context;

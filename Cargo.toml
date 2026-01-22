@@ -16,6 +16,7 @@ members = [
     "crates/integrations",
     "crates/plugin-sdk",
     "crates/automation",
+    "crates/testing",
 ]
 resolver = "2"
 default-run = "edge-ai"
@@ -23,6 +24,7 @@ default-run = "edge-ai"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 authors = ["Edge AI Agent Contributors"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/edge-ai-agent/neo-talk"

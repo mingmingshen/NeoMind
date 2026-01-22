@@ -149,6 +149,7 @@ export const selectCurrentPageTitle = (state: NeoTalkStore) => {
     plugins: '插件',
     settings: '设置',
     events: '事件中心',
+    agents: 'AI 智能体',
   }
   return titles[state.currentPage]
 }

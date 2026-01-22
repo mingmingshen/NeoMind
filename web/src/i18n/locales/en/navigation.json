@@ -2,6 +2,7 @@
   "dashboard": "Chat",
   "devices": "Devices",
   "automation": "Automation",
+  "agents": "AI Agents",
   "events": "Events",
   "decisions": "AI Decisions",
   "plugins": "Plugins",

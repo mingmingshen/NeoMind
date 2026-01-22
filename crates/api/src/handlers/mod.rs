@@ -2,6 +2,7 @@
 
 pub mod alerts;
 pub mod alert_channels;
+pub mod agents;
 pub mod automations;
 pub mod auth;
 pub mod auth_users;

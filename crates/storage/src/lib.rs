@@ -60,6 +60,7 @@
 pub mod backends;
 
 pub mod backend;
+pub mod agents;
 pub mod backup;
 pub mod business;
 pub mod decisions;
@@ -103,9 +104,17 @@ pub use llm_backends::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStats, LlmBackendStore,
 };
 
+pub use agents::{
+    ActionExecuted, AgentExecutionRecord, AgentFilter, AgentMemory, AgentResource, AgentSchedule,
+    AgentStats, AgentStore, AgentStatus, AiAgent, DataCollected, DataSummary, Decision,
+    DecisionProcess, ExecutionFilter, ExecutionResult, ExecutionStatus, GeneratedReport,
+    LearnedPattern, NotificationSent, ParsedIntent, ReasoningStep, ResourceType, ScheduleType,
+    TrendPoint, IntentType,
+};
+
 pub use decisions::{
     DecisionFilter, DecisionPriority, DecisionStats, DecisionStatus, DecisionStore, DecisionType,
-    ExecutionResult, StoredAction, StoredDecision,
+    StoredAction, StoredDecision,
 };
 
 pub use device_state::{

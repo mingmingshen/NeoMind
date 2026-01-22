@@ -91,6 +91,8 @@ pub struct ServerState {
     pub rule_history_store: Option<Arc<edge_ai_storage::business::RuleHistoryStore>>,
     /// Alert store for statistics.
     pub alert_store: Option<Arc<edge_ai_storage::business::AlertStore>>,
+    /// AI Agent store for user-defined automation agents.
+    pub agent_store: Arc<edge_ai_storage::AgentStore>,
     /// Server start timestamp.
     pub started_at: i64,
 }
@@ -262,6 +264,22 @@ impl ServerState {
         let auto_onboard_manager: Arc<tokio::sync::RwLock<Option<Arc<AutoOnboardManager>>>> =
             Arc::new(tokio::sync::RwLock::new(None));
 
+        // Create AI Agent store for user-defined automation agents
+        let agent_store = match edge_ai_storage::AgentStore::open("data/agents.redb") {
+            Ok(store) => {
+                tracing::info!("AI Agent store initialized at data/agents.redb");
+                store
+            }
+            Err(e) => {
+                tracing::warn!(category = "storage", error = %e, "Failed to open agent store, using in-memory");
+                edge_ai_storage::AgentStore::memory()
+                    .unwrap_or_else(|e| {
+                        tracing::error!(category = "storage", error = %e, "Failed to create in-memory agent store");
+                        std::process::exit(1);
+                    })
+            }
+        };
+
         Self {
             session_manager: Arc::new(session_manager),
             time_series_storage,
@@ -311,6 +329,7 @@ impl ServerState {
                     }
                 }
             },
+            agent_store,
             started_at,
         }
     }

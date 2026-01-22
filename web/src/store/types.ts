@@ -120,6 +120,7 @@ export type PageName =
   | 'plugins'
   | 'settings'
   | 'events'
+  | 'agents'
 
 export interface UIState {
   currentPage: PageName
@@ -163,4 +164,5 @@ export const pageTitles: Record<PageName, string> = {
   plugins: '插件',
   settings: '设置',
   events: '事件中心',
+  agents: 'AI 智能体',
 }

@@ -1459,4 +1459,194 @@ export interface NewDeviceTypeDefinition {
   }>
 }
 
+// ========== AI Agent Types ==========
+// Must match backend AgentDto and related types (crates/api/src/handlers/agents.rs)
+
+/**
+ * AI Agent status enumeration
+ */
+export type AgentStatus = 'Active' | 'Paused' | 'Error' | 'Executing'
+
+/**
+ * Schedule type for agent execution
+ */
+export type AgentScheduleType = 'interval' | 'cron' | 'event' | 'once'
+
+/**
+ * Resource type for agent resources
+ */
+export type AgentResourceType = 'Device' | 'Metric' | 'Command'
+
+/**
+ * AI Agent list item - matches backend AgentDto
+ */
+export interface AiAgent {
+  id: string
+  name: string
+  status: AgentStatus
+  created_at: string
+  last_execution_at: string | null
+  execution_count: number
+  success_count: number
+  error_count: number
+  avg_duration_ms: number
+}
+
+/**
+ * AI Agent detail - matches backend AgentDetailDto
+ */
+export interface AiAgentDetail extends AiAgent {
+  user_prompt: string
+  parsed_intent?: ParsedIntent
+  memory?: AgentMemory
+  stats: AgentStats
+  updated_at: string
+  error_message?: string
+}
+
+/**
+ * Parsed intent from natural language prompt
+ */
+export interface ParsedIntent {
+  intent_type: string
+  target_metrics: string[]
+  conditions: string[]
+  actions: string[]
+  confidence: number
+}
+
+/**
+ * Agent memory with persistent state
+ */
+export interface AgentMemory {
+  state_variables: Record<string, unknown>
+  learned_patterns: string[]
+  trend_data: TrendPoint[]
+  updated_at: string
+}
+
+/**
+ * Trend data point for memory
+ */
+export interface TrendPoint {
+  timestamp: number
+  metric: string
+  value: number
+  context?: Record<string, unknown>
+}
+
+/**
+ * Agent execution statistics
+ */
+export interface AgentStats {
+  total_executions: number
+  successful_executions: number
+  failed_executions: number
+  avg_duration_ms: number
+}
+
+/**
+ * Agent execution record - matches backend AgentExecutionDto
+ */
+export interface AgentExecution {
+  id: string
+  agent_id: string
+  timestamp: string
+  trigger_type: string
+  status: ExecutionStatus
+  duration_ms: number
+  error?: string
+}
+
+/**
+ * Execution status for agent executions
+ */
+export type ExecutionStatus = 'Running' | 'Completed' | 'Failed' | 'Cancelled'
+
+/**
+ * Agent resource for devices, metrics, and commands
+ */
+export interface AgentResource {
+  resource_type: AgentResourceType
+  resource_id: string
+  name: string
+  config: Record<string, unknown>
+}
+
+/**
+ * Request to create a new AI Agent - matches backend CreateAgentRequest
+ */
+export interface CreateAgentRequest {
+  name: string
+  user_prompt: string
+  device_ids: string[]
+  metrics: MetricSelectionRequest[]
+  commands: CommandSelectionRequest[]
+  schedule: AgentScheduleRequest
+}
+
+/**
+ * Metric selection in create request
+ */
+export interface MetricSelectionRequest {
+  device_id: string
+  metric_name: string
+  display_name: string
+}
+
+/**
+ * Command selection in create request
+ */
+export interface CommandSelectionRequest {
+  device_id: string
+  command_name: string
+  display_name: string
+  parameters: Record<string, unknown>
+}
+
+/**
+ * Agent schedule in create request
+ */
+export interface AgentScheduleRequest {
+  schedule_type: AgentScheduleType
+  interval_seconds?: number
+  cron_expression?: string
+  event_filter?: string
+  timezone?: string
+}
+
+/**
+ * Request to update an agent
+ */
+export interface UpdateAgentRequest {
+  name?: string
+  user_prompt?: string
+  status?: string
+}
+
+/**
+ * Request to execute an agent
+ */
+export interface ExecuteAgentRequest {
+  trigger_type?: string
+  event_data?: Record<string, unknown>
+}
+
+/**
+ * Agent list response
+ */
+export interface AgentListResponse {
+  agents: AiAgent[]
+  count: number
+}
+
+/**
+ * Agent executions response
+ */
+export interface AgentExecutionsResponse {
+  agent_id: string
+  executions: AgentExecution[]
+  count: number
+}
+
 

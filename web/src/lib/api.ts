@@ -57,6 +57,16 @@ import type {
   CreateChannelRequest,
   DraftDevice,
   SuggestedDeviceType,
+  // AI Agent Types
+  AiAgentDetail,
+  AgentMemory,
+  AgentStats,
+  AgentExecution,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+  ExecuteAgentRequest,
+  AgentListResponse,
+  AgentExecutionsResponse,
 } from '@/types'
 import { notifyFromError, notifySuccess } from './notify'
 
@@ -1387,4 +1397,113 @@ export const api = {
     fetchAPI<{ message: string }>(`/events/subscribe/${id}`, {
       method: 'DELETE',
     }),
+
+  // ========== AI Agents API ==========
+  // Matches backend: crates/api/src/handlers/agents.rs
+  //
+  // AI Agents are user-defined automation agents that can:
+  // - Monitor devices and metrics
+  // - Execute commands based on conditions
+  // - Maintain persistent memory across executions
+  // - Provide transparent decision process recording
+
+  /**
+   * List all AI Agents
+   * GET /api/agents
+   */
+  listAgents: () =>
+    fetchAPI<AgentListResponse>('/agents'),
+
+  /**
+   * Get an AI Agent by ID
+   * GET /api/agents/:id
+   */
+  getAgent: (id: string) =>
+    fetchAPI<AiAgentDetail>(`/agents/${id}`),
+
+  /**
+   * Create a new AI Agent
+   * POST /api/agents
+   */
+  createAgent: (req: CreateAgentRequest) =>
+    fetchAPI<{ id: string; name: string; status: string }>('/agents', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  /**
+   * Update an AI Agent
+   * PUT /api/agents/:id
+   */
+  updateAgent: (id: string, req: UpdateAgentRequest) =>
+    fetchAPI<{ id: string }>(`/agents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(req),
+    }),
+
+  /**
+   * Delete an AI Agent
+   * DELETE /api/agents/:id
+   */
+  deleteAgent: (id: string) =>
+    fetchAPI<{ ok: boolean }>(`/agents/${id}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Execute an AI Agent immediately
+   * POST /api/agents/:id/execute
+   */
+  executeAgent: (id: string, req?: ExecuteAgentRequest) =>
+    fetchAPI<{ execution_id: string; agent_id: string; status: string }>(`/agents/${id}/execute`, {
+      method: 'POST',
+      body: JSON.stringify(req || {}),
+    }),
+
+  /**
+   * Update agent status
+   * POST /api/agents/:id/status
+   */
+  setAgentStatus: (id: string, status: string) =>
+    fetchAPI<{ id: string; status: string }>(`/agents/${id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
+    }),
+
+  /**
+   * Get execution history for an agent
+   * GET /api/agents/:id/executions
+   */
+  getAgentExecutions: (id: string, limit = 50) =>
+    fetchAPI<AgentExecutionsResponse>(`/agents/${id}/executions?limit=${limit}`),
+
+  /**
+   * Get a specific execution record
+   * GET /api/agents/:id/executions/:execution_id
+   */
+  getAgentExecution: (id: string, executionId: string) =>
+    fetchAPI<AgentExecution>(`/agents/${id}/executions/${executionId}`),
+
+  /**
+   * Get agent memory
+   * GET /api/agents/:id/memory
+   */
+  getAgentMemory: (id: string) =>
+    fetchAPI<AgentMemory>(`/agents/${id}/memory`),
+
+  /**
+   * Clear agent memory
+   * DELETE /api/agents/:id/memory
+   */
+  clearAgentMemory: (id: string) =>
+    fetchAPI<{ ok: boolean }>(`/agents/${id}/memory`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Get agent statistics
+   * GET /api/agents/:id/stats
+   */
+  getAgentStats: (id: string) =>
+    fetchAPI<AgentStats>(`/agents/${id}/stats`),
 }

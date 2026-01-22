@@ -1,0 +1,63 @@
+{
+  "title": "AI Agents",
+  "description": "User-defined AI automation agents with persistent memory",
+  "tabs": {
+    "agents": "Agents",
+    "executions": "Executions",
+    "memory": "Memory"
+  },
+  "agentName": "Agent Name",
+  "userPrompt": "User Prompt",
+  "status": "Status",
+  "executions": "Executions",
+  "lastExecution": "Last Execution",
+  "timestamp": "Timestamp",
+  "triggerType": "Trigger",
+  "duration": "Duration",
+  "error": "Error",
+  "noAgents": "No AI agents",
+  "noAgentsDesc": "Create your first AI agent to automate your IoT tasks",
+  "noExecutions": "No executions yet",
+  "noExecutionsDesc": "Execution history will appear here once the agent runs",
+  "createAgent": "Create AI Agent",
+  "createAgentDesc": "Define a new AI agent with natural language",
+  "editAgent": "Edit AI Agent",
+  "editAgentDesc": "Modify agent configuration",
+  "deleteConfirm": "Are you sure you want to delete this agent?",
+  "execute": "Execute Now",
+  "agentDeleted": "Agent deleted successfully",
+  "agentCreated": "Agent created successfully",
+  "agentUpdated": "Agent updated successfully",
+  "executionStarted": "Execution started: {{id}}",
+  "agentNamePlaceholder": "e.g., Temperature Monitor",
+  "userPromptPlaceholder": "Describe what this agent should do...",
+  "userPromptHint": "Use natural language to describe the automation task. For example: 'Monitor the temperature sensor every 5 minutes and send an alert if it exceeds 30°C for 3 consecutive readings.'",
+  "schedule": "Schedule",
+  "scheduleTypes": {
+    "interval": "Interval",
+    "cron": "Cron Expression",
+    "event": "Event Triggered",
+    "once": "Run Once"
+  },
+  "intervalSeconds": "Interval (seconds)",
+  "intervalHint": "Agent will run every {{seconds}} seconds",
+  "cronExpression": "Cron Expression",
+  "cronHint": "Format: minute hour day month weekday. Example: 0 * * * * for every hour",
+  "timezone": "Timezone",
+  "resources": "Resources",
+  "noDevices": "No devices available. Add devices first.",
+  "metrics": "Metrics to Monitor",
+  "commands": "Available Commands",
+  "status": {
+    "active": "Active",
+    "paused": "Paused",
+    "error": "Error",
+    "executing": "Running"
+  },
+  "executionStatus": {
+    "running": "Running",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  }
+}

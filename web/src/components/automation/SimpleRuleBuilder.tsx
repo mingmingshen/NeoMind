@@ -958,86 +958,133 @@ function ConditionEditor({
   const renderLogicalCondition = (cond: UICondition, currentPath: number[]) => {
     const label = cond.type.toUpperCase()
     const badgeClass = cond.type === 'and'
-      ? 'bg-green-500/10 text-green-500'
+      ? 'bg-green-500/10 text-green-500 border-green-500/30'
       : cond.type === 'or'
-      ? 'bg-amber-500/10 text-amber-500'
-      : 'bg-red-500/10 text-red-500'
+      ? 'bg-amber-500/10 text-amber-500 border-amber-500/30'
+      : 'bg-red-500/10 text-red-500 border-red-500/30'
+
+    const connectorText = cond.type === 'and' ? 'AND' : cond.type === 'or' ? 'OR' : 'NOT'
 
     return (
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className={cn('text-xs', badgeClass)}>
+        {/* Header with operator badge and controls */}
+        <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-t-md border border-muted">
+          <Badge variant="outline" className={cn('text-xs px-2 py-0.5', badgeClass)}>
             {label}
           </Badge>
+          <span className="text-xs text-muted-foreground">
+            {cond.type === 'and' ? '所有条件都要满足' : cond.type === 'or' ? '任一条件满足' : '条件不满足时'}
+          </span>
           {currentPath.length === 0 && (
-            <>
-              <span className="text-xs text-muted-foreground">
-                {cond.type === 'and' ? '所有条件都要满足' : cond.type === 'or' ? '任一条件满足' : '条件不满足时'}
-              </span>
-              <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={onReset}>
-                <X className="h-3 w-3" />
-              </Button>
-            </>
+            <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={onReset}>
+              <X className="h-3 w-3" />
+            </Button>
           )}
         </div>
-        <div className="pl-4 border-l-2 border-muted space-y-2">
+
+        {/* Conditions container with proper styling */}
+        <div className="p-3 bg-background border-x border-b border-muted rounded-b-md space-y-3">
           {cond.conditions?.map((subCond, i) => (
-            <div key={subCond.id}>
-              {currentPath.length === 0 ? (
-                <ConditionEditor
-                  condition={subCond}
-                  devices={devices}
-                  deviceTypes={deviceTypes}
-                  onUpdate={(updates) => {
-                    const newConditions = [...(cond.conditions || [])]
-                    newConditions[i] = { ...newConditions[i], ...updates }
-                    onUpdate({ conditions: newConditions })
-                  }}
-                  onNestedUpdate={(nestedPath, updates) => {
-                    onNestedUpdate([i, ...nestedPath], updates)
-                  }}
-                  onReset={() => {
-                    const newConditions = cond.conditions?.filter((_, idx) => idx !== i) || []
-                    onUpdate({ conditions: newConditions })
-                  }}
-                  path={[i]}
-                />
-              ) : (
-                <ConditionEditor
-                  condition={subCond}
-                  devices={devices}
-                  deviceTypes={deviceTypes}
-                  onUpdate={() => {}}
-                  onNestedUpdate={(nestedPath, updates) => {
-                    onNestedUpdate([i, ...nestedPath], updates)
-                  }}
-                  onReset={() => {}}
-                  path={[...currentPath, i]}
-                />
+            <div key={subCond.id} className="relative group">
+              {/* Connector line before each condition (except first) */}
+              {i > 0 && (
+                <div className="flex items-center justify-start -mb-2 mt-1">
+                  <span className={cn(
+                    "text-xs font-medium px-2 py-0.5 rounded-full",
+                    cond.type === 'and' ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                    cond.type === 'or' ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                    "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  )}>
+                    {connectorText}
+                  </span>
+                </div>
               )}
+
+              {/* Condition editor with wrapper for delete button */}
+              <div className="relative pr-8">
+                <div className={cn(
+                  "rounded-md",
+                  subCond.type === 'and' || subCond.type === 'or' || subCond.type === 'not'
+                    ? "bg-muted/50 border border-muted"
+                    : ""
+                )}>
+                  {currentPath.length === 0 ? (
+                    <ConditionEditor
+                      condition={subCond}
+                      devices={devices}
+                      deviceTypes={deviceTypes}
+                      onUpdate={(updates) => {
+                        const newConditions = [...(cond.conditions || [])]
+                        newConditions[i] = { ...newConditions[i], ...updates }
+                        onUpdate({ conditions: newConditions })
+                      }}
+                      onNestedUpdate={(nestedPath, updates) => {
+                        onNestedUpdate([i, ...nestedPath], updates)
+                      }}
+                      onReset={() => {
+                        const newConditions = cond.conditions?.filter((_, idx) => idx !== i) || []
+                        onUpdate({ conditions: newConditions })
+                      }}
+                      path={[i]}
+                    />
+                  ) : (
+                    <ConditionEditor
+                      condition={subCond}
+                      devices={devices}
+                      deviceTypes={deviceTypes}
+                      onUpdate={() => {}}
+                      onNestedUpdate={(nestedPath, updates) => {
+                        onNestedUpdate([i, ...nestedPath], updates)
+                      }}
+                      onReset={() => {}}
+                      path={[...currentPath, i]}
+                    />
+                  )}
+                </div>
+
+                {/* Delete button for nested conditions */}
+                {currentPath.length === 0 && cond.conditions && cond.conditions.length > 1 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 absolute right-0 top-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => {
+                      const newConditions = cond.conditions?.filter((_, idx) => idx !== i) || []
+                      onUpdate({ conditions: newConditions })
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const newCond: UICondition = {
-                id: crypto.randomUUID(),
-                type: 'simple',
-                device_id: devices[0]?.id || '',
-                metric: getDeviceMetrics(devices[0]?.id || '', devices, deviceTypes)[0]?.name || 'value',
-                operator: '>',
-                threshold: 0,
-              }
-              const newConditions = [...(cond.conditions || []), newCond]
-              currentPath.length === 0
-                ? onUpdate({ conditions: newConditions })
-                : onNestedUpdate(currentPath, { conditions: newConditions })
-            }}
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            {t('automation:addCondition', { defaultValue: '添加条件' })}
-          </Button>
+
+          {/* Add condition button */}
+          <div className="pt-2 border-t border-muted/50">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full border-dashed"
+              onClick={() => {
+                const newCond: UICondition = {
+                  id: crypto.randomUUID(),
+                  type: 'simple',
+                  device_id: devices[0]?.id || '',
+                  metric: getDeviceMetrics(devices[0]?.id || '', devices, deviceTypes)[0]?.name || 'value',
+                  operator: '>',
+                  threshold: 0,
+                }
+                const newConditions = [...(cond.conditions || []), newCond]
+                currentPath.length === 0
+                  ? onUpdate({ conditions: newConditions })
+                  : onNestedUpdate(currentPath, { conditions: newConditions })
+              }}
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              {t('automation:addCondition', { defaultValue: '添加条件' })}
+            </Button>
+          </div>
         </div>
       </div>
     )

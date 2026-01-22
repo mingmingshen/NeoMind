@@ -10,6 +10,7 @@ import { CommandsPage } from "@/pages/commands"
 import { DecisionsPage } from "@/pages/decisions"
 import { PluginsPage } from "@/pages/plugins"
 import { EventsPage } from "@/pages/events"
+import { AgentsPage } from "@/pages/agents"
 import { Toaster } from "@/components/ui/toaster"
 
 // Suppress Radix UI Portal cleanup errors during page transitions
@@ -138,6 +139,8 @@ function App() {
         return <PluginsPage key="plugins" />
       case "events":
         return <EventsPage key="events" />
+      case "agents":
+        return <AgentsPage key="agents" />
       default:
         return <DashboardPage key="dashboard" />
     }
