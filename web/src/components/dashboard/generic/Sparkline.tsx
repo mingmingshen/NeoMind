@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDataSource, useNumberArrayDataSource } from '@/hooks/useDataSource'
 import { dashboardComponentSize, dashboardCardBase, dashboardCardContent } from '@/design-system/tokens/size'
+import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import type { DataSourceOrList } from '@/types/dashboard'
 
 export interface SparklineProps {
@@ -331,18 +332,19 @@ export function Sparkline({
         {(label || showValue) && (
           <div className="flex items-center justify-between mb-2">
             {label && (
-              <span className={cn('text-muted-foreground font-medium', sizeConfig.labelText)}>
+              <span className={cn(indicatorFontWeight.title, 'text-muted-foreground', sizeConfig.labelText)}>
                 {label}
               </span>
             )}
             {showValue && (
               <div className="flex items-center gap-2">
-                <span className={cn('font-bold text-foreground tabular-nums', sizeConfig.valueText)}>
+                <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)}>
                   {latestValue.toLocaleString(undefined, { maximumFractionDigits: 1 })}
                 </span>
                 {trend !== 0 && (
                   <span className={cn(
-                    'text-xs font-medium',
+                    indicatorFontWeight.meta,
+                    'text-xs',
                     trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                   )}>
                     {trend > 0 ? '+' : ''}{trendPercent}%

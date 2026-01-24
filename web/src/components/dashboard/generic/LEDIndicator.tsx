@@ -3,12 +3,15 @@
  *
  * Fills 100% of container using unified dashboard styles.
  * Size prop controls relative scale.
+ * Uses unified indicator fonts and enhanced gradient/glow effects.
  */
 
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Skeleton } from '@/components/ui/skeleton'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
+import { indicatorFontWeight, indicatorGlow, getGradientStops } from '@/design-system/tokens/indicator'
+import { statusColors } from '@/design-system/tokens/color'
 import type { DataSource } from '@/types/dashboard'
 
 export type LEDState = 'on' | 'off' | 'blinking' | 'error' | 'warning'
@@ -37,57 +40,28 @@ const getIconSize = (size: 'sm' | 'md' | 'lg') => {
   }
 }
 
-// State colors with glow effects
+// State colors with enhanced glow effects
 const getStateColors = (state: LEDState, customColor?: string, errorColor?: string, warningColor?: string) => {
-  if (customColor && state === 'on') {
-    return {
-      bg: customColor,
-      glow: `0 0 12px ${customColor}80, 0 0 24px ${customColor}40`,
-      text: '',
-      border: '',
-      ring: `ring-${customColor}/30`,
-    }
+  const getStateColor = () => {
+    if (customColor && state === 'on') return customColor
+    if (state === 'on' || state === 'blinking') return statusColors.success
+    if (state === 'error') return errorColor || statusColors.error
+    if (state === 'warning') return warningColor || statusColors.warning
+    return undefined
   }
 
-  const colors = {
-    on: {
-      bg: 'bg-emerald-500',
-      glow: '0 0 12px rgba(16, 185, 129, 0.5), 0 0 24px rgba(16, 185, 129, 0.25)',
-      text: 'text-emerald-600 dark:text-emerald-400',
-      border: 'border-emerald-500/30',
-      ring: 'ring-emerald-500/20',
-    },
-    off: {
-      bg: 'bg-zinc-400 dark:bg-zinc-600',
-      glow: 'none',
-      text: 'text-zinc-500 dark:text-zinc-500',
-      border: 'border-zinc-300 dark:border-zinc-700',
-      ring: 'transparent',
-    },
-    blinking: {
-      bg: 'bg-emerald-500',
-      glow: '0 0 12px rgba(16, 185, 129, 0.5), 0 0 24px rgba(16, 185, 129, 0.25)',
-      text: 'text-emerald-600 dark:text-emerald-400',
-      border: 'border-emerald-500/30',
-      ring: 'ring-emerald-500/20',
-    },
-    error: {
-      bg: errorColor ? errorColor : 'bg-rose-500',
-      glow: errorColor ? `0 0 12px ${errorColor}80` : '0 0 12px rgba(244, 63, 94, 0.5), 0 0 24px rgba(244, 63, 94, 0.25)',
-      text: errorColor ? '' : 'text-rose-600 dark:text-rose-400',
-      border: errorColor ? '' : 'border-rose-500/30',
-      ring: errorColor ? '' : 'ring-rose-500/20',
-    },
-    warning: {
-      bg: warningColor ? warningColor : 'bg-amber-500',
-      glow: warningColor ? `0 0 12px ${warningColor}80` : '0 0 12px rgba(245, 158, 11, 0.5), 0 0 24px rgba(245, 158, 11, 0.25)',
-      text: warningColor ? '' : 'text-amber-600 dark:text-amber-400',
-      border: warningColor ? '' : 'border-amber-500/30',
-      ring: warningColor ? '' : 'ring-amber-500/20',
-    },
-  }
+  const stateColor = getStateColor()
 
-  return colors[state] || colors.off
+  return {
+    bg: stateColor ? '' : (state === 'off' ? 'bg-zinc-400 dark:bg-zinc-600' : ''),
+    colorValue: stateColor,
+    glow: stateColor ? indicatorGlow.medium(stateColor) : 'none',
+    text: state === 'on' || state === 'blinking' ? 'text-emerald-600 dark:text-emerald-400'
+          : state === 'error' ? (errorColor ? '' : 'text-rose-600 dark:text-rose-400')
+          : state === 'warning' ? (warningColor ? '' : 'text-amber-600 dark:text-amber-400')
+          : 'text-zinc-500 dark:text-zinc-500',
+    border: stateColor ? '' : (state === 'off' ? 'border-zinc-300 dark:border-zinc-700' : ''),
+  }
 }
 
 const stateLabels = {
@@ -162,7 +136,7 @@ export function LEDIndicator({
             boxShadow: isOn && showGlow ? colorConfig.glow : undefined,
           }}
         />
-        {label && <span className={cn('font-medium text-sm', colorConfig.text || 'text-foreground')}>{label}</span>}
+        {label && <span className={cn(indicatorFontWeight.title, 'text-sm', colorConfig.text || 'text-foreground')}>{label}</span>}
       </div>
     )
   }
@@ -218,8 +192,8 @@ export function LEDIndicator({
           />
         </div>
         <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-          {label && <span className={cn('font-medium text-foreground truncate', config.titleText)}>{label}</span>}
-          <span className={cn(colorConfig.text || 'text-muted-foreground', config.labelText)}>
+          {label && <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', config.titleText)}>{label}</span>}
+          <span className={cn(indicatorFontWeight.label, colorConfig.text || 'text-muted-foreground', config.labelText)}>
             {stateLabels[ledState]}
           </span>
         </div>
@@ -309,8 +283,8 @@ export function LEDIndicator({
 
         {/* Label and state */}
         <div className="flex flex-col items-center text-center">
-          {label && <span className={cn('font-semibold text-foreground', config.titleText)}>{label}</span>}
-          <span className={cn(colorConfig.text || 'text-muted-foreground', config.labelText)}>
+          {label && <span className={cn(indicatorFontWeight.title, 'text-foreground', config.titleText)}>{label}</span>}
+          <span className={cn(indicatorFontWeight.label, colorConfig.text || 'text-muted-foreground', config.labelText)}>
             {stateLabels[ledState]}
           </span>
         </div>

@@ -9,7 +9,7 @@ import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatValue, getIconForEntity } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
-import { chartColors } from '@/design-system'
+import { chartColors, indicatorFontWeight, getValueTextColor, getGradientStops } from '@/design-system'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import type { DataSourceOrList } from '@/types/dashboard'
 
@@ -176,15 +176,12 @@ export function ValueCard({
 
   const sizeConfig = dashboardComponentSize[size]
 
-  // Color styling
-  const getValueColor = () => {
-    if (color) return color
-    if (trendDirection === 'up') return 'text-emerald-600 dark:text-emerald-500'
-    if (trendDirection === 'down') return 'text-rose-600 dark:text-rose-500'
-    return undefined
-  }
-
-  const valueColor = getValueColor()
+  // Color styling - use unified helper
+  const valueColor = color || (
+    trendDirection === 'up' ? 'text-emerald-600 dark:text-emerald-500' :
+    trendDirection === 'down' ? 'text-rose-600 dark:text-rose-500' :
+    undefined
+  )
 
   // ============================================================================
   // Minimal variant - just value with optional label
@@ -194,12 +191,12 @@ export function ValueCard({
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col justify-center', sizeConfig.padding, className)}>
         {label && (
-          <span className={cn('text-muted-foreground mb-1', sizeConfig.labelText)}>{label}</span>
+          <span className={cn(indicatorFontWeight.title, 'text-muted-foreground mb-1', sizeConfig.labelText)}>{label}</span>
         )}
         {loading ? (
           <Skeleton className={cn('h-6 w-20 rounded')} />
         ) : (
-          <span className={cn('font-bold text-foreground tracking-tight tabular-nums', sizeConfig.valueText, valueColor)}>
+          <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums', sizeConfig.valueText, valueColor)}>
             {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
           </span>
         )}
@@ -212,7 +209,7 @@ export function ValueCard({
           )}>
             {trendDirection === 'up' && <TrendingUp className={cn('h-3 w-3')} />}
             {trendDirection === 'down' && <TrendingDown className={cn('h-3 w-3')} />}
-            <span className={cn('text-xs font-medium', sizeConfig.labelText)}>
+            <span className={cn(indicatorFontWeight.meta, 'text-xs', sizeConfig.labelText)}>
               {Math.abs(trendValue ?? 0)}%
             </span>
           </div>
@@ -244,14 +241,14 @@ export function ValueCard({
         {loading ? (
           <Skeleton className={cn('h-7 w-16 rounded')} />
         ) : (
-          <span className={cn('font-bold text-foreground/90 tracking-tight tabular-nums text-center', sizeConfig.valueText, valueColor)}>
+          <span className={cn(indicatorFontWeight.value, 'text-foreground/90 tracking-tight tabular-nums text-center', sizeConfig.valueText, valueColor)}>
             {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
           </span>
         )}
 
         {/* Label */}
         {label && (
-          <span className={cn('text-muted-foreground text-center max-w-full truncate mt-1', sizeConfig.labelText)}>
+          <span className={cn(indicatorFontWeight.title, 'text-muted-foreground text-center max-w-full truncate mt-1', sizeConfig.labelText)}>
             {label}
           </span>
         )}
@@ -274,7 +271,7 @@ export function ValueCard({
             {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
             {trendDirection === 'neutral' && <Minus className="h-3 w-3" />}
-            <span className={cn('text-xs font-medium', sizeConfig.labelText)}>
+            <span className={cn(indicatorFontWeight.meta, 'text-xs', sizeConfig.labelText)}>
               {Math.abs(trendValue ?? 0)}%
             </span>
           </div>
@@ -296,13 +293,13 @@ export function ValueCard({
         {/* Content */}
         <div className="flex flex-col min-w-0 flex-1">
           {label && (
-            <span className={cn('text-muted-foreground truncate', sizeConfig.labelText)}>{label}</span>
+            <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate', sizeConfig.labelText)}>{label}</span>
           )}
           <div className="flex items-baseline gap-1">
             {loading ? (
               <Skeleton className={cn('h-5 w-16 rounded')} />
             ) : (
-              <span className={cn('font-semibold text-foreground tabular-nums', sizeConfig.valueText, valueColor)}>
+              <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText, valueColor)}>
                 {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
               </span>
             )}
@@ -318,7 +315,7 @@ export function ValueCard({
           )}>
             {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
-            <span className={cn('text-xs font-semibold tabular-nums')}>{Math.abs(trendValue ?? 0)}%</span>
+            <span className={cn(indicatorFontWeight.meta, 'text-xs tabular-nums')}>{Math.abs(trendValue ?? 0)}%</span>
           </div>
         )}
       </div>
@@ -340,7 +337,7 @@ export function ValueCard({
       <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
         {/* Label - primary text */}
         {label && (
-          <span className={cn('font-medium text-foreground truncate', sizeConfig.titleText)}>
+          <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', sizeConfig.titleText)}>
             {label}
           </span>
         )}
@@ -349,7 +346,7 @@ export function ValueCard({
         {loading ? (
           <Skeleton className={cn('h-5 w-16 rounded mt-0.5')} />
         ) : (
-          <span className={cn('font-semibold tabular-nums', sizeConfig.labelText, valueColor)}>
+          <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText, valueColor)}>
             {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
           </span>
         )}
