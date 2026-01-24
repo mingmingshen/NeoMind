@@ -166,17 +166,11 @@ export function ProgressBar({
   }
 
   // Default variant - horizontal layout: label | bar | percentage
+  // For narrow widths, use compact layout: bar with percentage inside/next
   const content = (
-    <div className="flex items-center gap-3 w-full min-h-0">
-      {/* Label */}
-      {label && (
-        <span className={cn('text-muted-foreground shrink-0 truncate max-w-[80px]', sizeConfig.labelText)}>
-          {label}
-        </span>
-      )}
-
+    <div className="flex items-center gap-2 w-full min-h-0">
       {/* Progress bar */}
-      <div className={cn('flex-1 min-w-0 rounded-full bg-muted/40 overflow-hidden', barHeight)}>
+      <div className={cn('flex-1 min-w-0 rounded-full bg-muted/40 overflow-hidden relative', barHeight)}>
         {loading ? (
           <Skeleton className={cn('h-full w-full rounded-full', barHeight)} />
         ) : (
@@ -187,12 +181,19 @@ export function ProgressBar({
         )}
       </div>
 
-      {/* Percentage */}
+      {/* Percentage - compact */}
       {loading ? (
-        <Skeleton className={cn('h-4 w-10 shrink-0 rounded')} />
+        <Skeleton className={cn('h-4 w-8 shrink-0 rounded text-xs', sizeConfig.labelText)} />
       ) : (
-        <span className={cn('font-semibold tabular-nums shrink-0', sizeConfig.labelText)}>
+        <span className={cn('font-semibold tabular-nums shrink-0 text-xs', sizeConfig.labelText)}>
           {Math.round(percentage)}%
+        </span>
+      )}
+
+      {/* Label - shown as tooltip or small text */}
+      {label && (
+        <span className={cn('text-muted-foreground shrink-0 truncate max-w-[60px] text-xs', sizeConfig.labelText)} title={label}>
+          {label}
         </span>
       )}
     </div>
