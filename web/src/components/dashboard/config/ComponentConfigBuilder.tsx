@@ -340,6 +340,8 @@ export function createDataDisplayConfig(config: {
 export function createProgressConfig(config: {
   dataSource?: DataSourceOrList
   onDataSourceChange: (ds: DataSourceOrList | DataSource | undefined) => void
+  label?: string
+  onLabelChange?: (label: string) => void
   value?: number
   onValueChange?: (value: number) => void
   min?: number
@@ -361,6 +363,25 @@ export function createProgressConfig(config: {
     type: 'data-source',
     props: { dataSource: config.dataSource, onChange: config.onDataSourceChange },
   })
+
+  // Label input
+  if (config.onLabelChange) {
+    sections.push({
+      type: 'custom',
+      render: () => (
+        <div className="space-y-2 pt-4 border-t">
+          <label className="text-sm font-medium">Label</label>
+          <input
+            type="text"
+            value={config.label ?? ''}
+            onChange={(e) => config.onLabelChange?.(e.target.value)}
+            placeholder="e.g., CPU Usage"
+            className="w-full h-10 px-3 rounded-md border border-input bg-background"
+          />
+        </div>
+      ),
+    })
+  }
 
   if (config.onValueChange || config.onMinChange || config.onMaxChange) {
     sections.push({
@@ -852,6 +873,8 @@ export function createContentConfig(config: {
 export function createChartConfig(config: {
   dataSource?: DataSourceOrList
   onDataSourceChange: (ds: DataSourceOrList | DataSource | undefined) => void
+  label?: string
+  onLabelChange?: (label: string) => void
   height?: number
   onHeightChange?: (height: number) => void
   size?: SizeOption
@@ -871,6 +894,25 @@ export function createChartConfig(config: {
     type: 'data-source',
     props: { dataSource: config.dataSource, onChange: config.onDataSourceChange },
   })
+
+  // Label input
+  if (config.onLabelChange) {
+    sections.push({
+      type: 'custom',
+      render: () => (
+        <div className="space-y-2 pt-4 border-t">
+          <label className="text-sm font-medium">Label</label>
+          <input
+            type="text"
+            value={config.label ?? ''}
+            onChange={(e) => config.onLabelChange?.(e.target.value)}
+            placeholder="e.g., Temperature Trend"
+            className="w-full h-10 px-3 rounded-md border border-input bg-background"
+          />
+        </div>
+      ),
+    })
+  }
 
   if (config.onHeightChange) {
     sections.push({

@@ -410,6 +410,7 @@ function renderDashboardComponent(component: DashboardComponent) {
           showCard={commonProps.showCard}
           showThreshold={config.showThreshold ?? false}
           threshold={config.threshold ?? 20}
+          label={config.label || commonProps.title}
         />
       )
 
@@ -420,7 +421,7 @@ function renderDashboardComponent(component: DashboardComponent) {
           dataSource={config.dataSource}
           value={config.dataSource ? undefined : config.value}
           max={config.max ?? 100}
-          label={config.label}
+          label={config.label || commonProps.title}
           color={config.color}
         />
       )
@@ -1321,6 +1322,8 @@ export function VisualDashboard() {
         return createChartConfig({
           dataSource: config.dataSource,
           onDataSourceChange: updateDataSource,
+          label: config.label,
+          onLabelChange: updateConfig('label'),
           showPoints: config.showPoints,
           onShowPointsChange: updateConfig('showPoints'),
         })
@@ -1329,6 +1332,8 @@ export function VisualDashboard() {
         return createProgressConfig({
           dataSource: config.dataSource,
           onDataSourceChange: updateDataSource,
+          label: config.label,
+          onLabelChange: updateConfig('label'),
           value: config.value,
           onValueChange: updateConfig('value'),
           min: config.min,
