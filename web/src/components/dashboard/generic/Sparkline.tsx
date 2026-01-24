@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDataSource, useNumberArrayDataSource } from '@/hooks/useDataSource'
 import { dashboardComponentSize, dashboardCardBase, dashboardCardContent } from '@/design-system/tokens/size'
-import { indicatorFontWeight } from '@/design-system/tokens/indicator'
+import { indicatorFontWeight, indicatorColors, getGradientStops } from '@/design-system/tokens/indicator'
 import type { DataSourceOrList } from '@/types/dashboard'
 
 export interface SparklineProps {
@@ -345,7 +345,7 @@ export function Sparkline({
                   <span className={cn(
                     indicatorFontWeight.meta,
                     'text-xs',
-                    trend > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                    trend > 0 ? indicatorColors.success.text : indicatorColors.error.text
                   )}>
                     {trend > 0 ? '+' : ''}{trendPercent}%
                   </span>

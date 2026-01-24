@@ -1,17 +1,25 @@
 /**
- * LED Indicator Component (Unified Styles)
+ * LED Indicator Component (Enhanced)
  *
- * Fills 100% of container using unified dashboard styles.
- * Size prop controls relative scale.
- * Uses unified indicator fonts and enhanced gradient/glow effects.
+ * Features:
+ * - Unified color system with OKLCH colors
+ * - Enhanced multi-layer glow effects
+ * - Smooth animations (pulse, blink)
+ * - Multiple variants (dot, pill, badge, card)
  */
 
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Skeleton } from '@/components/ui/skeleton'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
-import { indicatorFontWeight, indicatorGlow, getGradientStops } from '@/design-system/tokens/indicator'
-import { statusColors } from '@/design-system/tokens/color'
+import {
+  indicatorFontWeight,
+  indicatorColors,
+  getLedGlow,
+  getLedAnimation,
+  getLinearGradient,
+  type IndicatorState,
+} from '@/design-system/tokens/indicator'
 import type { DataSource } from '@/types/dashboard'
 
 export type LEDState = 'on' | 'off' | 'blinking' | 'error' | 'warning'
@@ -30,6 +38,23 @@ export interface LEDIndicatorProps {
   className?: string
 }
 
+// Map LED state to indicator state
+function mapLedState(ledState: LEDState): IndicatorState {
+  switch (ledState) {
+    case 'on':
+    case 'blinking':
+      return 'success'
+    case 'off':
+      return 'neutral'
+    case 'error':
+      return 'error'
+    case 'warning':
+      return 'warning'
+    default:
+      return 'neutral'
+  }
+}
+
 // Size configuration
 const getIconSize = (size: 'sm' | 'md' | 'lg') => {
   const config = dashboardComponentSize[size]
@@ -37,30 +62,6 @@ const getIconSize = (size: 'sm' | 'md' | 'lg') => {
     dot: size === 'sm' ? 'h-2 w-2' : size === 'md' ? 'h-2.5 w-2.5' : 'h-3 w-3',
     dotWithGlow: size === 'sm' ? 'h-3 w-3' : size === 'md' ? 'h-3.5 w-3.5' : 'h-4 w-4',
     ...config,
-  }
-}
-
-// State colors with enhanced glow effects
-const getStateColors = (state: LEDState, customColor?: string, errorColor?: string, warningColor?: string) => {
-  const getStateColor = () => {
-    if (customColor && state === 'on') return customColor
-    if (state === 'on' || state === 'blinking') return statusColors.success
-    if (state === 'error') return errorColor || statusColors.error
-    if (state === 'warning') return warningColor || statusColors.warning
-    return undefined
-  }
-
-  const stateColor = getStateColor()
-
-  return {
-    bg: stateColor ? '' : (state === 'off' ? 'bg-zinc-400 dark:bg-zinc-600' : ''),
-    colorValue: stateColor,
-    glow: stateColor ? indicatorGlow.medium(stateColor) : 'none',
-    text: state === 'on' || state === 'blinking' ? 'text-emerald-600 dark:text-emerald-400'
-          : state === 'error' ? (errorColor ? '' : 'text-rose-600 dark:text-rose-400')
-          : state === 'warning' ? (warningColor ? '' : 'text-amber-600 dark:text-amber-400')
-          : 'text-zinc-500 dark:text-zinc-500',
-    border: stateColor ? '' : (state === 'off' ? 'border-zinc-300 dark:border-zinc-700' : ''),
   }
 }
 
@@ -89,32 +90,64 @@ export function LEDIndicator({
   const ledState = error ? 'off' : data ?? state
   const config = getIconSize(size)
 
-  const colorConfig = getStateColors(ledState, color, errorColor, warningColor)
+  const indicatorState = mapLedState(ledState)
   const isBlinking = ledState === 'blinking'
   const isOn = ledState === 'on' || ledState === 'blinking'
 
-  // Dot variant - inline (used inside other components)
+  // Get unified color configuration
+  const getColorConfig = () => {
+    if (ledState === 'off') return indicatorColors.neutral
+    if (color && ledState === 'on') {
+      return { ...indicatorColors.success, base: color }
+    }
+    if (errorColor && ledState === 'error') {
+      return { ...indicatorColors.error, base: errorColor }
+    }
+    if (warningColor && ledState === 'warning') {
+      return { ...indicatorColors.warning, base: warningColor }
+    }
+    return indicatorColors[indicatorState]
+  }
+
+  const colorConfig = getColorConfig()
+  const ledColor = colorConfig.base
+
+  // Get enhanced glow effect
+  const glowEffect = isOn && showGlow ? getLedGlow(indicatorState, color) : 'none'
+
+  // Get animation
+  const animation = getLedAnimation(indicatorState, isBlinking)
+
+  // Generate unique ID for gradient
+  const gradientId = `led-gradient-${Math.random().toString(36).substring(2, 9)}`
+
+  // ============================================================================
+  // Dot variant - inline LED dot
+  // ============================================================================
+
   if (variant === 'dot') {
     return (
       <div className={cn('inline-flex items-center gap-2 overflow-hidden', className)}>
         <div
           className={cn(
             'rounded-full transition-all duration-300 shrink-0',
-            isBlinking && 'animate-pulse',
-            isOn && showGlow && 'shadow-[0_0_8px_currentColor]',
-            colorConfig.bg
+            animation.className,
+            config.dot
           )}
           style={{
-            backgroundColor: (ledState === 'on' || ledState === 'blinking') && color ? color : undefined,
-            boxShadow: isOn && showGlow ? colorConfig.glow : undefined,
+            backgroundColor: ledColor,
+            boxShadow: glowEffect,
           }}
         />
-        {label && <span className={cn('text-muted-foreground', config.labelText)}>{label}</span>}
+        {label && <span className={cn(indicatorFontWeight.label, colorConfig.text, config.labelText)}>{label}</span>}
       </div>
     )
   }
 
-  // Pill variant - horizontal pill (inline)
+  // ============================================================================
+  // Pill variant - horizontal pill with LED
+  // ============================================================================
+
   if (variant === 'pill') {
     return (
       <div
@@ -122,26 +155,29 @@ export function LEDIndicator({
           'inline-flex items-center gap-2 rounded-full border transition-all duration-300 overflow-hidden',
           'px-3 py-1.5',
           colorConfig.border,
-          isBlinking && 'animate-pulse',
-          ledState === 'off' && 'bg-muted/40',
+          ledState === 'off' && colorConfig.bg,
+          animation.className
         )}
         style={{
-          backgroundColor: isOn ? undefined : undefined,
+          background: isOn ? getLinearGradient(indicatorState, 'to right', color) : undefined,
         }}
       >
         <div
-          className={cn('rounded-full shrink-0', config.dot, colorConfig.bg)}
+          className={cn('rounded-full shrink-0', config.dot)}
           style={{
-            backgroundColor: isOn && color ? color : undefined,
-            boxShadow: isOn && showGlow ? colorConfig.glow : undefined,
+            backgroundColor: ledColor,
+            boxShadow: glowEffect,
           }}
         />
-        {label && <span className={cn(indicatorFontWeight.title, 'text-sm', colorConfig.text || 'text-foreground')}>{label}</span>}
+        {label && <span className={cn(indicatorFontWeight.title, colorConfig.text || 'text-foreground')}>{label}</span>}
       </div>
     )
   }
 
-  // Badge variant - fills container with icon background
+  // ============================================================================
+  // Badge variant - fills container with gradient background
+  // ============================================================================
+
   if (variant === 'badge') {
     if (loading) {
       return (
@@ -157,37 +193,26 @@ export function LEDIndicator({
       )
     }
 
-    // Get background color with proper opacity for both themes
-    const getContainerBg = () => {
-      if (ledState === 'off') return undefined
-      if (color) return color + '20' // Custom color with ~12% opacity
-      // Use theme-aware colors
-      const stateBgMap = {
-        on: 'rgba(16, 185, 129, 0.12)',    // emerald
-        blinking: 'rgba(16, 185, 129, 0.12)',
-        error: errorColor || 'rgba(244, 63, 94, 0.12)',  // rose
-        warning: warningColor || 'rgba(245, 158, 11, 0.12)', // amber
-      }
-      return stateBgMap[ledState] || stateBgMap.on
-    }
-
     const content = (
       <div className="flex items-center gap-3 w-full h-full min-w-0">
-        {/* LED indicator */}
+        {/* LED indicator with gradient container */}
         <div
           className={cn(
             'flex items-center justify-center rounded-full shrink-0 transition-all duration-300',
             config.iconContainer,
-            ledState === 'off' ? 'bg-muted/50' : '',
-            isBlinking && 'animate-pulse',
+            ledState === 'off' && colorConfig.bg,
+            animation.className
           )}
-          style={ledState !== 'off' ? { backgroundColor: getContainerBg() } : undefined}
+          style={{
+            background: isOn ? getLinearGradient(indicatorState, 'to right', color) : undefined,
+          }}
         >
+          {/* Inner LED dot with enhanced glow */}
           <div
-            className={cn('rounded-full transition-all duration-300', config.dotWithGlow, colorConfig.bg)}
+            className={cn('rounded-full transition-all duration-300', config.dotWithGlow)}
             style={{
-              backgroundColor: isOn && color ? color : undefined,
-              boxShadow: isOn && showGlow ? colorConfig.glow : undefined,
+              backgroundColor: ledColor,
+              boxShadow: glowEffect,
             }}
           />
         </div>
@@ -211,7 +236,10 @@ export function LEDIndicator({
     return <div className={cn('flex items-center w-full h-full overflow-hidden', config.padding, className)}>{content}</div>
   }
 
-  // Card variant - centered card with larger LED
+  // ============================================================================
+  // Card variant - centered card with large LED and ripple effect
+  // ============================================================================
+
   if (variant === 'card') {
     if (loading) {
       return (
@@ -225,60 +253,80 @@ export function LEDIndicator({
       )
     }
 
-    // Get background and border colors for both themes
-    const getCardStyles = () => {
-      if (ledState === 'off') {
-        return {
-          bg: undefined,
-          border: 'hsl(var(--border))',
-        }
-      }
-      if (color) {
-        return {
-          bg: color + '15', // ~8% opacity
-          border: color + '40', // ~25% opacity
-        }
-      }
-      const stateStyleMap = {
-        on: { bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.25)' },
-        blinking: { bg: 'rgba(16, 185, 129, 0.08)', border: 'rgba(16, 185, 129, 0.25)' },
-        error: { bg: errorColor ? errorColor + '15' : 'rgba(244, 63, 94, 0.08)',
-                 border: errorColor || 'rgba(244, 63, 94, 0.25)' },
-        warning: { bg: warningColor ? warningColor + '15' : 'rgba(245, 158, 11, 0.08)',
-                  border: warningColor || 'rgba(245, 158, 11, 0.25)' },
-      }
-      return stateStyleMap[ledState] || stateStyleMap.on
-    }
-
-    const cardStyles = getCardStyles()
+    const cardSize = size === 'sm' ? { container: 'w-16 h-16', dot: 'h-6 w-6' }
+                    : size === 'md' ? { container: 'w-20 h-20', dot: 'h-8 w-8' }
+                    : { container: 'w-24 h-24', dot: 'h-10 w-10' }
 
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3', config.padding, className)}>
-        {/* Large LED indicator */}
-        <div
-          className={cn(
-            'flex items-center justify-center rounded-full transition-all duration-300',
-            size === 'sm' ? 'w-16 h-16' : size === 'md' ? 'w-20 h-20' : 'w-24 h-24',
-            ledState === 'off' && 'bg-muted/40',
-            isBlinking && 'animate-pulse',
+        {/* Large LED indicator with multiple visual layers */}
+        <div className="relative">
+          {/* Outer glow ring */}
+          {isOn && showGlow && (
+            <div
+              className={cn(
+                'absolute inset-0 rounded-full transition-all duration-500',
+                animation.className
+              )}
+              style={{
+                background: getLinearGradient(indicatorState, 'to right', color),
+                opacity: 0.3,
+                filter: 'blur(8px)',
+              }}
+            />
           )}
-          style={ledState !== 'off' ? {
-            backgroundColor: cardStyles.bg,
-            border: '2px solid',
-            borderColor: cardStyles.border,
-          } : undefined}
-        >
+
+          {/* Main LED container */}
           <div
             className={cn(
-              'rounded-full transition-all duration-300',
-              size === 'sm' ? 'h-6 w-6' : size === 'md' ? 'h-8 w-8' : 'h-10 w-10',
-              colorConfig.bg
+              'flex items-center justify-center rounded-full transition-all duration-300 relative',
+              cardSize.container,
+              ledState === 'off' && colorConfig.bg
             )}
             style={{
-              backgroundColor: isOn && color ? color : undefined,
-              boxShadow: isOn && showGlow ? colorConfig.glow : undefined,
+              background: isOn ? getLinearGradient(indicatorState, 'to right', color) : undefined,
+              border: isOn ? `1px solid ${ledColor}40` : undefined,
             }}
-          />
+          >
+            {/* Inner LED dot with enhanced glow */}
+            <div
+              className={cn(
+                'rounded-full transition-all duration-300 relative z-10',
+                cardSize.dot,
+                animation.className
+              )}
+              style={{
+                backgroundColor: ledColor,
+                boxShadow: glowEffect,
+              }}
+            />
+          </div>
+
+          {/* Ripple effect rings for active state */}
+          {isOn && showGlow && (
+            <>
+              <div
+                className={cn(
+                  'absolute inset-0 rounded-full -z-10',
+                  animation.className
+                )}
+                style={{
+                  border: `1px solid ${ledColor}30`,
+                  animation: 'ripple 2s ease-out infinite',
+                }}
+              />
+              <div
+                className={cn(
+                  'absolute inset-0 rounded-full -z-10',
+                  animation.className
+                )}
+                style={{
+                  border: `1px solid ${ledColor}20`,
+                  animation: 'ripple 2s ease-out infinite 0.5s',
+                }}
+              />
+            </>
+          )}
         </div>
 
         {/* Label and state */}

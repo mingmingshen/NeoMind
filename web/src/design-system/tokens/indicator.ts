@@ -31,71 +31,138 @@ export const indicatorFontWeight = {
 export type IndicatorFontWeight = keyof typeof indicatorFontWeight
 
 // ============================================================================
-// Gradient Definitions
+// Unified Color System
 // ============================================================================
 
 /**
- * Gradient definitions for indicator visual elements
- * Each gradient has ID, color stops, and CSS string representation
+ * Unified state colors for all indicator components
+ * Uses OKLCH for consistent, perceptually uniform colors
  */
-export const indicatorGradients = {
-  // Primary gradient (blue/purple)
-  primary: {
-    id: 'indicator-primary',
-    stops: [
-      { offset: '0%', color: chartColors[1], opacity: 0.4 },
-      { offset: '50%', color: chartColors[1], opacity: 0.15 },
-      { offset: '100%', color: chartColors[1], opacity: 0 },
-    ],
+export const indicatorColors = {
+  // Success/On state - vibrant green
+  success: {
+    base: statusColors.success,           // oklch(0.646 0.222 142.5)
+    text: 'text-emerald-600 dark:text-emerald-400',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/20',
+    ring: 'ring-emerald-500/20',
+    shadow: 'shadow-emerald-500/20',
   },
 
-  // Success gradient (green)
+  // Warning state - warm amber
+  warning: {
+    base: statusColors.warning,           // oklch(0.646 0.222 85.85)
+    text: 'text-amber-600 dark:text-amber-400',
+    bg: 'bg-amber-500/10',
+    border: 'border-amber-500/20',
+    ring: 'ring-amber-500/20',
+    shadow: 'shadow-amber-500/20',
+  },
+
+  // Error state - clear red
+  error: {
+    base: statusColors.error,             // oklch(0.576 0.222 25.85)
+    text: 'text-rose-600 dark:text-rose-400',
+    bg: 'bg-rose-500/10',
+    border: 'border-rose-500/20',
+    ring: 'ring-rose-500/20',
+    shadow: 'shadow-rose-500/20',
+  },
+
+  // Info state - calm blue
+  info: {
+    base: statusColors.info,              // oklch(0.646 0.222 264.38)
+    text: 'text-cyan-600 dark:text-cyan-400',
+    bg: 'bg-cyan-500/10',
+    border: 'border-cyan-500/20',
+    ring: 'ring-cyan-500/20',
+    shadow: 'shadow-cyan-500/20',
+  },
+
+  // Neutral/Off state - subtle gray
+  neutral: {
+    base: statusColors.neutral,           // oklch(0.551 0.0 264.38)
+    text: 'text-muted-foreground',
+    bg: 'bg-muted/50',
+    border: 'border-border',
+    ring: 'transparent',
+    shadow: undefined,
+  },
+
+  // Primary accent - brand color
+  primary: {
+    base: chartColors[1],                 // oklch(0.646 0.222 264.38)
+    text: 'text-primary',
+    bg: 'bg-primary/10',
+    border: 'border-primary/20',
+    ring: 'ring-primary/20',
+    shadow: 'shadow-primary/20',
+  },
+} as const
+
+export type IndicatorState = keyof typeof indicatorColors
+
+// ============================================================================
+// Gradient Definitions for Decorative Elements
+// ============================================================================
+
+/**
+ * Gradient definitions for decorative visual elements
+ * Used in progress bars, sparkline fills, area charts
+ */
+export const indicatorGradients = {
   success: {
-    id: 'indicator-success',
+    from: statusColors.success,
+    to: 'oklch(0.646 0.222 142.5 / 0)',  // Fade to transparent
     stops: [
-      { offset: '0%', color: statusColors.success, opacity: 0.4 },
-      { offset: '50%', color: statusColors.success, opacity: 0.15 },
+      { offset: '0%', color: statusColors.success, opacity: 0.5 },
+      { offset: '50%', color: statusColors.success, opacity: 0.2 },
       { offset: '100%', color: statusColors.success, opacity: 0 },
     ],
   },
-
-  // Warning gradient (yellow/amber)
   warning: {
-    id: 'indicator-warning',
+    from: statusColors.warning,
+    to: 'oklch(0.646 0.222 85.85 / 0)',
     stops: [
-      { offset: '0%', color: statusColors.warning, opacity: 0.4 },
-      { offset: '50%', color: statusColors.warning, opacity: 0.15 },
+      { offset: '0%', color: statusColors.warning, opacity: 0.5 },
+      { offset: '50%', color: statusColors.warning, opacity: 0.2 },
       { offset: '100%', color: statusColors.warning, opacity: 0 },
     ],
   },
-
-  // Error gradient (red)
   error: {
-    id: 'indicator-error',
+    from: statusColors.error,
+    to: 'oklch(0.576 0.222 25.85 / 0)',
     stops: [
-      { offset: '0%', color: statusColors.error, opacity: 0.4 },
-      { offset: '50%', color: statusColors.error, opacity: 0.15 },
+      { offset: '0%', color: statusColors.error, opacity: 0.5 },
+      { offset: '50%', color: statusColors.error, opacity: 0.2 },
       { offset: '100%', color: statusColors.error, opacity: 0 },
     ],
   },
-
-  // Info gradient (cyan)
   info: {
-    id: 'indicator-info',
+    from: statusColors.info,
+    to: 'oklch(0.646 0.222 264.38 / 0)',
     stops: [
-      { offset: '0%', color: statusColors.info, opacity: 0.4 },
-      { offset: '50%', color: statusColors.info, opacity: 0.15 },
+      { offset: '0%', color: statusColors.info, opacity: 0.5 },
+      { offset: '50%', color: statusColors.info, opacity: 0.2 },
       { offset: '100%', color: statusColors.info, opacity: 0 },
     ],
   },
-
-  // Neutral gradient (gray)
   neutral: {
-    id: 'indicator-neutral',
+    from: statusColors.neutral,
+    to: 'oklch(0.551 0.0 264.38 / 0)',
     stops: [
       { offset: '0%', color: statusColors.neutral, opacity: 0.3 },
       { offset: '50%', color: statusColors.neutral, opacity: 0.1 },
       { offset: '100%', color: statusColors.neutral, opacity: 0 },
+    ],
+  },
+  primary: {
+    from: chartColors[1],
+    to: 'oklch(0.646 0.222 264.38 / 0)',
+    stops: [
+      { offset: '0%', color: chartColors[1], opacity: 0.5 },
+      { offset: '50%', color: chartColors[1], opacity: 0.2 },
+      { offset: '100%', color: chartColors[1], opacity: 0 },
     ],
   },
 } as const
@@ -103,36 +170,130 @@ export const indicatorGradients = {
 export type IndicatorGradientType = keyof typeof indicatorGradients
 
 // ============================================================================
-// Glow Effects
+// LED Glow Effects
 // ============================================================================
 
 /**
- * Glow effect configurations for LED indicators and highlights
+ * Enhanced glow effect configurations for LED indicators
+ * Uses multiple box-shadow layers for realistic glow
  */
-export const indicatorGlow = {
-  // Subtle glow for normal states
-  subtle: (color: string) => `0 0 8px ${color}40, 0 0 16px ${color}20`,
+export const ledGlowEffects = {
+  // No glow for off state
+  none: 'none',
 
-  // Medium glow for active/enhanced states
-  medium: (color: string) => `0 0 12px ${color}60, 0 0 24px ${color}30, 0 0 36px ${color}15`,
+  // Subtle glow - gentle ambient light
+  subtle: (color: string) => `0 0 4px ${color}40, 0 0 8px ${color}20`,
 
-  // Strong glow for emphasized states
-  strong: (color: string) => `0 0 16px ${color}80, 0 0 32px ${color}40, 0 0 48px ${color}20`,
+  // Soft glow - visible but not overwhelming
+  soft: (color: string) => `0 0 6px ${color}60, 0 0 12px ${color}30, 0 0 20px ${color}15`,
 
-  // Pulse animation for active indicators
-  pulse: (color: string) => ({
-    initial: `0 0 8px ${color}40`,
-    animate: `0 0 16px ${color}60, 0 0 24px ${color}40`,
-  }),
+  // Medium glow - standard active state
+  medium: (color: string) => `0 0 8px ${color}80, 0 0 16px ${color}50, 0 0 28px ${color}25, 0 0 40px ${color}10`,
+
+  // Strong glow - emphasized state
+  strong: (color: string) => `0 0 12px ${color}aa, 0 0 24px ${color}70, 0 0 40px ${color}40, 0 0 60px ${color}20`,
+
+  // Intense glow - maximum visibility
+  intense: (color: string) => `0 0 16px ${color}cc, 0 0 32px ${color}90, 0 0 56px ${color}60, 0 0 80px ${color}30`,
 } as const
 
+/**
+ * LED animation configurations
+ */
+export const ledAnimations = {
+  // Pulse animation - gentle breathing effect
+  pulse: {
+    className: 'animate-pulse',
+    duration: '2000ms',
+    keyframes: {
+      '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+      '50%': { opacity: '0.7', transform: 'scale(0.95)' },
+    },
+  },
+
+  // Blink animation - quick on/off
+  blink: {
+    className: 'animate-blink',
+    duration: '1000ms',
+    keyframes: {
+      '0%, 49%': { opacity: '1' },
+      '50%, 100%': { opacity: '0.3' },
+    },
+  },
+
+  // Glow pulse - animated glow intensity
+  glowPulse: {
+    className: 'animate-glow-pulse',
+    duration: '1500ms',
+    keyframes: {
+      '0%, 100%': { boxShadow: '0 0 8px currentColor' },
+      '50%': { boxShadow: '0 0 20px currentColor, 0 0 30px currentColor' },
+    },
+  },
+
+  // Ripple animation - outward expanding rings
+  ripple: {
+    className: 'animate-ripple',
+    duration: '2000ms',
+    keyframes: {
+      '0%': { transform: 'scale(1)', opacity: '0.8' },
+      '100%': { transform: 'scale(2)', opacity: '0' },
+    },
+  },
+} as const
+
+export type LedAnimationType = keyof typeof ledAnimations
+
+/**
+ * Get LED glow effect by state
+ */
+export function getLedGlow(state: IndicatorState, customColor?: string): string {
+  if (state === 'neutral') return ledGlowEffects.none
+
+  const color = customColor || indicatorColors[state].base
+
+  // Apply different glow intensity based on state
+  switch (state) {
+    case 'success':
+      return ledGlowEffects.medium(color)
+    case 'warning':
+      return ledGlowEffects.soft(color)
+    case 'error':
+      return ledGlowEffects.strong(color)  // Stronger glow for error
+    case 'info':
+      return ledGlowEffects.soft(color)
+    case 'primary':
+      return ledGlowEffects.medium(color)
+    default:
+      return ledGlowEffects.subtle(color)
+  }
+}
+
+/**
+ * Get LED animation by state
+ */
+export function getLedAnimation(state: IndicatorState, isBlinking = false): {
+  className?: string
+  style?: React.CSSProperties
+} {
+  if (isBlinking) {
+    return { className: 'animate-pulse' }
+  }
+
+  if (state === 'error') {
+    // Error state gets a subtle pulse
+    return { className: 'animate-pulse' }
+  }
+
+  return {}
+}
+
 // ============================================================================
-// Color State Mapping
+// Value State Helpers
 // ============================================================================
 
 /**
- * Get gradient config based on percentage/value
- * Used for progress bars and value indicators
+ * Get gradient type based on percentage/value
  */
 export function getValueGradient(
   value: number,
@@ -164,9 +325,22 @@ export function getValueStateColor(
 
   const percentage = (value / max) * 100
 
-  if (percentage >= dangerThreshold) return statusColors.error
-  if (percentage >= warningThreshold) return statusColors.warning
-  return statusColors.success
+  if (percentage >= dangerThreshold) return indicatorColors.error.base
+  if (percentage >= warningThreshold) return indicatorColors.warning.base
+  return indicatorColors.success.base
+}
+
+/**
+ * Get indicator state config
+ */
+export function getIndicatorColors(state: IndicatorState, customColor?: string) {
+  if (customColor && state === 'success') {
+    return {
+      ...indicatorColors.success,
+      base: customColor,
+    }
+  }
+  return indicatorColors[state]
 }
 
 /**
@@ -180,21 +354,17 @@ export function getValueTextColor(
 ): string {
   const percentage = (value / max) * 100
 
-  if (percentage >= dangerThreshold) {
-    return 'text-rose-600 dark:text-rose-400'
-  }
-  if (percentage >= warningThreshold) {
-    return 'text-amber-600 dark:text-amber-400'
-  }
-  return 'text-emerald-600 dark:text-emerald-400'
+  if (percentage >= dangerThreshold) return indicatorColors.error.text
+  if (percentage >= warningThreshold) return indicatorColors.warning.text
+  return indicatorColors.success.text
 }
 
 // ============================================================================
-// SVG Gradient Builder
+// Gradient Helpers
 // ============================================================================
 
 /**
- * Get gradient stops array for a given gradient type
+ * Get gradient stops array for a given type
  */
 export function getGradientStops(
   type: IndicatorGradientType,
@@ -202,62 +372,31 @@ export function getGradientStops(
 ): Array<{ offset: string; color: string; opacity: number }> {
   if (baseColor) {
     return [
-      { offset: '0%', color: baseColor, opacity: 0.4 },
-      { offset: '50%', color: baseColor, opacity: 0.15 },
+      { offset: '0%', color: baseColor, opacity: 0.5 },
+      { offset: '50%', color: baseColor, opacity: 0.2 },
       { offset: '100%', color: baseColor, opacity: 0 },
     ]
   }
 
-  return indicatorGradients[type].stops.map(s => ({
-    offset: s.offset,
-    color: s.color,
-    opacity: s.opacity,
-  }))
+  return [...indicatorGradients[type].stops]
 }
 
 /**
- * Get gradient ID for a given type
+ * Get gradient ID for SVG
  */
 export function getGradientId(type: IndicatorGradientType, suffix = ''): string {
-  return `${indicatorGradients[type].id}${suffix ? `-${suffix}` : ''}`
+  return `indicator-gradient-${type}${suffix ? `-${suffix}` : ''}`
 }
 
-// ============================================================================
-// CSS Classes
-// ============================================================================
-
 /**
- * Unified text color classes for different states
+ * Get CSS linear gradient string
  */
-export const indicatorTextColors = {
-  primary: 'text-primary',
-  success: 'text-emerald-600 dark:text-emerald-400',
-  warning: 'text-amber-600 dark:text-amber-400',
-  error: 'text-rose-600 dark:text-rose-400',
-  info: 'text-cyan-600 dark:text-cyan-400',
-  neutral: 'text-muted-foreground',
-} as const
-
-/**
- * Background classes with gradient support
- */
-export const indicatorBgColors = {
-  primary: 'bg-primary/10',
-  success: 'bg-emerald-500/10',
-  warning: 'bg-amber-500/10',
-  error: 'bg-rose-500/10',
-  info: 'bg-cyan-500/10',
-  neutral: 'bg-muted/50',
-} as const
-
-/**
- * Border classes for different states
- */
-export const indicatorBorderColors = {
-  primary: 'border-primary/20',
-  success: 'border-emerald-500/20',
-  warning: 'border-amber-500/20',
-  error: 'border-rose-500/20',
-  info: 'border-cyan-500/20',
-  neutral: 'border-border',
-} as const
+export function getLinearGradient(
+  type: IndicatorGradientType,
+  direction: 'to right' | 'to bottom' | 'to top' = 'to right',
+  customColor?: string
+): string {
+  const stops = getGradientStops(type, customColor)
+  const stopStrings = stops.map(s => `${s.color.replace(')', ` / ${s.opacity})`)} ${s.offset}`)
+  return `linear-gradient(${direction}, ${stopStrings.join(', ')})`
+}

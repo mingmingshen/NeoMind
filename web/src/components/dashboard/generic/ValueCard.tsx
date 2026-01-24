@@ -9,7 +9,7 @@ import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, formatValue, getIconForEntity } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
-import { chartColors, indicatorFontWeight, getValueTextColor, getGradientStops } from '@/design-system'
+import { chartColors, indicatorFontWeight, indicatorColors } from '@/design-system'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import type { DataSourceOrList } from '@/types/dashboard'
 
@@ -176,10 +176,10 @@ export function ValueCard({
 
   const sizeConfig = dashboardComponentSize[size]
 
-  // Color styling - use unified helper
+  // Color styling - use unified color system
   const valueColor = color || (
-    trendDirection === 'up' ? 'text-emerald-600 dark:text-emerald-500' :
-    trendDirection === 'down' ? 'text-rose-600 dark:text-rose-500' :
+    trendDirection === 'up' ? indicatorColors.success.text :
+    trendDirection === 'down' ? indicatorColors.error.text :
     undefined
   )
 
@@ -203,9 +203,9 @@ export function ValueCard({
         {showTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 mt-1',
-            trendDirection === 'up' && 'text-emerald-600 dark:text-emerald-500',
-            trendDirection === 'down' && 'text-rose-600 dark:text-rose-500',
-            trendDirection === 'neutral' && 'text-muted-foreground'
+            trendDirection === 'up' && indicatorColors.success.text,
+            trendDirection === 'down' && indicatorColors.error.text,
+            trendDirection === 'neutral' && indicatorColors.neutral.text
           )}>
             {trendDirection === 'up' && <TrendingUp className={cn('h-3 w-3')} />}
             {trendDirection === 'down' && <TrendingDown className={cn('h-3 w-3')} />}
@@ -264,9 +264,9 @@ export function ValueCard({
         {showTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 mt-2 px-2 py-1 rounded-full',
-            trendDirection === 'up' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-            trendDirection === 'down' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-            trendDirection === 'neutral' && 'bg-muted text-muted-foreground'
+            trendDirection === 'up' && indicatorColors.success.bg + ' ' + indicatorColors.success.text,
+            trendDirection === 'down' && indicatorColors.error.bg + ' ' + indicatorColors.error.text,
+            trendDirection === 'neutral' && indicatorColors.neutral.bg + ' ' + indicatorColors.neutral.text
           )}>
             {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
@@ -310,8 +310,8 @@ export function ValueCard({
         {showTrend && trendDirection && (
           <div className={cn(
             'flex items-center gap-1 px-2 py-1 rounded-full shrink-0',
-            trendDirection === 'up' && 'bg-emerald-500/10 text-emerald-600',
-            trendDirection === 'down' && 'bg-rose-500/10 text-rose-600',
+            trendDirection === 'up' && indicatorColors.success.bg + ' ' + indicatorColors.success.text,
+            trendDirection === 'down' && indicatorColors.error.bg + ' ' + indicatorColors.error.text,
           )}>
             {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
             {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
