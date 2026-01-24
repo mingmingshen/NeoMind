@@ -165,39 +165,42 @@ export function ProgressBar({
     )
   }
 
-  // Default variant - horizontal layout optimized for single row
+  // Default variant - Sparkline-style card layout (compact for single row)
   const content = (
-    <div className="flex items-center gap-2 w-full min-h-0">
-      {/* Label - left side */}
-      {label && (
-        <span className={cn('text-muted-foreground text-xs font-medium shrink-0 truncate max-w-[50px]', sizeConfig.labelText)} title={label}>
-          {label}
-        </span>
-      )}
-
-      {/* Progress bar - takes remaining space */}
-      <div className={cn('flex-1 min-w-0 rounded-full bg-muted/30 overflow-hidden', barHeight)}>
+    <div className="flex flex-col w-full min-h-0">
+      {/* Header: label (left) + percentage (right) */}
+      <div className="flex items-center justify-between mb-1">
+        {label && (
+          <span className={cn('text-muted-foreground font-medium truncate text-xs', sizeConfig.labelText)} title={label}>
+            {label}
+          </span>
+        )}
+        {!label && <span />}
         {loading ? (
-          <Skeleton className={cn('h-full w-full rounded-full', barHeight)} />
+          <Skeleton className={cn('h-3 w-7 shrink-0 rounded')} />
         ) : (
-          <div
-            className="h-full rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${percentage}%`, backgroundColor: progressColor }}
-          />
+          <span className={cn(
+            'font-bold tabular-nums text-xs',
+            getTextColor(percentage, color, warningThreshold, dangerThreshold)
+          )}>
+            {Math.round(percentage)}%
+          </span>
         )}
       </div>
 
-      {/* Percentage - right side with color matching progress */}
-      {loading ? (
-        <Skeleton className={cn('h-3.5 w-7 shrink-0 rounded text-[10px]')} />
-      ) : (
-        <span className={cn(
-          'font-bold tabular-nums shrink-0 text-[10px]',
-          getTextColor(percentage, color, warningThreshold, dangerThreshold)
-        )}>
-          {Math.round(percentage)}%
-        </span>
-      )}
+      {/* Progress bar - full width below header */}
+      <div className="flex-1 min-h-0 flex items-center">
+        <div className={cn('w-full rounded-full bg-muted/30 overflow-hidden', barHeight)}>
+          {loading ? (
+            <Skeleton className={cn('h-full w-full rounded-full', barHeight)} />
+          ) : (
+            <div
+              className="h-full rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${percentage}%`, backgroundColor: progressColor }}
+            />
+          )}
+        </div>
+      </div>
     </div>
   )
 
