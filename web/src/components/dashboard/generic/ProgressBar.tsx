@@ -165,12 +165,29 @@ export function ProgressBar({
     )
   }
 
-  // Default variant - horizontal layout: label | bar | percentage
-  // For narrow widths, use compact layout: bar with percentage inside/next
+  // Default variant - clean vertical layout for better aesthetics
   const content = (
-    <div className="flex items-center gap-2 w-full min-h-0">
+    <div className="flex flex-col gap-2 w-full min-h-0">
+      {/* Top row: label and percentage */}
+      <div className="flex items-center justify-between gap-2">
+        {label ? (
+          <span className={cn('text-muted-foreground font-medium truncate', sizeConfig.labelText)} title={label}>
+            {label}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {loading ? (
+          <Skeleton className={cn('h-4 w-10 shrink-0 rounded')} />
+        ) : (
+          <span className={cn('font-bold tabular-nums', sizeConfig.valueText, getTextColor(percentage, color, warningThreshold, dangerThreshold))}>
+            {Math.round(percentage)}%
+          </span>
+        )}
+      </div>
+
       {/* Progress bar */}
-      <div className={cn('flex-1 min-w-0 rounded-full bg-muted/40 overflow-hidden relative', barHeight)}>
+      <div className={cn('w-full rounded-full bg-muted/30 overflow-hidden', barHeight)}>
         {loading ? (
           <Skeleton className={cn('h-full w-full rounded-full', barHeight)} />
         ) : (
@@ -180,22 +197,6 @@ export function ProgressBar({
           />
         )}
       </div>
-
-      {/* Percentage - compact */}
-      {loading ? (
-        <Skeleton className={cn('h-4 w-8 shrink-0 rounded text-xs', sizeConfig.labelText)} />
-      ) : (
-        <span className={cn('font-semibold tabular-nums shrink-0 text-xs', sizeConfig.labelText)}>
-          {Math.round(percentage)}%
-        </span>
-      )}
-
-      {/* Label - shown as tooltip or small text */}
-      {label && (
-        <span className={cn('text-muted-foreground shrink-0 truncate max-w-[60px] text-xs', sizeConfig.labelText)} title={label}>
-          {label}
-        </span>
-      )}
     </div>
   )
 
