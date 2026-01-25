@@ -35,23 +35,11 @@ const Slider = lazy(() => import('../generic/Slider').then(m => ({ default: m.Sl
 const Dropdown = lazy(() => import('../generic/Dropdown').then(m => ({ default: m.Dropdown })))
 const InputField = lazy(() => import('../generic/InputField').then(m => ({ default: m.InputField })))
 
-// Lists & Tables
-const DataTable = lazy(() => import('../generic/DataTable').then(m => ({ default: m.DataTable })))
-const StatusList = lazy(() => import('../generic/StatusList').then(m => ({ default: m.StatusList })))
-const LogFeed = lazy(() => import('../generic/LogFeed').then(m => ({ default: m.LogFeed })))
-
 // Display & Content
 const ImageDisplay = lazy(() => import('../generic/ImageDisplay').then(m => ({ default: m.ImageDisplay })))
 const ImageHistory = lazy(() => import('../generic/ImageHistory').then(m => ({ default: m.ImageHistory })))
 const WebDisplay = lazy(() => import('../generic/WebDisplay').then(m => ({ default: m.WebDisplay })))
 const MarkdownDisplay = lazy(() => import('../generic/MarkdownDisplay').then(m => ({ default: m.MarkdownDisplay })))
-
-// Business Components
-const AgentStatusCard = lazy(() => import('../business/AgentStatusCard').then(m => ({ default: m.AgentStatusCard })))
-const DecisionList = lazy(() => import('../business/DecisionList').then(m => ({ default: m.DecisionList })))
-const DeviceControl = lazy(() => import('../business/DeviceControl').then(m => ({ default: m.DeviceControl })))
-const RuleStatusGrid = lazy(() => import('../business/RuleStatusGrid').then(m => ({ default: m.RuleStatusGrid })))
-const TransformList = lazy(() => import('../business/TransformList').then(m => ({ default: m.TransformList })))
 
 // ============================================================================
 // Component Map
@@ -77,25 +65,11 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
   'dropdown': Dropdown,
   'input-field': InputField,
 
-  // Lists & Tables
-  'data-table': DataTable,
-  'status-list': StatusList,
-  'log-feed': LogFeed,
-
   // Display & Content
   'image-display': ImageDisplay,
   'image-history': ImageHistory,
   'web-display': WebDisplay,
   'markdown-display': MarkdownDisplay,
-} as const
-
-// Business component map
-const businessComponentMap = {
-  'agent-status-card': AgentStatusCard,
-  'decision-list': DecisionList,
-  'device-control': DeviceControl,
-  'rule-status-grid': RuleStatusGrid,
-  'transform-list': TransformList,
 } as const
 
 // ============================================================================
@@ -175,8 +149,7 @@ export default function ComponentRenderer({
     return <UnknownComponent type={component.type} className={className} />
   }
 
-  const Component = componentMap[component.type as GenericComponentType] ||
-                    businessComponentMap[component.type as keyof typeof businessComponentMap]
+  const Component = componentMap[component.type as GenericComponentType]
 
   if (!Component) {
     return <UnknownComponent type={component.type} className={className} />

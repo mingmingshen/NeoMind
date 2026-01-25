@@ -6,10 +6,12 @@
  * - Gradient fills for decorative progress bar
  * - Glow effects for active states
  * - Multiple variants (default, compact, circular)
+ * - Telemetry data support (extracts latest value from arrays)
  */
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { toLatestValue } from '@/design-system/utils/format'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import {
@@ -67,12 +69,14 @@ export function ProgressBar({
   variant = 'default',
   className,
 }: ProgressBarProps) {
-  // When dataSource is provided, don't use propValue as fallback
-  const { data, loading, error } = useDataSource<number>(dataSource, {
-    fallback: dataSource ? undefined : (propValue ?? 0)
+  // Fetch data - may be telemetry array or single value
+  const { data, loading, error } = useDataSource<unknown>(dataSource, {
+    fallback: propValue ?? 0,
   })
-  const rawValue = error ? propValue : data ?? propValue ?? 0
-  const value = safeToNumber(rawValue)
+
+  // Extract the latest value from telemetry data or use the data directly
+  const rawValue = error ? propValue : toLatestValue(data, propValue ?? 0)
+  const value = safeToNumber(typeof rawValue === 'number' ? rawValue : 0)
   const percentage = Math.min(100, Math.max(0, (value / max) * 100))
 
   const sizeConfig = dashboardComponentSize[size]

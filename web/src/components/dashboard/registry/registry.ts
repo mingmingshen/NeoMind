@@ -28,34 +28,18 @@ import {
   // Charts
   LineChart as LineChartIcon,
   BarChart3,
-  Gauge,
   PieChart as PieChartIcon,
-  Donut,
   // Controls
   ToggleLeft,
   Layers as LayersIcon,
   Sliders as SliderIcon,
   List,
   Type,
-  // Lists & Tables
-  Table,
-  ListTodo,
-  Scroll,
   // Display & Content
   Image,
   Play,
   Globe,
   FileText,
-  // Layout & Content
-  Layers as LayoutIcon,
-  Heading as HeadingIcon,
-  AlertTriangle,
-  // Business
-  Bot,
-  Brain,
-  SlidersHorizontal,
-  GitBranch,
-  Workflow,
 } from 'lucide-react'
 
 // ============================================================================
@@ -164,7 +148,7 @@ export const componentRegistry: ComponentRegistry = {
       showLabel: true,
       variant: 'default',
     },
-    variants: ['default', 'thin', 'thick'],
+    variants: ['default', 'compact', 'circular'],
   },
 
   // ============================================================================
@@ -179,7 +163,7 @@ export const componentRegistry: ComponentRegistry = {
     icon: LineChartIcon,
     sizeConstraints: getSizeConstraints('line-chart'),
     hasDataSource: true,
-    maxDataSources: 5,  // Can show up to 5 lines
+    maxDataSources: 5,
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
@@ -203,7 +187,7 @@ export const componentRegistry: ComponentRegistry = {
     icon: LineChartIcon,
     sizeConstraints: getSizeConstraints('area-chart'),
     hasDataSource: true,
-    maxDataSources: 5,  // Can show up to 5 areas
+    maxDataSources: 5,
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
@@ -227,7 +211,7 @@ export const componentRegistry: ComponentRegistry = {
     icon: BarChart3,
     sizeConstraints: getSizeConstraints('bar-chart'),
     hasDataSource: true,
-    maxDataSources: 3,  // Can show up to 3 bar groups
+    maxDataSources: 3,
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
@@ -251,6 +235,7 @@ export const componentRegistry: ComponentRegistry = {
     icon: PieChartIcon,
     sizeConstraints: getSizeConstraints('pie-chart'),
     hasDataSource: true,
+    maxDataSources: 10,
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
@@ -270,7 +255,7 @@ export const componentRegistry: ComponentRegistry = {
   'toggle-switch': {
     type: 'toggle-switch',
     name: 'Toggle Switch',
-    description: 'On/off toggle switch',
+    description: 'On/off toggle switch for device commands',
     category: 'controls',
     icon: ToggleLeft,
     sizeConstraints: getSizeConstraints('toggle-switch'),
@@ -316,7 +301,7 @@ export const componentRegistry: ComponentRegistry = {
   'slider': {
     type: 'slider',
     name: 'Slider',
-    description: 'Numeric value slider',
+    description: 'Numeric value slider for device control',
     category: 'controls',
     icon: SliderIcon,
     sizeConstraints: getSizeConstraints('slider'),
@@ -342,7 +327,7 @@ export const componentRegistry: ComponentRegistry = {
   'dropdown': {
     type: 'dropdown',
     name: 'Dropdown',
-    description: 'Select dropdown',
+    description: 'Select dropdown for device control',
     category: 'controls',
     icon: List,
     sizeConstraints: getSizeConstraints('dropdown'),
@@ -361,7 +346,7 @@ export const componentRegistry: ComponentRegistry = {
   'input-field': {
     type: 'input-field',
     name: 'Input Field',
-    description: 'Text input field',
+    description: 'Text input field for device control',
     category: 'controls',
     icon: Type,
     sizeConstraints: getSizeConstraints('input-field'),
@@ -374,71 +359,6 @@ export const componentRegistry: ComponentRegistry = {
     defaultProps: {
       size: 'md',
       type: 'text',
-    },
-  },
-
-  // ============================================================================
-  // Lists & Tables
-  // ============================================================================
-
-  'data-table': {
-    type: 'data-table',
-    name: 'Data Table',
-    description: 'Sortable table with data rows',
-    category: 'lists',
-    icon: Table,
-    sizeConstraints: getSizeConstraints('data-table'),
-    hasDataSource: true,
-    hasDisplayConfig: true,
-    hasActions: false,
-    acceptsProp: (prop) => [
-      'columns', 'data', 'sortable', 'pageSize', 'showHeader', 'className'
-    ].includes(prop),
-    defaultProps: {
-      sortable: true,
-      pageSize: 10,
-      showHeader: true,
-    },
-  },
-
-  'status-list': {
-    type: 'status-list',
-    name: 'Status List',
-    description: 'List of status items with indicators',
-    category: 'lists',
-    icon: ListTodo,
-    sizeConstraints: getSizeConstraints('status-list'),
-    hasDataSource: true,
-    hasDisplayConfig: true,
-    hasActions: false,
-    acceptsProp: (prop) => [
-      'items', 'showIcon', 'showTimestamp', 'compact', 'className'
-    ].includes(prop),
-    defaultProps: {
-      showIcon: true,
-      showTimestamp: true,
-      compact: false,
-    },
-  },
-
-  'log-feed': {
-    type: 'log-feed',
-    name: 'Log Feed',
-    description: 'Scrolling log display',
-    category: 'lists',
-    icon: Scroll,
-    sizeConstraints: getSizeConstraints('log-feed'),
-    hasDataSource: true,
-    hasDisplayConfig: true,
-    hasActions: false,
-    acceptsProp: (prop) => [
-      'maxLines', 'autoScroll', 'showTimestamp', 'showLevel', 'className'
-    ].includes(prop),
-    defaultProps: {
-      maxLines: 50,
-      autoScroll: true,
-      showTimestamp: true,
-      showLevel: true,
     },
   },
 
@@ -474,7 +394,7 @@ export const componentRegistry: ComponentRegistry = {
     description: 'Display historical images with floating slider navigation',
     category: 'display',
     icon: Play,
-    sizeConstraints: getSizeConstraints('image-display'),
+    sizeConstraints: getSizeConstraints('image-history'),
     hasDataSource: true,
     hasDisplayConfig: true,
     hasActions: false,
@@ -532,107 +452,6 @@ export const componentRegistry: ComponentRegistry = {
       lineBreaks: true,
     },
     variants: ['default', 'compact', 'minimal'],
-  },
-
-  // ============================================================================
-  // Business Components
-  // ============================================================================
-
-  'agent-status-card': {
-    type: 'agent-status-card',
-    name: 'Agent Status',
-    description: 'AI agent status and execution stats',
-    category: 'business',
-    icon: Bot,
-    sizeConstraints: getSizeConstraints('agent-status-card'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'agentId', 'name', 'description', 'showStats', 'showExecuteButton', 'size', 'className'
-    ].includes(prop),
-    defaultProps: {
-      size: 'md',
-      showStats: true,
-      showExecuteButton: true,
-    },
-  },
-
-  'decision-list': {
-    type: 'decision-list',
-    name: 'Decision List',
-    description: 'List of AI decisions with actions',
-    category: 'business',
-    icon: Brain,
-    sizeConstraints: getSizeConstraints('decision-list'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'agentId', 'maxItems', 'showActions', 'compact', 'className'
-    ].includes(prop),
-    defaultProps: {
-      maxItems: 10,
-      showActions: true,
-      compact: false,
-    },
-  },
-
-  'device-control': {
-    type: 'device-control',
-    name: 'Device Control',
-    description: 'Device control interface',
-    category: 'business',
-    icon: SlidersHorizontal,
-    sizeConstraints: getSizeConstraints('device-control'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'deviceId', 'controls', 'layout', 'className'
-    ].includes(prop),
-    defaultProps: {
-      layout: 'default',
-    },
-    variants: ['default', 'compact', 'detailed'],
-  },
-
-  'rule-status-grid': {
-    type: 'rule-status-grid',
-    name: 'Rule Status Grid',
-    description: 'Grid showing rule statuses',
-    category: 'business',
-    icon: GitBranch,
-    sizeConstraints: getSizeConstraints('rule-status-grid'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'rules', 'groupBy', 'showStats', 'className'
-    ].includes(prop),
-    defaultProps: {
-      groupBy: 'status',
-      showStats: true,
-    },
-  },
-
-  'transform-list': {
-    type: 'transform-list',
-    name: 'Transform List',
-    description: 'Data transform configurations list',
-    category: 'business',
-    icon: Workflow,
-    sizeConstraints: getSizeConstraints('transform-list'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'transforms', 'showStats', 'compact', 'className'
-    ].includes(prop),
-    defaultProps: {
-      showStats: true,
-      compact: false,
-    },
   },
 } as const
 
@@ -703,11 +522,14 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     }
     acc[category].components.push(component)
     return acc
-  }, {} as Record<ComponentCategory, GroupedComponentRegistry[number]>)
+  }, {} as Record<string, GroupedComponentRegistry[number]>)
 
-  // Return in a consistent order
+  // Return in a consistent order (without removed categories)
   const categoryOrder: ComponentCategory[] = [
-    'indicators', 'charts', 'controls', 'lists', 'display', 'layout', 'business'
+    'indicators',
+    'charts',
+    'controls',
+    'display',
   ]
 
   return categoryOrder
@@ -719,14 +541,11 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
  * Get category info
  */
 export function getCategoryInfo(category: ComponentCategory): { name: string; icon: React.ComponentType<{ className?: string }> } {
-  const categoryInfos: Record<ComponentCategory, { name: string; icon: React.ComponentType<{ className?: string }> }> = {
+  const categoryInfos: Record<string, { name: string; icon: React.ComponentType<{ className?: string }> }> = {
     indicators: { name: 'Indicators', icon: Hash },
     charts: { name: 'Charts', icon: LineChartIcon },
     controls: { name: 'Controls', icon: ToggleLeft },
-    lists: { name: 'Lists & Tables', icon: Table },
     display: { name: 'Display & Content', icon: Image },
-    layout: { name: 'Layout & Content', icon: LayoutIcon },
-    business: { name: 'Business', icon: Bot },
   }
 
   return categoryInfos[category]
