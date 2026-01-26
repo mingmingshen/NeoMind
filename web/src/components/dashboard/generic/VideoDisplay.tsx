@@ -414,7 +414,7 @@ export function VideoDisplay({
   const content = (
     <div className={cn(dashboardCardBase, 'relative overflow-hidden', className)}>
       {/* Video content */}
-      <div className={cn('relative bg-black', rounded && 'rounded-lg', isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'aspect-video')}>
+      <div className={cn('relative bg-black w-full h-full', rounded && 'rounded-lg', isFullscreen && 'fixed inset-0 z-50 rounded-none')}>
         {detectedType === 'rtsp' || detectedType === 'rtmp' || detectedType === 'webrtc' ? (
           <StreamPlaceholder src={rawSrc || ''} streamType={detectedType === 'webrtc' ? 'rtsp' : detectedType} onRetry={handleRetry} />
         ) : detectedType === 'device-camera' ? (

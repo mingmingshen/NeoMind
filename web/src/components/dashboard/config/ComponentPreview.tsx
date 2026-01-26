@@ -92,16 +92,28 @@ export const ComponentPreview = memo(function ComponentPreview({
   // Track config changes for components with static content (like MarkdownDisplay)
   const [prevConfigKey, setPrevConfigKey] = useState<string>(() => createStableKey(config))
 
+  // Use ref to track the active timer for cleanup
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Detect dataSource changes
   useEffect(() => {
     const newKey = createDataSourceKey(dataSource)
     if (newKey !== prevDataSourceKey) {
+      // Clear any existing timer
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current)
+      }
+
       // Show transition state
       setIsTransitioning(true)
-      // Hide transition after delay
-      const timer = setTimeout(() => setIsTransitioning(false), 200)
+      
+      // Set new timer to hide transition
+      transitionTimerRef.current = setTimeout(() => {
+        setIsTransitioning(false)
+        transitionTimerRef.current = null
+      }, 200)
+      
       setPrevDataSourceKey(newKey)
-      return () => clearTimeout(timer)
     }
   }, [dataSource, prevDataSourceKey])
 
@@ -109,13 +121,32 @@ export const ComponentPreview = memo(function ComponentPreview({
   useEffect(() => {
     const newKey = createStableKey(config)
     if (newKey !== prevConfigKey) {
+      // Clear any existing timer
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current)
+      }
+
       // Force transition for config changes
       setIsTransitioning(true)
-      const timer = setTimeout(() => setIsTransitioning(false), 150)
+      
+      // Set new timer to hide transition
+      transitionTimerRef.current = setTimeout(() => {
+        setIsTransitioning(false)
+        transitionTimerRef.current = null
+      }, 150)
+      
       setPrevConfigKey(newKey)
-      return () => clearTimeout(timer)
     }
   }, [config, prevConfigKey])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current)
+      }
+    }
+  }, [])
 
   // Track previous data to show during loading (prevents flicker)
   const prevDataRef = useRef<any>(null)
