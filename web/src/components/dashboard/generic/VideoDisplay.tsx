@@ -31,7 +31,7 @@ import { EmptyState, ErrorState } from '../shared'
 // Types
 // ============================================================================
 
-export type VideoSourceType = 'file' | 'stream' | 'rtsp' | 'hls' | 'webrtc' | 'device-camera'
+export type VideoSourceType = 'file' | 'stream' | 'rtsp' | 'rtmp' | 'hls' | 'webrtc' | 'device-camera'
 
 export interface VideoDisplayProps {
   dataSource?: DataSource
@@ -244,22 +244,25 @@ function VideoPlayer({
 }
 
 // ============================================================================
-// RTSP Stream Placeholder (browser doesn't support RTSP directly)
+// RTSP/RTMP Stream Placeholder (browser doesn't support these directly)
 // ============================================================================
 
-interface RtspPlaceholderProps {
+interface StreamPlaceholderProps {
   src: string
+  streamType: 'rtsp' | 'rtmp'
   onRetry: () => void
 }
 
-function RtspPlaceholder({ src, onRetry }: RtspPlaceholderProps) {
+function StreamPlaceholder({ src, streamType, onRetry }: StreamPlaceholderProps) {
+  const streamName = streamType === 'rtsp' ? 'RTSP' : 'RTMP'
+
   return (
     <div className="w-full h-full bg-muted/10 flex flex-col items-center justify-center gap-4">
       <AlertCircle className="h-12 w-12 text-muted-foreground/40" />
       <div className="text-center">
-        <p className="text-muted-foreground text-sm font-medium">RTSP Stream</p>
+        <p className="text-muted-foreground text-sm font-medium">{streamName} Stream</p>
         <p className="text-muted-foreground/50 text-xs mt-1">
-          Direct RTSP playback requires a proxy or transcoder
+          Direct {streamName} playback requires a proxy or transcoder
         </p>
         <p className="text-xs text-muted-foreground/60 mt-2 font-mono truncate max-w-[200px]">
           {src}
@@ -351,7 +354,8 @@ export function VideoDisplay({
   // Detect video type from URL if not explicitly set
   const detectedType = type !== 'file' ? type : (() => {
     if (!rawSrc) return 'file'
-    if (rawSrc.includes('rtsp://') || rawSrc.includes('rtmp://')) return 'rtsp'
+    if (rawSrc.includes('rtsp://')) return 'rtsp'
+    if (rawSrc.includes('rtmp://')) return 'rtmp'
     if (rawSrc.includes('.m3u8')) return 'hls'
     if (rawSrc.startsWith('camera:') || rawSrc.startsWith('device:camera')) return 'device-camera'
     return 'file'
@@ -405,8 +409,8 @@ export function VideoDisplay({
     <div className={cn(dashboardCardBase, 'relative overflow-hidden', className)}>
       {/* Video content */}
       <div className={cn('relative bg-black', rounded && 'rounded-lg', isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'aspect-video')}>
-        {detectedType === 'rtsp' ? (
-          <RtspPlaceholder src={rawSrc || ''} onRetry={handleRetry} />
+        {detectedType === 'rtsp' || detectedType === 'rtmp' ? (
+          <StreamPlaceholder src={rawSrc || ''} streamType={detectedType} onRetry={handleRetry} />
         ) : detectedType === 'device-camera' ? (
           <CameraAccess
             key={retryKey}
@@ -456,6 +460,7 @@ export function VideoDisplay({
       {!isFullscreen && rawSrc && (
         <div className="absolute top-2 left-2 px-2 py-0.5 bg-background/80 backdrop-blur rounded text-xs text-muted-foreground">
           {detectedType === 'rtsp' && 'RTSP'}
+          {detectedType === 'rtmp' && 'RTMP'}
           {detectedType === 'hls' && 'HLS'}
           {detectedType === 'webrtc' && 'WebRTC'}
           {detectedType === 'device-camera' && 'Camera'}

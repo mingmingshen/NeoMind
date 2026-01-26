@@ -5,7 +5,7 @@
  * Uses the same renderer as the chat component for consistency.
  */
 
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
@@ -109,11 +109,22 @@ export function MarkdownDisplay({
   maxLines,
   className,
 }: MarkdownDisplayProps) {
+  // When there's no dataSource, use propContent directly for preview updates
+  // When there is a dataSource, fetch data but fallback to propContent
+  const hasDataSource = dataSource !== undefined
+
   const { data, loading, error } = useDataSource<string>(dataSource, {
     fallback: propContent,
   })
 
-  const content = error ? propContent : (data ?? propContent ?? '')
+  // Content determination: use fetched data if available, otherwise use prop
+  const content = useMemo(() => {
+    if (hasDataSource && !error && data !== undefined && data !== null) {
+      return data
+    }
+    // No dataSource or error - use propContent directly for immediate preview updates
+    return propContent ?? ''
+  }, [hasDataSource, error, data, propContent])
 
   const sizeConfig = dashboardComponentSize[size]
 

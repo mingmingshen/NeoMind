@@ -528,7 +528,8 @@ export function BarChart({
                 fill={color || fallbackColors[0]}
                 radius={4}
               >
-                {chartData.map((entry, index) => (
+                {/* Only use different colors per bar for categorical/distribution data */}
+                {chartData.some(d => d.color) && chartData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={entry.color || color || fallbackColors[index % fallbackColors.length]}

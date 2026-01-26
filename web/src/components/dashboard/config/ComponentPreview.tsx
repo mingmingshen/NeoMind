@@ -89,6 +89,9 @@ export const ComponentPreview = memo(function ComponentPreview({
   const [prevDataSourceKey, setPrevDataSourceKey] = useState<string>(() => createDataSourceKey(dataSource))
   const [isTransitioning, setIsTransitioning] = useState(false)
 
+  // Track config changes for components with static content (like MarkdownDisplay)
+  const [prevConfigKey, setPrevConfigKey] = useState<string>(() => createStableKey(config))
+
   // Detect dataSource changes
   useEffect(() => {
     const newKey = createDataSourceKey(dataSource)
@@ -101,6 +104,18 @@ export const ComponentPreview = memo(function ComponentPreview({
       return () => clearTimeout(timer)
     }
   }, [dataSource, prevDataSourceKey])
+
+  // Detect config changes (for static content components like MarkdownDisplay)
+  useEffect(() => {
+    const newKey = createStableKey(config)
+    if (newKey !== prevConfigKey) {
+      // Force transition for config changes
+      setIsTransitioning(true)
+      const timer = setTimeout(() => setIsTransitioning(false), 150)
+      setPrevConfigKey(newKey)
+      return () => clearTimeout(timer)
+    }
+  }, [config, prevConfigKey])
 
   // Track previous data to show during loading (prevents flicker)
   const prevDataRef = useRef<any>(null)

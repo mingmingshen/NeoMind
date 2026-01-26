@@ -677,6 +677,24 @@ function renderDashboardComponent(component: DashboardComponent) {
         />
       )
 
+    case 'video-display':
+      return (
+        <VideoDisplay
+          {...spreadableProps}
+          dataSource={dataSource}
+          src={config.src}
+          type={config.type}
+          size={config.size}
+          autoplay={config.autoplay ?? false}
+          muted={config.muted ?? true}
+          controls={config.controls ?? true}
+          loop={config.loop ?? false}
+          fit={config.fit || 'contain'}
+          rounded={config.rounded ?? true}
+          showFullscreen={config.showFullscreen ?? true}
+        />
+      )
+
     // Business Components (not implemented)
     case 'agent-status-card':
     case 'decision-list':
@@ -1082,6 +1100,19 @@ export function VisualDashboard() {
         defaultConfig = {
           content: '# Title\n\nThis is **markdown** content.\n\n- Item 1\n- Item 2\n\n`code example`',
           variant: 'default',
+        }
+        break
+      case 'video-display':
+        defaultConfig = {
+          src: '',
+          type: 'file',
+          autoplay: false,
+          muted: true,
+          controls: true,
+          loop: false,
+          fit: 'contain',
+          rounded: true,
+          showFullscreen: true,
         }
         break
       // Business Components (not implemented)
@@ -2742,6 +2773,141 @@ export function VisualDashboard() {
                       { value: 'minimal', label: '简约' },
                     ]}
                   />
+                </div>
+              ),
+            },
+          ],
+        }
+
+      case 'video-display':
+        return {
+          dataSourceSections: [
+            {
+              type: 'data-source' as const,
+              props: {
+                dataSource: config.dataSource,
+                onChange: updateDataSource,
+                allowedTypes: ['static', 'device', 'device-info', 'telemetry', 'api'],
+              },
+            },
+          ],
+          styleSections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="video-display-title">显示标题</Label>
+                    <Input
+                      id="video-display-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label htmlFor="video-display-src">视频源</Label>
+                    <Input
+                      id="video-display-src"
+                      value={config.src || ''}
+                      onChange={(e) => updateConfig('src')(e.target.value)}
+                      placeholder="https://example.com/video.mp4 或 rtsp://..."
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      支持 MP4、WebM、HLS (.m3u8)、RTSP、RTMP 等格式
+                    </p>
+                  </Field>
+
+                  <SelectField
+                    label="视频类型"
+                    value={config.type || 'file'}
+                    onChange={updateConfig('type')}
+                    options={[
+                      { value: 'file', label: '视频文件 (MP4, WebM)' },
+                      { value: 'stream', label: '视频流' },
+                      { value: 'rtsp', label: 'RTSP' },
+                      { value: 'rtmp', label: 'RTMP' },
+                      { value: 'hls', label: 'HLS' },
+                      { value: 'webrtc', label: 'WebRTC' },
+                      { value: 'device-camera', label: '设备摄像头' },
+                    ]}
+                  />
+
+                  <SelectField
+                    label="适配方式"
+                    value={config.fit || 'contain'}
+                    onChange={updateConfig('fit')}
+                    options={[
+                      { value: 'contain', label: '包含 (完整显示)' },
+                      { value: 'cover', label: '覆盖 (填充显示)' },
+                      { value: 'fill', label: '拉伸 (填充)' },
+                    ]}
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <Label>自动播放</Label>
+                      <select
+                        value={String(config.autoplay ?? false)}
+                        onChange={(e) => updateConfig('autoplay')(e.target.value === 'true')}
+                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      >
+                        <option value="false">关闭</option>
+                        <option value="true">开启</option>
+                      </select>
+                    </Field>
+                    <Field>
+                      <Label>静音</Label>
+                      <select
+                        value={String(config.muted ?? true)}
+                        onChange={(e) => updateConfig('muted')(e.target.value === 'true')}
+                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      >
+                        <option value="true">静音</option>
+                        <option value="false">开启声音</option>
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <Label>显示控制条</Label>
+                      <select
+                        value={String(config.controls ?? true)}
+                        onChange={(e) => updateConfig('controls')(e.target.value === 'true')}
+                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      >
+                        <option value="true">显示</option>
+                        <option value="false">隐藏</option>
+                      </select>
+                    </Field>
+                    <Field>
+                      <Label>循环播放</Label>
+                      <select
+                        value={String(config.loop ?? false)}
+                        onChange={(e) => updateConfig('loop')(e.target.value === 'true')}
+                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      >
+                        <option value="false">关闭</option>
+                        <option value="true">开启</option>
+                      </select>
+                    </Field>
+                  </div>
+
+                  <Field>
+                    <Label>全屏按钮</Label>
+                    <select
+                      value={String(config.showFullscreen ?? true)}
+                      onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
+                      className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                    >
+                      <option value="true">显示</option>
+                      <option value="false">隐藏</option>
+                    </select>
+                  </Field>
                 </div>
               ),
             },
