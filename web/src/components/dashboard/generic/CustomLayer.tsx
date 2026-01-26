@@ -342,6 +342,11 @@ export function CustomLayer({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [internalItems, setInternalItems] = useState<LayerItem[]>(items)
 
+  // Sync isEditing when editable prop changes (e.g., after configuration update)
+  useEffect(() => {
+    setIsEditing(editable)
+  }, [editable])
+
   useEffect(() => {
     setInternalItems(items)
   }, [items])

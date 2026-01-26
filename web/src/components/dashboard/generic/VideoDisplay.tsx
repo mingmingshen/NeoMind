@@ -92,6 +92,11 @@ function VideoPlayer({
   const [duration, setDuration] = useState(0)
   const [isSeeking, setIsSeeking] = useState(false)
 
+  // Sync isMuted when muted prop changes (e.g., after configuration update)
+  useEffect(() => {
+    setIsMuted(muted)
+  }, [muted])
+
   useEffect(() => {
     const video = videoRef.current
     if (!video) return

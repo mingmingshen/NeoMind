@@ -251,7 +251,7 @@ export const componentRegistry: ComponentRegistry = {
     icon: PieChartIcon,
     sizeConstraints: getSizeConstraints('pie-chart'),
     hasDataSource: true,
-    maxDataSources: 10,
+    maxDataSources: 1,  // Pie chart shows part-to-whole, single source makes more sense
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [

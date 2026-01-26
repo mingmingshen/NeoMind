@@ -5,7 +5,7 @@
  * Supports URL configuration, sandboxing, and loading states.
  */
 
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -91,6 +91,11 @@ export function WebDisplay({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [iframeLoading, setIframeLoading] = useState(true)
   const [currentUrl, setCurrentUrl] = useState(src)
+
+  // Sync currentUrl when src changes (e.g., after configuration update)
+  useEffect(() => {
+    setCurrentUrl(src)
+  }, [src])
 
   const sandboxPolicy = useMemo(() => getSandboxPolicy({
     sandbox,

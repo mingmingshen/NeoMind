@@ -235,10 +235,13 @@ function isTitleInDisplayComponent(componentType?: string): boolean {
     'led-indicator',
     // Controls - title is in style section
     'toggle-switch',
-    // Display components - title is in display section
+    // Display components - title is in style section
     'text-display',
     'image-display',
     'video-display',
+    'image-history',
+    'web-display',
+    'markdown-display',
   ]
   return titleInConfigTypes.includes(componentType)
 }

@@ -336,6 +336,15 @@ export function MapDisplay({
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerSize, setContainerSize] = useState({ width: 400, height: 300 })
 
+  // Sync internal state when props change (e.g., after configuration update)
+  useEffect(() => {
+    setCurrentZoom(zoom)
+  }, [zoom])
+
+  useEffect(() => {
+    setCurrentCenter(center)
+  }, [center])
+
   // Track container size
   useEffect(() => {
     const updateSize = () => {
