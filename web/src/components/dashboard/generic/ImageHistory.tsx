@@ -441,17 +441,18 @@ export function ImageHistory({
     return (
       <div className={cn(
         dashboardCardBase,
-        'relative overflow-hidden flex flex-col items-center justify-center bg-muted/30',
+        'flex flex-col items-center justify-center gap-3 bg-muted/30',
+        sizeConfig.padding,
         className
       )}>
         <ImageOff className={cn(
-          'text-muted-foreground/60 mb-2',
+          'text-muted-foreground/60',
           size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16'
         )} />
-        <p className={cn(
-          'text-muted-foreground font-medium',
-          size === 'sm' ? 'text-xs' : 'text-sm'
-        )}>No Images</p>
+        <div className="text-center">
+          <p className="text-muted-foreground text-sm font-medium">No Images</p>
+          <p className="text-muted-foreground/50 text-xs mt-1">Configure an image data source</p>
+        </div>
       </div>
     )
   }

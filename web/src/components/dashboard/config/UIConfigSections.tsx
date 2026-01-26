@@ -5,11 +5,16 @@
  * Provides consistent styling and validation for reusable config options.
  */
 
+import { useState } from 'react'
+import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { ConfigSection } from './ConfigSection'
+import { ColorPicker, CompactColorPicker, COLOR_PRESETS } from '@/components/ui/color-picker'
+import type { SingleValueMappingConfig, TimeSeriesMappingConfig, CategoricalMappingConfig } from '@/lib/dataMapping'
 
 // ============================================================================
 // Value Configuration Section
@@ -199,26 +204,13 @@ export function ColorConfig({
   readonly = false,
 }: ColorConfigProps) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <div className="flex items-center gap-2">
-        <Input
-          type="color"
-          value={color}
-          onChange={(e) => onChange?.(e.target.value)}
-          className="h-10 w-16 p-1"
-          disabled={readonly}
-        />
-        <Input
-          type="text"
-          value={color}
-          onChange={(e) => onChange?.(e.target.value)}
-          placeholder="#3b82f6"
-          className="flex-1 font-mono text-sm"
-          disabled={readonly}
-        />
-      </div>
-    </div>
+    <ColorPicker
+      value={color}
+      onChange={onChange}
+      label={label}
+      presets="primary"
+      disabled={readonly}
+    />
   )
 }
 
@@ -449,7 +441,7 @@ export function TextContentConfig({
     <ConfigSection title={label} bordered>
       <div className="space-y-2">
         <textarea
-          className="w-full min-h-[120px] p-2 border rounded-md text-sm"
+          className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           value={content}
           onChange={(e) => onChange?.(e.target.value)}
           placeholder={placeholder}
@@ -545,5 +537,100 @@ export function AnimationConfig({
         />
       </div>
     </ConfigSection>
+  )
+}
+
+// ============================================================================
+// Data Mapping Configuration Section
+// ============================================================================
+
+export type DataMappingType = 'single' | 'time-series' | 'categorical'
+
+export interface DataMappingConfigProps {
+  dataMapping?: SingleValueMappingConfig | TimeSeriesMappingConfig | CategoricalMappingConfig
+  onChange?: (config: any) => void
+  mappingType: DataMappingType
+  label?: string
+  readonly?: boolean
+}
+
+/**
+ * Simplified Data Mapping Configuration
+ * Only shows format options - fields are auto-detected by DataMapper
+ */
+export function DataMappingConfig({
+  dataMapping,
+  onChange,
+  mappingType,
+  label = '数据格式',
+  readonly = false,
+}: DataMappingConfigProps) {
+  const updateField = (field: string, value: any) => {
+    const updated = { ...dataMapping, [field]: value }
+    onChange?.(updated)
+  }
+
+  // Only show format options for single value mapping
+  if (mappingType !== 'single') {
+    return null // Charts use auto-detection
+  }
+
+  const config = dataMapping as SingleValueMappingConfig
+
+  return (
+    <div className="space-y-3">
+      <h4 className="text-sm font-medium">{label}</h4>
+
+      {/* Format Type */}
+      <div className="space-y-2">
+        <Label className="text-xs">格式类型</Label>
+        <Select
+          value={config?.format || 'auto'}
+          onValueChange={(v) => updateField('format', v)}
+          disabled={readonly}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">自动</SelectItem>
+            <SelectItem value="number">数字</SelectItem>
+            <SelectItem value="currency">货币</SelectItem>
+            <SelectItem value="percent">百分比</SelectItem>
+            <SelectItem value="bytes">字节</SelectItem>
+            <SelectItem value="duration">时长</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Unit */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-2">
+          <Label className="text-xs">单位</Label>
+          <Input
+            placeholder="如: °C, %"
+            value={config?.unit || ''}
+            onChange={(e) => updateField('unit', e.target.value || undefined)}
+            disabled={readonly}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="text-xs">单位位置</Label>
+          <Select
+            value={config?.unitPosition || 'suffix'}
+            onValueChange={(v) => updateField('unitPosition', v)}
+            disabled={readonly}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="prefix">前缀</SelectItem>
+              <SelectItem value="suffix">后缀</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+    </div>
   )
 }

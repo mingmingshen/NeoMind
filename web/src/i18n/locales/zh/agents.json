@@ -27,6 +27,7 @@
   "execute": "立即执行",
   "viewMemory": "查看记忆",
   "viewDetails": "查看详情",
+  "viewExecutions": "执行记录",
   "agentDeleted": "智能体已删除",
   "agentCreated": "智能体已创建",
   "agentUpdated": "智能体已更新",
@@ -133,7 +134,13 @@
       "requirement": "需求描述",
       "requirementHint": "用自然语言描述你希望智能体完成的目标",
       "requirementPlaceholder": "例如：\n• 当温度超过30度时发送告警\n• 每天早上9点生成设备状态报告\n• 检测异常能耗并分析原因",
-      "autoParseHint": "系统会自动解析你的描述并配置相应的执行逻辑"
+      "autoParseHint": "系统会自动解析你的描述并配置相应的执行逻辑",
+      "llmBackend": "LLM 模型",
+      "llmBackendHint": "选择此智能体使用的 LLM 模型。如未指定则使用默认模型。",
+      "selectLlmBackend": "选择 LLM 模型",
+      "defaultBackend": "默认模型",
+      "useActiveBackend": "使用当前激活的模型",
+      "active": "已激活"
     },
     "schedule": {
       "selectStrategy": "选择执行策略",

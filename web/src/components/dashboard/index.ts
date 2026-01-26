@@ -29,16 +29,17 @@ export { PieChart } from './generic/PieChart'
 
 // Generic components - Controls
 export { ToggleSwitch } from './generic/ToggleSwitch'
-export { ButtonGroup } from './generic/ButtonGroup'
-export { Slider } from './generic/Slider'
-export { Dropdown } from './generic/Dropdown'
-export { InputField } from './generic/InputField'
 
 // Generic components - Display & Content
 export { ImageDisplay } from './generic/ImageDisplay'
 export { ImageHistory, type ImageHistoryProps, type ImageHistoryItem } from './generic/ImageHistory'
 export { WebDisplay } from './generic/WebDisplay'
 export { MarkdownDisplay } from './generic/MarkdownDisplay'
+
+// Generic components - Spatial & Media
+export { MapDisplay, type MapDisplayProps, type MapMarker, type MapLayer } from './generic/MapDisplay'
+export { VideoDisplay, type VideoDisplayProps, type VideoSourceType } from './generic/VideoDisplay'
+export { CustomLayer, type CustomLayerProps, type LayerItem } from './generic/CustomLayer'
 
 // Config system
 export * from './config'

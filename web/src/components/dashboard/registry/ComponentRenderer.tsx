@@ -30,16 +30,17 @@ const PieChart = lazy(() => import('../generic/PieChart').then(m => ({ default: 
 
 // Controls
 const ToggleSwitch = lazy(() => import('../generic/ToggleSwitch').then(m => ({ default: m.ToggleSwitch })))
-const ButtonGroup = lazy(() => import('../generic/ButtonGroup').then(m => ({ default: m.ButtonGroup })))
-const Slider = lazy(() => import('../generic/Slider').then(m => ({ default: m.Slider })))
-const Dropdown = lazy(() => import('../generic/Dropdown').then(m => ({ default: m.Dropdown })))
-const InputField = lazy(() => import('../generic/InputField').then(m => ({ default: m.InputField })))
 
 // Display & Content
 const ImageDisplay = lazy(() => import('../generic/ImageDisplay').then(m => ({ default: m.ImageDisplay })))
 const ImageHistory = lazy(() => import('../generic/ImageHistory').then(m => ({ default: m.ImageHistory })))
 const WebDisplay = lazy(() => import('../generic/WebDisplay').then(m => ({ default: m.WebDisplay })))
 const MarkdownDisplay = lazy(() => import('../generic/MarkdownDisplay').then(m => ({ default: m.MarkdownDisplay })))
+
+// Spatial & Media
+const MapDisplay = lazy(() => import('../generic/MapDisplay').then(m => ({ default: m.MapDisplay })))
+const VideoDisplay = lazy(() => import('../generic/VideoDisplay').then(m => ({ default: m.VideoDisplay })))
+const CustomLayer = lazy(() => import('../generic/CustomLayer').then(m => ({ default: m.CustomLayer })))
 
 // ============================================================================
 // Component Map
@@ -60,16 +61,17 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
 
   // Controls
   'toggle-switch': ToggleSwitch,
-  'button-group': ButtonGroup,
-  'slider': Slider,
-  'dropdown': Dropdown,
-  'input-field': InputField,
 
   // Display & Content
   'image-display': ImageDisplay,
   'image-history': ImageHistory,
   'web-display': WebDisplay,
   'markdown-display': MarkdownDisplay,
+
+  // Spatial & Media
+  'map-display': MapDisplay,
+  'video-display': VideoDisplay,
+  'custom-layer': CustomLayer,
 } as const
 
 // ============================================================================

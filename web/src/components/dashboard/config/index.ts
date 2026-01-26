@@ -5,6 +5,10 @@
  * Provides abstracted, reusable configuration sections.
  */
 
+// New unified data source configuration
+export { UnifiedDataSourceConfig } from './UnifiedDataSourceConfig'
+export type { UnifiedDataSourceConfigProps } from './UnifiedDataSourceConfig'
+
 export { ConfigSection } from './ConfigSection'
 export { DataSourceConfigSection } from './DataSourceConfigSection'
 export {
@@ -27,10 +31,17 @@ export {
 export { ConfigRenderer } from './ConfigRenderer'
 export { ComponentConfigDialog } from './ComponentConfigDialog'
 export type { ComponentConfigDialogProps } from './ComponentConfigDialog'
+
+// Value Map Editor for LED Indicator
+export { ValueMapEditor } from './ValueMapEditor'
+export type { ValueStateMapping, LEDState } from './ValueMapEditor'
+
+// Legacy exports - consider removing when no longer needed
 export { DataSourceSelectorContent } from './DataSourceSelectorContent'
 export type { DataSourceSelectorContentProps } from './DataSourceSelectorContent'
 export { DataSourceSelector } from './DataSourceSelector'
 export type { DataSourceSelectorProps } from './DataSourceSelector'
+
 export {
   registerComponentConfig,
   getComponentConfig,

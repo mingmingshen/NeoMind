@@ -18,7 +18,7 @@ export interface ToggleSwitchProps {
   dataSource?: DataSource
 
   // Display
-  label?: string
+  title?: string
   size?: 'sm' | 'md' | 'lg'
 
   // Initial state for display before command response
@@ -28,10 +28,10 @@ export interface ToggleSwitchProps {
   className?: string
 }
 
-// Get icon based on label
-function getIconForLabel(label?: string): React.ComponentType<{ className?: string }> {
-  if (!label) return Power
-  const lower = label.toLowerCase()
+// Get icon based on title
+function getIconForTitle(title?: string): React.ComponentType<{ className?: string }> {
+  if (!title) return Power
+  const lower = title.toLowerCase()
   if (lower.includes('light') || lower.includes('lamp')) return Lightbulb
   if (lower.includes('fan')) return Fan
   if (lower.includes('lock')) return Lock
@@ -40,7 +40,7 @@ function getIconForLabel(label?: string): React.ComponentType<{ className?: stri
 
 export function ToggleSwitch({
   dataSource,
-  label,
+  title,
   size = 'md',
   initialState = false,
   disabled = false,
@@ -62,7 +62,7 @@ export function ToggleSwitch({
   }
 
   const config = dashboardComponentSize[size]
-  const Icon = getIconForLabel(label)
+  const Icon = getIconForTitle(title)
 
   // Loading state
   if (loading) {
@@ -100,18 +100,18 @@ export function ToggleSwitch({
         <Icon className={cn(config.iconSize, checked ? 'opacity-100' : 'opacity-50')} />
       </div>
 
-      {/* Label section - right side */}
+      {/* Title section - right side */}
       <div className="flex flex-col min-w-0 flex-1 text-left">
-        {label ? (
+        {title ? (
           <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', config.titleText)}>
-            {label}
+            {title}
           </span>
         ) : (
           <span className={cn(indicatorFontWeight.title, 'text-foreground', config.titleText)}>
             {checked ? '已开启' : '已关闭'}
           </span>
         )}
-        {label && (
+        {title && (
           <span className={cn(indicatorFontWeight.label, 'text-muted-foreground', config.labelText)}>
             {checked ? '已开启' : '已关闭'}
           </span>

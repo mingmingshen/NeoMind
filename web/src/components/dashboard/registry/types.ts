@@ -15,6 +15,7 @@ export type ComponentCategory =
   | 'charts'        // Visual data representations
   | 'controls'      // Interactive inputs
   | 'display'       // Content display (images, web, markdown)
+  | 'spatial'       // Spatial & media (maps, video, layers)
 
 // ============================================================================
 // Component Metadata

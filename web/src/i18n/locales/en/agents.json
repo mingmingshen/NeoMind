@@ -27,6 +27,7 @@
   "execute": "Execute Now",
   "viewMemory": "View Memory",
   "viewDetails": "View Details",
+  "viewExecutions": "View Executions",
   "agentDeleted": "Agent deleted successfully",
   "agentCreated": "Agent created successfully",
   "agentUpdated": "Agent updated successfully",
@@ -133,7 +134,13 @@
       "requirement": "Requirements",
       "requirementHint": "Describe the goals you want the agent to accomplish in natural language",
       "requirementPlaceholder": "e.g.:\n• Send alert when temperature exceeds 30°C\n• Generate device status report at 9 AM daily\n• Detect abnormal energy consumption and analyze causes",
-      "autoParseHint": "The system will automatically parse your description and configure the execution logic"
+      "autoParseHint": "The system will automatically parse your description and configure the execution logic",
+      "llmBackend": "LLM Model",
+      "llmBackendHint": "Select the LLM model for this agent. Uses the default model if not specified.",
+      "selectLlmBackend": "Select LLM Model",
+      "defaultBackend": "Default Model",
+      "useActiveBackend": "Use the currently active model",
+      "active": "Active"
     },
     "schedule": {
       "selectStrategy": "Select Execution Strategy",

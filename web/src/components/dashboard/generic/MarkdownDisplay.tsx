@@ -15,6 +15,7 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { FileText } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { EmptyState } from '../shared'
 
 export interface MarkdownDisplayProps {
   dataSource?: DataSource
@@ -132,13 +133,13 @@ export function MarkdownDisplay({
   // Empty state
   if (!content) {
     return (
-      <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3', sizeConfig.padding, className)}>
-        <FileText className="text-muted-foreground h-12 w-12" />
-        <div className="text-center">
-          <p className="text-muted-foreground text-sm">No content</p>
-          <p className="text-muted-foreground/60 text-xs mt-1">Add markdown content or data source</p>
-        </div>
-      </div>
+      <EmptyState
+        size={size}
+        className={className}
+        icon={<FileText />}
+        message="No content"
+        subMessage="Add markdown content or data source"
+      />
     )
   }
 

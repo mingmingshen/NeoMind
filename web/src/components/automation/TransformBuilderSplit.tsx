@@ -249,13 +249,13 @@ export function TransformBuilder({
 
   // Get all device types
   const deviceTypes = useMemo(() => {
-    return Array.from(new Set(devices.map((d) => d.device_type).filter(Boolean)))
+    return Array.from(new Set(devices.map((d) => d.device_type).filter((dt): dt is string => Boolean(dt))))
   }, [devices])
 
   // Build scope options
-  const scopeOptions = useMemo(() => {
+  const scopeOptions: Array<{ value: string; label: string }> = useMemo(() => {
     if (scopeType === 'device_type') {
-      return deviceTypes.map(dt => ({ value: dt, label: dt || '' }))
+      return deviceTypes.map(dt => ({ value: dt, label: dt }))
     }
     if (scopeType === 'device') {
       return devices.map(d => ({ value: d.id, label: d.name }))

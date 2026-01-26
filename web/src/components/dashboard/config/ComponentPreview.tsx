@@ -6,14 +6,31 @@
  * Uses the component's actual default size from the registry.
  */
 
-import { memo } from 'react'
+import { memo, useRef, useEffect, useState } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import ComponentRenderer from '@/components/dashboard/registry/ComponentRenderer'
 import { getComponentMeta } from '@/components/dashboard/registry/registry'
 import type { DashboardComponent, DataSource, ImplementedComponentType } from '@/types/dashboard'
+
+// Helper function to create stable key for comparison
+function createStableKey(obj: any): string {
+  if (obj === null || obj === undefined) return ''
+  if (typeof obj !== 'object') return String(obj)
+  if (Array.isArray(obj)) return '[' + obj.map(createStableKey).join(',') + ']'
+  const sortedKeys = Object.keys(obj).sort()
+  return '{' + sortedKeys.map(k => `"${k}":${createStableKey(obj[k])}`).join(',') + '}'
+}
+
+/**
+ * Create a simple key to detect dataSource changes
+ */
+function createDataSourceKey(ds: DataSource | undefined): string {
+  if (!ds) return 'no-ds'
+  return `${ds.type}:${ds.deviceId || ''}:${ds.metricId || ds.property || ds.infoProperty || ''}:${ds.command || ''}`
+}
 
 export interface ComponentPreviewProps {
   componentType: string
@@ -40,7 +57,7 @@ function formatDataSourceLabel(ds: DataSource | undefined): string {
     case 'device':
       return `设备: ${ds.deviceId}${ds.property ? ` (${ds.property})` : ''}`
     case 'device-info':
-      return `设备信息: ${ds.deviceId}${ds.property ? ` (${ds.property})` : ''}`
+      return `设备信息: ${ds.deviceId}${ds.infoProperty ? ` (${ds.infoProperty})` : ''}`
     case 'metric':
       return `指标: ${ds.metricId || '未指定'}`
     case 'command':
@@ -68,11 +85,40 @@ export const ComponentPreview = memo(function ComponentPreview({
 }: ComponentPreviewProps) {
   const meta = getComponentMeta(componentType as ImplementedComponentType)
 
+  // Track data source changes to show transition
+  const [prevDataSourceKey, setPrevDataSourceKey] = useState<string>(() => createDataSourceKey(dataSource))
+  const [isTransitioning, setIsTransitioning] = useState(false)
+
+  // Detect dataSource changes
+  useEffect(() => {
+    const newKey = createDataSourceKey(dataSource)
+    if (newKey !== prevDataSourceKey) {
+      // Show transition state
+      setIsTransitioning(true)
+      // Hide transition after delay
+      const timer = setTimeout(() => setIsTransitioning(false), 200)
+      setPrevDataSourceKey(newKey)
+      return () => clearTimeout(timer)
+    }
+  }, [dataSource, prevDataSourceKey])
+
+  // Track previous data to show during loading (prevents flicker)
+  const prevDataRef = useRef<any>(null)
+  const hasLoadedOnceRef = useRef(false)
+
   // Try to fetch real data for preview
   const { data, loading, error } = useDataSource(dataSource, {
     // Only fetch if we have a valid data source
     enabled: !!dataSource && meta?.hasDataSource,
   })
+
+  // Update prevDataRef when we successfully get data
+  useEffect(() => {
+    if (!loading && !error && data !== null && data !== undefined) {
+      prevDataRef.current = data
+      hasLoadedOnceRef.current = true
+    }
+  }, [data, loading, error])
 
   // Use component's default size from registry
   const defaultW = meta?.sizeConstraints.defaultW ?? 4
@@ -89,40 +135,28 @@ export const ComponentPreview = memo(function ComponentPreview({
   }
 
   // Calculate preview height based on component's default grid height
-  // Each grid cell is approximately GRID_CELL_HEIGHT pixels
-  const calculatedHeight = defaultH * GRID_CELL_HEIGHT + 32 // +32 for padding
-  const previewHeight = Math.max(MIN_PREVIEW_HEIGHT, calculatedHeight)
+  // Limit max height to prevent overflow in config dialog
+  const rawHeight = defaultH * GRID_CELL_HEIGHT + 32 // +32 for padding
+  const maxPreviewHeight = 280 // Max height for preview area in dialog
+  const previewHeight = Math.min(Math.max(MIN_PREVIEW_HEIGHT, rawHeight), maxPreviewHeight)
 
+  // Show previous data during loading (except on first load)
+  const displayData = loading && hasLoadedOnceRef.current ? prevDataRef.current : data
+  const showLoading = loading && !hasLoadedOnceRef.current
   const hasData = !loading && !error && !!dataSource
   const hasError = !!error
 
   return (
-    <div className={cn('flex flex-col', className)}>
+    <div className={cn('flex flex-col overflow-hidden', className)}>
       {/* Header */}
       {showHeader && (
         <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30 shrink-0">
           <div className="flex items-center gap-2">
             <Eye className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">预览</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {/* Data source indicator */}
-            {meta?.hasDataSource && (
-              <div className={cn(
-                'flex items-center gap-1 text-xs',
-                hasError ? 'text-destructive' : hasData ? 'text-green-600' : 'text-muted-foreground'
-              )}>
-                {hasError ? (
-                  <AlertCircle className="h-3 w-3" />
-                ) : hasData ? (
-                  <Eye className="h-3 w-3" />
-                ) : (
-                  <EyeOff className="h-3 w-3" />
-                )}
-                <span className="max-w-[120px] truncate">
-                  {formatDataSourceLabel(dataSource)}
-                </span>
-              </div>
+            {/* Loading indicator */}
+            {(loading || isTransitioning) && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
             )}
           </div>
         </div>
@@ -130,10 +164,14 @@ export const ComponentPreview = memo(function ComponentPreview({
 
       {/* Preview area - dynamic height based on component size */}
       <div
-        className="flex-1 p-3 bg-muted/10 overflow-hidden"
+        className={cn(
+          'min-h-0 p-3 bg-muted/10 overflow-hidden relative',
+          'transition-opacity duration-200',
+          isTransitioning && 'opacity-60'
+        )}
         style={{ height: `${previewHeight}px` }}
       >
-        {loading ? (
+        {showLoading ? (
           <div className="w-full h-full flex items-center justify-center">
             <Skeleton className="w-full h-full" />
           </div>
@@ -144,7 +182,10 @@ export const ComponentPreview = memo(function ComponentPreview({
             <p className="text-xs text-muted-foreground/60 mt-1">使用静态数据预览</p>
           </div>
         ) : (
-          <div className="w-full h-full p-2">
+          <div className={cn(
+            'w-full h-full p-2 transition-all duration-200 ease-out overflow-hidden',
+            isTransitioning && 'scale-[0.98] blur-[1px]'
+          )}>
             <ComponentRenderer component={mockComponent} />
           </div>
         )}
@@ -157,16 +198,16 @@ export const ComponentPreview = memo(function ComponentPreview({
           <span className="text-muted-foreground/60">
             {defaultW}×{defaultH}
           </span>
-          {dataSource && (
-            <span className={cn(
-              'flex items-center gap-1',
-              hasError ? 'text-destructive' : 'text-green-600'
-            )}>
-              {hasError ? '数据错误' : hasData ? '实时数据' : '无数据'}
-            </span>
-          )}
         </div>
       </div>
     </div>
+  )
+}, (prevProps, nextProps) => {
+  // Custom comparison for memo - check if props actually changed
+  return (
+    prevProps.componentType === nextProps.componentType &&
+    prevProps.title === nextProps.title &&
+    createStableKey(prevProps.config) === createStableKey(nextProps.config) &&
+    createStableKey(prevProps.dataSource) === createStableKey(nextProps.dataSource)
   )
 })

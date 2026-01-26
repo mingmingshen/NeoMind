@@ -1,16 +1,18 @@
 /**
  * ConfigRenderer Component
  *
- * Renders configuration sections from a ComponentConfigSchema.
- * Handles all section types and dispatches to appropriate UI components.
+ * Renders configuration sections following system UI standards.
+ * Uses Field components and default input/label styles.
  */
 
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ConfigSection } from './ConfigSection'
-import { DataSourceConfigSection } from './DataSourceConfigSection'
+import { Field } from '@/components/ui/field'
+import { ColorPicker, CompactColorPicker, COLOR_PRESETS } from '@/components/ui/color-picker'
+import { cn } from '@/lib/utils'
+import { DataMappingConfig } from './UIConfigSections'
 import type {
   ConfigSection as ConfigSectionType,
   DataSourceSection,
@@ -25,6 +27,7 @@ import type {
   TextSection,
   OrientationSection,
   AnimationSection,
+  DataMappingSection,
   CustomSection,
 } from './ComponentConfigBuilder'
 
@@ -33,8 +36,10 @@ interface ConfigRendererProps {
 }
 
 export function ConfigRenderer({ sections }: ConfigRendererProps) {
+  if (sections.length === 0) return null
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {sections.map((section, index) => (
         <ConfigSectionItem key={index} section={section} />
       ))}
@@ -45,14 +50,14 @@ export function ConfigRenderer({ sections }: ConfigRendererProps) {
 function ConfigSectionItem({ section }: { section: ConfigSectionType }) {
   switch (section.type) {
     case 'data-source':
-      return <DataSourceConfigSection {...(section as DataSourceSection).props} />
+      return null // Handled separately by UnifiedDataSourceConfig
 
     case 'value': {
       const props = (section as ValueSection).props
       return (
-        <ConfigSection title={props.label || 'Value'} bordered>
-          <div className="space-y-2">
-            <Label>Static Value ({props.min ?? 0} - {props.max ?? 100})</Label>
+        <div className="space-y-3">
+          <Field>
+            <Label>{props.label || '数值'} ({props.min ?? 0} - {props.max ?? 100})</Label>
             <Input
               type="number"
               min={props.min}
@@ -61,80 +66,74 @@ function ConfigSectionItem({ section }: { section: ConfigSectionType }) {
               value={props.value ?? 0}
               onChange={(e) => props.onChange?.(parseFloat(e.target.value) || 0)}
             />
-          </div>
+          </Field>
           {props.unit !== undefined && (
-            <div className="space-y-2">
-              <Label>Unit</Label>
+            <Field>
+              <Label>单位</Label>
               <Input
                 value={props.unit}
-                onChange={() => {
-                  // Unit is typically handled separately
-                }}
+                onChange={() => {}}
                 placeholder="°C, %, kg..."
               />
-            </div>
+            </Field>
           )}
           {props.showValue !== undefined && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between">
+              <Label>显示数值</Label>
               <Switch
-                id="show-value"
                 checked={props.showValue}
                 onCheckedChange={() => {}}
               />
-              <Label htmlFor="show-value">Show Value</Label>
             </div>
           )}
-        </ConfigSection>
+        </div>
       )
     }
 
     case 'range': {
       const props = (section as RangeSection).props
       return (
-        <ConfigSection title={props.label || 'Range'} bordered>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="space-y-2">
-              <Label>Min</Label>
-              <Input
-                type="number"
-                value={props.min}
-                onChange={(e) => props.onChange?.('min', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Max</Label>
-              <Input
-                type="number"
-                value={props.max}
-                onChange={(e) => props.onChange?.('max', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Step</Label>
-              <Input
-                type="number"
-                value={props.step}
-                onChange={(e) => props.onChange?.('step', parseFloat(e.target.value) || 0)}
-              />
-            </div>
-          </div>
-        </ConfigSection>
+        <div className="space-y-3">
+          <Field>
+            <Label>最小值</Label>
+            <Input
+              type="number"
+              value={props.min}
+              onChange={(e) => props.onChange?.('min', parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field>
+            <Label>最大值</Label>
+            <Input
+              type="number"
+              value={props.max}
+              onChange={(e) => props.onChange?.('max', parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+          <Field>
+            <Label>步长</Label>
+            <Input
+              type="number"
+              value={props.step}
+              onChange={(e) => props.onChange?.('step', parseFloat(e.target.value) || 0)}
+            />
+          </Field>
+        </div>
       )
     }
 
     case 'size': {
       const props = (section as SizeSection).props
       const sizeOptions = [
-        { value: 'xs', label: 'Extra Small' },
-        { value: 'sm', label: 'Small' },
-        { value: 'md', label: 'Medium' },
-        { value: 'lg', label: 'Large' },
-        { value: 'xl', label: 'Extra Large' },
-        { value: '2xl', label: '2X Large' },
+        { value: 'xs', label: '极小' },
+        { value: 'sm', label: '小' },
+        { value: 'md', label: '中' },
+        { value: 'lg', label: '大' },
+        { value: 'xl', label: '极大' },
       ]
       return (
-        <div className="space-y-2">
-          <Label>{props.label || 'Size'}</Label>
+        <Field>
+          <Label>{props.label || '尺寸'}</Label>
           <Select value={props.size} onValueChange={props.onChange}>
             <SelectTrigger>
               <SelectValue />
@@ -147,140 +146,115 @@ function ConfigSectionItem({ section }: { section: ConfigSectionType }) {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       )
     }
 
     case 'color': {
       const props = (section as ColorSection).props
       return (
-        <div className="space-y-2">
-          <Label>{props.label || 'Color'}</Label>
-          <div className="flex items-center gap-2">
-            <Input
-              type="color"
-              value={props.color}
-              onChange={(e) => props.onChange?.(e.target.value)}
-              className="h-10 w-16 p-1"
-            />
-            <Input
-              type="text"
-              value={props.color}
-              onChange={(e) => props.onChange?.(e.target.value)}
-              placeholder="#3b82f6"
-              className="flex-1 font-mono text-sm"
-            />
-          </div>
-        </div>
+        <ColorPicker
+          value={props.color}
+          onChange={props.onChange}
+          label={props.label || '颜色'}
+          presets="primary"
+          disabled={false}
+        />
       )
     }
 
     case 'multi-color': {
       const props = (section as MultiColorSection).props
-      const colorFields: { key: string; label: string; defaultColor: string }[] = [
-        { key: 'primary', label: 'Primary Color', defaultColor: '#3b82f6' },
-        { key: 'secondary', label: 'Secondary Color', defaultColor: '#8b5cf6' },
-        { key: 'error', label: 'Error Color', defaultColor: '#ef4444' },
-        { key: 'warning', label: 'Warning Color', defaultColor: '#eab308' },
-        { key: 'success', label: 'Success Color', defaultColor: '#22c55e' },
+      const colorFields: { key: string; label: string; defaultColor: string; presetKey?: keyof typeof COLOR_PRESETS }[] = [
+        { key: 'primary', label: '主色', defaultColor: '#3b82f6', presetKey: 'primary' },
+        { key: 'secondary', label: '辅色', defaultColor: '#8b5cf6', presetKey: 'primary' },
+        { key: 'error', label: '错误色', defaultColor: '#ef4444', presetKey: 'semantic' },
+        { key: 'warning', label: '警告色', defaultColor: '#eab308', presetKey: 'semantic' },
+        { key: 'success', label: '成功色', defaultColor: '#22c55e', presetKey: 'semantic' },
       ]
       return (
-        <ConfigSection title={props.label || 'Colors'} bordered>
-          <div className="space-y-3">
-            {colorFields.map((field) => {
-              const colorValue = props.colors?.[field.key as keyof typeof props.colors] || field.defaultColor
-              return (
-                <div key={field.key} className="space-y-2">
-                  <Label>{field.label}</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="color"
-                      value={colorValue}
-                      onChange={(e) => props.onChange?.(field.key, e.target.value)}
-                      className="h-8 w-12 p-0.5"
-                    />
-                    <Input
-                      type="text"
-                      value={colorValue}
-                      onChange={(e) => props.onChange?.(field.key, e.target.value)}
-                      className="flex-1 font-mono text-sm h-8"
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </ConfigSection>
+        <div className="space-y-3">
+          {colorFields.map((field) => {
+            const colorValue = props.colors?.[field.key as keyof typeof props.colors] || field.defaultColor
+            return (
+              <Field key={field.key}>
+                <Label>{field.label}</Label>
+                <CompactColorPicker
+                  value={colorValue}
+                  onChange={(color) => props.onChange?.(field.key, color)}
+                  presets={field.presetKey ? COLOR_PRESETS[field.presetKey] : COLOR_PRESETS.primary}
+                  disabled={false}
+                />
+              </Field>
+            )
+          })}
+        </div>
       )
     }
 
     case 'label': {
       const props = (section as LabelSection).props
       return (
-        <ConfigSection title={props.label || 'Labels'} bordered>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-2">
-              <Label>Prefix</Label>
-              <Input
-                value={props.prefix}
-                onChange={(e) => props.onChange?.('prefix', e.target.value)}
-                placeholder="$"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Suffix</Label>
-              <Input
-                value={props.suffix}
-                onChange={(e) => props.onChange?.('suffix', e.target.value)}
-                placeholder="kg"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Unit</Label>
+        <div className="space-y-3">
+          <Field>
+            <Label>前缀</Label>
+            <Input
+              value={props.prefix}
+              onChange={(e) => props.onChange?.('prefix', e.target.value)}
+              placeholder="$"
+            />
+          </Field>
+          <Field>
+            <Label>后缀</Label>
+            <Input
+              value={props.suffix}
+              onChange={(e) => props.onChange?.('suffix', e.target.value)}
+              placeholder="kg"
+            />
+          </Field>
+          <Field>
+            <Label>单位</Label>
             <Input
               value={props.unit}
               onChange={(e) => props.onChange?.('unit', e.target.value)}
               placeholder="°C, %..."
             />
-          </div>
-        </ConfigSection>
+          </Field>
+        </div>
       )
     }
 
     case 'boolean': {
       const props = (section as BooleanSection).props
       return (
-        <ConfigSection title={props.label || 'Options'} bordered>
-          <div className="space-y-3">
-            {props.options.map((option) => (
-              <div key={option.key} className="flex items-center justify-between">
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor={option.key} className="cursor-pointer">
-                    {option.label}
-                  </Label>
-                  {option.description && (
-                    <span className="text-xs text-muted-foreground">
-                      {option.description}
-                    </span>
-                  )}
-                </div>
-                <Switch
-                  id={option.key}
-                  checked={option.value ?? false}
-                  onCheckedChange={(checked) => props.onChange?.(option.key, checked)}
-                />
+        <div className="space-y-3">
+          {props.options.map((option) => (
+            <div key={option.key} className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor={option.key} className="cursor-pointer">
+                  {option.label}
+                </Label>
+                {option.description && (
+                  <span className="text-sm text-muted-foreground">
+                    {option.description}
+                  </span>
+                )}
               </div>
-            ))}
-          </div>
-        </ConfigSection>
+              <Switch
+                id={option.key}
+                checked={option.value ?? false}
+                onCheckedChange={(checked) => props.onChange?.(option.key, checked)}
+              />
+            </div>
+          ))}
+        </div>
       )
     }
 
     case 'select': {
       const props = (section as SelectSection).props
       return (
-        <div className="space-y-2">
+        <Field>
           <Label>{props.label}</Label>
           <Select value={props.value} onValueChange={props.onChange}>
             <SelectTrigger>
@@ -294,58 +268,63 @@ function ConfigSectionItem({ section }: { section: ConfigSectionType }) {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       )
     }
 
     case 'text': {
       const props = (section as TextSection).props
       return (
-        <ConfigSection title={props.label} bordered>
-          <div className="space-y-2">
-            <textarea
-              className="w-full min-h-[120px] p-2 border rounded-md text-sm font-mono"
-              value={props.content}
-              onChange={(e) => props.onChange?.(e.target.value)}
-              placeholder={props.placeholder || 'Enter content...'}
-              rows={props.rows || 4}
-            />
-          </div>
-        </ConfigSection>
+        <Field>
+          <Label>{props.label}</Label>
+          <textarea
+            className={cn(
+              "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
+              "ring-offset-background placeholder:text-muted-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+              "resize-none"
+            )}
+            value={props.content}
+            onChange={(e) => props.onChange?.(e.target.value)}
+            placeholder={props.placeholder || '输入内容...'}
+            rows={props.rows || 3}
+          />
+        </Field>
       )
     }
 
     case 'orientation': {
       const props = (section as OrientationSection).props
       return (
-        <div className="space-y-2">
-          <Label>{props.label || 'Orientation'}</Label>
+        <Field>
+          <Label>{props.label || '方向'}</Label>
           <Select value={props.orientation} onValueChange={props.onChange}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="horizontal">Horizontal</SelectItem>
-              <SelectItem value="vertical">Vertical</SelectItem>
+              <SelectItem value="horizontal">水平</SelectItem>
+              <SelectItem value="vertical">垂直</SelectItem>
             </SelectContent>
           </Select>
-        </div>
+        </Field>
       )
     }
 
     case 'animation': {
       const props = (section as AnimationSection).props
       return (
-        <ConfigSection title={props.label || 'Animation'} bordered>
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label>Enable Animation</Label>
+            <Label>启用动画</Label>
             <Switch
               checked={props.animated}
               onCheckedChange={(checked) => props.onChange?.('animated', checked)}
             />
           </div>
-          <div className="space-y-2">
-            <Label>Duration (ms)</Label>
+          <Field>
+            <Label>时长 (毫秒)</Label>
             <Input
               type="number"
               min={0}
@@ -354,8 +333,21 @@ function ConfigSectionItem({ section }: { section: ConfigSectionType }) {
               value={props.duration}
               onChange={(e) => props.onChange?.('duration', parseInt(e.target.value) || 0)}
             />
-          </div>
-        </ConfigSection>
+          </Field>
+        </div>
+      )
+    }
+
+    case 'data-mapping': {
+      const props = (section as DataMappingSection).props
+      return (
+        <DataMappingConfig
+          dataMapping={props.dataMapping}
+          onChange={props.onChange}
+          mappingType={props.mappingType}
+          label={props.label}
+          readonly={false}
+        />
       )
     }
 

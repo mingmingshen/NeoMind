@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Search, Server, Database, Check, Zap, ChevronRight, BarChart3, Bot, Info, Layers } from 'lucide-react'
+import { Search, Server, Database, Check, Zap, ChevronRight, Info, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -28,14 +28,14 @@ export interface DataSourceSelectorProps {
   onSelect: (dataSource: DataSourceOrList | DataSource | undefined) => void
   currentDataSource?: DataSourceOrList
   // Optional: filter which source types to show
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
   // Optional: enable multiple data source selection
   multiple?: boolean
   // Optional: max number of data sources (only used when multiple is true)
   maxSources?: number
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system'
+type CategoryType = 'device-metric' | 'device-command' | 'device-info'
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
 
 // Device info property definitions
@@ -54,15 +54,13 @@ const CATEGORIES = [
   { id: 'device-metric' as const, name: '指标', icon: Server, description: '设备的实时数据点' },
   { id: 'device-command' as const, name: '指令', icon: Zap, description: '控制设备的操作' },
   { id: 'device-info' as const, name: '基本信息', icon: Info, description: '设备的属性和状态' },
-  { id: 'agent' as const, name: 'Agent', icon: Bot, description: 'AI Agent 数据' },
-  { id: 'system' as const, name: '系统', icon: BarChart3, description: '系统统计数据' },
 ]
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info', 'agent', 'system']
+  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info']
 
   const result: CategoryType[] = []
 
@@ -70,8 +68,6 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
   if (allowedTypes.includes('device-info')) result.push('device-info')
-  if (allowedTypes.includes('agent')) result.push('agent')
-  if (allowedTypes.includes('system')) result.push('system')
 
   // Old format types - map to new format
   if (allowedTypes.includes('device') || allowedTypes.includes('metric')) {
@@ -81,24 +77,8 @@ function normalizeAllowedTypes(
     if (!result.includes('device-command')) result.push('device-command')
   }
 
-  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info', 'agent', 'system']
+  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info']
 }
-
-// System metrics (non-device specific)
-const SYSTEM_METRICS = [
-  { id: 'device-online-count', name: '在线设备数', unit: '个', endpoint: '/stats/devices' },
-  { id: 'device-offline-count', name: '离线设备数', unit: '个', endpoint: '/stats/devices' },
-  { id: 'alert-critical-count', name: '严重告警', unit: '个', endpoint: '/stats/alerts' },
-  { id: 'alert-warning-count', name: '警告告警', unit: '个', endpoint: '/stats/alerts' },
-  { id: 'rule-trigger-count', name: '规则触发次数', unit: '次', endpoint: '/stats/rules' },
-]
-
-// Agent data options
-const AGENT_METRICS = [
-  { id: 'agent-status', name: 'Agent 状态', description: 'idle, running, paused' },
-  { id: 'agent-executions', name: '执行次数', description: '总执行次数' },
-  { id: 'agent-success-rate', name: '成功率', description: '执行成功率百分比' },
-]
 
 export function DataSourceSelector({
   open,
@@ -159,16 +139,6 @@ export function DataSourceSelector({
           newSelectedItems.add(`device-command:${ds.deviceId}:${ds.command}`)
         } else if (ds.type === 'device-info' && ds.deviceId && ds.infoProperty) {
           newSelectedItems.add(`device-info:${ds.deviceId}:${ds.infoProperty}`)
-        } else if (ds.type === 'api' && ds.endpoint) {
-          // System metrics
-          if (ds.endpoint.includes('devices')) {
-            newSelectedItems.add(`system:device-online-count`)
-          } else if (ds.endpoint.includes('alerts')) {
-            newSelectedItems.add(`system:alert-critical-count`)
-          }
-        } else if (ds.type === 'static') {
-          // Map to system
-          newSelectedItems.add(`system:device-online-count`)
         }
       }
 
@@ -300,22 +270,6 @@ export function DataSourceSelector({
           type: 'device-info',
           deviceId,
           infoProperty: infoProperty as any,
-          refresh: 10,
-        }
-      } else if (category === 'system') {
-        const metricId = rest[0]
-        const metric = SYSTEM_METRICS.find(m => m.id === metricId)
-        return {
-          type: 'api',
-          endpoint: metric?.endpoint || '/stats/devices',
-          refresh: 10,
-        }
-      } else if (category === 'agent') {
-        const metricId = rest[0]
-        return {
-          type: 'api',
-          endpoint: '/agents',
-          params: { metric: metricId },
           refresh: 10,
         }
       }
@@ -713,100 +667,6 @@ export function DataSourceSelector({
                   <p className="text-sm">暂无设备</p>
                 </div>
               )}
-            </TabsContent>
-
-            {/* Agent Data Content */}
-            <TabsContent value="agent" className="flex-1 overflow-y-auto px-6 py-4 mt-0">
-              <div className="space-y-2">
-                {AGENT_METRICS.map(metric => {
-                  if (!filterMatches(metric.name) && !filterMatches(metric.description)) return null
-
-                  const itemId = `agent:${metric.id}`
-                  const selected = isSelected(itemId)
-                  const disabled = multiple && !selected && !canSelectMore
-
-                  return (
-                    <button
-                      key={metric.id}
-                      onClick={() => !disabled && handleItemClick(itemId)}
-                      disabled={disabled}
-                      className={cn(
-                        "w-full flex items-center justify-between p-3 rounded-lg border transition-all",
-                        selected ? 'bg-primary/10 border-primary/30' : 'bg-card border-border hover:bg-accent/50 hover:border-primary/30',
-                        disabled && 'opacity-50 cursor-not-allowed'
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        {multiple && (
-                          <div className={cn(
-                            "w-5 h-5 rounded border flex items-center justify-center transition-colors",
-                            selected ? 'bg-primary border-primary' : 'border-border'
-                          )}>
-                            {selected && <Check className="h-3.5 w-3.5 text-white" />}
-                          </div>
-                        )}
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-500/10">
-                          <Bot className={cn("h-4 w-4", selected ? 'text-primary' : 'text-purple-500')} />
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-medium">{metric.name}</p>
-                          <p className="text-xs text-muted-foreground">{metric.description}</p>
-                        </div>
-                      </div>
-                      {!multiple && selected && (
-                        <Check className="h-4 w-4 text-primary" />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            </TabsContent>
-
-            {/* System Stats Content */}
-            <TabsContent value="system" className="flex-1 overflow-y-auto px-6 py-4 mt-0">
-              <div className="space-y-2">
-                {SYSTEM_METRICS.map(metric => {
-                  if (!filterMatches(metric.name)) return null
-
-                  const itemId = `system:${metric.id}`
-                  const selected = isSelected(itemId)
-                  const disabled = multiple && !selected && !canSelectMore
-
-                  return (
-                    <button
-                      key={metric.id}
-                      onClick={() => !disabled && handleItemClick(itemId)}
-                      disabled={disabled}
-                      className={cn(
-                        "w-full flex items-center justify-between p-3 rounded-lg border transition-all",
-                        selected ? 'bg-primary/10 border-primary/30' : 'bg-card border-border hover:bg-accent/50 hover:border-primary/30',
-                        disabled && 'opacity-50 cursor-not-allowed'
-                      )}
-                    >
-                      <div className="flex items-center gap-3">
-                        {multiple && (
-                          <div className={cn(
-                            "w-5 h-5 rounded border flex items-center justify-center transition-colors",
-                            selected ? 'bg-primary border-primary' : 'border-border'
-                          )}>
-                            {selected && <Check className="h-3.5 w-3.5 text-white" />}
-                          </div>
-                        )}
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-500/10">
-                          <BarChart3 className={cn("h-4 w-4", selected ? 'text-primary' : 'text-blue-500')} />
-                        </div>
-                        <div className="text-left">
-                          <p className="text-sm font-medium">{metric.name}</p>
-                          <p className="text-xs text-muted-foreground">{metric.unit}</p>
-                        </div>
-                      </div>
-                      {!multiple && selected && (
-                        <Check className="h-4 w-4 text-primary" />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
             </TabsContent>
           </Tabs>
         </div>

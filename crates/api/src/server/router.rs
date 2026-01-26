@@ -151,6 +151,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             get(devices::get_device_current_handler),
         )
         .route(
+            "/api/devices/current-batch",
+            post(devices::get_devices_current_batch_handler),
+        )
+        .route(
             "/api/devices/:id/state",
             get(devices::get_device_state_handler),
         )

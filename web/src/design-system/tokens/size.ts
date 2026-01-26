@@ -94,6 +94,69 @@ export const responsiveCols = {
 // ============================================================================
 
 /**
+ * Value Card specific size configuration
+ * Optimized for visual hierarchy rather than proportional scaling
+ * - sm: Compact/Dense - for small cards and data-dense layouts
+ * - md: Standard - balanced for most use cases
+ * - lg: Prominent - for emphasis and larger containers
+ */
+export const valueCardSize = {
+  sm: {
+    // Minimal padding, tight spacing for compact display
+    padding: 'p-2.5',
+    headerPadding: 'pb-1.5',
+    // Text: value is primary, keep it readable
+    titleText: 'text-xs',
+    labelText: 'text-[11px]',
+    valueText: 'text-sm font-semibold',
+    // Icons: smaller but still visible
+    iconSize: 'w-3.5 h-3.5',
+    iconContainer: 'w-7 h-7',
+    // Gaps: tighter spacing
+    contentGap: 'gap-2',
+    itemGap: 'gap-1.5',
+    // Border radius
+    radius: 'rounded-md',
+  },
+  md: {
+    // Balanced padding for standard display
+    padding: 'p-3.5',
+    headerPadding: 'pb-2',
+    // Text: standard hierarchy
+    titleText: 'text-sm',
+    labelText: 'text-xs',
+    valueText: 'text-base font-semibold',
+    // Icons: standard size
+    iconSize: 'w-4 h-4',
+    iconContainer: 'w-8 h-8',
+    // Gaps: comfortable spacing
+    contentGap: 'gap-2.5',
+    itemGap: 'gap-2',
+    // Border radius
+    radius: 'rounded-lg',
+  },
+  lg: {
+    // More padding for visual prominence
+    padding: 'p-4.5',
+    headerPadding: 'pb-2.5',
+    // Text: emphasize value, subtle increase elsewhere
+    titleText: 'text-sm',
+    labelText: 'text-xs',
+    valueText: 'text-xl font-bold',
+    // Icons: slightly larger for emphasis
+    iconSize: 'w-5 h-5',
+    iconContainer: 'w-10 h-10',
+    // Gaps: more breathing room
+    contentGap: 'gap-3',
+    itemGap: 'gap-2',
+    // Border radius
+    radius: 'rounded-xl',
+  },
+} as const
+
+export type ValueCardSize = keyof typeof valueCardSize
+
+/**
  * Unified component size configuration
  * All components use consistent padding, gaps, and text scaling
  */

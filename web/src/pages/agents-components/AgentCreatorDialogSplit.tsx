@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { useTranslation } from "react-i18next"
+import { useStore } from "@/store"
 import type {
   AiAgentDetail,
   CreateAgentRequest,
@@ -181,6 +182,8 @@ function BasicInfoStep({
   setRole,
   userPrompt,
   setUserPrompt,
+  llmBackendId,
+  setLlmBackendId,
 }: {
   name: string
   setName: (v: string) => void
@@ -188,8 +191,11 @@ function BasicInfoStep({
   setRole: (v: AgentRole) => void
   userPrompt: string
   setUserPrompt: (v: string) => void
+  llmBackendId: string | null
+  setLlmBackendId: (v: string | null) => void
 }) {
   const { t } = useTranslation('agents')
+  const { llmBackends, activeBackendId } = useStore()
 
   const ROLES = [
     {
@@ -285,6 +291,55 @@ function BasicInfoStep({
           <span>{t('creator.basicInfo.autoParseHint')}</span>
         </div>
       </div>
+
+      {/* LLM Backend Selection */}
+      {llmBackends.length > 0 && (
+        <div>
+          <Label className="text-sm font-medium">
+            {t('creator.basicInfo.llmBackend')}
+          </Label>
+          <p className="text-xs text-muted-foreground mt-1 mb-2">
+            {t('creator.basicInfo.llmBackendHint')}
+          </p>
+          <Select
+            value={llmBackendId ?? activeBackendId ?? ''}
+            onValueChange={(v) => setLlmBackendId(v === 'default' ? null : v)}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder={t('creator.basicInfo.selectLlmBackend')} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="default">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <div className="text-sm font-medium">{t('creator.basicInfo.defaultBackend')}</div>
+                    <div className="text-xs text-muted-foreground">{t('creator.basicInfo.useActiveBackend')}</div>
+                  </div>
+                </div>
+              </SelectItem>
+              {llmBackends.map((backend) => (
+                <SelectItem key={backend.id} value={backend.id}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-gradient-to-br from-primary to-primary/60" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{backend.name}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {backend.model} · {backend.backend_type}
+                      </div>
+                    </div>
+                    {backend.is_active && (
+                      <Badge variant="secondary" className="text-xs">
+                        {t('creator.basicInfo.active')}
+                      </Badge>
+                    )}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
     </div>
   )
 }
@@ -1411,6 +1466,9 @@ export function AgentCreatorDialogSplit({
   const { t } = useTranslation('agents')
   const isEditing = !!agent
 
+  // Get loadBackends from store to fetch LLM backends
+  const loadBackends = useStore((state) => state.loadBackends)
+
   // Step state
   const [currentStep, setCurrentStep] = useState(0)
 
@@ -1425,6 +1483,7 @@ export function AgentCreatorDialogSplit({
   const [name, setName] = useState("")
   const [role, setRole] = useState<AgentRole>('Monitor')
   const [userPrompt, setUserPrompt] = useState("")
+  const [llmBackendId, setLlmBackendId] = useState<string | null>(null)
   const [scheduleType, setScheduleType] = useState<'interval' | 'daily' | 'weekly' | 'monthly' | 'event' | 'once'>('interval')
   const [intervalValue, setIntervalValue] = useState(5)
   const [intervalUnit, setIntervalUnit] = useState<'minute' | 'hour'>('minute')
@@ -1456,6 +1515,7 @@ export function AgentCreatorDialogSplit({
         setName(agent.name)
         setRole(agent.role || 'Monitor')
         setUserPrompt(agent.user_prompt)
+        setLlmBackendId(agent.llm_backend_id || null)
         // Parse schedule...
         if (agent.schedule) {
           const type = agent.schedule.schedule_type as AgentScheduleType
@@ -1550,6 +1610,7 @@ export function AgentCreatorDialogSplit({
         setName("")
         setRole('Monitor')
         setUserPrompt("")
+        setLlmBackendId(null)
         setScheduleType('interval')
         setIntervalValue(5)
         setIntervalUnit('minute')
@@ -1570,6 +1631,14 @@ export function AgentCreatorDialogSplit({
       setSearchQuery("")
     }
   }, [agent, open, devices])
+
+  // Load LLM backends when dialog opens
+  // This ensures the LLM selector has available backends to choose from
+  useEffect(() => {
+    if (open) {
+      loadBackends()
+    }
+  }, [open, loadBackends])
 
   // Step validation
   const validateStep = (step: number): boolean => {
@@ -1665,6 +1734,7 @@ export function AgentCreatorDialogSplit({
             timezone: timezone,
             event_filter: eventFilter,
           },
+          llm_backend_id: llmBackendId ?? undefined,
         }
         await onSave(data)
       }
@@ -1745,6 +1815,8 @@ export function AgentCreatorDialogSplit({
                 setRole={setRole}
                 userPrompt={userPrompt}
                 setUserPrompt={setUserPrompt}
+                llmBackendId={llmBackendId}
+                setLlmBackendId={setLlmBackendId}
               />
             )}
             {currentStep === 1 && (
@@ -1821,6 +1893,8 @@ export function AgentCreatorDialogSplit({
                   setRole={setRole}
                   userPrompt={userPrompt}
                   setUserPrompt={setUserPrompt}
+                  llmBackendId={llmBackendId}
+                  setLlmBackendId={setLlmBackendId}
                 />
               </TabsContent>
               <TabsContent value="1">
@@ -1843,7 +1917,11 @@ export function AgentCreatorDialogSplit({
                   setEventType={setEventType}
                   eventDeviceId={eventDeviceId}
                   setEventDeviceId={setEventDeviceId}
+                  eventThreshold={eventThreshold}
+                  setEventThreshold={setEventThreshold}
                   selectedResources={selectedResources}
+                  timezone={timezone}
+                  setTimezone={setTimezone}
                 />
               </TabsContent>
               <TabsContent value="2">

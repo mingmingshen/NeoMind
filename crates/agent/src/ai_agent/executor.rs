@@ -7,8 +7,11 @@ use edge_ai_storage::{
     GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType,
     // New conversation types
     ConversationTurn, TurnInput, TurnOutput, AgentRole,
+    LlmBackendStore, LlmBackendInstance,
 };
 use edge_ai_devices::DeviceService;
+use edge_ai_llm::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
+use edge_ai_core::llm::backend::LlmRuntime;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
@@ -29,8 +32,10 @@ pub struct AgentExecutorConfig {
     pub device_service: Option<Arc<DeviceService>>,
     /// Event bus for event subscription
     pub event_bus: Option<Arc<EventBus>>,
-    /// LLM runtime for intent analysis
+    /// LLM runtime for intent analysis (default)
     pub llm_runtime: Option<Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>>,
+    /// LLM backend store for per-agent backend lookup
+    pub llm_backend_store: Option<Arc<LlmBackendStore>>,
 }
 
 /// Context for agent execution.
@@ -68,8 +73,10 @@ pub struct AgentExecutor {
     event_bus: Option<Arc<EventBus>>,
     /// Configuration
     config: AgentExecutorConfig,
-    /// LLM runtime
+    /// LLM runtime (default)
     llm_runtime: Option<Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>>,
+    /// LLM backend store for per-agent backend lookup
+    llm_backend_store: Option<Arc<LlmBackendStore>>,
     /// Event-triggered agents cache
     event_agents: Arc<RwLock<HashMap<String, AiAgent>>>,
 }
@@ -77,13 +84,16 @@ pub struct AgentExecutor {
 impl AgentExecutor {
     /// Create a new agent executor.
     pub async fn new(config: AgentExecutorConfig) -> Result<Self, AgentError> {
+        let llm_runtime = config.llm_runtime.clone();
+        let llm_backend_store = config.llm_backend_store.clone();
         Ok(Self {
             store: config.store.clone(),
             time_series_storage: config.time_series_storage.clone(),
             device_service: config.device_service.clone(),
             event_bus: config.event_bus.clone(),
             config,
-            llm_runtime: None,
+            llm_runtime,
+            llm_backend_store,
             event_agents: Arc::new(RwLock::new(HashMap::new())),
         })
     }
@@ -96,6 +106,71 @@ impl AgentExecutor {
     /// Get the agent store.
     pub fn store(&self) -> Arc<AgentStore> {
         self.store.clone()
+    }
+
+    /// Get the LLM runtime for a specific agent.
+    /// If the agent has a specific backend ID configured, use that.
+    /// Otherwise, fall back to the default runtime.
+    pub async fn get_llm_runtime_for_agent(
+        &self,
+        agent: &AiAgent,
+    ) -> Result<Option<Arc<dyn LlmRuntime + Send + Sync>>, AgentError> {
+        // If agent has a specific backend ID, try to use it
+        if let Some(ref backend_id) = agent.llm_backend_id {
+            if let Some(ref store) = self.llm_backend_store {
+                if let Ok(Some(backend)) = store.load_instance(backend_id) {
+                    use edge_ai_storage::LlmBackendType;
+                    match backend.backend_type {
+                        LlmBackendType::Ollama => {
+                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
+                            let model = backend.model.clone();
+                            let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(120);
+                            match OllamaRuntime::new(
+                                OllamaConfig::new(&model)
+                                    .with_endpoint(&endpoint)
+                                    .with_timeout_secs(timeout)
+                            ) {
+                                Ok(runtime) => return Ok(Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>)),
+                                Err(e) => {
+                                    tracing::warn!(category = "ai", error = %e,
+                                        "Failed to create Ollama runtime for agent '{}'", agent.name);
+                                }
+                            }
+                        }
+                        LlmBackendType::OpenAi => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+                            let model = backend.model.clone();
+                            let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(60);
+                            match CloudRuntime::new(
+                                CloudConfig::custom(&api_key, &endpoint)
+                                    .with_model(&model)
+                                    .with_timeout_secs(timeout)
+                            ) {
+                                Ok(runtime) => return Ok(Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>)),
+                                Err(e) => {
+                                    tracing::warn!(category = "ai", error = %e,
+                                        "Failed to create OpenAI runtime for agent '{}'", agent.name);
+                                }
+                            }
+                        }
+                        _ => {
+                            tracing::warn!(category = "ai", backend_type = ?backend.backend_type,
+                                "Unsupported backend type for agent '{}'", agent.name);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to default runtime
+        Ok(self.llm_runtime.clone())
     }
 
     /// Parse user intent from natural language using LLM or keyword-based fallback.
@@ -558,14 +633,36 @@ Respond in JSON format:
         &self,
         context: ExecutionContext,
     ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
-        let agent = context.agent;
+        let mut agent = context.agent;
 
         // Step 1: Collect data
         let data_collected = self.collect_data(&agent).await?;
 
+        // Step 1.5: Parse intent if not already done
+        let parsed_intent = if agent.parsed_intent.is_none() {
+            match self.parse_intent(&agent.user_prompt).await {
+                Ok(intent) => {
+                    // Update agent with parsed intent
+                    let _ = self.store.update_agent_parsed_intent(&agent.id, Some(intent.clone())).await;
+                    Some(intent)
+                }
+                Err(e) => {
+                    tracing::warn!(agent_id = %agent.id, error = %e, "Failed to parse intent, using default");
+                    None
+                }
+            }
+        } else {
+            agent.parsed_intent.clone()
+        };
+
+        // Update agent reference with parsed intent
+        if let Some(ref intent) = parsed_intent {
+            agent.parsed_intent = Some(intent.clone());
+        }
+
         // Step 2: Analyze situation with LLM
         let (situation_analysis, reasoning_steps, decisions, conclusion) =
-            self.analyze_situation(&agent, &data_collected).await?;
+            self.analyze_situation_with_intent(&agent, &data_collected, parsed_intent.as_ref()).await?;
 
         // Step 3: Execute decisions
         let (actions_executed, notifications_sent) =
@@ -712,10 +809,11 @@ Respond in JSON format:
     }
 
     /// Analyze situation using LLM or rule-based logic.
-    async fn analyze_situation(
+    async fn analyze_situation_with_intent(
         &self,
         agent: &AiAgent,
         data: &[DataCollected],
+        parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
     ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
         let mut reasoning_steps = Vec::new();
         let mut decisions = Vec::new();
@@ -737,7 +835,9 @@ Respond in JSON format:
         });
 
         // Step 2: Evaluate conditions based on parsed intent
-        if let Some(ref intent) = agent.parsed_intent {
+        // Use the parsed_intent passed in (which may have been freshly parsed)
+        let intent = parsed_intent.or(agent.parsed_intent.as_ref());
+        if let Some(ref intent) = intent {
             for condition in &intent.conditions {
                 let result = self.evaluate_condition(condition, data).await;
 
@@ -763,8 +863,10 @@ Respond in JSON format:
         }
 
         // Step 3: Determine actions
+        let empty_actions = vec![];
+        let actions = intent.map(|i| &i.actions).unwrap_or(&empty_actions);
         if !decisions.is_empty() {
-            for action in agent.parsed_intent.as_ref().map(|i| &i.actions).unwrap_or(&vec![]) {
+            for action in actions {
                 reasoning_steps.push(ReasoningStep {
                     step_number: reasoning_steps.len() as u32 + 1,
                     description: format!("Plan action: {}", action),

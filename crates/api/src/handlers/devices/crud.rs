@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use super::compat::{config_to_device_instance, format_status_to_str};
 use super::models::{
-    AddDeviceRequest, DeviceDto, PaginationMeta, PaginationQuery, UpdateDeviceRequest,
+    AddDeviceRequest, BatchCurrentValuesRequest, BatchCurrentValuesResponse, DeviceCurrentValues,
+    DeviceDto, PaginationMeta, PaginationQuery, UpdateDeviceRequest,
 };
 use crate::handlers::{
     ServerState,
@@ -390,6 +391,73 @@ pub async fn get_device_current_handler(
             "display_name": c.display_name,
             "parameters": c.parameters,
         })).collect::<Vec<_>>(),
+    }))
+}
+
+/// Batch get current values for multiple devices.
+///
+/// POST /api/devices/current-batch
+///
+/// Efficiently fetches current metric values for multiple devices in one request.
+/// This is optimized for dashboard components that need data from multiple devices.
+pub async fn get_devices_current_batch_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<BatchCurrentValuesRequest>,
+) -> HandlerResult<serde_json::Value> {
+    let mut devices = std::collections::HashMap::new();
+
+    for device_id in req.device_ids {
+        // Get current metrics from device_service (in-memory cache)
+        let current_values = state
+            .device_service
+            .get_current_metrics(&device_id)
+            .await
+            .unwrap_or_default();
+
+        // Convert to JSON values immediately
+        let current_values_json: std::collections::HashMap<String, serde_json::Value> =
+            current_values
+                .into_iter()
+                .map(|(k, v)| (k, super::metrics::value_to_json(&v)))
+                .collect();
+
+        // If cache is empty, try time_series_storage for recent data
+        let current_values_json = if current_values_json.is_empty() {
+            // Try to get the device template to know which metrics to fetch
+            let template = state.device_service.get_template(&device_id).await;
+
+            if let Some(template) = template {
+                let mut values = std::collections::HashMap::new();
+                // Fetch latest value for each template metric
+                for metric in &template.metrics {
+                    if let Ok(Some(point)) =
+                        state.time_series_storage.latest(&device_id, &metric.name).await
+                    {
+                        values.insert(metric.name.clone(), super::metrics::value_to_json(&point.value));
+                    }
+                }
+                values
+            } else {
+                current_values_json
+            }
+        } else {
+            current_values_json
+        };
+
+        devices.insert(
+            device_id.clone(),
+            json!({
+                "device_id": device_id,
+                "current_values": current_values_json
+            }),
+        );
+    }
+
+    let count = devices.len();
+
+    ok(json!({
+        "devices": devices,
+        "count": count,
     }))
 }
 

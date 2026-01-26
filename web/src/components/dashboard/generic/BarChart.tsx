@@ -3,6 +3,12 @@
  *
  * Unified with dashboard design system.
  * Supports historical telemetry data binding.
+ *
+ * Enhanced with time-series aggregation support:
+ * - Aggregate multiple data points into single values
+ * - Support for different aggregation methods (latest, avg, sum, etc.)
+ * - Time window selection for data scope
+ * - Chart view modes: timeseries, snapshot, comparison
  */
 
 import { useMemo } from 'react'
@@ -21,12 +27,22 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { DataMapper, type CategoricalMappingConfig } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
-import type { DataSource, DataSourceOrList } from '@/types/dashboard'
+import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
+import { EmptyState } from '../shared'
+import {
+  getEffectiveAggregate,
+  getEffectiveTimeWindow,
+  timeWindowToHours,
+  aggregateData,
+  transformToBarData,
+  type TimeSeriesData,
+} from '@/lib/telemetryTransform'
 
 // Use design system chart colors
 const chartColors = designChartColors
@@ -67,6 +83,7 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: any[] }
 /**
  * Convert device/metric source to telemetry for bar charts.
  * Bar charts can display time-series data as discrete bars.
+ * Now supports the new timeWindow and aggregateExt options.
  */
 function toTelemetrySource(
   dataSource?: DataSource,
@@ -77,13 +94,17 @@ function toTelemetrySource(
     return undefined
   }
 
-  // If already telemetry type, update with raw settings
+  // Get effective time window (new or legacy)
+  const effectiveTimeWindow = getEffectiveTimeWindow(dataSource)
+  const effectiveAggregate = getEffectiveAggregate(dataSource)
+
+  // If already telemetry type, update with settings
   if (dataSource.type === 'telemetry') {
     return {
       ...dataSource,
       limit: dataSource.limit ?? limit,
-      timeRange: dataSource.timeRange ?? timeRange,
-      aggregate: 'raw',
+      timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
+      aggregate: dataSource.aggregate ?? (effectiveAggregate === 'raw' ? 'raw' : 'avg'),
       params: {
         ...dataSource.params,
         includeRawPoints: true,
@@ -98,9 +119,9 @@ function toTelemetrySource(
       type: 'telemetry' as const,
       deviceId: dataSource.deviceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeRange,
+      timeRange: timeWindowToHours(effectiveTimeWindow.type),
       limit: limit,
-      aggregate: 'raw' as const,
+      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
       params: {
         includeRawPoints: true,
       },
@@ -112,58 +133,94 @@ function toTelemetrySource(
 }
 
 /**
- * Transform raw telemetry points to chart data
+ * Transform raw telemetry points to chart data using DataMapper
+ * For categorical data (strings) or when aggregate is 'count', groups by value and counts occurrences
  */
-function transformTelemetryToBarData(data: unknown) {
+function transformTelemetryToBarData(
+  data: unknown,
+  dataMapping?: CategoricalMappingConfig,
+  aggregate?: TelemetryAggregate
+): { name: string; value: number; color?: string }[] {
   if (!data || !Array.isArray(data)) return []
 
-  const result: { name: string; value: number; color?: string }[] = []
-
-  for (const item of data) {
-    if (typeof item === 'number') {
-      result.push({ name: `${result.length + 1}`, value: item })
-    } else if (typeof item === 'object' && item !== null) {
-      const obj = item as Record<string, unknown>
-
-      // Extract value
-      let value: number | undefined = undefined
-      if (typeof obj.value === 'number') value = obj.value
-      else if (typeof obj.v === 'number') value = obj.v
-      else if (typeof obj.val === 'number') value = obj.val
-      else if (typeof obj.avg === 'number') value = obj.avg
-      else if (typeof obj.min === 'number') value = obj.min
-      else if (typeof obj.max === 'number') value = obj.max
-
-      if (value === undefined) continue
-
-      // Extract timestamp/name for label
-      const timestamp = obj.timestamp ?? obj.time ?? obj.t
-      const name = obj.name ?? obj.label
-
-      let label = `${result.length + 1}`
-      if (typeof name === 'string') {
-        label = name
-      } else if (typeof timestamp === 'number') {
-        const date = new Date(timestamp * 1000)
-        label = date.toLocaleTimeString('zh-CN', {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      } else if (typeof timestamp === 'string') {
-        label = timestamp
-      }
-
-      result.push({ name: label, value })
-    }
+  // Handle simple number array
+  if (data.length > 0 && typeof data[0] === 'number') {
+    return (data as number[]).map((value, index) => ({
+      name: `${index + 1}`,
+      value,
+    }))
   }
 
-  return result
+  // Check if already in BarData format FIRST (has both name and value)
+  if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'value' in data[0] && 'name' in data[0]) {
+    return data as { name: string; value: number; color?: string }[]
+  }
+
+  // Handle raw telemetry points format: [{ timestamp, value }, ...]
+  // Only has 'value' but not 'name' → this is telemetry data
+  if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'value' in data[0]) {
+    const telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
+
+    // Check if values are categorical (strings) OR if aggregate is 'count' - group and count for distribution
+    const firstValue = telemetryPoints[0]?.value
+    const isCategorical = typeof firstValue === 'string'
+    const forceCounting = aggregate === 'count'
+
+    if (isCategorical || forceCounting) {
+      // Group by value and count occurrences for categorical data or when 'count' aggregate is set
+      const counts = new Map<string, number>()
+      for (const point of telemetryPoints) {
+        // For numeric values with counting, group by rounded value to avoid too many unique values
+        let key: string
+        if (typeof point.value === 'number') {
+          // Round to 2 decimal places for grouping
+          key = String(Math.round(point.value * 100) / 100)
+        } else {
+          key = String(point.value ?? 'unknown')
+        }
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+
+      // Convert to BarData format, sorted by count descending
+      return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, value]) => ({
+          name,
+          value,
+        }))
+    }
+
+    // For numeric telemetry data without count aggregation, create time-based labels
+    return telemetryPoints.map((point, index) => {
+      let name = `${index + 1}`
+      if (point.timestamp) {
+        const date = new Date(point.timestamp > 10000000000 ? point.timestamp : point.timestamp * 1000)
+        if (!isNaN(date.getTime())) {
+          name = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        }
+      }
+      return {
+        name,
+        value: typeof point.value === 'number' ? point.value : 0,
+      }
+    })
+  }
+
+  // Use DataMapper for categorical data
+  const categoricalPoints = DataMapper.mapToCategorical(data, dataMapping)
+
+  return categoricalPoints.map(p => ({
+    name: p.name,
+    value: p.value,
+    color: p.color,
+  }))
 }
 
 export interface BarData {
   name: string
   value: number
   color?: string
+  timestamp?: number  // For time-series mode
 }
 
 export interface BarChartProps {
@@ -184,9 +241,21 @@ export interface BarChartProps {
   layout?: 'vertical' | 'horizontal'
   stacked?: boolean
 
-  // Telemetry options
+  // === Telemetry options ===
+  // Legacy options (kept for backward compatibility)
   limit?: number
   timeRange?: number
+
+  // === New: Data transformation options ===
+  // How to aggregate time-series data
+  aggregate?: TelemetryAggregate
+  // Time window for data
+  timeWindow?: 'now' | 'last_5min' | 'last_15min' | 'last_30min' | 'last_1hour' | 'last_6hours' | 'last_24hours'
+  // Chart view mode - how to interpret data
+  chartViewMode?: ChartViewMode
+
+  // Data mapping configuration
+  dataMapping?: CategoricalMappingConfig
 
   // Styling
   color?: string
@@ -207,9 +276,31 @@ export function BarChart({
   size = 'md',
   limit = 24,
   timeRange = 1,
+  aggregate = 'raw',  // Default to raw for bar charts (show time series)
+  timeWindow,
+  chartViewMode = 'timeseries',
+  dataMapping,
   className,
 }: BarChartProps) {
   const config = dashboardComponentSize[size]
+
+  // Get effective aggregate from dataSource or props
+  const effectiveAggregate = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].aggregateExt) {
+      return sources[0].aggregateExt
+    }
+    return aggregate
+  }, [dataSource, aggregate])
+
+  // Get effective chart view mode
+  const effectiveViewMode = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].chartViewMode) {
+      return sources[0].chartViewMode
+    }
+    return chartViewMode
+  }, [dataSource, chartViewMode])
 
   // Normalize data sources for historical data
   const telemetrySources = useMemo(() => {
@@ -254,6 +345,41 @@ export function BarChart({
     // Multi-source data - create grouped bar chart
     // preserveMultiple returns array of arrays where length equals sources length
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
+      // Check if any source contains categorical data
+      const hasCategoricalData = data.some((arr: unknown) => {
+        if (Array.isArray(arr) && arr.length > 0) {
+          const first = arr[0]
+          return typeof first === 'object' && first !== null && 'value' in first && typeof first.value === 'string'
+        }
+        return false
+      })
+      const forceCounting = effectiveAggregate === 'count'
+
+      // If categorical data or count aggregate, combine all sources and show distribution
+      if (hasCategoricalData || forceCounting) {
+        const combinedCounts = new Map<string, number>()
+
+        // Process all data sources and count occurrences
+        for (const arr of data as unknown[][]) {
+          if (!Array.isArray(arr)) continue
+          for (const item of arr) {
+            if (typeof item === 'object' && item !== null && 'value' in item) {
+              const key = String(item.value ?? 'unknown')
+              combinedCounts.set(key, (combinedCounts.get(key) ?? 0) + 1)
+            }
+          }
+        }
+
+        // Convert to BarData format, sorted by count descending
+        return Array.from(combinedCounts.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, value]) => ({
+            name,
+            value,
+          }))
+      }
+
+      // Numeric data - create grouped bar chart
       const numberArrays = data as number[][]
       const maxLength = Math.max(...numberArrays.map(arr => Array.isArray(arr) ? arr.length : 0))
 
@@ -268,7 +394,7 @@ export function BarChart({
           if (i === 0) {
             point.seriesNames = sources.map((ds, si) => {
               return ds.deviceId
-                ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
+                ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
                 : `Series ${si + 1}`
             })
           }
@@ -280,12 +406,14 @@ export function BarChart({
     // Single source - handle as before
     if (dataSource && Array.isArray(data) && data.length > 0) {
       const first = data[0]
-      if (typeof first === 'object' && first !== null && 'value' in first) {
+      // Check if already in BarData format (has both 'name' AND 'value')
+      if (typeof first === 'object' && first !== null && 'value' in first && 'name' in first) {
         return data as BarData[]
       }
 
-      // Transform telemetry points
-      const transformed = transformTelemetryToBarData(data)
+      // Transform telemetry points (handles both numeric and categorical data)
+      // Pass aggregate setting to influence transformation behavior
+      const transformed = transformTelemetryToBarData(data, dataMapping, effectiveAggregate)
       if (transformed.length > 0) {
         return transformed
       }
@@ -304,12 +432,12 @@ export function BarChart({
       return propData
     }
 
-    // Return empty array when loading with dataSource
-    if (dataSource && loading) {
+    // If dataSource is set but data is empty, return empty array (will show EmptyState)
+    if (dataSource && !loading && Array.isArray(data) && data.length === 0) {
       return []
     }
 
-    // Return default sample data for preview only
+    // Return default sample data for preview only (no dataSource)
     return [
       { name: 'Jan', value: 12 },
       { name: 'Feb', value: 18 },
@@ -318,7 +446,7 @@ export function BarChart({
       { name: 'May', value: 19 },
       { name: 'Jun', value: 25 },
     ]
-  }, [data, propData, dataSource, loading])
+  }, [data, propData, dataSource, loading, dataMapping])
 
   // Get series info for multi-source rendering
   const seriesInfo = useMemo(() => {
@@ -348,11 +476,7 @@ export function BarChart({
   }
 
   if (chartData.length === 0) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', config.padding, className)}>
-        <span className={cn('text-sm text-muted-foreground')}>No data available</span>
-      </div>
-    )
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
   return (

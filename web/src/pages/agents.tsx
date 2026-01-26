@@ -45,7 +45,7 @@ export function AgentsPage() {
 
   // Data state
   const [agents, setAgents] = useState<AiAgent[]>([])
-  const [selectedAgent] = useState<AiAgentDetail | undefined>(undefined)
+  const [selectedAgent, setSelectedAgent] = useState<AiAgentDetail | undefined>(undefined)
   const [executions, setExecutions] = useState<AgentExecution[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -208,6 +208,22 @@ export function AgentsPage() {
     setExecutionDetailOpen(true)
   }
 
+  // Select agent to view executions
+  const handleViewExecutions = async (agent: AiAgent) => {
+    try {
+      const detail = await api.getAgent(agent.id)
+      setSelectedAgent(detail)
+      setActiveTab('executions')
+    } catch (error) {
+      console.error('Failed to load agent details:', error)
+      toast({
+        title: tCommon('failed'),
+        description: (error as Error).message,
+        variant: 'destructive',
+      })
+    }
+  }
+
   return (
     <PageLayout
       title={tAgent('title')}
@@ -244,6 +260,7 @@ export function AgentsPage() {
             onToggleStatus={handleToggleStatus}
             onExecute={handleExecute}
             onViewMemory={handleViewMemory}
+            onViewExecutions={handleViewExecutions}
           />
         </PageTabsContent>
 

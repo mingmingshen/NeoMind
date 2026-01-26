@@ -99,13 +99,14 @@ async function fetchHistoricalTelemetry(
   timeRange: number = 1, // hours
   limit: number = 50,
   aggregate: 'raw' | 'avg' | 'min' | 'max' | 'sum' = 'raw',
-  includeRawPoints: boolean = false
+  includeRawPoints: boolean = false,
+  bypassCache: boolean = false
 ): Promise<{ data: number[]; raw?: any[]; success: boolean }> {
   const cacheKey = `${deviceId}|${metricId}|${timeRange}|${limit}|${aggregate}`
   const cached = telemetryCache.get(cacheKey)
 
-  // Return cached data if fresh
-  if (cached && Date.now() - cached.timestamp < TELEMETRY_CACHE_TTL) {
+  // Return cached data if fresh (unless bypassing cache)
+  if (!bypassCache && cached && Date.now() - cached.timestamp < TELEMETRY_CACHE_TTL) {
     return { data: cached.data, raw: cached.raw, success: true }
   }
 
@@ -116,40 +117,62 @@ async function fetchHistoricalTelemetry(
 
     const response = await api.getDeviceTelemetry(deviceId, metricId, Math.floor(start / 1000), Math.floor(now / 1000), limit)
 
-    console.log('[fetchHistoricalTelemetry] API response:', response)
-    console.log('[fetchHistoricalTelemetry] metricId:', metricId)
-    console.log('[fetchHistoricalTelemetry] response.data:', response?.data)
-
     // TelemetryDataResponse has structure: { data: Record<string, TelemetryPoint[]> }
     // The actual time series data is in response.data[metricId]
     if (response?.data && typeof response.data === 'object') {
       const metricData = response.data[metricId]
 
-      console.log('[fetchHistoricalTelemetry] metricData:', metricData)
-      console.log('[fetchHistoricalTelemetry] metricData type:', Array.isArray(metricData) ? 'array' : typeof metricData)
-
       if (Array.isArray(metricData) && metricData.length > 0) {
         // Extract values from telemetry points
+        // Handles: numbers, strings, and objects with various field names
+        const toNumber = (val: unknown): number => {
+          if (typeof val === 'number') return val
+          if (typeof val === 'string') {
+            const parsed = parseFloat(val)
+            return isNaN(parsed) ? 0 : parsed
+          }
+          if (typeof val === 'boolean') return val ? 1 : 0
+          return 0
+        }
+
         const values = metricData
           .map((point) => {
             if (typeof point === 'number') return point
             if (typeof point === 'object' && point !== null) {
               const p = point as unknown as Record<string, unknown>
-              // Try common value field names
-              return (p.value ?? p.v ?? p.avg ?? p.min ?? p.max ?? 0) as number
+              // Try common value field names and convert to number
+              const rawValue = p.value ?? p.v ?? p.avg ?? p.min ?? p.max ?? 0
+              return toNumber(rawValue)
             }
             return 0
           })
           .filter((v: number) => typeof v === 'number' && !isNaN(v))
 
+        // For raw points, preserve original structure including string values
+        // This is important for categorical data like status (online/offline)
+        const rawPoints = includeRawPoints ? metricData.map((point) => {
+          if (typeof point === 'number') {
+            return { timestamp: Date.now() / 1000, value: point }
+          }
+          if (typeof point === 'object' && point !== null) {
+            const p = point as unknown as Record<string, unknown>
+            // Extract timestamp from various field names
+            const timestamp = p.timestamp ?? p.time ?? p.t ?? Date.now() / 1000
+            // Preserve original value (could be string, number, etc.)
+            const value = p.value ?? p.v ?? 0
+            return { timestamp: timestamp as number, value }
+          }
+          return { timestamp: Date.now() / 1000, value: point }
+        }) : undefined
+
         // Cache the result with raw points if requested
         telemetryCache.set(cacheKey, {
           data: values,
-          raw: includeRawPoints ? metricData : undefined,
+          raw: rawPoints,
           timestamp: Date.now()
         })
 
-        return { data: values, raw: includeRawPoints ? metricData : undefined, success: true }
+        return { data: values, raw: rawPoints, success: true }
       }
     }
 
@@ -320,6 +343,8 @@ export function useDataSource<T = unknown>(
   const [error, setError] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<number | null>(null)
   const [sending, setSending] = useState(false)
+  // Telemetry refresh trigger - incremented when WebSocket event matches telemetry source
+  const [telemetryRefreshTrigger, setTelemetryRefreshTrigger] = useState(0)
 
   // CRITICAL: Memoize dataSources to prevent infinite re-renders
   // Using stable key generation ensures consistency
@@ -543,7 +568,7 @@ export function useDataSource<T = unknown>(
                   result = fallbackVal ?? '-'
               }
             }
-            result = safeExtractValue(result, fallbackVal ?? '-')
+            result = safeExtractValue(result as unknown, (fallbackVal ?? '-') as any)
             break
           }
 
@@ -584,9 +609,13 @@ export function useDataSource<T = unknown>(
       } else if (nonTelemetrySources.length === 1) {
         // Single non-telemetry source
         finalData = results[0]
+      } else if (currentDataSources.length === 0) {
+        // No data sources configured
+        return
       } else {
-        // All sources are telemetry - keep the initial fallback data
-        return // Don't overwrite initial state with empty data
+        // All sources are telemetry - the telemetry effect will handle this
+        // For single telemetry sources, telemetry effect sets the data
+        return
       }
 
       const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
@@ -655,13 +684,21 @@ export function useDataSource<T = unknown>(
   }, [dataSources.length, enabled])
 
   // WebSocket events handling
+  // Include telemetry and computed types to enable real-time updates
   const needsWebSocket = dataSources.some((ds) =>
-    ds.type === 'websocket' || ds.type === 'device' || ds.type === 'metric' || ds.type === 'command'
+    ds.type === 'websocket' ||
+    ds.type === 'device' ||
+    ds.type === 'metric' ||
+    ds.type === 'command' ||
+    ds.type === 'telemetry' ||
+    ds.type === 'computed'
   )
 
+  // Use device category instead of specific event types to receive all device events
+  // This ensures we get events regardless of the exact type format (device.metric vs DeviceMetric)
   const { events } = useEvents({
     enabled: enabled && needsWebSocket,
-    eventTypes: ['DeviceMetric', 'DeviceStatus', 'DeviceCommandResult'] as any,
+    category: 'device',
   })
 
   useEffect(() => {
@@ -673,7 +710,11 @@ export function useDataSource<T = unknown>(
     const eventData = (latestEvent as any).data || latestEvent
     const eventType = (latestEvent as any).type
 
-    const isDeviceMetricEvent = eventType === 'device.metric' || eventType === 'DeviceMetric'
+    // Normalize event type - handle both PascalCase (DeviceMetric) and snake_case (device.metric)
+    const normalizedEventType = eventType?.toLowerCase().replace('.', '')
+    const isDeviceMetricEvent = normalizedEventType.includes('devicemetric') ||
+                                normalizedEventType.includes('metric') ||
+                                eventType === 'DeviceMetric'
     const hasDeviceId = eventData && typeof eventData === 'object' && 'device_id' in eventData
 
     let shouldUpdate = false
@@ -706,6 +747,42 @@ export function useDataSource<T = unknown>(
       ) {
         shouldUpdate = true
         break
+      } else if (
+        // Telemetry sources: trigger refresh when matching device metric event occurs
+        ds.type === 'telemetry' &&
+        hasDeviceId &&
+        eventData.device_id === ds.deviceId &&
+        isDeviceMetricEvent
+      ) {
+        shouldUpdate = true
+        break
+      } else if (
+        // Computed sources: trigger update when any relevant device data changes
+        ds.type === 'computed' &&
+        isDeviceMetricEvent
+      ) {
+        shouldUpdate = true
+        break
+      }
+    }
+
+    // For telemetry sources, also trigger telemetry cache invalidation and refetch
+    const hasTelemetrySource = dataSources.some((ds) => ds.type === 'telemetry')
+    if (hasTelemetrySource && isDeviceMetricEvent && hasDeviceId) {
+      const eventDeviceId = eventData.device_id as string
+      const matchingTelemetrySources = dataSources.filter((ds) =>
+        ds.type === 'telemetry' && ds.deviceId === eventDeviceId
+      )
+
+      // Invalidate telemetry cache for affected sources and trigger refresh
+      if (matchingTelemetrySources.length > 0) {
+        matchingTelemetrySources.forEach((ds) => {
+          const cacheKey = `${ds.deviceId}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? 'raw'}`
+          telemetryCache.delete(cacheKey)
+        })
+
+        // Trigger telemetry refresh by updating the trigger state
+        setTelemetryRefreshTrigger(prev => prev + 1)
       }
     }
 
@@ -844,7 +921,50 @@ export function useDataSource<T = unknown>(
                   result = optionsRef.current.fallback ?? '-'
               }
             }
-            result = safeExtractValue(result, optionsRef.current.fallback ?? '-')
+            result = safeExtractValue(result as unknown, (optionsRef.current.fallback ?? '-') as any)
+            break
+          }
+
+          case 'telemetry': {
+            // For telemetry sources, try to get the latest value from store on WebSocket events
+            // This provides immediate updates while the API fetch runs in background
+            const deviceId = ds.deviceId
+            const metricId = ds.metricId || ds.property || 'value'
+
+            if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+              // Try to extract value from the event first
+              if ('metric' in eventData && eventData.metric === metricId && 'value' in eventData) {
+                result = eventData.value
+                break
+              }
+              const extracted = extractValueFromData(eventData, metricId)
+              if (extracted !== undefined) {
+                result = extracted
+                break
+              }
+            }
+
+            // If not found in event, try to get from store (latest device state)
+            const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+            if (device?.current_values && typeof device.current_values === 'object') {
+              const extracted = extractValueFromData(device.current_values, metricId)
+              if (extracted !== undefined) {
+                result = extracted
+                break
+              }
+            }
+
+            // If no latest value found, preserve current data for display
+            // This prevents flickering while waiting for API response
+            const currentData = data as any
+            if (result === undefined) {
+              if (Array.isArray(currentData) && currentData.length > 0) {
+                // Keep existing data, will be updated by telemetry fetch
+                result = currentData
+              } else {
+                result = optionsRef.current.fallback ?? '-'
+              }
+            }
             break
           }
 
@@ -883,15 +1003,8 @@ export function useDataSource<T = unknown>(
 
   const hasTelemetrySource = telemetryDataSources.length > 0
 
-  console.log('[useDataSource] dataSources:', dataSources)
-  console.log('[useDataSource] telemetryDataSources:', telemetryDataSources)
-  console.log('[useDataSource] hasTelemetrySource:', hasTelemetrySource)
-  console.log('[useDataSource] enabled:', enabled)
-
   useEffect(() => {
-    console.log('[useDataSource] Telemetry effect running, hasTelemetrySource:', hasTelemetrySource, 'enabled:', enabled)
     if (!hasTelemetrySource || !enabled) {
-      console.log('[useDataSource] Telemetry effect returning early')
       return
     }
 
@@ -909,12 +1022,15 @@ export function useDataSource<T = unknown>(
         const results = await Promise.all(
           telemetryDataSources.map(async (ds) => {
             if (!ds.deviceId || !ds.metricId) {
-              console.warn('[useDataSource] Missing deviceId or metricId:', ds)
               return { data: [], raw: undefined }
             }
 
             // Check if raw points are needed (for image history, etc.)
             const includeRawPoints = ds.params?.includeRawPoints === true || ds.transform === 'raw'
+
+            // Bypass cache on initial fetch to ensure we get the latest data
+            // This is especially important for image components that need the most recent value
+            const bypassCache = !initialFetchCompleted
 
             const response = await fetchHistoricalTelemetry(
               ds.deviceId,
@@ -922,7 +1038,8 @@ export function useDataSource<T = unknown>(
               ds.timeRange ?? 1,
               ds.limit ?? 50,
               ds.aggregate ?? 'raw',
-              includeRawPoints
+              includeRawPoints,
+              bypassCache
             )
 
             // Return raw data if requested, otherwise return values
@@ -961,12 +1078,48 @@ export function useDataSource<T = unknown>(
           finalData = singleResult.raw ?? singleResult.data ?? []
         }
 
-        // Debug: Log the final data before setting
-        console.log('[useDataSource] Telemetry results:', results)
-        console.log('[useDataSource] Final data to set:', finalData)
-        console.log('[useDataSource] Final data type:', Array.isArray(finalData) ? 'array length=' + finalData.length : typeof finalData)
-        if (Array.isArray(finalData) && finalData.length > 0) {
-          console.log('[useDataSource] First item:', finalData[0])
+        // CRITICAL: Merge with latest values from store for real-time updates
+        // This ensures components see the latest data even if API hasn't persisted it yet
+        const storeState = useStore.getState()
+        const telemetryDataSourcesWithStore = telemetryDataSources.map((ds) => {
+          const device = storeState.devices.find((d: any) => d.id === ds.deviceId || d.device_id === ds.deviceId)
+          if (!device?.current_values) return { dataSource: ds, latestValue: undefined }
+
+          // Get the latest value for this metric from store
+          const metricId = ds.metricId || ds.property || 'value'
+          const latestValue = (device.current_values as Record<string, unknown>)[metricId]
+          return { dataSource: ds, latestValue, deviceId: ds.deviceId, metricId }
+        })
+
+        // If we have latest values from store, merge them with API data
+        // This ensures real-time updates even when API data is delayed
+        if (telemetryDataSourcesWithStore.some((item) => item.latestValue !== undefined)) {
+          // Ensure finalData is an array
+          let rawDataArray = Array.isArray(finalData) ? [...finalData] : []
+          const now = Math.floor(Date.now() / 1000)
+
+          for (const storeItem of telemetryDataSourcesWithStore) {
+            if (storeItem.latestValue === undefined) continue
+
+            const latestValue = storeItem.latestValue
+            const maxTime = now
+            const maxLimit = telemetryDataSources[0].limit ?? 100
+
+            // Always add the latest store value at the end
+            // This ensures components like ImageDisplay get the most recent value via extractImageValue
+            const newPoint = {
+              time: maxTime,
+              value: latestValue,
+            }
+
+            // Add to array and trim to limit
+            rawDataArray.push(newPoint)
+            if (rawDataArray.length > maxLimit) {
+              rawDataArray = rawDataArray.slice(-maxLimit)
+            }
+          }
+
+          finalData = rawDataArray
         }
 
         const { transform: transformFn } = optionsRef.current
@@ -998,7 +1151,9 @@ export function useDataSource<T = unknown>(
       const interval = setInterval(fetchTelemetryData, minRefreshMs)
       return () => clearInterval(interval)
     }
-  }, [telemetryKey, enabled])
+    // If no periodic refresh, still return cleanup that will re-run on trigger changes
+    return () => {}
+  }, [telemetryKey, enabled, telemetryRefreshTrigger])
 
   return {
     data,

@@ -14,6 +14,7 @@ use edge_ai_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
 use edge_ai_rules::{InMemoryValueProvider, RuleEngine, store::RuleStore};
 use edge_ai_storage::business::EventLogStore;
 use edge_ai_storage::decisions::DecisionStore;
+use edge_ai_storage::llm_backends::LlmBackendStore;
 
 use edge_ai_automation::{AutoOnboardManager, store::SharedAutomationStore, intent::IntentAnalyzer, transform::TransformEngine};
 
@@ -910,17 +911,78 @@ impl ServerState {
             return Ok(mgr.clone());
         }
 
-        // Create the executor config
-        // Note: time_series_storage from devices crate is different from TimeSeriesStore in storage
-        // For now, we create a fresh TimeSeriesStore or use None
-        let time_series_store = None; // Can be initialized later if needed
+        // Create or open TimeSeriesStore for agent data collection
+        let time_series_store = match edge_ai_storage::TimeSeriesStore::open("data/timeseries_agents.redb") {
+            Ok(store) => Some(store),
+            Err(e) => {
+                tracing::warn!(category = "storage", error = %e, "Failed to open TimeSeriesStore, agents will not collect data");
+                None
+            }
+        };
+
+        // Get LLM runtime from SessionManager if available
+        let llm_runtime = if let Ok(Some(backend)) = self.session_manager.get_llm_backend().await {
+            use edge_ai_agent::LlmBackend;
+            use edge_ai_llm::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
+            use edge_ai_core::llm::backend::LlmRuntime;
+
+            match backend {
+                LlmBackend::Ollama { endpoint, model } => {
+                    let timeout = std::env::var("OLLAMA_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(120);
+                    match OllamaRuntime::new(OllamaConfig::new(&model).with_endpoint(&endpoint).with_timeout_secs(timeout)) {
+                        Ok(runtime) => Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>),
+                        Err(e) => {
+                            tracing::warn!(category = "ai", error = %e, "Failed to create Ollama runtime for agents");
+                            None
+                        }
+                    }
+                }
+                LlmBackend::OpenAi { api_key, endpoint, model } => {
+                    // Use CloudRuntime for OpenAI-compatible APIs
+                    let timeout = std::env::var("OPENAI_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(60);
+                    match CloudRuntime::new(
+                        CloudConfig::custom(&api_key, &endpoint)
+                            .with_model(&model)
+                            .with_timeout_secs(timeout)
+                    ) {
+                        Ok(runtime) => Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>),
+                        Err(e) => {
+                            tracing::warn!(category = "ai", error = %e, "Failed to create OpenAI runtime for agents");
+                            None
+                        }
+                    }
+                }
+            }
+        } else {
+            tracing::info!(category = "ai", "No LLM backend configured for agents");
+            None
+        };
+
+        let has_llm = llm_runtime.is_some();
+        let has_time_series = time_series_store.is_some();
+
+        // Open LLM backend store for per-agent backend lookup
+        let llm_backend_store = match LlmBackendStore::open("data/llm_backends.redb") {
+            Ok(store) => Some(store),
+            Err(e) => {
+                tracing::warn!(category = "storage", error = %e, "Failed to open LlmBackendStore");
+                None
+            }
+        };
 
         let executor_config = edge_ai_agent::ai_agent::AgentExecutorConfig {
             store: self.agent_store.clone(),
             time_series_storage: time_series_store,
             device_service: Some(self.device_service.clone()),
             event_bus: self.event_bus.clone(),
-            llm_runtime: None, // Will be set later if LLM is available
+            llm_runtime,
+            llm_backend_store,
         };
 
         let manager = edge_ai_agent::ai_agent::AiAgentManager::new(executor_config)
@@ -929,7 +991,11 @@ impl ServerState {
 
         *mgr_guard = Some(manager.clone());
 
-        tracing::info!("AI Agent manager initialized");
+        tracing::info!(
+            has_llm,
+            has_time_series,
+            "AI Agent manager initialized"
+        );
         Ok(manager)
     }
 

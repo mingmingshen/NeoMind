@@ -24,16 +24,19 @@ import {
   type IndicatorState,
 } from '@/design-system/tokens/indicator'
 import type { DataSourceOrList } from '@/types/dashboard'
+import { EmptyState, ErrorState } from '../shared'
+import type { SingleValueMappingConfig } from '@/lib/dataMapping'
 
 export interface ProgressBarProps {
   dataSource?: DataSourceOrList
   value?: number
   max?: number
-  label?: string
+  title?: string
   size?: 'sm' | 'md' | 'lg'
   color?: string
   warningThreshold?: number
   dangerThreshold?: number
+  dataMapping?: SingleValueMappingConfig
   showCard?: boolean
   variant?: 'default' | 'compact' | 'circular'
   className?: string
@@ -60,15 +63,19 @@ export function ProgressBar({
   dataSource,
   value: propValue,
   max = 100,
-  label,
+  title,
   size = 'md',
   color,
   warningThreshold = 70,
   dangerThreshold = 90,
+  dataMapping,
   showCard = true,
   variant = 'default',
   className,
 }: ProgressBarProps) {
+  // Check if dataSource is configured
+  const hasDataSource = dataSource !== undefined
+
   // Fetch data - may be telemetry array or single value
   const { data, loading, error } = useDataSource<unknown>(dataSource, {
     fallback: propValue ?? 0,
@@ -82,14 +89,30 @@ export function ProgressBar({
   const sizeConfig = dashboardComponentSize[size]
   const barHeight = size === 'sm' ? 'h-1.5' : size === 'md' ? 'h-2' : 'h-2.5'
 
+  // Derive thresholds from dataMapping if not explicitly provided
+  // dataMapping.thresholds.warning corresponds to warningThreshold
+  // dataMapping.thresholds.error corresponds to dangerThreshold
+  const effectiveWarningThreshold = warningThreshold ?? dataMapping?.thresholds?.warning?.value ?? 70
+  const effectiveDangerThreshold = dangerThreshold ?? dataMapping?.thresholds?.error?.value ?? 90
+
   // Use unified color and gradient system
-  const state = getProgressState(percentage, warningThreshold, dangerThreshold)
-  const progressColor = getValueStateColor(value, max, warningThreshold, dangerThreshold, color)
-  const textColor = getValueTextColor(value, max, warningThreshold, dangerThreshold)
+  const state = getProgressState(percentage, effectiveWarningThreshold, effectiveDangerThreshold)
+  const progressColor = getValueStateColor(value, max, effectiveWarningThreshold, effectiveDangerThreshold, color)
+  const textColor = getValueTextColor(value, max, effectiveWarningThreshold, effectiveDangerThreshold)
   const colorConfig = indicatorColors[state]
 
   // Get gradient for the progress fill
   const progressGradient = getLinearGradient(state, 'to right', color)
+
+  // Unified error state for all variants (only when dataSource is configured)
+  if (error && hasDataSource) {
+    return <ErrorState size={size} className={className} />
+  }
+
+  // Unified empty state for all variants (only when dataSource is configured but no value)
+  if (!loading && !error && hasDataSource && (data === null || data === undefined)) {
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
+  }
 
   // ============================================================================
   // Compact variant - just the progress bar
@@ -178,9 +201,9 @@ export function ProgressBar({
             </div>
           </div>
         )}
-        {label && (
+        {title && (
           <span className={cn(indicatorFontWeight.label, colorConfig.text, 'mt-2', sizeConfig.labelText)}>
-            {label}
+            {title}
           </span>
         )}
       </div>
@@ -195,12 +218,12 @@ export function ProgressBar({
     <div className="flex flex-col w-full min-h-0">
       {/* Header: label (left) + percentage (right) */}
       <div className="flex items-center justify-between mb-1">
-        {label && (
-          <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate text-xs', sizeConfig.labelText)} title={label}>
-            {label}
+        {title && (
+          <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate text-xs', sizeConfig.labelText)} title={title}>
+            {title}
           </span>
         )}
-        {!label && <span />}
+        {!title && <span />}
         {loading ? (
           <Skeleton className={cn('h-3 w-7 shrink-0 rounded')} />
         ) : (

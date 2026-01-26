@@ -13,6 +13,7 @@ import type {
   TelemetryDataResponse,
   TelemetrySummaryResponse,
   DeviceCurrentStateResponse,
+  BatchCurrentValuesResponse,
   CommandHistoryResponse,
   CommandDto,
   CommandListResponse,
@@ -355,6 +356,12 @@ export const api = {
   getDevices: () => fetchAPI<{ devices: Device[]; count: number }>('/devices'),
   getDevice: (id: string) => fetchAPI<Device>(`/devices/${id}`),
   getDeviceCurrent: (id: string) => fetchAPI<DeviceCurrentStateResponse>(`/devices/${id}/current`),
+  getDevicesCurrentBatch: (deviceIds: string[]) =>
+    fetchAPI<BatchCurrentValuesResponse>('/devices/current-batch', {
+      method: 'POST',
+      body: JSON.stringify({ device_ids: deviceIds }),
+      skipErrorToast: true, // Skip error toast if endpoint not implemented
+    }),
   addDevice: (req: AddDeviceRequest) =>
     fetchAPI<{ device_id: string; added: boolean }>('/devices', {
       method: 'POST',
@@ -642,8 +649,8 @@ export const api = {
       body: JSON.stringify({ host, ports, timeout_ms: timeoutMs }),
     }),
 
-  // Alerts
-  getAlerts: () => fetchAPI<{ alerts: Alert[]; count: number }>('/alerts'),
+  // Alerts - response can be either { alerts: Alert[] } or Alert[] directly
+  getAlerts: () => fetchAPI<{ alerts?: Alert[]; count?: number } | Alert[]>('/alerts'),
   getAlert: (id: string) => fetchAPI<Alert>(`/alerts/${id}`),
   createAlert: (req: { title: string; message: string; severity?: string; source?: string }) =>
     fetchAPI<{ id: string; title: string; message: string; severity: string }>('/alerts', {

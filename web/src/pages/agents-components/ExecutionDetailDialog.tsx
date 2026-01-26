@@ -216,7 +216,7 @@ export function ExecutionDetailDialog({
                 >
                   <Card className="p-4">
                     <div className="text-sm whitespace-pre-wrap font-mono">
-                      {execution.result.report.content}
+                      {execution.result.report}
                     </div>
                   </Card>
                 </DecisionProcessSection>

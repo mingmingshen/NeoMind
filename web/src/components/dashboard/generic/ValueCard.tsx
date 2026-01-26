@@ -3,22 +3,24 @@
  *
  * Fills 100% of container using unified dashboard styles.
  * Size prop controls relative scale, not fixed dimensions.
+ * Uses raw data values directly.
  */
 
+import { useMemo } from 'react'
 import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn, formatValue, getIconForEntity } from '@/lib/utils'
-import { toLatestValue } from '@/design-system/utils/format'
-import { useDataSource } from '@/hooks/useDataSource'
-import { chartColors, indicatorFontWeight, indicatorColors } from '@/design-system'
-import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
+import { cn, getIconForEntity } from '@/lib/utils'
+import { chartColors, indicatorFontWeight, indicatorColors, dashboardCardBase } from '@/design-system'
+import { valueCardSize, type ValueCardSize } from '@/design-system/tokens/size'
 import type { DataSourceOrList } from '@/types/dashboard'
+import { useDataSource } from '@/hooks/useDataSource'
+import { ErrorState } from '../shared'
 
 export interface ValueCardProps {
   dataSource?: DataSourceOrList
 
   // Display
-  label?: string
+  title?: string
   unit?: string
   prefix?: string
   icon?: string
@@ -35,9 +37,10 @@ export interface ValueCardProps {
   sparklineData?: number[]
 
   // Styling - controls relative scale, not fixed size
-  size?: 'sm' | 'md' | 'lg'
+  size?: ValueCardSize
   variant?: 'default' | 'vertical' | 'compact' | 'minimal'
-  color?: string
+  iconColor?: string
+  valueColor?: string
 
   className?: string
 }
@@ -109,14 +112,15 @@ function Sparkline({ data, color, trendDirection }: SparklineProps) {
 
 interface ValueIconProps {
   icon?: string
-  label?: string
+  title?: string
   iconType?: 'auto' | 'entity' | 'emoji'
-  size: 'sm' | 'md' | 'lg'
+  size: ValueCardSize
   className?: string
+  iconColor?: string
 }
 
-function ValueIcon({ icon, label, iconType = 'entity', size, className }: ValueIconProps) {
-  const config = dashboardComponentSize[size]
+function ValueIcon({ icon, title, iconType = 'entity', size, className, iconColor }: ValueIconProps) {
+  const config = valueCardSize[size]
 
   // Emoji fallback
   if (icon && iconType === 'emoji') {
@@ -125,20 +129,39 @@ function ValueIcon({ icon, label, iconType = 'entity', size, className }: ValueI
 
   // Get SVG icon
   const getIcon = () => {
-    if (!icon && label) return getIconForEntity(label)
+    if (!icon && title) return getIconForEntity(title)
     if (icon) return getIconForEntity(icon)
     return Activity
   }
 
   const IconComponent = getIcon()
 
+  // Convert hex to rgba for background opacity
+  const hexToRgba = (hex: string, alpha: number) => {
+    const cleanHex = hex.replace('#', '')
+    const r = parseInt(cleanHex.substring(0, 2), 16)
+    const g = parseInt(cleanHex.substring(2, 4), 16)
+    const b = parseInt(cleanHex.substring(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+
+  // Use custom icon color or default primary color
+  const iconBgColor = iconColor ? hexToRgba(iconColor, 0.15) : undefined
+  const iconTextColor = iconColor || undefined
+
   return (
-    <div className={cn(
-      'flex items-center justify-center rounded-lg',
-      'bg-primary/10 text-primary',
-      config.iconContainer,
-      className
-    )}>
+    <div
+      className={cn(
+        'flex items-center justify-center rounded-lg',
+        'bg-primary/10 text-primary',
+        config.iconContainer,
+        className
+      )}
+      style={{
+        backgroundColor: iconBgColor,
+        color: iconTextColor
+      }}
+    >
       <IconComponent className={cn(config.iconSize)} />
     </div>
   )
@@ -150,7 +173,7 @@ function ValueIcon({ icon, label, iconType = 'entity', size, className }: ValueI
 
 export function ValueCard({
   dataSource,
-  label,
+  title,
   unit,
   prefix = '',
   icon,
@@ -163,27 +186,63 @@ export function ValueCard({
   sparklineData,
   size = 'md',
   variant = 'default',
-  color,
+  iconColor,
+  valueColor,
   className,
 }: ValueCardProps) {
-  const { data, loading, error } = useDataSource<number | string | null>(dataSource, {
+  const { data, loading, error } = useDataSource<unknown>(dataSource, {
     fallback: null,
   })
 
-  // Extract the latest value from telemetry data
-  const displayValue = error ? null : toLatestValue(data, null)
+  // Check if dataSource is configured
+  const hasDataSource = dataSource !== undefined
+
+  // Format the value with unit and prefix - uses raw data
+  // For arrays, use the last value (latest telemetry data)
+  // For objects, extract the 'value' property
+  const formattedValue = useMemo(() => {
+    if (error || data === null || data === undefined) {
+      return '-'
+    }
+
+    // If data is an array, get the last value (latest)
+    let rawValue = data
+    if (Array.isArray(data) && data.length > 0) {
+      rawValue = data[data.length - 1]
+    }
+
+    // If rawValue is an object, extract the 'value' property
+    if (typeof rawValue === 'object' && rawValue !== null && 'value' in rawValue) {
+      rawValue = (rawValue as any).value
+    }
+
+    // Convert to string and add prefix/unit
+    const valueStr = String(rawValue)
+    const prefixStr = prefix || ''
+    const unitStr = unit ? ` ${unit}` : ''
+
+    return `${prefixStr}${valueStr}${unitStr}`
+  }, [data, error, prefix, unit])
+
   const trendDirection = trendValue !== undefined
     ? trendValue > 0 ? 'up' : trendValue < 0 ? 'down' : 'neutral'
     : null
 
-  const sizeConfig = dashboardComponentSize[size]
+  // Get size config with fallback - only 'sm', 'md', 'lg' are valid
+  const safeSize: ValueCardSize = (size === 'sm' || size === 'md' || size === 'lg') ? size : 'md'
+  const sizeConfig = valueCardSize[safeSize]
 
-  // Color styling - use unified color system
-  const valueColor = color || (
+  // Color styling for value text - use prop or fall back to trend colors
+  const finalValueColor = valueColor || (
     trendDirection === 'up' ? indicatorColors.success.text :
     trendDirection === 'down' ? indicatorColors.error.text :
     undefined
   )
+
+  // Unified error state for all variants
+  if (error && hasDataSource) {
+    return <ErrorState size={safeSize} className={className} />
+  }
 
   // ============================================================================
   // Minimal variant - just value with optional label
@@ -192,14 +251,14 @@ export function ValueCard({
   if (variant === 'minimal') {
     return (
       <div className={cn(dashboardCardBase, 'flex flex-col justify-center', sizeConfig.padding, className)}>
-        {label && (
-          <span className={cn(indicatorFontWeight.title, 'text-muted-foreground mb-1', sizeConfig.labelText)}>{label}</span>
+        {title && (
+          <span className={cn(indicatorFontWeight.title, 'text-muted-foreground mb-1', sizeConfig.labelText)}>{title}</span>
         )}
         {loading ? (
           <Skeleton className={cn('h-6 w-20 rounded')} />
         ) : (
-          <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums', sizeConfig.valueText, valueColor)}>
-            {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
+          <span className={cn(indicatorFontWeight.value, 'text-foreground tracking-tight tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+            {formattedValue}
           </span>
         )}
         {showTrend && trendDirection && (
@@ -235,7 +294,7 @@ export function ValueCard({
         {/* Icon */}
         {icon && (
           <div className={cn('mb-3', sizeConfig.contentGap)}>
-            <ValueIcon icon={icon} label={label} iconType={iconType} size={size} />
+            <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />
           </div>
         )}
 
@@ -243,15 +302,15 @@ export function ValueCard({
         {loading ? (
           <Skeleton className={cn('h-7 w-16 rounded')} />
         ) : (
-          <span className={cn(indicatorFontWeight.value, 'text-foreground/90 tracking-tight tabular-nums text-center', sizeConfig.valueText, valueColor)}>
-            {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
+          <span className={cn(indicatorFontWeight.value, 'text-foreground/90 tracking-tight tabular-nums text-center', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+            {formattedValue}
           </span>
         )}
 
         {/* Label */}
-        {label && (
+        {title && (
           <span className={cn(indicatorFontWeight.title, 'text-muted-foreground text-center max-w-full truncate mt-1', sizeConfig.labelText)}>
-            {label}
+            {title}
           </span>
         )}
 
@@ -290,19 +349,19 @@ export function ValueCard({
     return (
       <div className={cn(dashboardCardBase, 'flex-row items-center gap-3', sizeConfig.padding, className)}>
         {/* Icon */}
-        {icon && <ValueIcon icon={icon} label={label} iconType={iconType} size={size} />}
+        {icon && <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />}
 
         {/* Content */}
         <div className="flex flex-col min-w-0 flex-1">
-          {label && (
-            <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate', sizeConfig.labelText)}>{label}</span>
+          {title && (
+            <span className={cn(indicatorFontWeight.title, 'text-muted-foreground truncate', sizeConfig.labelText)}>{title}</span>
           )}
           <div className="flex items-baseline gap-1">
             {loading ? (
               <Skeleton className={cn('h-5 w-16 rounded')} />
             ) : (
-              <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText, valueColor)}>
-                {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
+              <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)} style={{ color: finalValueColor }}>
+                {formattedValue}
               </span>
             )}
           </div>
@@ -332,15 +391,15 @@ export function ValueCard({
     <div className={cn(dashboardCardBase, 'flex-row items-center', sizeConfig.contentGap, sizeConfig.padding, className)}>
       {/* Icon section */}
       <div className={cn('flex items-center justify-center shrink-0', sizeConfig.iconContainer)}>
-        <ValueIcon icon={icon} label={label} iconType={iconType} size={size} />
+        <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />
       </div>
 
       {/* Content section - left-aligned like LEDIndicator */}
       <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-        {/* Label - primary text */}
-        {label && (
+        {/* Title - primary text */}
+        {title && (
           <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', sizeConfig.titleText)}>
-            {label}
+            {title}
           </span>
         )}
 
@@ -348,8 +407,8 @@ export function ValueCard({
         {loading ? (
           <Skeleton className={cn('h-5 w-16 rounded mt-0.5')} />
         ) : (
-          <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText, valueColor)}>
-            {formatValue(displayValue ?? '-', { unit, prefix, locale: 'en' })}
+          <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText)} style={{ color: finalValueColor }}>
+            {formattedValue}
           </span>
         )}
       </div>

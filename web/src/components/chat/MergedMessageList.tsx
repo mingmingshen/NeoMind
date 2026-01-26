@@ -251,7 +251,7 @@ export function MergedMessageList({
 
               {/* Content */}
               {message.content && (
-                <MarkdownMessage content={message.content} />
+                <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
               )}
             </div>
 

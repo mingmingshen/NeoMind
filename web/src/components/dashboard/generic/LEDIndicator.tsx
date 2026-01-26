@@ -3,22 +3,23 @@
  *
  * State indicator with LED-like visual feedback.
  * Layout matches ValueCard: left LED container + right content.
+ * Supports data mapping configuration for flexible value handling.
  */
 
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { toLatestValue } from '@/design-system/utils/format'
+import { DataMapper, type SingleValueMappingConfig } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Skeleton } from '@/components/ui/skeleton'
 import { dashboardComponentSize, dashboardCardBase } from '@/design-system/tokens/size'
 import {
   indicatorFontWeight,
   indicatorColors,
-  getLedGlow,
   getLedAnimation,
   type IndicatorState,
 } from '@/design-system/tokens/indicator'
 import type { DataSource } from '@/types/dashboard'
+import { ErrorState } from '../shared'
 
 export type LEDState = 'on' | 'off' | 'error' | 'warning' | 'unknown'
 
@@ -33,13 +34,18 @@ export interface ValueStateMapping {
 export interface LEDIndicatorProps {
   dataSource?: DataSource
   state?: LEDState
-  label?: string
+  title?: string
   size?: 'sm' | 'md' | 'lg'
   valueMap?: ValueStateMapping[]
   defaultState?: LEDState
   color?: string
   showCard?: boolean
   showGlow?: boolean
+
+  // Data mapping configuration (enhances valueMap with thresholds)
+  // stateThresholds is now part of SingleValueMappingConfig
+  dataMapping?: SingleValueMappingConfig
+
   className?: string
 }
 
@@ -70,18 +76,6 @@ const stateConfig = {
     label: '未知',
     color: indicatorColors.neutral,
   },
-}
-
-// LED container sizes
-const getLedContainerSize = (size: 'xs' | 'sm' | 'md' | 'lg') => {
-  if (size === 'xs') return 'w-6 h-6'
-  return size === 'sm' ? 'w-8 h-8' : size === 'md' ? 'w-10 h-10' : 'w-12 h-12'
-}
-
-// LED dot sizes
-const getLedDotSize = (size: 'xs' | 'sm' | 'md' | 'lg') => {
-  if (size === 'xs') return 'h-2 w-2'
-  return size === 'sm' ? 'h-3 w-3' : size === 'md' ? 'h-4 w-4' : 'h-5 w-5'
 }
 
 // Match value to state
@@ -183,16 +177,56 @@ function getCustomColor(
   return undefined
 }
 
+// Determine state from numeric value using thresholds
+function getStateFromThresholds(
+  value: number,
+  thresholds?: SingleValueMappingConfig['stateThresholds']
+): LEDState | null {
+  if (!thresholds) return null
+
+  // Check in order: error > warning > on > off
+  if (thresholds.error) {
+    const { operator, value: threshold } = thresholds.error
+    if (DataMapper.evaluateThreshold(value, operator, threshold)) {
+      return 'error'
+    }
+  }
+
+  if (thresholds.warning) {
+    const { operator, value: threshold } = thresholds.warning
+    if (DataMapper.evaluateThreshold(value, operator, threshold)) {
+      return 'warning'
+    }
+  }
+
+  if (thresholds.on) {
+    const { operator, value: threshold } = thresholds.on
+    if (DataMapper.evaluateThreshold(value, operator, threshold)) {
+      return 'on'
+    }
+  }
+
+  if (thresholds.off) {
+    const { operator, value: threshold } = thresholds.off
+    if (DataMapper.evaluateThreshold(value, operator, threshold)) {
+      return 'off'
+    }
+  }
+
+  return null
+}
+
 export function LEDIndicator({
   dataSource,
   state: propState = 'off',
-  label,
+  title,
   size = 'md',
   valueMap,
   defaultState = 'unknown',
   color,
   showCard = true,
   showGlow = true,
+  dataMapping,
   className,
 }: LEDIndicatorProps) {
   const { data, loading, error } = useDataSource<unknown>(dataSource)
@@ -202,15 +236,38 @@ export function LEDIndicator({
     if (error) return 'error'
     if (loading) return 'unknown'
 
-    // Extract the latest value from telemetry data
-    const latestValue = toLatestValue(data, null)
+    // Extract numeric value if available
+    const numericValue = DataMapper.extractValue(data, dataMapping)
 
-    if (latestValue !== undefined && valueMap && valueMap.length > 0) {
-      return matchValueToState(latestValue, valueMap, defaultState)
+    // First try: Use state thresholds from dataMapping
+    if (numericValue !== null && numericValue !== undefined) {
+      const thresholdState = getStateFromThresholds(numericValue, dataMapping?.stateThresholds)
+      if (thresholdState) {
+        return thresholdState
+      }
     }
 
-    if (latestValue !== undefined) {
-      const dataStr = String(latestValue).trim().toLowerCase()
+    // Second try: Use valueMap for string/enum matching
+    if (valueMap && valueMap.length > 0) {
+      return matchValueToState(data, valueMap, defaultState)
+    }
+
+    // Third try: Auto-detect boolean/string states
+    if (data !== null && data !== undefined) {
+      // Check for boolean-like values
+      const boolValue = DataMapper.mapToBoolean(data, {
+        valueMapping: {
+          onValues: ['true', 'on', '1', 'yes', 'enabled', 'active', 'online'],
+          offValues: ['false', 'off', '0', 'no', 'disabled', 'inactive', 'offline'],
+        },
+      })
+
+      if (typeof data === 'boolean' || boolValue !== undefined) {
+        return boolValue ? 'on' : 'off'
+      }
+
+      // Check for string states
+      const dataStr = String(data).trim().toLowerCase()
       if (['on', 'true', '1', 'yes', 'enabled', 'active', 'online'].includes(dataStr)) {
         return 'on'
       }
@@ -226,20 +283,18 @@ export function LEDIndicator({
     }
 
     return propState
-  }, [data, valueMap, defaultState, propState, loading, error])
+  }, [data, valueMap, defaultState, propState, loading, error, dataMapping])
 
   const customLabel = useMemo(() => {
-    const latestValue = toLatestValue(data, undefined)
-    if (latestValue !== undefined && valueMap) {
-      return getCustomLabel(latestValue, valueMap, ledState)
+    if (data !== undefined && valueMap) {
+      return getCustomLabel(data, valueMap, ledState)
     }
     return undefined
   }, [data, valueMap, ledState])
 
   const customColor = useMemo(() => {
-    const latestValue = toLatestValue(data, undefined)
-    if (latestValue !== undefined && valueMap) {
-      return getCustomColor(latestValue, valueMap, ledState)
+    if (data !== undefined && valueMap) {
+      return getCustomColor(data, valueMap, ledState)
     }
     return undefined
   }, [data, valueMap, ledState])
@@ -253,12 +308,30 @@ export function LEDIndicator({
   const colorConfig = stateCfg.color
   const animation = getLedAnimation(indicatorState, false)
 
+  // Convert hex to rgba for background opacity
+  const hexToRgba = (hex: string, alpha: number) => {
+    const cleanHex = hex.replace('#', '')
+    const r = parseInt(cleanHex.substring(0, 2), 16)
+    const g = parseInt(cleanHex.substring(2, 4), 16)
+    const b = parseInt(cleanHex.substring(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+
+  // Use custom color or default background
+  const useCustomBg = customColor || color
+  const containerBgColor = useCustomBg && isActive ? hexToRgba(useCustomBg, 0.15) : undefined
+
   // Enhanced glow effect
   const glowStyle = showGlow && isActive
     ? `0 0 8px ${finalColor}60, 0 0 16px ${finalColor}40, 0 0 24px ${finalColor}20`
     : 'none'
 
-  const displayLabel = label || customLabel || stateCfg.label
+  const displayLabel = title || customLabel || stateCfg.label
+
+  // Error state
+  if (error && dataSource) {
+    return <ErrorState size={size} className={className} />
+  }
 
   // Loading state
   if (loading) {
@@ -276,10 +349,11 @@ export function LEDIndicator({
       <div className={cn(
         'flex items-center justify-center shrink-0 rounded-full',
         config.iconContainer,
-        isActive ? colorConfig.bg : 'bg-muted/30',
+        !containerBgColor && (isActive ? colorConfig.bg : 'bg-muted/30'),
         animation.className
       )}
       style={{
+        backgroundColor: containerBgColor,
         boxShadow: glowStyle !== 'none' ? glowStyle : undefined,
       }}>
         {/* LED dot */}

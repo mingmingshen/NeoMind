@@ -278,3 +278,28 @@ pub struct GenerateMdlRequest {
     #[serde(default)]
     pub downlink_example: String,
 }
+
+/// Request to fetch current values for multiple devices.
+#[derive(Debug, Deserialize)]
+pub struct BatchCurrentValuesRequest {
+    /// List of device IDs to fetch current values for
+    pub device_ids: Vec<String>,
+}
+
+/// Batch current values response for a single device.
+#[derive(Debug, Serialize)]
+pub struct DeviceCurrentValues {
+    /// Device ID
+    pub device_id: String,
+    /// Current metric values (flat key-value map)
+    pub current_values: HashMap<String, serde_json::Value>,
+}
+
+/// Response for batch current values request.
+#[derive(Debug, Serialize)]
+pub struct BatchCurrentValuesResponse {
+    /// Current values for each device (keyed by device_id)
+    pub devices: HashMap<String, DeviceCurrentValues>,
+    /// Count of devices with data
+    pub count: usize,
+}

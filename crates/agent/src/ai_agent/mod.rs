@@ -54,6 +54,9 @@ pub struct CreateAgentRequest {
     pub commands: Vec<CommandSelection>,
     /// Schedule configuration
     pub schedule: AgentSchedule,
+    /// Optional LLM backend ID (uses default if not specified)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_backend_id: Option<String>,
 }
 
 /// A selected metric for monitoring.
@@ -130,6 +133,7 @@ impl AiAgentManager {
             id: uuid::Uuid::new_v4().to_string(),
             name: request.name.clone(),
             user_prompt: request.user_prompt,
+            llm_backend_id: request.llm_backend_id,
             parsed_intent: Some(intent.clone()),
             resources,
             schedule: request.schedule,

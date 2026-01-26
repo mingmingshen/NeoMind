@@ -126,6 +126,93 @@ struct AgentExecutionDto {
     error: Option<String>,
 }
 
+/// Data collected for API responses.
+#[derive(Debug, serde::Serialize)]
+struct DataCollectedDto {
+    source: String,
+    data_type: String,
+    values: serde_json::Value,
+    timestamp: i64,
+}
+
+/// Reasoning step for API responses.
+#[derive(Debug, serde::Serialize)]
+struct ReasoningStepDto {
+    step_number: u32,
+    description: String,
+    step_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<String>,
+    output: String,
+    confidence: f32,
+}
+
+/// Decision for API responses.
+#[derive(Debug, serde::Serialize)]
+struct DecisionDto {
+    decision_type: String,
+    description: String,
+    action: String,
+    rationale: String,
+    expected_outcome: String,
+}
+
+/// Decision process for API responses.
+#[derive(Debug, serde::Serialize)]
+struct DecisionProcessDto {
+    situation_analysis: String,
+    data_collected: Vec<DataCollectedDto>,
+    reasoning_steps: Vec<ReasoningStepDto>,
+    decisions: Vec<DecisionDto>,
+    conclusion: String,
+    confidence: f32,
+}
+
+/// Execution result for API responses.
+#[derive(Debug, serde::Serialize)]
+struct ExecutionResultDto {
+    actions_executed: Vec<ActionExecutedDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    report: Option<String>,
+    notifications_sent: Vec<NotificationSentDto>,
+    summary: String,
+    success_rate: f32,
+}
+
+/// Action executed for API responses.
+#[derive(Debug, serde::Serialize)]
+struct ActionExecutedDto {
+    action_type: String,
+    target: String,
+    description: String,
+    success: bool,
+}
+
+/// Notification sent for API responses.
+#[derive(Debug, serde::Serialize)]
+struct NotificationSentDto {
+    channel: String,
+    recipient: String,
+    message: String,
+}
+
+/// Detailed agent execution record with full decision process.
+#[derive(Debug, serde::Serialize)]
+struct AgentExecutionDetailDto {
+    id: String,
+    agent_id: String,
+    timestamp: String,
+    trigger_type: String,
+    status: String,
+    duration_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decision_process: Option<DecisionProcessDto>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<ExecutionResultDto>,
+}
+
 /// Request body for creating a new AI Agent.
 #[derive(Debug, serde::Deserialize)]
 pub struct CreateAgentRequest {
@@ -139,6 +226,8 @@ pub struct CreateAgentRequest {
     #[serde(default)]
     pub commands: Vec<CommandSelectionRequest>,
     pub schedule: AgentScheduleRequest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_backend_id: Option<String>,
 }
 
 fn default_agent_role() -> String {
@@ -282,6 +371,72 @@ impl From<AgentExecutionRecord> for AgentExecutionDto {
     }
 }
 
+impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
+    fn from(record: AgentExecutionRecord) -> Self {
+        Self {
+            id: record.id,
+            agent_id: record.agent_id,
+            timestamp: format_datetime(record.timestamp),
+            trigger_type: record.trigger_type,
+            status: format!("{:?}", record.status),
+            duration_ms: record.duration_ms,
+            error: record.error,
+            decision_process: Some(DecisionProcessDto {
+                situation_analysis: record.decision_process.situation_analysis,
+                data_collected: record.decision_process.data_collected.into_iter()
+                    .map(|d| DataCollectedDto {
+                        source: d.source,
+                        data_type: d.data_type,
+                        values: d.values,
+                        timestamp: d.timestamp,
+                    })
+                    .collect(),
+                reasoning_steps: record.decision_process.reasoning_steps.into_iter()
+                    .map(|s| ReasoningStepDto {
+                        step_number: s.step_number,
+                        description: s.description,
+                        step_type: s.step_type,
+                        input: s.input,
+                        output: s.output,
+                        confidence: s.confidence,
+                    })
+                    .collect(),
+                decisions: record.decision_process.decisions.into_iter()
+                    .map(|d| DecisionDto {
+                        decision_type: d.decision_type,
+                        description: d.description,
+                        action: d.action,
+                        rationale: d.rationale,
+                        expected_outcome: d.expected_outcome,
+                    })
+                    .collect(),
+                conclusion: record.decision_process.conclusion,
+                confidence: record.decision_process.confidence,
+            }),
+            result: record.result.map(|r| ExecutionResultDto {
+                actions_executed: r.actions_executed.into_iter()
+                    .map(|a| ActionExecutedDto {
+                        action_type: a.action_type,
+                        target: a.target,
+                        description: a.description,
+                        success: a.success,
+                    })
+                    .collect(),
+                report: r.report.map(|rep| rep.content),
+                notifications_sent: r.notifications_sent.into_iter()
+                    .map(|n| NotificationSentDto {
+                        channel: n.channel,
+                        recipient: n.recipient,
+                        message: n.message,
+                    })
+                    .collect(),
+                summary: r.summary,
+                success_rate: r.success_rate,
+            }),
+        }
+    }
+}
+
 fn format_datetime(ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
         .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
@@ -395,6 +550,7 @@ pub async fn create_agent(
         id: uuid::Uuid::new_v4().to_string(),
         name: request.name.clone(),
         user_prompt: request.user_prompt,
+        llm_backend_id: request.llm_backend_id,
         parsed_intent: None,
         resources,
         schedule,
@@ -563,7 +719,7 @@ pub async fn get_execution(
         .find(|e| e.id == execution_id)
         .ok_or_else(|| ErrorResponse::not_found(&format!("Execution not found: {}", execution_id)))?;
 
-    let dto = AgentExecutionDto::from(execution);
+    let dto = AgentExecutionDetailDto::from(execution);
 
     ok(json!(dto))
 }

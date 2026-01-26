@@ -20,7 +20,15 @@ import {
   getValueGradient,
   type IndicatorGradientType,
 } from '@/design-system/tokens/indicator'
-import type { DataSourceOrList } from '@/types/dashboard'
+import type { DataSourceOrList, TelemetryAggregate, TimeWindowType } from '@/types/dashboard'
+import { EmptyState, ErrorState, LoadingState } from '../shared'
+import type { SingleValueMappingConfig } from '@/lib/dataMapping'
+import { normalizeDataSource } from '@/types/dashboard'
+import {
+  getEffectiveAggregate,
+  getEffectiveTimeWindow,
+  timeWindowToHours,
+} from '@/lib/telemetryTransform'
 
 export interface SparklineProps {
   // Data source configuration
@@ -51,13 +59,22 @@ export interface SparklineProps {
   threshold?: number
   thresholdColor?: string
 
+  // Data mapping configuration
+  dataMapping?: SingleValueMappingConfig
+
   // Value range for value-based coloring
   maxValue?: number  // For colorMode='value', determines color based on latestValue/maxValue ratio
 
   // Value display
   showValue?: boolean
-  label?: string
+  title?: string
   size?: 'sm' | 'md' | 'lg'
+
+  // === Telemetry transform options ===
+  // Time window for data
+  timeWindow?: TimeWindowType
+  // How to aggregate time-series data
+  aggregate?: TelemetryAggregate
 
   className?: string
 }
@@ -293,24 +310,103 @@ export function Sparkline({
   showThreshold = false,
   threshold,
   thresholdColor,
+  dataMapping,
   maxValue,
   showValue = false,
-  label,
+  title,
   size = 'md',
+  timeWindow,
+  aggregate = 'raw',
   className,
 }: SparklineProps) {
+  // Get effective aggregate and time window from dataSource or props
+  const effectiveAggregate = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].aggregateExt) {
+      return sources[0].aggregateExt
+    }
+    return aggregate
+  }, [dataSource, aggregate])
+
+  const effectiveTimeWindow = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].timeWindow?.type) {
+      return sources[0].timeWindow.type
+    }
+    return timeWindow ?? 'last_1hour'
+  }, [dataSource, timeWindow])
+
+  // Normalize data sources to telemetry type with transform settings
+  const telemetrySources = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    const limit = 50 // Default limit for sparkline
+    const timeRange = timeWindowToHours(effectiveTimeWindow)
+
+    return sources.map(ds => {
+      // If already telemetry type, update with settings
+      if (ds.type === 'telemetry') {
+        return {
+          ...ds,
+          limit: ds.limit ?? limit,
+          timeRange: ds.timeRange ?? timeRange,
+          aggregate: ds.aggregate ?? (effectiveAggregate === 'raw' ? 'raw' : 'avg'),
+          params: {
+            ...ds.params,
+            includeRawPoints: true,
+          },
+        }
+      }
+
+      // Convert device/metric to telemetry for historical data
+      if (ds.type === 'device' || ds.type === 'metric') {
+        return {
+          type: 'telemetry' as const,
+          deviceId: ds.deviceId,
+          metricId: ds.metricId ?? ds.property ?? 'value',
+          timeRange: timeRange,
+          limit: limit,
+          aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
+          params: {
+            includeRawPoints: true,
+          },
+        }
+      }
+
+      return ds
+    })
+  }, [dataSource, effectiveAggregate, effectiveTimeWindow])
+
+  // Use telemetry sources if available, otherwise use original dataSource
+  const finalDataSource = telemetrySources.length > 0
+    ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources)
+    : dataSource
+
   // Fetch data with proper array handling
-  const { data, loading, error } = useDataSource<unknown>(dataSource, {
-    fallback: propData ?? DEFAULT_SAMPLE_DATA,
+  const { data, loading, error } = useDataSource<unknown>(finalDataSource, {
+    fallback: propData,
+    preserveMultiple: true,
   })
+
+  // Check if dataSource is configured
+  const hasDataSource = dataSource !== undefined
 
   // Convert data to number array using the updated toNumberArray function
   const chartData = useMemo(() => {
     if (error) return []
-    // Use toNumberArray which now handles { value: number } objects
-    const result = toNumberArray(data ?? propData ?? DEFAULT_SAMPLE_DATA, [])
-    return result.length > 0 ? result : DEFAULT_SAMPLE_DATA
-  }, [data, propData, error])
+
+    // Handle multi-source data - use first source
+    let rawData = data ?? propData
+    if (Array.isArray(rawData) && rawData.length > 0 && Array.isArray(rawData[0])) {
+      rawData = rawData[0] // Use first source's data
+    }
+
+    const result = toNumberArray(rawData, [])
+    // Only use DEFAULT_SAMPLE_DATA if there's no dataSource configured
+    if (result.length === 0 && !hasDataSource) {
+      return DEFAULT_SAMPLE_DATA
+    }
+    return result
+  }, [data, propData, error, hasDataSource])
 
   const sizeConfig = dashboardComponentSize[size]
 
@@ -326,6 +422,9 @@ export function Sparkline({
   // For value-based coloring, determine the max value
   const dataMax = chartData.length > 0 ? Math.max(...chartData) : 0
   const effectiveMax = maxValue ?? dataMax ?? 100
+
+  // Derive threshold from dataMapping if not explicitly provided
+  const effectiveThreshold = threshold ?? dataMapping?.thresholds?.warning?.value
 
   // Determine line color based on colorMode
   const lineColor = colorMode === 'auto'
@@ -349,12 +448,12 @@ export function Sparkline({
   // Inner content component
   const SparklineContent = () => (
     <>
-      {/* Header with label and value */}
-      {(label || showValue) && (
+      {/* Header with title and value */}
+      {(title || showValue) && (
         <div className="flex items-center justify-between mb-2">
-          {label && (
+          {title && (
             <span className={cn(indicatorFontWeight.title, 'text-muted-foreground', sizeConfig.labelText)}>
-              {label}
+              {title}
             </span>
           )}
           {showValue && (
@@ -390,7 +489,7 @@ export function Sparkline({
             strokeWidth={strokeWidth}
             curved={curved}
             showThreshold={showThreshold}
-            threshold={threshold}
+            threshold={effectiveThreshold}
             thresholdColor={thresholdColor || indicatorColors.neutral.base}
             gradientType={gradientState}
           />
@@ -406,7 +505,7 @@ export function Sparkline({
             strokeWidth={strokeWidth}
             curved={curved}
             showThreshold={showThreshold}
-            threshold={threshold}
+            threshold={effectiveThreshold}
             thresholdColor={thresholdColor || indicatorColors.neutral.base}
             gradientType={gradientState}
           />
@@ -415,37 +514,14 @@ export function Sparkline({
     </>
   )
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex flex-col', sizeConfig.padding, className)}>
-        {(label || showValue) && (
-          <div className="flex items-center justify-between mb-2">
-            {label && <Skeleton className={cn('h-4 w-20')} />}
-            {showValue && <Skeleton className={cn('h-5 w-16')} />}
-          </div>
-        )}
-        <Skeleton className={cn('w-full')} style={{ height: chartHeight }} />
-      </div>
-    )
-  }
-
-  // Error state
+  // Error state - use unified ErrorState
   if (error) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
-        <span className={cn('text-destructive/60', sizeConfig.labelText)}>Error loading data</span>
-      </div>
-    )
+    return <ErrorState size={size} className={className} />
   }
 
-  // Not enough data state
-  if (chartData.length < 2) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
-        <span className={cn('text-muted-foreground/50', sizeConfig.labelText)}>Insufficient data</span>
-      </div>
-    )
+  // Empty state - use unified EmptyState (when dataSource is configured but no data available)
+  if (hasDataSource && chartData.length < 2) {
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
   // Card wrapper mode (default for dashboard use)

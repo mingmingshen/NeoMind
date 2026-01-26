@@ -378,6 +378,11 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Get the default LLM backend if configured.
+    pub async fn get_llm_backend(&self) -> Result<Option<LlmBackend>> {
+        Ok(self.default_llm_backend.read().await.clone())
+    }
+
     /// Configure LLM using the LlmBackendInstanceManager.
     /// This fetches the active backend from the instance manager and configures it for all sessions.
     pub async fn configure_llm_from_instance_manager(&self) -> Result<()> {

@@ -3,6 +3,12 @@
  *
  * Unified with dashboard design system.
  * Supports historical telemetry data binding.
+ *
+ * Enhanced with time-series aggregation support:
+ * - Aggregate multiple data points into single values
+ * - Support for different aggregation methods (latest, avg, sum, etc.)
+ * - Time window selection for data scope
+ * - Chart view modes: timeseries, snapshot
  */
 
 import { useMemo, useCallback } from 'react'
@@ -20,12 +26,20 @@ import {
 } from 'recharts'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { DataMapper, type TimeSeriesMappingConfig } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
-import type { DataSource, DataSourceOrList } from '@/types/dashboard'
+import type { DataSource, DataSourceOrList, TelemetryAggregate, ChartViewMode } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
+import { EmptyState, ErrorState } from '../shared'
+import {
+  getEffectiveAggregate,
+  getEffectiveTimeWindow,
+  timeWindowToHours,
+  type TimeSeriesData,
+} from '@/lib/telemetryTransform'
 
 // Use design system chart colors
 const chartColors = designChartColors
@@ -40,8 +54,9 @@ const fallbackColors = [
 ]
 
 /**
- * Convert device/metric source to telemetry for historical data
- * Supports configurable time range and data point limit
+ * Convert device/metric source to telemetry for line charts.
+ * Line charts display time-series data as connected points.
+ * Now supports the new timeWindow and aggregateExt options.
  */
 function toTelemetrySource(
   dataSource?: DataSource,
@@ -50,13 +65,17 @@ function toTelemetrySource(
 ): DataSource | undefined {
   if (!dataSource) return undefined
 
-  // If already telemetry type, update with raw settings
+  // Get effective time window (new or legacy)
+  const effectiveTimeWindow = getEffectiveTimeWindow(dataSource)
+  const effectiveAggregate = getEffectiveAggregate(dataSource)
+
+  // If already telemetry type, update with settings
   if (dataSource.type === 'telemetry') {
     return {
       ...dataSource,
       limit: dataSource.limit ?? limit,
-      timeRange: dataSource.timeRange ?? timeRange,
-      aggregate: 'raw',
+      timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
+      aggregate: dataSource.aggregate ?? (effectiveAggregate === 'raw' ? 'raw' : 'avg'),
       params: {
         ...dataSource.params,
         includeRawPoints: true,
@@ -71,9 +90,9 @@ function toTelemetrySource(
       type: 'telemetry',
       deviceId: dataSource.deviceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeRange,
+      timeRange: timeWindowToHours(effectiveTimeWindow.type),
       limit: limit,
-      aggregate: 'raw',
+      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
       params: {
         includeRawPoints: true,
       },
@@ -85,56 +104,54 @@ function toTelemetrySource(
 }
 
 /**
- * Transform raw telemetry points to chart data
+ * Transform raw telemetry points to chart data using DataMapper
  * Handles formats: [{ timestamp, value }, { t, v }, { time, val }] or number arrays
+ * Converts string values to numbers when possible
  */
-function transformTelemetryToChartData(data: unknown): { labels: string[]; values: number[] } {
+function transformTelemetryToChartData(
+  data: unknown,
+  dataMapping?: TimeSeriesMappingConfig
+): { labels: string[]; values: number[] } {
   // Empty data
   if (!data) return { labels: [], values: [] }
 
-  // Array of telemetry points
+  // Array of telemetry points - use DataMapper for time series
   if (Array.isArray(data)) {
-    const values: number[] = []
-    const labels: string[] = []
+    // Check if it's already in simple number array format
+    if (data.length > 0 && typeof data[0] === 'number') {
+      return {
+        labels: data.map((_, i) => `${i + 1}`),
+        values: data as number[],
+      }
+    }
 
-    for (const item of data) {
-      if (typeof item === 'number') {
-        values.push(item)
-        labels.push(`${values.length}`)
-      } else if (typeof item === 'object' && item !== null) {
-        const obj = item as Record<string, unknown>
+    // Check if it's already in SeriesData format
+    if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'data' in data[0]) {
+      const seriesData = data[0] as SeriesData
+      return {
+        labels: seriesData.data.map((_, i) => `${i + 1}`),
+        values: seriesData.data,
+      }
+    }
 
-        // Extract value
-        let value: number | undefined = undefined
-        if (typeof obj.value === 'number') value = obj.value
-        else if (typeof obj.v === 'number') value = obj.v
-        else if (typeof obj.val === 'number') value = obj.val
-        else if (typeof obj.avg === 'number') value = obj.avg
-        else if (typeof obj.min === 'number') value = obj.min
-        else if (typeof obj.max === 'number') value = obj.max
+    // Use DataMapper to map to time series
+    const timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
 
-        if (value === undefined) continue
-
-        // Extract timestamp for label
-        const timestamp = obj.timestamp ?? obj.time ?? obj.t ?? obj.ts
-        let label = `${values.length + 1}`
-
-        if (typeof timestamp === 'number') {
-          // Format timestamp as time
-          const date = new Date(timestamp * 1000)
-          label = date.toLocaleTimeString('zh-CN', {
+    // Extract values and format labels from timestamps
+    const values = timeSeriesPoints.map(p => p.value)
+    const labels = timeSeriesPoints.map(p => {
+      if (p.timestamp) {
+        const date = new Date(p.timestamp > 10000000000 ? p.timestamp : p.timestamp * 1000)
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleTimeString('zh-CN', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
           })
-        } else if (typeof timestamp === 'string') {
-          label = timestamp
         }
-
-        values.push(value)
-        labels.push(label)
       }
-    }
+      return p.label || `${timeSeriesPoints.indexOf(p) + 1}`
+    })
 
     return { labels, values }
   }
@@ -165,9 +182,14 @@ export interface SeriesData {
 }
 
 export interface LineChartProps {
+  // Data source configuration
   dataSource?: DataSourceOrList  // Support both single and multiple data sources
+
+  // Data
   series?: SeriesData[]
   labels?: string[]
+
+  // Display options
   title?: string
   height?: number | 'auto'
   showGrid?: boolean
@@ -178,9 +200,19 @@ export interface LineChartProps {
   color?: string
   size?: 'sm' | 'md' | 'lg'
 
-  // Telemetry options
+  // === Telemetry options ===
+  // Legacy options (kept for backward compatibility)
   limit?: number
   timeRange?: number
+
+  // === New: Data transformation options ===
+  // How to aggregate time-series data
+  aggregate?: TelemetryAggregate
+  // Chart view mode - how to interpret data
+  chartViewMode?: ChartViewMode
+
+  // Data mapping configuration
+  dataMapping?: TimeSeriesMappingConfig
 
   className?: string
 }
@@ -222,9 +254,30 @@ export function LineChart({
   size = 'md',
   limit = 50,
   timeRange = 1,
+  aggregate = 'raw',  // Default to raw for line charts (show time series)
+  chartViewMode = 'timeseries',
+  dataMapping,
   className,
 }: LineChartProps) {
   const config = dashboardComponentSize[size]
+
+  // Get effective aggregate from dataSource or props
+  const effectiveAggregate = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].aggregateExt) {
+      return sources[0].aggregateExt
+    }
+    return aggregate
+  }, [dataSource, aggregate])
+
+  // Get effective chart view mode
+  const effectiveViewMode = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].chartViewMode) {
+      return sources[0].chartViewMode
+    }
+    return chartViewMode
+  }, [dataSource, chartViewMode])
 
   // Normalize data sources for historical data
   // Convert single DataSource or DataSource[] to array of telemetry sources
@@ -233,7 +286,7 @@ export function LineChart({
     return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
   }, [dataSource, limit, timeRange])
 
-  const { data, loading } = useDataSource<any>(
+  const { data, loading, error } = useDataSource<any>(
     telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
     {
       fallback: propSeries ?? [],
@@ -274,7 +327,7 @@ export function LineChart({
             values = sourceData as number[]
           } else {
             // Transform telemetry points - sourceData is raw telemetry points with timestamps
-            const { values: v } = transformTelemetryToChartData(sourceData)
+            const { values: v } = transformTelemetryToChartData(sourceData, dataMapping)
             values = v
           }
         }
@@ -299,7 +352,7 @@ export function LineChart({
       }
 
       // Single source - transform telemetry points
-      const { labels, values } = transformTelemetryToChartData(data)
+      const { labels, values } = transformTelemetryToChartData(data, dataMapping)
       if (values.length > 0) {
         const singleSource = sources[0]
         const seriesName = singleSource?.deviceId
@@ -330,7 +383,7 @@ export function LineChart({
       data: [10, 15, 12, 18, 14, 20, 16, 22, 19, 25],
       color: undefined,
     } as SeriesData]
-  }, [data, propSeries, dataSource])
+  }, [data, propSeries, dataSource, dataMapping])
 
   // Extract raw labels from telemetry data before any transformation
   // This must be computed before normalizedSeries to access raw timestamps
@@ -361,7 +414,7 @@ export function LineChart({
       const first = data[0]
       // Check if it's raw telemetry points
       if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-        const { labels: telemetryLabels } = transformTelemetryToChartData(data)
+        const { labels: telemetryLabels } = transformTelemetryToChartData(data, dataMapping)
         if (telemetryLabels.length > 0) {
           return telemetryLabels
         }
@@ -369,7 +422,7 @@ export function LineChart({
     }
 
     return null // Signal that we couldn't extract raw labels
-  }, [data, dataSource])
+  }, [data, dataSource, dataMapping])
 
   // Generate labels from telemetry or use provided labels
   const chartLabels = useMemo(() => {
@@ -413,13 +466,14 @@ export function LineChart({
     )
   }
 
-  // Empty state
-  if (series.length === 0 || chartData.length === 0) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', config.padding, className)}>
-        <span className={cn('text-sm text-muted-foreground')}>No data available</span>
-      </div>
-    )
+  // Error state
+  if (error && dataSource) {
+    return <ErrorState size={size} className={className} />
+  }
+
+  // Empty state - only when dataSource is configured but no data available
+  if (dataSource && (series.length === 0 || chartData.length === 0)) {
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
   return (
@@ -494,14 +548,25 @@ export function LineChart({
 
 /**
  * Area Chart Component
+ *
+ * Enhanced with time-series aggregation support:
+ * - Aggregate multiple data points into single values
+ * - Support for different aggregation methods (latest, avg, sum, etc.)
+ * - Time window selection for data scope
+ * - Chart view modes: timeseries, snapshot
  */
 
 const DEFAULT_AREA_DATA: SeriesData[] = [{ name: 'Revenue', data: [12, 19, 15, 25, 22, 30, 28, 35, 32, 40, 38, 45] }]
 
 export interface AreaChartProps {
+  // Data source configuration
   dataSource?: DataSourceOrList  // Support both single and multiple data sources
+
+  // Data
   series?: SeriesData[]
   labels?: string[]
+
+  // Display options
   title?: string
   height?: number | 'auto'
   showGrid?: boolean
@@ -510,8 +575,21 @@ export interface AreaChartProps {
   smooth?: boolean
   color?: string
   size?: 'sm' | 'md' | 'lg'
+
+  // === Telemetry options ===
+  // Legacy options (kept for backward compatibility)
   limit?: number
   timeRange?: number
+
+  // === New: Data transformation options ===
+  // How to aggregate time-series data
+  aggregate?: TelemetryAggregate
+  // Chart view mode - how to interpret data
+  chartViewMode?: ChartViewMode
+
+  // Data mapping configuration
+  dataMapping?: TimeSeriesMappingConfig
+
   className?: string
 }
 
@@ -528,10 +606,31 @@ export function AreaChart({
   size = 'md',
   limit = 50,
   timeRange = 1,
+  aggregate = 'raw',  // Default to raw for area charts (show time series)
+  chartViewMode = 'timeseries',
+  dataMapping,
   className,
 }: AreaChartProps) {
   const config = dashboardComponentSize[size]
   const effectiveSeries = propSeries || DEFAULT_AREA_DATA
+
+  // Get effective aggregate from dataSource or props
+  const effectiveAggregate = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].aggregateExt) {
+      return sources[0].aggregateExt
+    }
+    return aggregate
+  }, [dataSource, aggregate])
+
+  // Get effective chart view mode
+  const effectiveViewMode = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].chartViewMode) {
+      return sources[0].chartViewMode
+    }
+    return chartViewMode
+  }, [dataSource, chartViewMode])
 
   // Normalize data sources for historical data
   const telemetrySources = useMemo(() => {
@@ -540,7 +639,7 @@ export function AreaChart({
   }, [dataSource, limit, timeRange])
 
   const shouldFetch = telemetrySources.length > 0
-  const { data: sourceData, loading } = useDataSource<SeriesData[] | number | number[]>(
+  const { data: sourceData, loading, error } = useDataSource<SeriesData[] | number | number[]>(
     shouldFetch ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
     shouldFetch ? { fallback: effectiveSeries, preserveMultiple: true } : undefined
   )
@@ -577,7 +676,7 @@ export function AreaChart({
             values = sourceData as number[]
           } else {
             // Transform telemetry points
-            const { values: v } = transformTelemetryToChartData(sourceData)
+            const { values: v } = transformTelemetryToChartData(sourceData, dataMapping)
             values = v
           }
         }
@@ -601,7 +700,7 @@ export function AreaChart({
       }
 
       // Transform telemetry points
-      const { values } = transformTelemetryToChartData(rawData)
+      const { values } = transformTelemetryToChartData(rawData, dataMapping)
       if (values.length > 0) {
         const seriesName = sources[0]?.deviceId
           ? `${getDeviceName(sources[0].deviceId)} · ${getPropertyDisplayName(sources[0].property)}`
@@ -624,7 +723,7 @@ export function AreaChart({
     }
 
     return DEFAULT_AREA_DATA
-  }, [rawData, propSeries, dataSource])
+  }, [rawData, propSeries, dataSource, dataMapping])
 
   const series = normalizedSeries
 
@@ -656,7 +755,7 @@ export function AreaChart({
       const first = rawData[0]
       // Check if it's raw telemetry points
       if (typeof first === 'object' && first !== null && ('timestamp' in first || 't' in first || 'time' in first)) {
-        const { labels: telemetryLabels } = transformTelemetryToChartData(rawData)
+        const { labels: telemetryLabels } = transformTelemetryToChartData(rawData, dataMapping)
         if (telemetryLabels.length > 0) {
           return telemetryLabels
         }
@@ -664,7 +763,7 @@ export function AreaChart({
     }
 
     return null // Signal that we couldn't extract raw labels
-  }, [rawData, dataSource])
+  }, [rawData, dataSource, dataMapping])
 
   // Generate labels
   const chartLabels = useMemo(() => {
@@ -703,13 +802,14 @@ export function AreaChart({
     )
   }
 
-  // Empty state
-  if (series.length === 0 || chartData.length === 0) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', config.padding, className)}>
-        <span className={cn('text-sm text-muted-foreground')}>No data available</span>
-      </div>
-    )
+  // Error state
+  if (error && dataSource) {
+    return <ErrorState size={size} className={className} />
+  }
+
+  // Empty state - only when dataSource is configured but no data available
+  if (dataSource && (series.length === 0 || chartData.length === 0)) {
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
   return (

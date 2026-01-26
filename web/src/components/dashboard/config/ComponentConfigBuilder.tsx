@@ -11,7 +11,9 @@ import type {
   BooleanOption,
   SelectOption,
   Orientation,
+  DataMappingType,
 } from './UIConfigSections'
+import type { SingleValueMappingConfig } from '@/lib/dataMapping'
 
 // ============================================================================
 // Configuration Schema Types
@@ -40,6 +42,7 @@ export type ConfigSection =
   | TextSection
   | OrientationSection
   | AnimationSection
+  | DataMappingSection
   | CustomSection
 
 export interface DataSourceSection {
@@ -48,7 +51,7 @@ export interface DataSourceSection {
     dataSource?: DataSourceOrList
     onChange: (dataSource: DataSourceOrList | DataSource | undefined) => void
     // Optional: filter which source types to show
-    allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system' | 'device' | 'metric' | 'command'>
+    allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
     // Optional: enable multiple data source selection
     multiple?: boolean
     // Optional: max number of data sources (only used when multiple is true)
@@ -170,6 +173,16 @@ export interface AnimationSection {
     duration?: number
     animated?: boolean
     onChange?: (key: 'duration' | 'animated', value: any) => void
+    label?: string
+  }
+}
+
+export interface DataMappingSection {
+  type: 'data-mapping'
+  props: {
+    dataMapping?: SingleValueMappingConfig
+    onChange?: (config: SingleValueMappingConfig | undefined) => void
+    mappingType: DataMappingType
     label?: string
   }
 }
@@ -889,10 +902,9 @@ export function createChartConfig(config: {
   showLabels?: boolean
   onShowLabelsChange?: (show: boolean) => void
   // Telemetry options for historical data
+  // Note: timeRange is deprecated - use timeWindow in DataSource instead
   limit?: number
   onLimitChange?: (limit: number) => void
-  timeRange?: number
-  onTimeRangeChange?: (timeRange: number) => void
   // Multiple data source support
   multiple?: boolean
   maxSources?: number
@@ -904,48 +916,29 @@ export function createChartConfig(config: {
     props: {
       dataSource: config.dataSource,
       onChange: config.onDataSourceChange,
+      allowedTypes: ['device-metric'],  // Charts only support metrics, not commands
       multiple: config.multiple ?? true,
       maxSources: config.maxSources ?? 10
     },
   })
 
-  // Telemetry data options (limit and timeRange)
-  if (config.onLimitChange || config.onTimeRangeChange) {
+  // Data points limit option (shown when configured)
+  // Note: Time range is now configured via DataTransformConfig component with timeWindow enum
+  if (config.onLimitChange) {
     sections.push({
       type: 'custom',
       render: () => (
-        <div className="space-y-3 pt-4 border-t">
-          <div className="grid grid-cols-2 gap-3">
-            {config.onLimitChange && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Data Points</label>
-                <input
-                  type="number"
-                  value={config.limit ?? 50}
-                  onChange={(e) => config.onLimitChange?.(Number(e.target.value))}
-                  min={1}
-                  max={200}
-                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                />
-                <p className="text-xs text-muted-foreground">Max points to fetch</p>
-              </div>
-            )}
-            {config.onTimeRangeChange && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Time Range (hours)</label>
-                <input
-                  type="number"
-                  value={config.timeRange ?? 1}
-                  onChange={(e) => config.onTimeRangeChange?.(Number(e.target.value))}
-                  min={1}
-                  max={168}
-                  step={1}
-                  className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                />
-                <p className="text-xs text-muted-foreground">Historical period</p>
-              </div>
-            )}
-          </div>
+        <div className="space-y-2 pt-4 border-t">
+          <label className="text-sm font-medium">Data Points</label>
+          <input
+            type="number"
+            value={config.limit ?? 50}
+            onChange={(e) => config.onLimitChange?.(Number(e.target.value))}
+            min={1}
+            max={500}
+            className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+          />
+          <p className="text-xs text-muted-foreground">Max data points to fetch (for raw data)</p>
         </div>
       ),
     })

@@ -115,7 +115,7 @@
     --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.7);
 
     /* Chat-specific colors - dark mode */
-    --msg-user-bg: 200 80% 45%;
+    --msg-user-bg: 217 85% 35%;
     --msg-user-text: 0 0% 100%;
     --msg-ai-bg: 0 0% 14%;
     --msg-ai-text: 0 0% 90%;
@@ -178,7 +178,7 @@
     --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
 
     /* Chat-specific colors - light mode */
-    --msg-user-bg: 217 91% 60%;
+    --msg-user-bg: 217 91% 40%;
     --msg-user-text: 0 0% 100%;
     --msg-ai-bg: 0 0% 96%;
     --msg-ai-text: 0 0% 9%;

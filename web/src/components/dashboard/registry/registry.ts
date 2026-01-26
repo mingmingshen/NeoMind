@@ -40,6 +40,11 @@ import {
   Play,
   Globe,
   FileText,
+  // Spatial & Media
+  MapPin,
+  Map,
+  Webcam,
+  Square as SquareIcon,
 } from 'lucide-react'
 
 // ============================================================================
@@ -75,9 +80,11 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
-      'label', 'unit', 'prefix', 'suffix', 'size', 'variant',
+      'title', 'unit', 'prefix', 'suffix', 'size', 'variant',
       'showTrend', 'trendValue', 'trendPeriod', 'showSparkline',
-      'color', 'className'
+      'icon', 'iconType', 'iconColor', 'valueColor',
+      'description', 'sparklineData',
+      'dataMapping', 'className'
     ].includes(prop),
     defaultProps: {
       size: 'md',
@@ -85,13 +92,13 @@ export const componentRegistry: ComponentRegistry = {
       showTrend: false,
       showSparkline: false,
     },
-    variants: ['default', 'vertical', 'compact'],
+    variants: ['default', 'vertical', 'compact', 'minimal'],
   },
 
   'led-indicator': {
     type: 'led-indicator',
     name: 'LED Indicator',
-    description: 'Simple LED status indicator light',
+    description: 'Simple LED status indicator light with value-to-state mapping',
     category: 'indicators',
     icon: Circle,
     sizeConstraints: getSizeConstraints('led-indicator'),
@@ -99,12 +106,16 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
-      'label', 'color', 'size', 'variant', 'blink', 'className'
+      'title', 'color', 'size', 'variant', 'className',
+      'valueMap', 'defaultState', 'showGlow', 'state',
+      'dataMapping', 'showCard',
     ].includes(prop),
     defaultProps: {
       size: 'md',
       variant: 'default',
-      blink: false,
+      defaultState: 'unknown',
+      showGlow: true,
+      valueMap: [],
     },
     variants: ['default', 'labeled'],
   },
@@ -120,12 +131,15 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
-      'data', 'color', 'showArea', 'showDots', 'smooth', 'className'
+      'data', 'color', 'colorMode', 'fill', 'fillColor', 'showPoints', 'strokeWidth', 'curved',
+      'showThreshold', 'threshold', 'thresholdColor', 'maxValue',
+      'showValue', 'title', 'size', 'responsive', 'showCard',
+      'dataMapping', 'className'
     ].includes(prop),
     defaultProps: {
-      showArea: true,
-      showDots: false,
-      smooth: true,
+      fill: true,
+      showPoints: false,
+      curved: true,
     },
   },
 
@@ -140,12 +154,12 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
-      'value', 'min', 'max', 'color', 'showLabel', 'variant', 'className'
+      'value', 'max', 'color', 'showCard', 'variant', 'title', 'size',
+      'warningThreshold', 'dangerThreshold',
+      'dataMapping', 'className'
     ].includes(prop),
     defaultProps: {
-      min: 0,
       max: 100,
-      showLabel: true,
       variant: 'default',
     },
     variants: ['default', 'compact', 'circular'],
@@ -168,7 +182,8 @@ export const componentRegistry: ComponentRegistry = {
     hasActions: false,
     acceptsProp: (prop) => [
       'data', 'labels', 'colors', 'smooth', 'showGrid',
-      'showLegend', 'showTooltip', 'fillArea', 'className'
+      'showLegend', 'showTooltip', 'fillArea', 'className',
+      'limit', 'timeRange', 'aggregate', 'chartViewMode', 'dataMapping'
     ].includes(prop),
     defaultProps: {
       smooth: true,
@@ -192,7 +207,8 @@ export const componentRegistry: ComponentRegistry = {
     hasActions: false,
     acceptsProp: (prop) => [
       'data', 'labels', 'colors', 'smooth', 'showGrid',
-      'showLegend', 'showTooltip', 'opacity', 'className'
+      'showLegend', 'showTooltip', 'opacity', 'className',
+      'limit', 'timeRange', 'aggregate', 'chartViewMode', 'dataMapping'
     ].includes(prop),
     defaultProps: {
       smooth: true,
@@ -239,9 +255,10 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: true,
     hasActions: false,
     acceptsProp: (prop) => [
-      'data', 'colors', 'showLabels', 'showLegend', 'showTooltip', 'innerRadius', 'className'
+      'data', 'colors', 'showLabels', 'showLegend', 'showTooltip', 'innerRadius', 'variant', 'className'
     ].includes(prop),
     defaultProps: {
+      variant: 'donut',
       showLabels: false,
       showLegend: false,
       showTooltip: true,
@@ -275,91 +292,6 @@ export const componentRegistry: ComponentRegistry = {
       falseLabel: 'Off',
     },
     variants: ['default', 'icon', 'slider', 'pill'],
-  },
-
-  'button-group': {
-    type: 'button-group',
-    name: 'Button Group',
-    description: 'Group of action buttons',
-    category: 'controls',
-    icon: LayersIcon,
-    sizeConstraints: getSizeConstraints('button-group'),
-    hasDataSource: false,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'buttons', 'size', 'variant', 'orientation', 'className'
-    ].includes(prop),
-    defaultProps: {
-      size: 'md',
-      variant: 'default',
-      orientation: 'horizontal',
-    },
-    variants: ['default', 'segmented', 'icon-only'],
-  },
-
-  'slider': {
-    type: 'slider',
-    name: 'Slider',
-    description: 'Numeric value slider for device control',
-    category: 'controls',
-    icon: SliderIcon,
-    sizeConstraints: getSizeConstraints('slider'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'min', 'max', 'step', 'value', 'unit', 'label', 'size',
-      'orientation', 'showValue', 'className'
-    ].includes(prop),
-    defaultProps: {
-      min: 0,
-      max: 100,
-      step: 1,
-      value: 50,
-      size: 'md',
-      orientation: 'horizontal',
-      showValue: true,
-    },
-    variants: ['default', 'icon'],
-  },
-
-  'dropdown': {
-    type: 'dropdown',
-    name: 'Dropdown',
-    description: 'Select dropdown for device control',
-    category: 'controls',
-    icon: List,
-    sizeConstraints: getSizeConstraints('dropdown'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'label', 'options', 'placeholder', 'size', 'disabled', 'className'
-    ].includes(prop),
-    defaultProps: {
-      size: 'md',
-      placeholder: 'Select...',
-    },
-  },
-
-  'input-field': {
-    type: 'input-field',
-    name: 'Input Field',
-    description: 'Text input field for device control',
-    category: 'controls',
-    icon: Type,
-    sizeConstraints: getSizeConstraints('input-field'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: true,
-    acceptsProp: (prop) => [
-      'label', 'placeholder', 'type', 'size', 'disabled', 'className'
-    ].includes(prop),
-    defaultProps: {
-      size: 'md',
-      type: 'text',
-    },
   },
 
   // ============================================================================
@@ -453,6 +385,155 @@ export const componentRegistry: ComponentRegistry = {
     },
     variants: ['default', 'compact', 'minimal'],
   },
+
+  // ============================================================================
+  // Spatial & Media
+  // ============================================================================
+
+  'map-display': {
+    type: 'map-display',
+    name: 'Map Display',
+    description: 'Interactive map with device markers, metrics, and commands',
+    category: 'spatial',
+    icon: Map,
+    sizeConstraints: getSizeConstraints('map-display'),
+    hasDataSource: true,
+    maxDataSources: 10,
+    hasDisplayConfig: true,
+    hasActions: true,
+    acceptsProp: (prop) => [
+      'markers', 'layers', 'center', 'zoom', 'minZoom', 'maxZoom',
+      'showControls', 'showLayers', 'showFullscreen', 'interactive',
+      'tileLayer', 'markerColor', 'size', 'className'
+    ].includes(prop),
+    defaultProps: {
+      center: { lat: 39.9042, lng: 116.4074 },
+      zoom: 10,
+      showControls: true,
+      showLayers: true,
+      interactive: true,
+    },
+    variants: ['default', 'satellite', 'dark', 'terrain'],
+  },
+
+  'video-display': {
+    type: 'video-display',
+    name: 'Video Display',
+    description: 'Video player for streams and camera feeds',
+    category: 'spatial',
+    icon: Webcam,
+    sizeConstraints: getSizeConstraints('video-display'),
+    hasDataSource: true,
+    hasDisplayConfig: true,
+    hasActions: false,
+    acceptsProp: (prop) => [
+      'src', 'type', 'autoplay', 'muted', 'controls', 'loop', 'fit',
+      'refreshInterval', 'reconnectAttempts', 'rounded', 'showFullscreen',
+      'size', 'className'
+    ].includes(prop),
+    defaultProps: {
+      type: 'file',
+      autoplay: false,
+      muted: true,
+      controls: true,
+      fit: 'contain',
+    },
+    variants: ['file', 'stream', 'rtsp', 'hls', 'camera'],
+  },
+
+  'custom-layer': {
+    type: 'custom-layer',
+    name: 'Custom Layer',
+    description: 'Free-form container for devices, metrics, and commands',
+    category: 'spatial',
+    icon: SquareIcon,
+    sizeConstraints: getSizeConstraints('custom-layer'),
+    hasDataSource: true,
+    maxDataSources: 20,
+    hasDisplayConfig: true,
+    hasActions: true,
+    acceptsProp: (prop) => [
+      'items', 'backgroundType', 'backgroundColor', 'backgroundImage', 'gridSize',
+      'interactive', 'showControls', 'editable', 'showFullscreen',
+      'maintainAspectRatio', 'aspectRatio', 'size', 'className'
+    ].includes(prop),
+    defaultProps: {
+      backgroundType: 'grid',
+      interactive: true,
+      showControls: true,
+      editable: false,
+    },
+    variants: ['grid', 'color', 'image', 'transparent'],
+  },
+
+  // ============================================================================
+  // Business Components (placeholders for backward compatibility)
+  // ============================================================================
+
+  'agent-status-card': {
+    type: 'agent-status-card',
+    name: 'Agent Status Card',
+    description: 'AI agent status and activity monitor',
+    category: 'indicators',
+    icon: Hash,
+    sizeConstraints: getSizeConstraints('agent-status-card'),
+    hasDataSource: true,
+    hasDisplayConfig: false,
+    hasActions: false,
+    acceptsProp: () => false,
+  },
+
+  'decision-list': {
+    type: 'decision-list',
+    name: 'Decision List',
+    description: 'List of AI decisions',
+    category: 'indicators',
+    icon: Hash,
+    sizeConstraints: getSizeConstraints('decision-list'),
+    hasDataSource: true,
+    hasDisplayConfig: false,
+    hasActions: false,
+    acceptsProp: () => false,
+  },
+
+  'device-control': {
+    type: 'device-control',
+    name: 'Device Control',
+    description: 'Device control panel',
+    category: 'controls',
+    icon: ToggleLeft,
+    sizeConstraints: getSizeConstraints('device-control'),
+    hasDataSource: true,
+    hasDisplayConfig: false,
+    hasActions: true,
+    acceptsProp: () => false,
+  },
+
+  'rule-status-grid': {
+    type: 'rule-status-grid',
+    name: 'Rule Status Grid',
+    description: 'Rule execution status grid',
+    category: 'indicators',
+    icon: Hash,
+    sizeConstraints: getSizeConstraints('rule-status-grid'),
+    hasDataSource: true,
+    hasDisplayConfig: false,
+    hasActions: false,
+    acceptsProp: () => false,
+  },
+
+  'transform-list': {
+    type: 'transform-list',
+    name: 'Transform List',
+    description: 'Data transformation list',
+    category: 'indicators',
+    icon: Hash,
+    sizeConstraints: getSizeConstraints('transform-list'),
+    hasDataSource: true,
+    hasDisplayConfig: false,
+    hasActions: false,
+    acceptsProp: () => false,
+  },
 } as const
 
 // ============================================================================
@@ -530,6 +611,7 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     'charts',
     'controls',
     'display',
+    'spatial',
   ]
 
   return categoryOrder
@@ -546,6 +628,7 @@ export function getCategoryInfo(category: ComponentCategory): { name: string; ic
     charts: { name: 'Charts', icon: LineChartIcon },
     controls: { name: 'Controls', icon: ToggleLeft },
     display: { name: 'Display & Content', icon: Image },
+    spatial: { name: 'Spatial & Media', icon: MapPin },
   }
 
   return categoryInfos[category]

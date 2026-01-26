@@ -64,10 +64,13 @@ export interface DashboardState {
 
   // Component management
   addComponent: (component: Omit<DashboardComponent, 'id'>) => void
-  updateComponent: (id: string, updates: Partial<DashboardComponent>) => void
+  updateComponent: (id: string, updates: Partial<DashboardComponent>, persist?: boolean) => void
   removeComponent: (id: string) => void
   moveComponent: (id: string, position: ComponentPosition) => void
   duplicateComponent: (id: string) => void
+
+  // Persistence
+  persistDashboard: (id?: string) => Promise<void>
 
   // UI state
   setEditMode: (edit: boolean) => void
@@ -307,6 +310,21 @@ export const createDashboardSlice: StateCreator<
       })
     },
 
+    persistDashboard: async (id) => {
+      const { currentDashboard, dashboards } = get()
+      const dashboardToPersist = id
+        ? dashboards.find((d) => d.id === id)
+        : currentDashboard
+
+      if (!dashboardToPersist) {
+        console.warn('[persistDashboard] No dashboard to persist')
+        return
+      }
+
+      console.log('[persistDashboard] Persisting dashboard:', dashboardToPersist.name)
+      await storage.sync(dashboardToPersist)
+    },
+
     addComponent(component) {
       const { currentDashboard, dashboards, currentDashboardId } = get()
       if (!currentDashboard) return
@@ -330,7 +348,7 @@ export const createDashboardSlice: StateCreator<
       storage.sync(updatedDashboard).catch(() => {})
     },
 
-    updateComponent(id, updates) {
+    updateComponent(id, updates, persist = true) {
       const { currentDashboard, dashboards } = get()
       if (!currentDashboard) return
 
@@ -351,7 +369,10 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      storage.sync(updatedDashboard).catch(() => {})
+      // Only persist to localStorage if persist=true (default for backward compatibility)
+      if (persist) {
+        storage.sync(updatedDashboard).catch(() => {})
+      }
     },
 
     removeComponent(id) {

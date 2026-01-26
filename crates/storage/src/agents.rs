@@ -40,6 +40,9 @@ pub struct AiAgent {
     pub role: AgentRole,
     /// User's natural language description of requirements
     pub user_prompt: String,
+    /// Optional LLM backend ID for this agent (uses default if not specified)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_backend_id: Option<String>,
     /// AI-generated understanding of the requirements
     pub parsed_intent: Option<ParsedIntent>,
     /// Selected resources (devices, metrics, commands)
@@ -641,6 +644,41 @@ impl AgentStore {
                     .map_err(|e| Error::Serialization(e.to_string()))?;
                 ag.status = status;
                 ag.error_message = error_message;
+                ag.updated_at = chrono::Utc::now().timestamp();
+                ag
+            }
+            None => return Ok(()), // Agent doesn't exist
+        };
+        drop(table);
+        drop(read_txn);
+
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(AGENTS_TABLE)?;
+
+            let value =
+                serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
+
+            table.insert(id, value.as_slice())?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Update agent parsed intent after initial parsing.
+    pub async fn update_agent_parsed_intent(
+        &self,
+        id: &str,
+        parsed_intent: Option<ParsedIntent>,
+    ) -> Result<(), Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(AGENTS_TABLE)?;
+
+        let mut agent = match table.get(id)? {
+            Some(bytes) => {
+                let mut ag: AiAgent = serde_json::from_slice(bytes.value())
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                ag.parsed_intent = parsed_intent;
                 ag.updated_at = chrono::Utc::now().timestamp();
                 ag
             }

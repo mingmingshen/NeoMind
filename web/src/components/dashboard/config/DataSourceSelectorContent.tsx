@@ -7,7 +7,7 @@
  */
 
 import { useState, useMemo, useEffect } from 'react'
-import { Search, Server, Check, Zap, BarChart3, Bot, Info, ChevronRight, X, ChevronDown } from 'lucide-react'
+import { Search, Server, Check, Zap, Info, ChevronRight, X, ChevronDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
@@ -18,12 +18,12 @@ import type { MetricDefinition, CommandDefinition } from '@/types'
 export interface DataSourceSelectorContentProps {
   onSelect: (dataSource: DataSourceOrList | DataSource | undefined) => void
   currentDataSource?: DataSourceOrList
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
   multiple?: boolean
   maxSources?: number
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system'
+type CategoryType = 'device-metric' | 'device-command' | 'device-info'
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
 
 // Device info property definitions
@@ -42,15 +42,13 @@ const CATEGORIES = [
   { id: 'device-metric' as const, name: '指标', icon: Server, description: '设备的实时数据点' },
   { id: 'device-command' as const, name: '指令', icon: Zap, description: '控制设备的操作' },
   { id: 'device-info' as const, name: '基本信息', icon: Info, description: '设备的属性和状态' },
-  { id: 'agent' as const, name: 'Agent', icon: Bot, description: 'AI Agent 数据' },
-  { id: 'system' as const, name: '系统', icon: BarChart3, description: '系统统计数据' },
 ]
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info', 'agent', 'system']
+  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info']
 
   const result: CategoryType[] = []
 
@@ -58,8 +56,6 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
   if (allowedTypes.includes('device-info')) result.push('device-info')
-  if (allowedTypes.includes('agent')) result.push('agent')
-  if (allowedTypes.includes('system')) result.push('system')
 
   // Old format types - map to new format
   if (allowedTypes.includes('device') || allowedTypes.includes('metric')) {
@@ -69,24 +65,8 @@ function normalizeAllowedTypes(
     if (!result.includes('device-command')) result.push('device-command')
   }
 
-  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info', 'agent', 'system']
+  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info']
 }
-
-// System metrics (non-device specific)
-const SYSTEM_METRICS = [
-  { id: 'device-online-count', name: '在线设备数', unit: '个' },
-  { id: 'device-offline-count', name: '离线设备数', unit: '个' },
-  { id: 'alert-critical-count', name: '严重告警', unit: '个' },
-  { id: 'alert-warning-count', name: '警告告警', unit: '个' },
-  { id: 'rule-trigger-count', name: '规则触发次数', unit: '次' },
-]
-
-// Agent data options
-const AGENT_METRICS = [
-  { id: 'agent-status', name: 'Agent 状态', description: 'idle, running, paused' },
-  { id: 'agent-executions', name: '执行次数', description: '总执行次数' },
-  { id: 'agent-success-rate', name: '成功率', description: '执行成功率百分比' },
-]
 
 /**
  * Convert selected items to DataSource format
@@ -126,16 +106,6 @@ function selectedItemsToDataSource(
           type: 'device-info',
           deviceId,
           property: rest.join(':'),
-        }
-      case 'agent':
-        return {
-          type: 'metric',
-          metricId: rest.join(':'),
-        }
-      case 'system':
-        return {
-          type: 'metric',
-          metricId: rest.join(':'),
         }
       default:
         return undefined
@@ -177,18 +147,6 @@ function selectedItemsToDataSource(
           property: rest.join(':'),
         })
         break
-      case 'agent':
-        result.push({
-          type: 'metric',
-          metricId: rest.join(':'),
-        })
-        break
-      case 'system':
-        result.push({
-          type: 'metric',
-          metricId: rest.join(':'),
-        })
-        break
     }
   }
 
@@ -219,14 +177,6 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
       case 'device-info':
         items.add(`device-info:${dataSource.deviceId}:${dataSource.property}` as SelectedItem)
         break
-      case 'metric':
-        // Determine if this is an agent or system metric
-        if (dataSource.metricId?.startsWith('agent-')) {
-          items.add(`agent:${dataSource.metricId}` as SelectedItem)
-        } else {
-          items.add(`system:${dataSource.metricId}` as SelectedItem)
-        }
-        break
     }
   }
 
@@ -253,12 +203,6 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[]): string {
       const deviceName3 = device3?.name || deviceId
       const prop = DEVICE_INFO_PROPERTIES.find(p => p.id === rest.join(':'))
       return `${deviceName3} · ${prop?.name || rest.join(':')}`
-    case 'agent':
-      const agentMetric = AGENT_METRICS.find(m => m.id === rest.join(':'))
-      return agentMetric?.name || rest.join(':')
-    case 'system':
-      const sysMetric = SYSTEM_METRICS.find(m => m.id === rest.join(':'))
-      return sysMetric?.name || rest.join(':')
     default:
       return item
   }
@@ -648,57 +592,6 @@ export function DataSourceSelectorContent({
         ) : (
           /* Non-device categories: single panel */
           <div className="flex-1 overflow-y-auto p-2">
-            {selectedCategory === 'agent' && (
-              <div className="space-y-0.5">
-                {AGENT_METRICS.map(metric => {
-                  const itemKey = `agent:${metric.id}` as SelectedItem
-                  const isSelected = selectedItems.has(itemKey)
-
-                  return (
-                    <button
-                      key={metric.id}
-                      onClick={() => handleSelectItem(itemKey)}
-                      className={cn(
-                        'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-muted/50 rounded-md transition-colors',
-                        isSelected && 'bg-primary/10 text-primary'
-                      )}
-                    >
-                      <div className="text-left">
-                        <div className="font-medium">{metric.name}</div>
-                        <div className="text-[10px] text-muted-foreground">{metric.description}</div>
-                      </div>
-                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-
-            {selectedCategory === 'system' && (
-              <div className="space-y-0.5">
-                {SYSTEM_METRICS.map(metric => {
-                  const itemKey = `system:${metric.id}` as SelectedItem
-                  const isSelected = selectedItems.has(itemKey)
-
-                  return (
-                    <button
-                      key={metric.id}
-                      onClick={() => handleSelectItem(itemKey)}
-                      className={cn(
-                        'w-full flex items-center justify-between px-3 py-1.5 text-xs hover:bg-muted/50 rounded-md transition-colors',
-                        isSelected && 'bg-primary/10 text-primary'
-                      )}
-                    >
-                      <div className="text-left">
-                        <div className="font-medium">{metric.name}</div>
-                        <div className="text-[10px] text-muted-foreground">单位: {metric.unit}</div>
-                      </div>
-                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )}
       </div>

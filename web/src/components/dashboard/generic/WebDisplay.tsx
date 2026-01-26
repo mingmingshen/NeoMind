@@ -14,6 +14,7 @@ import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { ExternalLink, RefreshCw, Globe, Lock } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { EmptyState } from '../shared'
 
 export interface WebDisplayProps {
   dataSource?: DataSource
@@ -127,13 +128,13 @@ export function WebDisplay({
   // No source state
   if (!src) {
     return (
-      <div className={cn(dashboardCardBase, 'flex flex-col items-center justify-center gap-3', sizeConfig.padding, className)}>
-        <Globe className={cn('text-muted-foreground', size === 'sm' ? 'h-8 w-8' : size === 'md' ? 'h-12 w-12' : 'h-16 w-16')} />
-        <div className="text-center">
-          <p className="text-muted-foreground text-sm">No URL specified</p>
-          <p className="text-muted-foreground/60 text-xs mt-1">Configure a data source or URL</p>
-        </div>
-      </div>
+      <EmptyState
+        size={size}
+        className={className}
+        icon={<Globe />}
+        message="No URL specified"
+        subMessage="Configure a data source or URL"
+      />
     )
   }
 

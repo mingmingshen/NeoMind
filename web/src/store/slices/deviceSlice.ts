@@ -50,6 +50,7 @@ export interface DeviceSlice extends DeviceState, TelemetryState {
   fetchTelemetryData: (deviceId: string, metric?: string, start?: number, end?: number, limit?: number) => Promise<void>
   fetchTelemetrySummary: (deviceId: string, hours?: number) => Promise<void>
   fetchDeviceCurrentState: (deviceId: string) => Promise<void>  // New: unified device + metrics
+  fetchDevicesCurrentBatch: (deviceIds: string[]) => Promise<void>  // Batch fetch for dashboard
   fetchCommandHistory: (deviceId: string, limit?: number) => Promise<void>
 
   // Device Adapter Actions
@@ -362,6 +363,61 @@ export const createDeviceSlice: StateCreator<
       set({ commandHistory: null })
     } finally {
       set({ telemetryLoading: false })
+    }
+  },
+
+  // Batch fetch current values for multiple devices
+  // Optimized for dashboard - fetches all device current_values in one API call
+  // Note: Silently skip if backend doesn't support this endpoint (405 error)
+  fetchDevicesCurrentBatch: async (deviceIds) => {
+    if (!deviceIds || deviceIds.length === 0) {
+      return
+    }
+
+    try {
+      const data = await api.getDevicesCurrentBatch(deviceIds)
+      console.log('[fetchDevicesCurrentBatch] Got current values for', data.count, 'devices')
+
+      // Helper function to build nested object from flat key paths
+      const buildNestedValues = (metrics: Record<string, unknown>) => {
+        const result: Record<string, unknown> = {}
+        for (const [key, value] of Object.entries(metrics)) {
+          const parts = key.split('.')
+          let current = result
+          for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i]
+            if (!(part in current)) {
+              current[part] = {}
+            }
+            current = current[part] as Record<string, unknown>
+          }
+          current[parts[parts.length - 1]] = value
+        }
+        return result
+      }
+
+      // Update devices array with fetched current_values
+      set((state) => ({
+        devices: state.devices.map((device) => {
+          const deviceData = data.devices[device.id || device.device_id]
+          if (!deviceData) {
+            return device
+          }
+
+          return {
+            ...device,
+            current_values: buildNestedValues(deviceData.current_values),
+          }
+        }),
+      }))
+    } catch (error) {
+      const errorMessage = (error as Error).message
+      // Silently ignore 405 errors - backend doesn't support this endpoint yet
+      if (errorMessage.includes('405') || errorMessage.includes('Method Not Allowed')) {
+        // Endpoint not implemented in backend - skip silently
+        return
+      }
+      console.error('Failed to fetch devices current batch:', error)
     }
   },
 

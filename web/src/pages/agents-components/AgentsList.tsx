@@ -23,7 +23,7 @@ import {
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyStateInline, Pagination } from "@/components/shared"
-import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Brain, Activity, Zap, CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Brain, Activity, Zap, CheckCircle2, XCircle, Loader2, History } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import type { AiAgent, AgentRole } from "@/types"
@@ -36,6 +36,7 @@ interface AgentsListProps {
   onToggleStatus: (agent: AiAgent) => void
   onExecute: (agent: AiAgent) => void
   onViewMemory?: (agentId: string, agentName: string) => void
+  onViewExecutions?: (agent: AiAgent) => void
 }
 
 // Role configuration
@@ -63,6 +64,7 @@ export function AgentsList({
   onToggleStatus,
   onExecute,
   onViewMemory,
+  onViewExecutions,
 }: AgentsListProps) {
   const { t } = useTranslation(['common', 'agents'])
   const [page, setPage] = useState(1)
@@ -241,6 +243,12 @@ export function AgentsList({
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
+                          {onViewExecutions && (
+                            <DropdownMenuItem onClick={() => onViewExecutions(agent)}>
+                              <History className="mr-2 h-4 w-4" />
+                              {t('agents:viewExecutions')}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             onClick={() => onDelete(agent)}
                             className="text-destructive"

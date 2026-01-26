@@ -470,6 +470,16 @@ export interface DeviceMetricValue {
   is_virtual: boolean
 }
 
+// Batch current values response
+// Used by POST /api/devices/current-batch - efficiently fetches current values for multiple devices
+export interface BatchCurrentValuesResponse {
+  devices: Record<string, {
+    device_id: string
+    current_values: Record<string, unknown>
+  }>
+  count: number
+}
+
 export interface CommandHistoryResponse {
   device_id: string
   commands: CommandHistoryEntry[]
@@ -1537,6 +1547,7 @@ export interface AiAgent {
   success_count: number
   error_count: number
   avg_duration_ms: number
+  llm_backend_id?: string
 }
 
 /**
@@ -1566,6 +1577,7 @@ export interface AgentSchedule {
   interval_seconds?: number
   cron_expression?: string
   timezone?: string
+  event_filter?: string
 }
 
 /**
@@ -1685,6 +1697,7 @@ export interface CreateAgentRequest {
   metrics: MetricSelectionRequest[]
   commands: CommandSelectionRequest[]
   schedule: AgentScheduleRequest
+  llm_backend_id?: string
 }
 
 /**
@@ -1810,7 +1823,7 @@ export interface Decision {
  */
 export interface ExecutionResult {
   actions_executed: ActionExecuted[]
-  report?: GeneratedReport
+  report?: string
   notifications_sent: NotificationSent[]
   summary: string
   success_rate: number
@@ -1823,9 +1836,7 @@ export interface ActionExecuted {
   action_type: string
   description: string
   target: string
-  parameters: Record<string, unknown>
   success: boolean
-  result?: string
 }
 
 /**

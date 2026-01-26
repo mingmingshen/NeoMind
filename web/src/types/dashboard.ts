@@ -20,6 +20,87 @@ export interface ValueMapping {
   [key: string]: unknown
 }
 
+// ============================================================================
+// Time-Series Data Transformation Types
+// ============================================================================
+
+/**
+ * Aggregation methods for time-series telemetry data.
+ * - raw: Return all data points without aggregation
+ * - latest: Return only the most recent value
+ * - first: Return the oldest value in the time window
+ * - avg: Average of all values
+ * - min: Minimum value
+ * - max: Maximum value
+ * - sum: Sum of all values
+ * - count: Count of data points
+ * - delta: Change (last - first)
+ * - rate: Rate of change per time unit
+ */
+export type TelemetryAggregate =
+  | 'raw'        // 原始数据点
+  | 'latest'     // 最新值
+  | 'first'      // 第一个值
+  | 'avg'        // 平均值
+  | 'min'        // 最小值
+  | 'max'        // 最大值
+  | 'sum'        // 总和
+  | 'count'      // 计数
+  | 'delta'      // 变化量 (last - first)
+  | 'rate'       // 变化率 per time unit
+
+/**
+ * Time window options for telemetry queries.
+ */
+export type TimeWindowType =
+  | 'now'            // Current latest value (single point)
+  | 'last_5min'      // Last 5 minutes
+  | 'last_15min'     // Last 15 minutes
+  | 'last_30min'     // Last 30 minutes
+  | 'last_1hour'     // Last 1 hour
+  | 'last_6hours'    // Last 6 hours
+  | 'last_24hours'   // Last 24 hours
+  | 'today'          // Today (from 00:00)
+  | 'yesterday'      // Yesterday
+  | 'this_week'      // This week
+  | 'custom'         // Custom time range
+
+/**
+ * Time window configuration for telemetry queries.
+ */
+export interface TimeWindowConfig {
+  type: TimeWindowType
+  // When type='custom', specify start/end timestamps
+  startTime?: number  // Unix timestamp in seconds
+  endTime?: number    // Unix timestamp in seconds
+}
+
+/**
+ * Chart view mode - how to interpret and display the data.
+ * - timeseries: X-axis is time, show trends over time
+ * - snapshot: Show current/aggregated values (comparison view)
+ * - distribution: Show proportions (for pie/donut charts)
+ * - histogram: Show frequency distribution
+ */
+export type ChartViewMode =
+  | 'timeseries'     // 时序模式：X轴=时间
+  | 'snapshot'       // 快照模式：显示当前值或聚合值对比
+  | 'distribution'   // 分布模式：显示占比（适合饼图）
+  | 'histogram'      // 直方图模式：显示频率分布
+
+/**
+ * How to handle missing/empty values in time series.
+ */
+export type FillMissingStrategy =
+  | 'none'       // Leave as null/undefined
+  | 'zero'       // Fill with 0
+  | 'previous'   // Use previous value (forward fill)
+  | 'linear'     // Linear interpolation between points
+
+// ============================================================================
+// Data Source Interface
+// ============================================================================
+
 export interface DataSource {
   type: DataSourceType
   endpoint?: string
@@ -38,11 +119,30 @@ export interface DataSource {
   valueMapping?: ValueMapping
   // Current value for command sources (for display)
   currentValue?: unknown
-  // Telemetry-specific fields (for historical time-series data)
-  timeRange?: number // Hours of history to fetch (default: 1)
-  limit?: number // Max number of data points (default: 50)
-  aggregate?: 'raw' | 'avg' | 'min' | 'max' | 'sum' // Aggregation method (default: raw)
-  // Device-info-specific fields (for basic device properties)
+
+  // === Telemetry fields ===
+  // Legacy: simple time range in hours (kept for backward compatibility)
+  timeRange?: number
+  // Legacy: max number of data points
+  limit?: number
+  // Legacy: simple aggregation
+  aggregate?: 'raw' | 'avg' | 'min' | 'max' | 'sum'
+
+  // === New: Time-series data transformation ===
+  // Time window configuration
+  timeWindow?: TimeWindowConfig
+  // Extended aggregation method
+  aggregateExt?: TelemetryAggregate
+  // Chart view mode - how to interpret data
+  chartViewMode?: ChartViewMode
+  // Data sampling interval (seconds) - for downsampling
+  sampleInterval?: number
+  // How to handle missing values
+  fillMissing?: FillMissingStrategy
+  // Group dimension for multi-source data
+  groupBy?: 'device' | 'metric' | 'time'
+
+  // === Device-info fields ===
   infoProperty?: 'name' | 'status' | 'online' | 'last_seen' | 'device_type' | 'plugin_name' | 'adapter_id'
 }
 
@@ -81,19 +181,15 @@ export type GenericComponentType =
   | 'pie-chart'
   // Controls
   | 'toggle-switch'
-  | 'button-group'
-  | 'slider'
-  | 'dropdown'
-  | 'input-field'
-  // Lists & Tables
-  | 'data-table'
-  | 'status-list'
-  | 'log-feed'
   // Display & Content
   | 'image-display'
   | 'image-history'
   | 'web-display'
   | 'markdown-display'
+  // Spatial & Media
+  | 'map-display'
+  | 'video-display'
+  | 'custom-layer'
 
 /**
  * Business Component Types
@@ -234,14 +330,6 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
 
   // Controls - very compact
   'toggle-switch': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 4, maxH: 2 },
-  'button-group': { minW: 2, minH: 1, defaultW: 3, defaultH: 1, maxW: 6, maxH: 2 },
-  'dropdown': { minW: 2, minH: 1, defaultW: 3, defaultH: 1, maxW: 4, maxH: 2 },
-  'input-field': { minW: 2, minH: 1, defaultW: 3, defaultH: 1, maxW: 6, maxH: 2 },
-
-  // Tables & Lists - need more height
-  'data-table': { minW: 3, minH: 2, defaultW: 6, defaultH: 5, maxW: 12, maxH: 12 },
-  'status-list': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 10 },
-  'log-feed': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 8, maxH: 12 },
 
   // Display & Content
   'image-display': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
@@ -249,7 +337,12 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'web-display': { minW: 3, minH: 3, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
   'markdown-display': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
 
-  // Business Components
+  // Spatial & Media
+  'map-display': { minW: 3, minH: 3, defaultW: 6, defaultH: 5, maxW: 12, maxH: 12 },
+  'video-display': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
+  'custom-layer': { minW: 2, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
+
+  // Business Components (deleted but kept for backward compatibility)
   'agent-status-card': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 6, preserveAspect: true },
   'decision-list': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 10 },
   'device-control': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 6, maxH: 5 },
@@ -288,9 +381,9 @@ export function isGenericComponent(component: DashboardComponent): component is 
   const genericTypes: GenericComponentType[] = [
     'value-card', 'led-indicator', 'sparkline', 'progress-bar',
     'line-chart', 'area-chart', 'bar-chart', 'pie-chart',
-    'toggle-switch', 'button-group', 'dropdown', 'input-field',
-    'data-table', 'status-list', 'log-feed',
+    'toggle-switch',
     'image-display', 'image-history', 'web-display', 'markdown-display',
+    'map-display', 'video-display', 'custom-layer',
   ]
   return genericTypes.includes(component.type as GenericComponentType)
 }

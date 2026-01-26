@@ -3,6 +3,11 @@
  *
  * Unified with dashboard design system.
  * Supports telemetry data binding for categorical/part-to-whole data.
+ *
+ * Enhanced with time-series aggregation support:
+ * - Aggregate multiple data points into single values
+ * - Support for different aggregation methods (latest, avg, sum, etc.)
+ * - Time window selection for data scope
  */
 
 import { useMemo } from 'react'
@@ -16,12 +21,23 @@ import {
 } from 'recharts'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { DataMapper, type CategoricalMappingConfig } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
 import { indicatorFontWeight } from '@/design-system/tokens/indicator'
 import { chartColors as designChartColors } from '@/design-system/tokens/color'
-import type { DataSource, DataSourceOrList } from '@/types/dashboard'
+import type { DataSource, DataSourceOrList, TelemetryAggregate } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
+import { EmptyState } from '../shared'
+import {
+  getEffectiveAggregate,
+  getEffectiveTimeWindow,
+  timeWindowToHours,
+  parseTelemetryResponse,
+  aggregateData,
+  transformToPieData,
+  type TimeSeriesData,
+} from '@/lib/telemetryTransform'
 
 // Use design system chart colors
 const chartColors = designChartColors
@@ -39,6 +55,7 @@ const fallbackColors = [
 /**
  * Convert device/metric source to telemetry for pie chart data.
  * For pie charts, we typically want the latest snapshot or aggregated categories.
+ * Now supports the new timeWindow and aggregateExt options.
  */
 function toTelemetrySource(
   dataSource?: DataSource,
@@ -47,13 +64,17 @@ function toTelemetrySource(
 ): DataSource | undefined {
   if (!dataSource) return undefined
 
+  // Get effective time window (new or legacy)
+  const effectiveTimeWindow = getEffectiveTimeWindow(dataSource)
+  const effectiveAggregate = getEffectiveAggregate(dataSource)
+
   // If already telemetry type, update with settings
   if (dataSource.type === 'telemetry') {
     return {
       ...dataSource,
       limit: dataSource.limit ?? limit,
-      timeRange: dataSource.timeRange ?? timeRange,
-      aggregate: dataSource.aggregate ?? 'raw',
+      timeRange: dataSource.timeRange ?? timeWindowToHours(effectiveTimeWindow.type),
+      aggregate: dataSource.aggregate ?? (effectiveAggregate === 'raw' ? 'raw' : 'avg'),
       params: {
         ...dataSource.params,
         includeRawPoints: true,
@@ -68,9 +89,9 @@ function toTelemetrySource(
       type: 'telemetry',
       deviceId: dataSource.deviceId,
       metricId: dataSource.metricId ?? dataSource.property ?? 'value',
-      timeRange: timeRange,
+      timeRange: timeWindowToHours(effectiveTimeWindow.type),
       limit: limit,
-      aggregate: 'raw',
+      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
       params: {
         includeRawPoints: true,
       },
@@ -82,42 +103,93 @@ function toTelemetrySource(
 }
 
 /**
- * Transform telemetry points to pie chart data.
- * Handles: [{ name, value }, { label, val }, { category, count }] or raw numbers
+ * Transform telemetry points to pie chart data using DataMapper.
+ * Handles: [{ name, value }, { label, val }, { category, count }, { timestamp, value }] or raw numbers
+ *
+ * For categorical data (strings), groups by value and counts occurrences.
+ * The aggregate parameter controls behavior:
+ * - 'count': Always group by value and count (for distribution charts)
+ * - Other: Auto-detect categorical vs numeric data
  */
-function transformTelemetryToPieData(data: unknown): PieData[] {
+function transformTelemetryToPieData(
+  data: unknown,
+  dataMapping?: CategoricalMappingConfig,
+  aggregate?: TelemetryAggregate
+): PieData[] {
   if (!data || !Array.isArray(data)) return []
 
-  const result: PieData[] = []
-
-  for (const item of data) {
-    if (typeof item === 'number') {
-      result.push({ name: `Item ${result.length + 1}`, value: item })
-    } else if (typeof item === 'object' && item !== null) {
-      const obj = item as Record<string, unknown>
-
-      // Extract value
-      let value: number | undefined = undefined
-      if (typeof obj.value === 'number') value = obj.value
-      else if (typeof obj.v === 'number') value = obj.v
-      else if (typeof obj.val === 'number') value = obj.val
-      else if (typeof obj.count === 'number') value = obj.count
-      else if (typeof obj.amount === 'number') value = obj.amount
-
-      if (value === undefined) continue
-
-      // Extract name/label for category
-      const name = obj.name ?? obj.label ?? obj.category ?? obj.key ?? `Item ${result.length + 1}`
-      const label = typeof name === 'string' ? name : String(name)
-
-      // Extract color if present
-      const color = typeof obj.color === 'string' ? obj.color : undefined
-
-      result.push({ name: label, value, color })
-    }
+  // Handle simple number array
+  if (data.length > 0 && typeof data[0] === 'number') {
+    return (data as number[]).map((value, index) => ({
+      name: `Item ${index + 1}`,
+      value,
+    }))
   }
 
-  return result
+  // Check if already in PieData format FIRST (has both name and value)
+  if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'value' in data[0] && 'name' in data[0]) {
+    return data as PieData[]
+  }
+
+  // Handle raw telemetry points format: [{ timestamp, value }, ...]
+  // Only has 'value' but not 'name' → this is telemetry data
+  // For pie chart, we aggregate or show distribution over time
+  if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'value' in data[0]) {
+    const telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
+
+    // Check if values are categorical (strings) OR if aggregate is 'count' - group and count for distribution
+    const firstValue = telemetryPoints[0]?.value
+    const isCategorical = typeof firstValue === 'string'
+    const forceCounting = aggregate === 'count'
+
+    if (isCategorical || forceCounting) {
+      // Group by value and count occurrences for categorical data or when 'count' aggregate is set
+      const counts = new Map<string, number>()
+      for (const point of telemetryPoints) {
+        // For numeric values with counting, group by rounded value to avoid too many unique values
+        let key: string
+        if (typeof point.value === 'number') {
+          // Round to 2 decimal places for grouping
+          key = String(Math.round(point.value * 100) / 100)
+        } else {
+          key = String(point.value ?? 'unknown')
+        }
+        counts.set(key, (counts.get(key) ?? 0) + 1)
+      }
+
+      // Convert to PieData format, sorted by count descending
+      return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, value]) => ({
+          name,
+          value,
+        }))
+    }
+
+    // For numeric telemetry data without count aggregation, create time-based labels
+    return telemetryPoints.map((point, index) => {
+      let name = `Item ${index + 1}`
+      if (point.timestamp) {
+        const date = new Date(point.timestamp > 10000000000 ? point.timestamp : point.timestamp * 1000)
+        if (!isNaN(date.getTime())) {
+          name = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        }
+      }
+      return {
+        name,
+        value: typeof point.value === 'number' ? point.value : 0,
+      }
+    })
+  }
+
+  // Use DataMapper for categorical data
+  const categoricalPoints = DataMapper.mapToCategorical(data, dataMapping)
+
+  return categoricalPoints.map(p => ({
+    name: p.name,
+    value: p.value,
+    color: p.color,
+  }))
 }
 
 /**
@@ -169,9 +241,19 @@ export interface PieChartProps {
   innerRadius?: number | string
   outerRadius?: number | string
 
-  // Telemetry options
+  // === Telemetry options ===
+  // Legacy options (kept for backward compatibility)
   limit?: number
   timeRange?: number
+
+  // === New: Data transformation options ===
+  // How to aggregate time-series data
+  aggregate?: TelemetryAggregate
+  // Time window for data
+  timeWindow?: 'now' | 'last_5min' | 'last_15min' | 'last_30min' | 'last_1hour' | 'last_6hours' | 'last_24hours'
+
+  // Data mapping configuration
+  dataMapping?: CategoricalMappingConfig
 
   // Styling
   colors?: string[]
@@ -192,11 +274,23 @@ export function PieChart({
   outerRadius = '80%',
   limit = 10,
   timeRange = 1,
+  aggregate = 'latest',  // Default to latest value for pie charts
+  timeWindow,
+  dataMapping,
   colors,
   size = 'md',
   className,
 }: PieChartProps) {
   const config = dashboardComponentSize[size]
+
+  // Get effective aggregate from dataSource or props
+  const effectiveAggregate = useMemo(() => {
+    const sources = normalizeDataSource(dataSource)
+    if (sources.length > 0 && sources[0].aggregateExt) {
+      return sources[0].aggregateExt
+    }
+    return aggregate
+  }, [dataSource, aggregate])
 
   // Normalize data sources for telemetry
   const telemetrySources = useMemo(() => {
@@ -245,17 +339,65 @@ export function PieChart({
     // Multi-source data - combine into single pie chart
     // preserveMultiple returns array of arrays where length equals sources length
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
-      const numberArrays = data as number[][]
-      // For pie chart, we sum each series and show as a slice
       return sources.map((ds, i) => {
-        const arr = numberArrays[i]
-        const values = Array.isArray(arr) ? arr : []
-        const sum = values.reduce((a, b) => a + b, 0)
+        const arr = data[i]
+        if (!Array.isArray(arr)) {
+          return {
+            name: ds.deviceId
+              ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+              : `Series ${i + 1}`,
+            value: 0,
+            color: fallbackColors[i % fallbackColors.length],
+          }
+        }
+
+        // Check if data contains categorical (string) values
+        const firstItem = arr[0]
+        const isCategoricalData = typeof firstItem === 'object' && firstItem !== null && 'value' in firstItem && typeof firstItem.value === 'string'
+        const forceCounting = effectiveAggregate === 'count'
+
+        if (isCategoricalData || forceCounting) {
+          // For categorical data, count occurrences of each unique value
+          const counts = new Map<string, number>()
+          for (const item of arr) {
+            if (typeof item === 'object' && item !== null && 'value' in item) {
+              const key = String(item.value ?? 'unknown')
+              counts.set(key, (counts.get(key) ?? 0) + 1)
+            }
+          }
+          // Return the most common value as the representative
+          const mostCommon = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
+          return {
+            name: ds.deviceId
+              ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+              : `Series ${i + 1}`,
+            value: mostCommon ? mostCommon[1] : 0,
+            color: fallbackColors[i % fallbackColors.length],
+          }
+        }
+
+        // Numeric data - use aggregation
+        const values = (arr as unknown[]).filter(v => typeof v === 'number')
+        if (values.length > 0) {
+          const timePoints = values.map((v, idx) => ({
+            timestamp: Date.now() / 1000 - (values.length - idx) * 60,
+            value: v as number,
+          }))
+          const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
+          return {
+            name: ds.deviceId
+              ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+              : `Series ${i + 1}`,
+            value: aggregatedValue ?? 0,
+            color: fallbackColors[i % fallbackColors.length],
+          }
+        }
+
         return {
           name: ds.deviceId
-            ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
+            ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
             : `Series ${i + 1}`,
-          value: sum,
+          value: 0,
           color: fallbackColors[i % fallbackColors.length],
         }
       })
@@ -264,23 +406,32 @@ export function PieChart({
     // Handle telemetry data FIRST (when dataSource is provided)
     if (dataSource && Array.isArray(data) && data.length > 0) {
       const first = data[0]
-      if (typeof first === 'object' && first !== null && 'value' in first) {
+      // Check if already in PieData format (has both 'name' AND 'value')
+      if (typeof first === 'object' && first !== null && 'value' in first && 'name' in first) {
         return data as PieData[]
       }
 
-      // Transform telemetry points
-      const transformed = transformTelemetryToPieData(data)
+      // Transform telemetry points (handles both numeric and categorical data)
+      // Pass aggregate setting to influence transformation behavior
+      const transformed = transformTelemetryToPieData(data, dataMapping, effectiveAggregate)
       if (transformed.length > 0) {
         return transformed
       }
     }
 
-    // Handle number array from data source
+    // Handle number array from data source - apply aggregation
     if (dataSource && Array.isArray(data) && data.length > 0 && typeof data[0] === 'number') {
-      return (data as number[]).map((value, index) => ({
-        name: `Item ${index + 1}`,
-        value,
+      const values = data as number[]
+      const timePoints = values.map((v, idx) => ({
+        timestamp: Date.now() / 1000 - (values.length - idx) * 60,
+        value: v,
       }))
+
+      const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
+      return [{
+        name: sources[0]?.deviceId ? getDeviceName(sources[0].deviceId) : 'Value',
+        value: aggregatedValue ?? values[values.length - 1] ?? 0,
+      }]
     }
 
     // If no dataSource, use propData (static data)
@@ -288,13 +439,18 @@ export function PieChart({
       return propData
     }
 
-    // Return default sample data
+    // If dataSource is set but data is empty, return empty array (will show EmptyState)
+    if (dataSource && !loading && Array.isArray(data) && data.length === 0) {
+      return []
+    }
+
+    // Return default sample data for preview only (no dataSource)
     return [
       { name: 'Category A', value: 30 },
       { name: 'Category B', value: 45 },
       { name: 'Category C', value: 25 },
     ]
-  }, [data, propData, dataSource])
+  }, [data, propData, dataSource, dataMapping, effectiveAggregate, loading])
 
   if (loading) {
     return (
@@ -308,11 +464,7 @@ export function PieChart({
   }
 
   if (chartData.length === 0) {
-    return (
-      <div className={cn(dashboardCardBase, 'flex items-center justify-center', config.padding, className)}>
-        <span className={cn('text-sm text-muted-foreground')}>No data available</span>
-      </div>
-    )
+    return <EmptyState size={size} className={className} message={title ? `${title} - No Data Available` : undefined} />
   }
 
   const chartColors = colors || fallbackColors

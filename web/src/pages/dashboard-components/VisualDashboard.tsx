@@ -45,9 +45,12 @@ import {
   // Media icons
   Image as ImageIcon,
   Video as VideoIcon,
+  Camera,
   Music,
   Globe,
   QrCode,
+  Square as SquareIcon,
+  Map,
   Type,
   Code,
   Link,
@@ -83,6 +86,16 @@ import {
 } from 'lucide-react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { Field } from '@/components/ui/field'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -95,6 +108,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 
 // Config system
 import {
@@ -107,6 +121,14 @@ import {
   ComponentConfigDialog,
 } from '@/components/dashboard/config'
 import type { ComponentConfigSchema } from '@/components/dashboard/config/ComponentConfigBuilder'
+import { ValueMapEditor } from '@/components/dashboard/config/ValueMapEditor'
+import { DataMappingConfig } from '@/components/dashboard/config/UIConfigSections'
+import type { ValueStateMapping } from '@/components/dashboard/config/ValueMapEditor'
+import type { SingleValueMappingConfig, TimeSeriesMappingConfig, CategoricalMappingConfig } from '@/lib/dataMapping'
+
+// UI components
+import { ColorPicker } from '@/components/ui/color-picker'
+import { EntityIconPicker } from '@/components/ui/entity-icon-picker'
 
 // Dashboard components
 import {
@@ -123,24 +145,18 @@ import {
   PieChart,
   // Controls
   ToggleSwitch,
-  // Tables & Lists
-  DataTable,
-  LogFeed,
-  StatusList,
   // Display & Content
   ImageDisplay,
   ImageHistory,
   WebDisplay,
   MarkdownDisplay,
-  // Business
-  AgentStatusCard,
-  DecisionList,
-  DeviceControl,
-  RuleStatusGrid,
-  TransformList,
+  // Spatial & Media
+  MapDisplay,
+  VideoDisplay,
+  CustomLayer,
 } from '@/components/dashboard'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
-import type { DashboardComponent, DataSourceOrList, DataSource } from '@/types/dashboard'
+import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { confirm } from '@/hooks/use-confirm'
 
@@ -152,7 +168,7 @@ import { confirm } from '@/hooks/use-confirm'
  * Memoized cache for converted telemetry data sources
  * Caches both individual DataSource objects AND complete arrays to prevent reference changes
  */
-const telemetryCache = new Map<string, DataSourceOrList>()
+const telemetryCache: Record<string, any> = {}
 
 /**
  * Convert device data source to telemetry with caching to prevent infinite re-renders
@@ -165,12 +181,9 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
   const cacheKey = JSON.stringify(dataSource)
 
   // Return cached result if exists (reference stability!)
-  if (telemetryCache.has(cacheKey)) {
-    console.log('[getTelemetryDataSource] Cache hit, returning cached telemetry')
-    return telemetryCache.get(cacheKey)!
+  if (cacheKey in telemetryCache) {
+    return telemetryCache[cacheKey]
   }
-
-  console.log('[getTelemetryDataSource] Cache miss, converting to telemetry:', dataSource)
 
   const normalizeAndConvert = (ds: DataSource): DataSource => {
     // If already telemetry, return as-is
@@ -197,9 +210,37 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
     : normalizeAndConvert(dataSource)
 
   // Cache the entire result for reference stability
-  telemetryCache.set(cacheKey, result)
+  telemetryCache[cacheKey] = result
 
   return result
+}
+
+// Helper function to determine if title should be in display section
+// All components show title in the style config, not in the right panel
+function isTitleInDisplayComponent(componentType?: string): boolean {
+  if (!componentType) return false
+  // Components that have their own title input in their config sections
+  const titleInConfigTypes: string[] = [
+    // Charts - title is in style section
+    'line-chart',
+    'area-chart',
+    'bar-chart',
+    'pie-chart',
+    // Indicators - title is in style section
+    'value-card',
+    'counter',
+    'metric-card',
+    'sparkline',
+    'progress-bar',
+    'led-indicator',
+    // Controls - title is in style section
+    'toggle-switch',
+    // Display components - title is in display section
+    'text-display',
+    'image-display',
+    'video-display',
+  ]
+  return titleInConfigTypes.includes(componentType)
 }
 
 // ============================================================================
@@ -247,17 +288,6 @@ const COMPONENT_LIBRARY: ComponentCategory[] = [
       { id: 'pie-chart', name: 'Pie Chart', description: 'Part to whole', icon: PieChartIcon },
     ],
   },
-  // Lists & Tables
-  {
-    category: 'lists',
-    categoryLabel: 'Lists & Tables',
-    categoryIcon: List,
-    items: [
-      { id: 'data-table', name: 'Data Table', description: 'Sortable table', icon: Table },
-      { id: 'status-list', name: 'Status List', description: 'Status items list', icon: ListTodo },
-      { id: 'log-feed', name: 'Log Feed', description: 'Scrolling log', icon: Scroll },
-    ],
-  },
   // Display & Content
   {
     category: 'display',
@@ -268,6 +298,17 @@ const COMPONENT_LIBRARY: ComponentCategory[] = [
       { id: 'image-history', name: 'Image History', description: 'Image timeline player', icon: Play },
       { id: 'web-display', name: 'Web Display', description: 'Embed web content', icon: Globe },
       { id: 'markdown-display', name: 'Markdown Display', description: 'Render markdown', icon: FileText },
+    ],
+  },
+  // Spatial & Media
+  {
+    category: 'spatial',
+    categoryLabel: 'Spatial & Media',
+    categoryIcon: MapPin,
+    items: [
+      { id: 'map-display', name: 'Map Display', description: 'Interactive map with markers', icon: Map },
+      { id: 'video-display', name: 'Video Display', description: 'Video player and streams', icon: Camera },
+      { id: 'custom-layer', name: 'Custom Layer', description: 'Free-form container', icon: SquareIcon },
     ],
   },
   // Controls
@@ -390,6 +431,8 @@ function getChartHeight(component: DashboardComponent): number | 'auto' {
 
 function renderDashboardComponent(component: DashboardComponent) {
   const config = (component as any).config || {}
+  // dataSource is a separate property on GenericComponent, not part of config
+  const dataSource = (component as any).dataSource
   const commonProps = getCommonDisplayProps(component)
   const spreadableProps = getSpreadableProps(component.type, commonProps)
 
@@ -400,15 +443,16 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <ValueCard
           {...spreadableProps}
-          dataSource={config.dataSource}
-          label={commonProps.title || 'Value'}
+          dataSource={dataSource}
+          title={commonProps.title || 'Value'}
           unit={config.unit}
           prefix={config.prefix}
           icon={config.icon}
           iconType={config.iconType || 'entity'}
           description={config.description}
           variant={config.variant || 'default'}
-          color={config.color}
+          iconColor={config.iconColor}
+          valueColor={config.valueColor}
           showTrend={config.showTrend}
           trendValue={config.trendValue}
           trendPeriod={config.trendPeriod}
@@ -421,9 +465,9 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <LEDIndicator
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
           state={config.state || 'off'}
-          label={config.label || commonProps.title}
+          title={config.label || commonProps.title}
           size={config.size || 'md'}
           color={config.color}
           valueMap={config.valueMap}
@@ -437,13 +481,13 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <Sparkline
           {...spreadableProps}
-          dataSource={getTelemetryDataSource(config.dataSource)}
+          dataSource={getTelemetryDataSource(dataSource)}
           data={config.data}
           showCard={commonProps.showCard}
           showThreshold={config.showThreshold ?? false}
           threshold={config.threshold}
           thresholdColor={config.thresholdColor}
-          label={config.label || commonProps.title}
+          title={commonProps.title}
           color={config.color}
           colorMode={config.colorMode || 'auto'}
           fill={config.fill ?? true}
@@ -460,10 +504,10 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <ProgressBar
           {...spreadableProps}
-          dataSource={config.dataSource}
-          value={config.dataSource ? undefined : config.value}
+          dataSource={dataSource}
+          value={dataSource ? undefined : config.value}
           max={config.max ?? 100}
-          label={config.label || commonProps.title}
+          title={config.label || commonProps.title}
           color={config.color}
           size={config.size || commonProps.size}
           variant={config.variant || 'default'}
@@ -478,7 +522,8 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <LineChart
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
+          dataMapping={config.dataMapping}
           series={config.series || [{
             name: 'Value',
             data: [20, 22, 21, 24, 23, 26, 25, 28, 27, 30],
@@ -503,7 +548,8 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <AreaChart
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
+          dataMapping={config.dataMapping}
           series={config.series || [{
             name: 'Value',
             data: [20, 22, 21, 24, 23, 26, 25, 28, 27, 30],
@@ -527,7 +573,8 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <BarChart
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
+          dataMapping={config.dataMapping}
           data={config.data}
           title={commonProps.title}
           height={getChartHeight(component)}
@@ -545,7 +592,8 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <PieChart
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
+          dataMapping={config.dataMapping}
           data={config.data}
           title={commonProps.title}
           height={getChartHeight(component)}
@@ -554,7 +602,7 @@ function renderDashboardComponent(component: DashboardComponent) {
           showLegend={config.showLegend ?? false}
           showTooltip={config.showTooltip ?? true}
           showLabels={config.showLabels ?? false}
-          variant={config.variant || 'pie'}
+          variant={config.variant || 'donut'}
           innerRadius={config.innerRadius}
           outerRadius={config.outerRadius}
         />
@@ -566,49 +614,9 @@ function renderDashboardComponent(component: DashboardComponent) {
         <ToggleSwitch
           {...spreadableProps}
           size={config.size || commonProps.size === 'xs' ? 'sm' : commonProps.size}
-          dataSource={config.dataSource}
-          label={config.label || commonProps.title}
+          dataSource={dataSource}
+          title={config.label || commonProps.title}
           initialState={config.initialState ?? false}
-        />
-      )
-
-    // Tables & Lists
-    case 'data-table':
-      return (
-        <DataTable
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          columns={config.columns || [
-            { key: 'name', label: 'Name' },
-            { key: 'value', label: 'Value' }
-          ]}
-          data={config.data}
-          sortable={config.sortable ?? true}
-        />
-      )
-
-    case 'status-list':
-      return (
-        <StatusList
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          data={config.data}
-          title={commonProps.title}
-          showTimestamp={config.showTimestamp ?? true}
-          showDescription={config.showDescription ?? true}
-        />
-      )
-
-    case 'log-feed':
-      return (
-        <LogFeed
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          data={config.data}
-          title={commonProps.title}
-          maxEntries={config.maxEntries || 50}
-          autoScroll={config.autoScroll ?? true}
-          showTimestamp={config.showTimestamp ?? true}
         />
       )
 
@@ -617,7 +625,7 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <ImageDisplay
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
           src={config.src}
           alt={config.alt || commonProps.title || 'Image'}
           caption={config.caption}
@@ -633,7 +641,7 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <ImageHistory
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
           images={config.images}
           fit={config.fit || 'fill'}
           rounded={config.rounded ?? true}
@@ -646,7 +654,7 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <WebDisplay
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
           src={config.src}
           title={config.title || commonProps.title}
           sandbox={config.sandbox ?? true}
@@ -660,82 +668,23 @@ function renderDashboardComponent(component: DashboardComponent) {
       return (
         <MarkdownDisplay
           {...spreadableProps}
-          dataSource={config.dataSource}
+          dataSource={dataSource}
           content={config.content}
           variant={config.variant || 'default'}
         />
       )
 
-    // Business Components
+    // Business Components (not implemented)
     case 'agent-status-card':
-      return (
-        <AgentStatusCard
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          name={commonProps.title || 'Agent'}
-          description={config.description}
-          status={config.status}
-          executions={config.executions}
-          successRate={config.successRate}
-          avgDuration={config.avgDuration}
-          lastRun={config.lastRun}
-        />
-      )
-
     case 'decision-list':
-      return (
-        <DecisionList
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          decisions={config.decisions}
-          title={commonProps.title}
-          filter={config.filter}
-          showReasoning={config.showReasoning}
-          showConfidence={config.showConfidence}
-          maxDecisions={config.maxDecisions}
-          onApprove={config.onApprove}
-          onReject={config.onReject}
-          onView={config.onView}
-        />
-      )
-
     case 'device-control':
-      return (
-        <DeviceControl
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          deviceId={config.deviceId}
-          commands={config.commands}
-          deviceName={config.deviceName}
-          deviceStatus={config.deviceStatus}
-          title={commonProps.title}
-          showStatus={config.showStatus}
-          onCommand={config.onCommand}
-        />
-      )
-
     case 'rule-status-grid':
-      return (
-        <RuleStatusGrid
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          rules={config.rules}
-          title={commonProps.title}
-          showTriggers={config.showTriggers ?? true}
-          showErrors={config.showErrors ?? true}
-        />
-      )
-
     case 'transform-list':
       return (
-        <TransformList
-          {...spreadableProps}
-          dataSource={config.dataSource}
-          transforms={config.transforms}
-          title={commonProps.title}
-          showSchema={config.showSchema ?? true}
-          showStats={config.showStats ?? true}
-        />
+        <div className="p-4 text-center text-muted-foreground h-full flex flex-col items-center justify-center">
+          <p className="text-sm font-medium">{component.type}</p>
+          <p className="text-xs mt-1">This component is not yet implemented</p>
+        </div>
       )
 
     default:
@@ -836,6 +785,8 @@ export function VisualDashboard() {
     currentDashboard,
     currentDashboardId,
     dashboards,
+    dashboardsLoading,
+    devices,
     editMode,
     setEditMode,
     addComponent,
@@ -845,12 +796,14 @@ export function VisualDashboard() {
     createDashboard,
     updateDashboard,
     deleteDashboard,
+    persistDashboard,
     setCurrentDashboard,
     componentLibraryOpen,
     setComponentLibraryOpen,
     fetchDashboards,
     fetchDevices,
     fetchDeviceTypes,
+    fetchDevicesCurrentBatch,
   } = useStore()
 
   const [configOpen, setConfigOpen] = useState(false)
@@ -907,11 +860,19 @@ export function VisualDashboard() {
   const [componentConfig, setComponentConfig] = useState<Record<string, any>>({})
   const [configSchema, setConfigSchema] = useState<ComponentConfigSchema | null>(null)
 
+  // Store original config for revert on cancel
+  const [originalComponentConfig, setOriginalComponentConfig] = useState<Record<string, any>>({})
+  const [originalTitle, setOriginalTitle] = useState('')
+
   // Track if we've initialized to avoid duplicate calls
   const hasInitialized = useRef(false)
 
   // Track previous components to detect actual changes (not just reference changes)
   const prevComponentsRef = useRef<DashboardComponent[]>([])
+
+  // Use a counter to force refresh when config changes in dialog
+  // Must be declared before componentsStableKey which depends on it
+  const [configVersion, setConfigVersion] = useState(0)
 
   // Create a stable key for components to detect actual changes
   // This key only changes when component data actually changes, not on every render
@@ -922,7 +883,7 @@ export function VisualDashboard() {
     // Quick check: if length changed, definitely different
     if (components.length !== prevComponents.length) {
       prevComponentsRef.current = components
-      return `changed-${components.length}-${Date.now()}`
+      return `changed-${components.length}-${Date.now()}-${configVersion}`
     }
 
     // Deep check: compare each component's key properties
@@ -932,29 +893,27 @@ export function VisualDashboard() {
 
       if (!prev) {
         prevComponentsRef.current = components
-        return `new-${curr.id}-${curr.type}-${Date.now()}`
+        return `new-${curr.id}-${curr.type}-${Date.now()}-${configVersion}`
       }
 
-      // Check each property separately
+      // Check each property separately (including title and dataSource)
       if (curr.id !== prev.id ||
           curr.type !== prev.type ||
+          curr.title !== prev.title ||
           curr.position.x !== prev.position.x ||
           curr.position.y !== prev.position.y ||
           curr.position.w !== prev.position.w ||
           curr.position.h !== prev.position.h ||
-          JSON.stringify(curr.config) !== JSON.stringify(prev.config)) {
+          JSON.stringify(curr.config) !== JSON.stringify(prev.config) ||
+          JSON.stringify((curr as any).dataSource) !== JSON.stringify((prev as any).dataSource)) {
         prevComponentsRef.current = components
-        return `changed-${curr.id}-${Date.now()}`
+        return `changed-${curr.id}-${Date.now()}-${configVersion}`
       }
     }
 
-    // No actual changes detected - return previous key
-    return `stable-${components.length}`
-  }, [currentDashboard?.components])
-
-  // Use a counter to force refresh when config changes in dialog
-  // Must be declared before gridComponents which depends on it
-  const [configVersion, setConfigVersion] = useState(0)
+    // No actual changes detected - return stable key with version
+    return `stable-${components.length}-${configVersion}`
+  }, [currentDashboard?.components, configVersion])
 
   // Initialize dashboards on mount
   useEffect(() => {
@@ -968,6 +927,31 @@ export function VisualDashboard() {
     fetchDeviceTypes()
   }, [fetchDashboards, fetchDevices, fetchDeviceTypes])
 
+  // Batch fetch current values for devices used in dashboard components
+  // This ensures dashboard components have current_values after server restart
+  useEffect(() => {
+    if (devices.length === 0 || !currentDashboard) {
+      return
+    }
+
+    // Extract all unique device IDs from dashboard components
+    const deviceIds = new Set<string>()
+    for (const dashboard of dashboards) {
+      for (const component of dashboard.components) {
+        const genericComponent = component as GenericComponent
+        const dataSource = genericComponent.dataSource
+        if (dataSource?.deviceId) {
+          deviceIds.add(dataSource.deviceId)
+        }
+      }
+    }
+
+    if (deviceIds.size > 0) {
+      console.log('[VisualDashboard] Fetching current values for', deviceIds.size, 'devices')
+      fetchDevicesCurrentBatch(Array.from(deviceIds))
+    }
+  }, [devices.length, dashboards, currentDashboard, fetchDevicesCurrentBatch])
+
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {
     if (dashboards.length === 0 && currentDashboardId) {
@@ -977,8 +961,18 @@ export function VisualDashboard() {
   }, [dashboards.length, currentDashboardId, fetchDashboards])
 
   // Create default dashboard if needed
+  // Use a ref to track if we've already attempted creation to avoid duplicates
+  const hasAttemptedCreation = useRef(false)
+
   useEffect(() => {
+    // Skip if we've already attempted or if dashboards are loading
+    if (hasAttemptedCreation.current || dashboardsLoading) {
+      return
+    }
+
+    // Only create if truly no dashboards exist
     if (dashboards.length === 0 && !currentDashboard) {
+      hasAttemptedCreation.current = true
       createDashboard({
         name: 'Overview',
         layout: {
@@ -989,7 +983,7 @@ export function VisualDashboard() {
         components: [],
       })
     }
-  }, [dashboards.length, currentDashboard, createDashboard])
+  }, [dashboards.length, currentDashboard, dashboardsLoading, createDashboard])
 
   // Handle adding a component
   const handleAddComponent = (componentType: string) => {
@@ -1046,28 +1040,6 @@ export function VisualDashboard() {
           initialState: false
         }
         break
-      // Tables & Lists
-      case 'data-table':
-        defaultConfig = {
-          columns: [{ key: 'name', label: 'Name' }, { key: 'value', label: 'Value' }],
-          data: [{ name: 'Item 1', value: 100 }, { name: 'Item 2', value: 200 }]
-        }
-        break
-      case 'status-list':
-        defaultConfig = {
-          data: [
-            { id: '1', label: 'Online', status: 'online' },
-            { id: '2', label: 'Offline', status: 'offline' }
-          ]
-        }
-        break
-      case 'log-feed':
-        defaultConfig = {
-          data: [
-            { id: '1', message: 'System started', level: 'info', timestamp: new Date().toISOString() }
-          ]
-        }
-        break
       // Display & Content
       case 'image-display':
         defaultConfig = {
@@ -1109,35 +1081,13 @@ export function VisualDashboard() {
           variant: 'default',
         }
         break
-      // Business Components
+      // Business Components (not implemented)
       case 'agent-status-card':
-        defaultConfig = {
-          name: 'Agent',
-          status: 'online',
-          executions: 0
-        }
-        break
-      case 'device-control':
-        defaultConfig = {
-          commands: [
-            { id: 'cmd1', name: 'Toggle', type: 'toggle' }
-          ]
-        }
-        break
-      case 'rule-status-grid':
-        defaultConfig = {
-          rules: []
-        }
-        break
-      case 'transform-list':
-        defaultConfig = {
-          transforms: []
-        }
-        break
       case 'decision-list':
-        defaultConfig = {
-          decisions: []
-        }
+      case 'device-control':
+      case 'rule-status-grid':
+      case 'transform-list':
+        defaultConfig = {}
         break
       default:
         defaultConfig = {}
@@ -1231,11 +1181,57 @@ export function VisualDashboard() {
     if (!component) return
 
     setSelectedComponent(component)
+    // Extract both config and dataSource (they are separate properties on GenericComponent)
     const config = { ...((component as any).config || {}) }
-    setConfigTitle(component.title || 'Configure Component')
-    setComponentConfig(config)
+    const dataSource = (component as any).dataSource
+    // Include title in config so style sections can access it
+    const configWithTitle = { ...config, title: component.title }
+    // Merge dataSource into config for unified state management
+    const mergedConfig = dataSource ? { ...configWithTitle, dataSource } : configWithTitle
+
+    // Store original config for revert on cancel
+    setOriginalComponentConfig(mergedConfig)
+    setOriginalTitle(component.title || '')
+
+    setConfigTitle(component.title || '')
+    setComponentConfig(mergedConfig)
     setConfigOpen(true)
   }, [currentDashboard?.components])
+
+  // ============================================================================
+  // Unified Select Field Helper
+  // ============================================================================
+
+  interface SelectOption {
+    value: string
+    label: string
+  }
+
+  interface SelectFieldProps {
+    label: string
+    value: string
+    onChange: (value: string) => void
+    options: SelectOption[]
+    className?: string
+  }
+
+  const SelectField = useCallback(({ label, value, onChange, options, className }: SelectFieldProps) => (
+    <Field className={className}>
+      <Label>{label}</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger>
+          <SelectValue placeholder={`选择${label}`} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  ), [])
 
   // Memoize grid components to prevent infinite re-renders
   // Only recalculate when actual component data changes (detected via stableKey)
@@ -1280,8 +1276,15 @@ export function VisualDashboard() {
       // Check if config actually changed since last sync
       const currentJSON = JSON.stringify(componentConfig)
       if (currentJSON !== lastSyncedConfigRef.current) {
-        // Update the component with current config for live preview
-        updateComponent(selectedComponent.id, { config: componentConfig })
+        // Separate dataSource from config for proper update
+        const { dataSource, ...configOnly } = componentConfig
+        const updateData: any = { config: configOnly }
+        // Only include dataSource if it exists (for GenericComponent)
+        if (dataSource !== undefined) {
+          updateData.dataSource = dataSource
+        }
+        // Update the component with current config for live preview (don't persist yet)
+        updateComponent(selectedComponent.id, updateData, false)
         // Update last synced config
         lastSyncedConfigRef.current = currentJSON
         // Increment version to force re-render
@@ -1297,8 +1300,29 @@ export function VisualDashboard() {
     }
   }, [componentConfig, configOpen, selectedComponent?.id, updateComponent, setConfigSchema])
 
-  // Handle saving component config (just close dialog, already live-previewed)
-  const handleSaveConfig = () => {
+  // Handle canceling component config - revert to original
+  const handleCancelConfig = useCallback(() => {
+    if (selectedComponent && originalComponentConfig) {
+      // Revert to original config (no need to persist - reverting to saved state)
+      const { dataSource, ...configOnly } = originalComponentConfig
+      const updateData: any = { config: configOnly }
+      if (dataSource !== undefined) {
+        updateData.dataSource = dataSource
+      }
+      updateComponent(selectedComponent.id, updateData, false)
+
+      // Revert title
+      if (originalTitle !== selectedComponent.title) {
+        updateComponent(selectedComponent.id, { title: originalTitle }, false)
+      }
+    }
+    setConfigOpen(false)
+  }, [selectedComponent, originalComponentConfig, originalTitle, updateComponent])
+
+  // Handle saving component config - persist the dashboard to localStorage
+  const handleSaveConfig = async () => {
+    // Persist all changes to localStorage
+    await persistDashboard()
     setConfigOpen(false)
   }
 
@@ -1306,7 +1330,8 @@ export function VisualDashboard() {
   const handleTitleChange = (newTitle: string) => {
     setConfigTitle(newTitle)
     if (selectedComponent) {
-      updateComponent(selectedComponent.id, { title: newTitle })
+      // Don't persist during edit - will be persisted on save
+      updateComponent(selectedComponent.id, { title: newTitle }, false)
     }
   }
 
@@ -1316,6 +1341,13 @@ export function VisualDashboard() {
 
     // Helper to create updater functions
     const updateConfig = (key: string) => (value: any) => {
+      if (key === 'title') {
+        // Title changes need to sync with configTitle state and the component
+        setConfigTitle(value)
+        if (selectedComponent) {
+          updateComponent(selectedComponent.id, { title: value }, false)
+        }
+      }
       setComponentConfig(prev => ({ ...prev, [key]: value }))
     }
 
@@ -1331,6 +1363,11 @@ export function VisualDashboard() {
       setComponentConfig(prev => ({ ...prev, dataSource: ds }))
     }
 
+    // Data mapping updater
+    const updateDataMapping = (newMapping: any) => {
+      setComponentConfig(prev => ({ ...prev, dataMapping: newMapping }))
+    }
+
     switch (componentType) {
       // ========== Indicators ==========
       case 'value-card':
@@ -1341,108 +1378,81 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Variant</label>
-                    <select
-                      value={config.variant || 'default'}
-                      onChange={(e) => updateConfig('variant')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="default">Default (horizontal)</option>
-                      <option value="vertical">Vertical</option>
-                      <option value="compact">Compact</option>
-                      <option value="minimal">Minimal</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Icon</label>
-                    <select
-                      value={config.icon || ''}
-                      onChange={(e) => updateConfig('icon')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="">No Icon</option>
-                      <option value="activity">Activity</option>
-                      <option value="cpu">CPU</option>
-                      <option value="memory">Memory</option>
-                      <option value="temperature">Temperature</option>
-                      <option value="humidity">Humidity</option>
-                      <option value="speed">Speed</option>
-                      <option value="power">Power</option>
-                      <option value="battery">Battery</option>
-                      <option value="wifi">WiFi</option>
-                      <option value="database">Database</option>
-                    </select>
-                  </div>
-
-                  {config.icon && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Icon Type</label>
-                      <select
-                        value={config.iconType || 'entity'}
-                        onChange={(e) => updateConfig('iconType')(e.target.value)}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                      >
-                        <option value="entity">Entity Icon</option>
-                        <option value="emoji">Emoji</option>
-                      </select>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Color</label>
-                    <input
-                      type="color"
-                      value={config.color || '#3b82f6'}
-                      onChange={(e) => updateConfig('color')(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="value-card-title">显示标题</Label>
+                    <Input
+                      id="value-card-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
                     />
-                  </div>
-                </div>
-              ),
-            },
-          ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Prefix</label>
-                      <input
-                        type="text"
+                  </Field>
+
+                  <SelectField
+                    label="样式"
+                    value={config.variant || 'default'}
+                    onChange={updateConfig('variant')}
+                    options={[
+                      { value: 'default', label: '默认 (水平)' },
+                      { value: 'vertical', label: '垂直' },
+                      { value: 'compact', label: '紧凑' },
+                      { value: 'minimal', label: '简约' },
+                    ]}
+                  />
+
+                  <EntityIconPicker
+                    value={config.icon || ''}
+                    onChange={(icon) => updateConfig('icon')(icon)}
+                    label="图标"
+                  />
+
+                  <ColorPicker
+                    value={config.iconColor || '#3b82f6'}
+                    onChange={(color) => updateConfig('iconColor')(color)}
+                    label="图标颜色"
+                    presets="primary"
+                  />
+
+                  <ColorPicker
+                    value={config.valueColor || '#3b82f6'}
+                    onChange={(color) => updateConfig('valueColor')(color)}
+                    label="数值颜色"
+                    presets="primary"
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <Label>前缀</Label>
+                      <Input
                         value={config.prefix || ''}
                         onChange={(e) => updateConfig('prefix')(e.target.value)}
-                        placeholder="e.g., $, °"
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                        placeholder="如 $, °"
+                        className="h-9"
                       />
-                    </div>
+                    </Field>
 
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Unit</label>
-                      <input
-                        type="text"
+                    <Field>
+                      <Label>单位</Label>
+                      <Input
                         value={config.unit || ''}
                         onChange={(e) => updateConfig('unit')(e.target.value)}
-                        placeholder="e.g., %, °C"
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                        placeholder="如 %, °C"
+                        className="h-9"
                       />
-                    </div>
+                    </Field>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Description</label>
-                    <input
-                      type="text"
+                  <Field>
+                    <Label>描述</Label>
+                    <Input
                       value={config.description || ''}
                       onChange={(e) => updateConfig('description')(e.target.value)}
-                      placeholder="e.g., Current CPU usage"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      placeholder="如当前 CPU 使用率"
+                      className="h-9"
                     />
-                  </div>
+                  </Field>
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1452,7 +1462,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTrend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Trend</span>
+                      <span className="text-sm">显示趋势</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1462,31 +1472,33 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showSparkline')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Sparkline</span>
+                      <span className="text-sm">显示迷你图</span>
                     </label>
                   </div>
 
                   {config.showTrend && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Trend Value (%)</label>
-                      <input
+                    <Field>
+                      <Label>趋势值 (%)</Label>
+                      <Input
                         type="number"
                         value={config.trendValue ?? 0}
                         onChange={(e) => updateConfig('trendValue')(Number(e.target.value))}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                        className="h-9"
                       />
-                    </div>
+                    </Field>
                   )}
                 </div>
               ),
             },
           ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -1498,53 +1510,59 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Color Mode</label>
-                    <select
-                      value={config.colorMode || 'auto'}
-                      onChange={(e) => updateConfig('colorMode')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="auto">Auto (trend-based)</option>
-                      <option value="primary">Primary</option>
-                      <option value="fixed">Fixed Color</option>
-                      <option value="value">Value-based</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Color (for fixed mode)</label>
-                    <input
-                      type="color"
-                      value={config.color || '#3b82f6'}
-                      onChange={(e) => updateConfig('color')(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="sparkline-title">显示标题</Label>
+                    <Input
+                      id="sparkline-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Max Value (for value-based coloring)</label>
-                    <input
+                  <SelectField
+                    label="颜色模式"
+                    value={config.colorMode || 'auto'}
+                    onChange={updateConfig('colorMode')}
+                    options={[
+                      { value: 'auto', label: '自动 (基于趋势)' },
+                      { value: 'primary', label: '主题色' },
+                      { value: 'fixed', label: '固定颜色' },
+                      { value: 'value', label: '基于数值' },
+                    ]}
+                  />
+
+                  <ColorPicker
+                    value={config.color || '#3b82f6'}
+                    onChange={(color) => updateConfig('color')(color)}
+                    label="颜色（固定模式）"
+                    presets="primary"
+                  />
+
+                  <Field>
+                    <Label>最大值（用于基于数值的着色）</Label>
+                    <Input
                       type="number"
                       value={config.maxValue || 100}
                       onChange={(e) => updateConfig('maxValue')(Number(e.target.value))}
                       min={1}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      className="h-9"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Stroke Width</label>
-                    <input
+                  <Field>
+                    <Label>线条宽度</Label>
+                    <Input
                       type="number"
                       value={config.strokeWidth ?? 2}
                       onChange={(e) => updateConfig('strokeWidth')(Number(e.target.value))}
                       min={1}
                       max={5}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      className="h-9"
                     />
-                  </div>
+                  </Field>
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1554,7 +1572,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('fill')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Fill Area</span>
+                      <span className="text-sm">填充区域</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1564,7 +1582,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('curved')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Curved Lines</span>
+                      <span className="text-sm">曲线</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1574,27 +1592,8 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showPoints')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Points</span>
+                      <span className="text-sm">显示数据点</span>
                     </label>
-                  </div>
-                </div>
-              ),
-            },
-          ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Label</label>
-                    <input
-                      type="text"
-                      value={config.label || ''}
-                      onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder="e.g., Temperature Trend"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    />
                   </div>
 
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1604,7 +1603,7 @@ export function VisualDashboard() {
                       onChange={(e) => updateConfig('showValue')(e.target.checked)}
                       className="rounded"
                     />
-                    <span className="text-sm">Show Current Value</span>
+                    <span className="text-sm">显示当前值</span>
                   </label>
 
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -1614,42 +1613,41 @@ export function VisualDashboard() {
                       onChange={(e) => updateConfig('showThreshold')(e.target.checked)}
                       className="rounded"
                     />
-                    <span className="text-sm">Show Threshold Line</span>
+                    <span className="text-sm">显示阈值线</span>
                   </label>
 
                   {config.showThreshold && (
                     <>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Threshold Value</label>
-                        <input
+                      <Field>
+                        <Label>阈值</Label>
+                        <Input
                           type="number"
                           value={config.threshold ?? 20}
                           onChange={(e) => updateConfig('threshold')(Number(e.target.value))}
-                          className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                          className="h-9"
                         />
-                      </div>
+                      </Field>
 
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium">Threshold Color</label>
-                        <input
-                          type="color"
-                          value={config.thresholdColor || '#ef4444'}
-                          onChange={(e) => updateConfig('thresholdColor')(e.target.value)}
-                          className="w-full h-10 rounded-md border border-input bg-background"
-                        />
-                      </div>
+                      <ColorPicker
+                        value={config.thresholdColor || '#ef4444'}
+                        onChange={(color) => updateConfig('thresholdColor')(color)}
+                        label="阈值颜色"
+                        presets="semantic"
+                      />
                     </>
                   )}
                 </div>
               ),
             },
           ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -1661,140 +1659,135 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Variant</label>
-                    <select
-                      value={config.variant || 'default'}
-                      onChange={(e) => updateConfig('variant')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="default">Default (Linear)</option>
-                      <option value="compact">Compact</option>
-                      <option value="circular">Circular</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Color</label>
-                    <input
-                      type="color"
-                      value={config.color || '#3b82f6'}
-                      onChange={(e) => updateConfig('color')(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="progress-bar-title">显示标题</Label>
+                    <Input
+                      id="progress-bar-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Size</label>
-                    <select
-                      value={config.size || 'md'}
-                      onChange={(e) => updateConfig('size')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="sm">Small</option>
-                      <option value="md">Medium</option>
-                      <option value="lg">Large</option>
-                    </select>
-                  </div>
+                  <SelectField
+                    label="样式"
+                    value={config.variant || 'default'}
+                    onChange={updateConfig('variant')}
+                    options={[
+                      { value: 'default', label: '默认 (线性)' },
+                      { value: 'compact', label: '紧凑' },
+                      { value: 'circular', label: '圆形' },
+                    ]}
+                  />
 
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.showCard ?? true}
-                        onChange={(e) => updateConfig('showCard')(e.target.checked)}
-                        className="rounded"
-                      />
-                      <span className="text-sm">Show Card</span>
-                    </label>
-                  </div>
-                </div>
-              ),
-            },
-          ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Label</label>
-                    <input
-                      type="text"
+                  <ColorPicker
+                    value={config.color || '#3b82f6'}
+                    onChange={(color) => updateConfig('color')(color)}
+                    label="颜色"
+                    presets="primary"
+                  />
+
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
+
+                  <Field>
+                    <Label>标签</Label>
+                    <Input
                       value={config.label || ''}
                       onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder="e.g., CPU Usage"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      placeholder="如 CPU 使用率"
+                      className="h-9"
                     />
-                  </div>
+                  </Field>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Warning Threshold (%)</label>
-                      <input
+                    <Field>
+                      <Label>警告阈值 (%)</Label>
+                      <Input
                         type="number"
                         value={config.warningThreshold ?? 70}
                         onChange={(e) => updateConfig('warningThreshold')(Number(e.target.value))}
                         min={0}
                         max={100}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                        className="h-9"
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Danger Threshold (%)</label>
-                      <input
+                    </Field>
+                    <Field>
+                      <Label>危险阈值 (%)</Label>
+                      <Input
                         type="number"
                         value={config.dangerThreshold ?? 90}
                         onChange={(e) => updateConfig('dangerThreshold')(Number(e.target.value))}
                         min={0}
                         max={100}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                        className="h-9"
                       />
-                    </div>
+                    </Field>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     进度条颜色会根据阈值自动变化：正常 → 警告 → 危险
                   </p>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.showCard ?? true}
+                      onChange={(e) => updateConfig('showCard')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">显示卡片</span>
+                  </label>
                 </div>
               ),
             },
           ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Value (静态)</label>
+                <div className="space-y-3">
+                  <Field>
+                    <Label>数值（静态）</Label>
                     <input
                       type="number"
                       value={config.value ?? 0}
                       onChange={(e) => updateConfig('value')(Number(e.target.value))}
                       min={0}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                       disabled={!!config.dataSource}
                     />
                     <p className="text-xs text-muted-foreground">绑定数据源后自动禁用</p>
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Maximum Value</label>
+                  <Field>
+                    <Label>最大值</Label>
                     <input
                       type="number"
                       value={config.max ?? 100}
                       onChange={(e) => updateConfig('max')(Number(e.target.value))}
                       min={1}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                     />
-                  </div>
+                  </Field>
                 </div>
               ),
             },
@@ -1807,146 +1800,140 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Label</label>
-                    <input
-                      type="text"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="led-indicator-title">显示标题</Label>
+                    <Input
+                      id="led-indicator-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>标签</Label>
+                    <Input
                       value={config.label || ''}
                       onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder="e.g., Device Status"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      placeholder="例如：设备状态"
+                      className="h-9"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">State (no data source)</label>
-                    <select
-                      value={config.state || 'on'}
-                      onChange={(e) => updateConfig('state')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="on">On</option>
-                      <option value="off">Off</option>
-                      <option value="error">Error</option>
-                      <option value="warning">Warning</option>
-                    </select>
-                  </div>
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Size</label>
-                    <select
-                      value={config.size || 'md'}
-                      onChange={(e) => updateConfig('size')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="sm">Small</option>
-                      <option value="md">Medium</option>
-                      <option value="lg">Large</option>
-                    </select>
-                  </div>
+                  <ColorPicker
+                    value={config.color || '#22c55e'}
+                    onChange={(color) => updateConfig('color')(color)}
+                    label="颜色"
+                    presets="semantic"
+                  />
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Color</label>
-                    <input
-                      type="color"
-                      value={config.color || '#22c55e'}
-                      onChange={(e) => updateConfig('color')(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                  <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="showGlow"
                         checked={config.showGlow ?? true}
-                        onChange={(e) => updateConfig('showGlow')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showGlow')(checked === true)}
                       />
-                      <span className="text-sm">Show Glow Effect</span>
-                    </label>
+                      <label htmlFor="showGlow" className="text-sm cursor-pointer">
+                        发光效果
+                      </label>
+                    </div>
 
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="showCard"
                         checked={config.showCard ?? true}
-                        onChange={(e) => updateConfig('showCard')(e.target.checked)}
-                        className="rounded"
+                        onCheckedChange={(checked) => updateConfig('showCard')(checked === true)}
                       />
-                      <span className="text-sm">Show Card</span>
-                    </label>
+                      <label htmlFor="showCard" className="text-sm cursor-pointer">
+                        显示卡片
+                      </label>
+                    </div>
+                  </div>
+
+                  <Field>
+                    <Label>默认状态（无数据源时）</Label>
+                    <Select
+                      value={config.state || 'on'}
+                      onValueChange={updateConfig('state')}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="on">开启</SelectItem>
+                        <SelectItem value="off">关闭</SelectItem>
+                        <SelectItem value="error">错误</SelectItem>
+                        <SelectItem value="warning">警告</SelectItem>
+                        <SelectItem value="unknown">未知</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+
+                  <Field>
+                    <Label>默认状态</Label>
+                    <Select
+                      value={config.defaultState || 'unknown'}
+                      onValueChange={updateConfig('defaultState')}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="on">开启</SelectItem>
+                        <SelectItem value="off">关闭</SelectItem>
+                        <SelectItem value="error">错误</SelectItem>
+                        <SelectItem value="warning">警告</SelectItem>
+                        <SelectItem value="unknown">未知</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      当数据值不匹配任何映射规则时，显示此状态
+                    </p>
+                  </Field>
+
+                  <div className="pt-2 border-t">
+                    <div className="text-sm font-medium mb-3">字符串值映射</div>
+                    <ValueMapEditor
+                      valueMap={(config.valueMap || []).map((m: any) => ({
+                        id: m.id || Date.now().toString() + Math.random(),
+                        values: m.values || '',
+                        pattern: m.pattern,
+                        state: m.state || 'unknown',
+                        label: m.label,
+                        color: m.color,
+                      }))}
+                      onChange={(newValueMap) => {
+                        updateConfig('valueMap')(newValueMap)
+                      }}
+                    />
                   </div>
                 </div>
               ),
             },
           ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
-            },
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Value Mapping</label>
-                    <p className="text-xs text-muted-foreground">
-                      One mapping per line: <code>values {'->'} state</code>
-                    </p>
-                    <textarea
-                      value={(config.valueMap || [])
-                        .map((m: any) => {
-                          const values = m.values || m.pattern || ''
-                          const label = m.label ? ` (${m.label})` : ''
-                          const color = m.color ? ` [${m.color}]` : ''
-                          return `${values} -> ${m.state}${label}${color}`
-                        })
-                        .join('\n')}
-                      onChange={(e) => {
-                        const lines = e.target.value.split('\n').filter(Boolean)
-                        const newValueMap = lines.map(line => {
-                          const match = line.match(/^(.+?)\s*->\s*(\w+)(?:\s*\[([#\w]+)\])?(?:\s*\((.+?)\))?$/)
-                          if (match) {
-                            const [, valuesOrPattern, state, color, label] = match
-                            const trimmed = valuesOrPattern.trim()
-                            const isPattern = /[.*+?^${}()|[\]\\]/.test(trimmed) && !trimmed.includes(',')
-                            return {
-                              state,
-                              ...(isPattern ? { pattern: trimmed } : { values: trimmed }),
-                              ...(color && { color }),
-                              ...(label && { label }),
-                            }
-                          }
-                          return { state: 'unknown', values: line }
-                        })
-                        updateConfig('valueMap')(newValueMap)
-                      }}
-                      placeholder="online, active -> on\noffline -> off\nerror, failed -> error [ef4444]\n/warn|warning/i -> warning"
-                      className="w-full h-32 px-3 py-2 rounded-md border border-input bg-background text-sm font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Default State</label>
-                    <select
-                      value={config.defaultState || 'unknown'}
-                      onChange={(e) => updateConfig('defaultState')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="on">On</option>
-                      <option value="off">Off</option>
-                      <option value="error">Error</option>
-                      <option value="warning">Warning</option>
-                      <option value="unknown">Unknown</option>
-                    </select>
-                  </div>
-                </div>
-              ),
             },
           ],
         }
@@ -1958,29 +1945,35 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Line Color</label>
-                    <input
-                      type="color"
-                      value={config.color || '#3b82f6'}
-                      onChange={(e) => updateConfig('color')(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="line-chart-title">显示标题</Label>
+                    <Input
+                      id="line-chart-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Size</label>
-                    <select
-                      value={config.size || 'md'}
-                      onChange={(e) => updateConfig('size')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="sm">Small</option>
-                      <option value="md">Medium</option>
-                      <option value="lg">Large</option>
-                    </select>
-                  </div>
+                  <ColorPicker
+                    value={config.color || '#3b82f6'}
+                    onChange={(color) => updateConfig('color')(color)}
+                    label="线条颜色"
+                    presets="primary"
+                  />
+
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -1990,7 +1983,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('smooth')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Smooth Lines</span>
+                      <span className="text-sm">平滑曲线</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2000,7 +1993,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('fillArea')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Fill Area</span>
+                      <span className="text-sm">填充区域</span>
                     </label>
                   </div>
 
@@ -2012,7 +2005,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showGrid')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Grid</span>
+                      <span className="text-sm">显示网格</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2022,7 +2015,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Legend</span>
+                      <span className="text-sm">显示图例</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2032,49 +2025,14 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Tooltip</span>
+                      <span className="text-sm">显示提示</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Data Points</label>
-                      <input
-                        type="number"
-                        value={config.limit ?? 50}
-                        onChange={(e) => updateConfig('limit')(Number(e.target.value))}
-                        min={1}
-                        max={200}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Max points to fetch</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Time Range (hours)</label>
-                      <input
-                        type="number"
-                        value={config.timeRange ?? 1}
-                        onChange={(e) => updateConfig('timeRange')(Number(e.target.value))}
-                        min={1}
-                        max={168}
-                        step={1}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Historical period</p>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-          ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2095,29 +2053,35 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Area Color</label>
-                    <input
-                      type="color"
-                      value={config.color || '#3b82f6'}
-                      onChange={(e) => updateConfig('color')(e.target.value)}
-                      className="w-full h-10 rounded-md border border-input bg-background"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="area-chart-title">显示标题</Label>
+                    <Input
+                      id="area-chart-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Size</label>
-                    <select
-                      value={config.size || 'md'}
-                      onChange={(e) => updateConfig('size')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="sm">Small</option>
-                      <option value="md">Medium</option>
-                      <option value="lg">Large</option>
-                    </select>
-                  </div>
+                  <ColorPicker
+                    value={config.color || '#3b82f6'}
+                    onChange={(color) => updateConfig('color')(color)}
+                    label="区域颜色"
+                    presets="primary"
+                  />
+
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2127,7 +2091,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('smooth')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Smooth Lines</span>
+                      <span className="text-sm">平滑曲线</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2137,7 +2101,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showGrid')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Grid</span>
+                      <span className="text-sm">显示网格</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2147,7 +2111,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Legend</span>
+                      <span className="text-sm">显示图例</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2157,49 +2121,14 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Tooltip</span>
+                      <span className="text-sm">显示提示</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Data Points</label>
-                      <input
-                        type="number"
-                        value={config.limit ?? 50}
-                        onChange={(e) => updateConfig('limit')(Number(e.target.value))}
-                        min={1}
-                        max={200}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Max points to fetch</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Time Range (hours)</label>
-                      <input
-                        type="number"
-                        value={config.timeRange ?? 1}
-                        onChange={(e) => updateConfig('timeRange')(Number(e.target.value))}
-                        min={1}
-                        max={168}
-                        step={1}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Historical period</p>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-          ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2211,6 +2140,18 @@ export function VisualDashboard() {
                 maxSources: 5,
               },
             },
+            {
+              type: 'custom' as const,
+              render: () => (
+                <DataMappingConfig
+                  dataMapping={config.dataMapping as TimeSeriesMappingConfig}
+                  onChange={updateDataMapping}
+                  mappingType="time-series"
+                  label="数据映射配置"
+                  readonly={false}
+                />
+              ),
+            },
           ],
         }
 
@@ -2220,18 +2161,45 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Layout</label>
-                    <select
-                      value={config.layout || 'vertical'}
-                      onChange={(e) => updateConfig('layout')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="vertical">Vertical</option>
-                      <option value="horizontal">Horizontal</option>
-                    </select>
-                  </div>
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="bar-chart-title">显示标题</Label>
+                    <Input
+                      id="bar-chart-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <ColorPicker
+                    value={config.color || '#8b5cf6'}
+                    onChange={(color) => updateConfig('color')(color)}
+                    label="柱体颜色"
+                    presets="primary"
+                  />
+
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
+
+                  <SelectField
+                    label="布局"
+                    value={config.layout || 'vertical'}
+                    onChange={updateConfig('layout')}
+                    options={[
+                      { value: 'vertical', label: '垂直' },
+                      { value: 'horizontal', label: '水平' },
+                    ]}
+                  />
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2241,7 +2209,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('stacked')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Stacked</span>
+                      <span className="text-sm">堆叠</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2251,7 +2219,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showGrid')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Grid</span>
+                      <span className="text-sm">显示网格</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2261,7 +2229,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Legend</span>
+                      <span className="text-sm">显示图例</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2271,55 +2239,21 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Tooltip</span>
+                      <span className="text-sm">显示提示</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Data Points</label>
-                      <input
-                        type="number"
-                        value={config.limit ?? 24}
-                        onChange={(e) => updateConfig('limit')(Number(e.target.value))}
-                        min={1}
-                        max={200}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Max points to fetch</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Time Range (hours)</label>
-                      <input
-                        type="number"
-                        value={config.timeRange ?? 1}
-                        onChange={(e) => updateConfig('timeRange')(Number(e.target.value))}
-                        min={1}
-                        max={168}
-                        step={1}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Historical period</p>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-          ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
                 multiple: true,
                 maxSources: 3,
               },
@@ -2333,42 +2267,62 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Variant</label>
-                    <select
-                      value={config.variant || 'pie'}
-                      onChange={(e) => updateConfig('variant')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="pie">Pie Chart</option>
-                      <option value="donut">Donut Chart</option>
-                    </select>
-                  </div>
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="pie-chart-title">显示标题</Label>
+                    <Input
+                      id="pie-chart-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
+
+                  <SelectField
+                    label="类型"
+                    value={config.variant || 'donut'}
+                    onChange={updateConfig('variant')}
+                    options={[
+                      { value: 'pie', label: '饼图' },
+                      { value: 'donut', label: '环形图' },
+                    ]}
+                  />
 
                   {config.variant === 'donut' && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Inner Radius</label>
+                    <Field>
+                      <Label>内半径</Label>
                       <input
                         type="text"
                         value={config.innerRadius || '60%'}
                         onChange={(e) => updateConfig('innerRadius')(e.target.value)}
                         placeholder="60% or 60"
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                        className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                       />
-                    </div>
+                    </Field>
                   )}
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Outer Radius</label>
+                  <Field>
+                    <Label>外半径</Label>
                     <input
                       type="text"
                       value={config.outerRadius || '80%'}
                       onChange={(e) => updateConfig('outerRadius')(e.target.value)}
                       placeholder="80% or 80"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                     />
-                  </div>
+                  </Field>
 
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2378,7 +2332,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Legend</span>
+                      <span className="text-sm">显示图例</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2388,7 +2342,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Tooltip</span>
+                      <span className="text-sm">显示提示</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2398,55 +2352,21 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLabels')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Labels</span>
+                      <span className="text-sm">显示标签</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Data Points</label>
-                      <input
-                        type="number"
-                        value={config.limit ?? 10}
-                        onChange={(e) => updateConfig('limit')(Number(e.target.value))}
-                        min={1}
-                        max={100}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Max categories to show</p>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Time Range (hours)</label>
-                      <input
-                        type="number"
-                        value={config.timeRange ?? 1}
-                        onChange={(e) => updateConfig('timeRange')(Number(e.target.value))}
-                        min={1}
-                        max={168}
-                        step={1}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">Historical period</p>
-                    </div>
-                  </div>
-                </div>
-              ),
-            },
-          ],
+          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -2459,43 +2379,56 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Label</label>
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="toggle-switch-title">显示标题</Label>
+                    <Input
+                      id="toggle-switch-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>标签</Label>
                     <input
                       type="text"
                       value={config.label || ''}
                       onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder="e.g., Main Light"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      placeholder="如 主灯"
+                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                     />
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Initial State</label>
-                    <select
+                  <Field>
+                    <Label>初始状态</Label>
+                    <Select
                       value={config.initialState ? 'on' : 'off'}
-                      onChange={(e) => updateConfig('initialState')(e.target.value === 'on')}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      onValueChange={(val) => updateConfig('initialState')(val === 'on')}
                     >
-                      <option value="off">Off (关闭)</option>
-                      <option value="on">On (开启)</option>
-                    </select>
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">关闭</SelectItem>
+                        <SelectItem value="on">开启</SelectItem>
+                      </SelectContent>
+                    </Select>
                     <p className="text-xs text-muted-foreground">显示状态，在收到命令响应前使用</p>
-                  </div>
+                  </Field>
 
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Size</label>
-                    <select
-                      value={config.size || 'md'}
-                      onChange={(e) => updateConfig('size')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="sm">Small</option>
-                      <option value="md">Medium</option>
-                      <option value="lg">Large</option>
-                    </select>
-                  </div>
+                  <SelectField
+                    label="尺寸"
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: '小' },
+                      { value: 'md', label: '中' },
+                      { value: 'lg', label: '大' },
+                    ]}
+                  />
                 </div>
               ),
             },
@@ -2507,84 +2440,17 @@ export function VisualDashboard() {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
                 allowedTypes: ['command'],
-                requireCommand: true,
               },
             },
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                     <p className="text-sm text-amber-700 dark:text-amber-300">
                       <strong>仅支持命令模式</strong><br />
                       此组件只能绑定到设备的命令接口，点击时发送开关命令。
                     </p>
-                  </div>
-                </div>
-              ),
-            },
-          ],
-        }
-
-      // ========== Tables & Lists ==========
-      case 'data-table':
-        return {
-          dataSourceSections: [
-            {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: updateDataSource,
-              },
-            },
-          ],
-          styleSections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="sortable"
-                      checked={config.sortable ?? true}
-                      onChange={(e) => updateConfig('sortable')(e.target.checked)}
-                      className="rounded"
-                    />
-                    <label htmlFor="sortable" className="text-sm">Sortable</label>
-                  </div>
-                </div>
-              ),
-            },
-          ],
-        }
-
-      case 'status-list':
-      case 'log-feed':
-        return {
-          dataSourceSections: [
-            {
-              type: 'data-source' as const,
-              props: {
-                dataSource: config.dataSource,
-                onChange: updateDataSource,
-              },
-            },
-          ],
-          styleSections: [
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="showTimestamp"
-                      checked={config.showTimestamp ?? true}
-                      onChange={(e) => updateConfig('showTimestamp')(e.target.checked)}
-                      className="rounded"
-                    />
-                    <label htmlFor="showTimestamp" className="text-sm">Show Timestamp</label>
                   </div>
                 </div>
               ),
@@ -2601,6 +2467,7 @@ export function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -2608,34 +2475,42 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Image Source</label>
-                    <input
-                      type="text"
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="image-display-title">显示标题</Label>
+                    <Input
+                      id="image-display-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>图片源</Label>
+                    <Input
                       value={config.src || ''}
                       onChange={(e) => updateConfig('src')(e.target.value)}
-                      placeholder="https://example.com/image.jpg or data:image/png;base64,..."
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                      placeholder="https://example.com/image.jpg 或 data:image/png;base64,..."
+                      className="h-9"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      Supports URLs or Base64 (data:image/png;base64,...)
+                      支持 URL 或 Base64 (data:image/png;base64,...)
                     </p>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Fit Mode</label>
-                    <select
-                      value={config.fit || 'contain'}
-                      onChange={(e) => updateConfig('fit')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                    >
-                      <option value="contain">Contain</option>
-                      <option value="cover">Cover</option>
-                      <option value="fill">Fill</option>
-                      <option value="none">None</option>
-                      <option value="scale-down">Scale Down</option>
-                    </select>
-                  </div>
+                  </Field>
+                  <SelectField
+                    label="适配模式"
+                    value={config.fit || 'contain'}
+                    onChange={updateConfig('fit')}
+                    options={[
+                      { value: 'contain', label: '包含' },
+                      { value: 'cover', label: '覆盖' },
+                      { value: 'fill', label: '填充' },
+                      { value: 'none', label: '无' },
+                      { value: 'scale-down', label: '缩小' },
+                    ]}
+                  />
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2">
                       <input
@@ -2644,7 +2519,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('rounded')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">Rounded</span>
+                      <span className="text-xs">圆角</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -2653,7 +2528,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('zoomable')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">Zoomable</span>
+                      <span className="text-xs">可缩放</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -2662,7 +2537,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showShadow')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">Shadow</span>
+                      <span className="text-xs">阴影</span>
                     </label>
                   </div>
                 </div>
@@ -2679,6 +2554,7 @@ export function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -2686,45 +2562,54 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Fit Mode</label>
-                    <select
-                      value={config.fit || 'contain'}
-                      onChange={(e) => updateConfig('fit')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
-                    >
-                      <option value="contain">Contain</option>
-                      <option value="cover">Cover</option>
-                      <option value="fill">Fill</option>
-                      <option value="none">None</option>
-                      <option value="scale-down">Scale Down</option>
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Max Images</label>
-                      <input
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="image-history-title">显示标题</Label>
+                    <Input
+                      id="image-history-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <SelectField
+                    label="适配模式"
+                    value={config.fit || 'contain'}
+                    onChange={updateConfig('fit')}
+                    options={[
+                      { value: 'contain', label: '包含' },
+                      { value: 'cover', label: '覆盖' },
+                      { value: 'fill', label: '填充' },
+                      { value: 'none', label: '无' },
+                      { value: 'scale-down', label: '缩小' },
+                    ]}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <Label>最大图片数</Label>
+                      <Input
                         type="number"
                         value={config.limit ?? 50}
                         onChange={(e) => updateConfig('limit')(Number(e.target.value))}
                         min={1}
                         max={200}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                        className="h-9"
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Time Range (hours)</label>
-                      <input
+                    </Field>
+                    <Field>
+                      <Label>时间范围（小时）</Label>
+                      <Input
                         type="number"
                         value={config.timeRange ?? 1}
                         onChange={(e) => updateConfig('timeRange')(Number(e.target.value))}
                         min={1}
                         max={168}
                         step={1}
-                        className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                        className="h-9"
                       />
-                    </div>
+                    </Field>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     <label className="flex items-center gap-2">
@@ -2734,7 +2619,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('rounded')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">Rounded</span>
+                      <span className="text-xs">圆角</span>
                     </label>
                   </div>
                 </div>
@@ -2751,6 +2636,7 @@ export function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -2759,14 +2645,24 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-4">
+                  <Field>
+                    <Label htmlFor="web-display-title">显示标题</Label>
+                    <Input
+                      id="web-display-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Website URL</label>
-                    <input
-                      type="text"
+                    <Input
                       value={config.src || ''}
                       onChange={(e) => updateConfig('src')(e.target.value)}
                       placeholder="https://example.com"
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                      className="h-10"
                     />
                   </div>
                   <div className="flex items-center gap-4">
@@ -2777,7 +2673,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('sandbox')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Sandboxed</span>
+                      <span className="text-sm">沙盒隔离</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -2786,7 +2682,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showHeader')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">Show Header</span>
+                      <span className="text-sm">显示头部</span>
                     </label>
                   </div>
                 </div>
@@ -2803,6 +2699,7 @@ export function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
+                allowedTypes: ['device-metric'],
               },
             },
           ],
@@ -2810,29 +2707,38 @@ export function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Markdown Content</label>
+                <div className="space-y-3">
+                  <Field>
+                    <Label htmlFor="markdown-display-title">显示标题</Label>
+                    <Input
+                      id="markdown-display-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>Markdown 内容</Label>
                     <textarea
                       value={config.content || ''}
                       onChange={(e) => updateConfig('content')(e.target.value)}
-                      placeholder="# Title\n\n**Bold** and *italic* text"
+                      placeholder="# 标题\n\n**粗体** 和 *斜体* 文本"
                       rows={6}
                       className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Variant</label>
-                    <select
-                      value={config.variant || 'default'}
-                      onChange={(e) => updateConfig('variant')(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background"
-                    >
-                      <option value="default">Default</option>
-                      <option value="compact">Compact</option>
-                      <option value="minimal">Minimal</option>
-                    </select>
-                  </div>
+                  </Field>
+                  <SelectField
+                    label="样式"
+                    value={config.variant || 'default'}
+                    onChange={updateConfig('variant')}
+                    options={[
+                      { value: 'default', label: '默认' },
+                      { value: 'compact', label: '紧凑' },
+                      { value: 'minimal', label: '简约' },
+                    ]}
+                  />
                 </div>
               ),
             },
@@ -2852,8 +2758,8 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-sm">This component uses data from the system.</p>
-                  <p className="text-xs mt-1">Configure data sources in the settings.</p>
+                  <p className="text-sm">此组件使用系统数据。</p>
+                  <p className="text-xs mt-1">请在设置中配置数据源。</p>
                 </div>
               ),
             },
@@ -3014,7 +2920,7 @@ export function VisualDashboard() {
       {/* Config Dialog */}
       <ComponentConfigDialog
         open={configOpen}
-        onClose={() => setConfigOpen(false)}
+        onClose={handleCancelConfig}
         onSave={handleSaveConfig}
         title={configTitle}
         onTitleChange={handleTitleChange}
@@ -3022,6 +2928,7 @@ export function VisualDashboard() {
         componentType={selectedComponent?.type || ''}
         previewDataSource={componentConfig.dataSource}
         previewConfig={componentConfig}
+        showTitleInDisplay={isTitleInDisplayComponent(selectedComponent?.type)}
       />
     </div>
   )

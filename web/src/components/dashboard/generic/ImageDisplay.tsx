@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { dashboardCardBase, dashboardComponentSize } from '@/design-system/tokens/size'
-import { Maximize2, Minimize2, Download, ImageOff, AlertTriangle, FileCode, RefreshCw } from 'lucide-react'
+import { Maximize2, Minimize2, Download, ImageOff, AlertTriangle, RefreshCw } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 
 export interface ImageDisplayProps {
@@ -163,7 +163,7 @@ function isPureBase64(str: string): boolean {
 /**
  * Normalize various image formats to a standard data URL
  */
-function normalizeImageUrl(value: string | undefined): {
+function normalizeImageUrl(value: string | number | undefined | null): {
   src: string
   format: ImageFormatType
   isBase64: boolean
@@ -172,7 +172,9 @@ function normalizeImageUrl(value: string | undefined): {
 } | null {
   if (!value) return null
 
-  const trimmed = value.trim()
+  // Convert to string first, then trim
+  const valueStr = String(value)
+  const trimmed = valueStr.trim()
 
   // Handle empty/placeholder values
   if (trimmed === '-' || trimmed === 'undefined' || trimmed === 'null' || trimmed === '') {
@@ -191,7 +193,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: formatInfo.type,
       isBase64: trimmed.includes('base64'),
       isDataUrl: true,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -204,7 +206,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: formatInfo.type,
       isBase64: true,
       isDataUrl: true,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -216,7 +218,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: 'png',
       isBase64: trimmed.includes('base64'),
       isDataUrl: true,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -228,7 +230,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: formatInfo.type,
       isBase64: true,
       isDataUrl: true,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -239,7 +241,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: 'unknown',
       isBase64: false,
       isDataUrl: false,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -250,7 +252,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: 'unknown',
       isBase64: false,
       isDataUrl: false,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -261,7 +263,7 @@ function normalizeImageUrl(value: string | undefined): {
       format: 'unknown',
       isBase64: false,
       isDataUrl: false,
-      originalValue: value,
+      originalValue: valueStr,
     }
   }
 
@@ -315,6 +317,30 @@ function getFormatInfo(normalized: ReturnType<typeof normalizeImageUrl>) {
   }
 }
 
+/**
+ * Normalize data source for image display
+ * Ensures raw points are included for telemetry sources
+ */
+function normalizeDataSourceForImage(
+  ds: DataSource | undefined
+): DataSource | undefined {
+  if (!ds) return undefined
+
+  // If it's telemetry, ensure raw points are included
+  if (ds.type === 'telemetry') {
+    return {
+      ...ds,
+      params: {
+        ...ds.params,
+        includeRawPoints: true,
+      },
+      transform: 'raw',
+    }
+  }
+
+  return ds
+}
+
 export function ImageDisplay({
   dataSource,
   src: propSrc,
@@ -330,15 +356,112 @@ export function ImageDisplay({
   openInNewTab = false,
   className,
 }: ImageDisplayProps) {
-  const { data, loading, error } = useDataSource<string>(dataSource, {
+  // Normalize data source to ensure raw points are included
+  const normalizedDataSource = useMemo(() => normalizeDataSourceForImage(dataSource), [dataSource])
+
+  const { data, loading, error } = useDataSource(normalizedDataSource, {
     fallback: propSrc,
   })
 
-  const rawSrc = error ? propSrc : (data ?? propSrc ?? '')
+  // Extract image value from various data formats
+  const extractImageValue = (value: unknown): string => {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'string') return value
+    if (typeof value === 'number') return String(value)
+    if (typeof value === 'boolean') return String(value)
 
-  // Normalize the image source
+    // Handle arrays - take the value with the latest timestamp
+    if (Array.isArray(value)) {
+      if (value.length === 0) return ''
+
+      // Find the item with the latest timestamp
+      let latestItem = value[0]
+      let latestTime = -1
+
+      for (const item of value) {
+        if (typeof item === 'object' && item !== null) {
+          const obj = item as Record<string, unknown>
+          const time = (obj.time ?? obj.timestamp ?? obj.t ?? 0) as number
+          if (time > latestTime) {
+            latestTime = time
+            latestItem = item
+          }
+        }
+      }
+
+      console.log('[ImageDisplay] Array analysis:', {
+        totalItems: value.length,
+        latestTime,
+        latestItemPreview: JSON.stringify(latestItem)?.slice(0, 200),
+      })
+
+      return extractImageValue(latestItem)
+    }
+
+    // Handle objects - try to find image-related fields
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>
+
+      // Common image field names
+      for (const key of ['src', 'url', 'image', 'imageUrl', 'image_url', 'data', 'value', 'content']) {
+        if (obj[key] !== null && obj[key] !== undefined) {
+          const extracted = extractImageValue(obj[key])
+          if (extracted && extracted !== '' && extracted !== '-') {
+            return extracted
+          }
+        }
+      }
+    }
+
+    return ''
+  }
+
+  const rawSrc = error ? propSrc : (extractImageValue(data) ?? propSrc ?? '')
+
+  // Debug logging to understand data flow
+  useEffect(() => {
+    console.log('[ImageDisplay] Data received:', {
+      dataType: Array.isArray(data) ? 'array' : typeof data,
+      dataLength: Array.isArray(data) ? data.length : 1,
+      firstItem: Array.isArray(data) && data.length > 0 ? JSON.stringify(data[0])?.slice(0, 100) : data,
+      lastItem: Array.isArray(data) && data.length > 0 ? JSON.stringify(data[data.length - 1])?.slice(0, 100) : data,
+      extractedSrc: rawSrc?.slice(0, 100),
+    })
+  }, [data, rawSrc])
+
+  // Track last update timestamp for cache-busting
+  const lastUpdate = useRef(Date.now())
+
+  // Normalize the image source (for metadata extraction)
   const normalizedImage = useMemo(() => normalizeImageUrl(rawSrc), [rawSrc])
-  const src = normalizedImage?.src || rawSrc
+  const baseSrc = normalizedImage?.src || rawSrc
+
+  // Update lastUpdate timestamp when rawSrc changes
+  useEffect(() => {
+    if (rawSrc && rawSrc !== propSrc) {
+      lastUpdate.current = Date.now()
+    }
+  }, [rawSrc, propSrc])
+
+  // For base64 images, add cache-busting parameter to force refresh
+  // This ensures that when new data arrives, the image actually reloads
+  const displaySrc = useMemo(() => {
+    if (!baseSrc) return baseSrc
+
+    // Add cache-busting for base64 images and data URLs
+    if (baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')) {
+      // Use the last update timestamp as cache buster
+      const cacheBuster = lastUpdate.current
+      // Append a fragment identifier with timestamp
+      // The browser will treat it as a "different" URL
+      return `${baseSrc}#${cacheBuster}`
+    }
+
+    return baseSrc
+  }, [baseSrc])
+
+  // Keep originalSrc without cache-buster for download/fullscreen
+  const originalSrc = baseSrc
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>('no-source')
   const imageRef = useRef<HTMLImageElement>(null)
@@ -349,7 +472,7 @@ export function ImageDisplay({
   const formatInfo = useMemo(() => getFormatInfo(normalizedImage), [normalizedImage])
 
   const handleDownload = useCallback(() => {
-    if (!src) return
+    if (!displaySrc || !originalSrc) return
 
     // For base64 images, extract the correct extension
     let filename = alt.replace(/[^a-z0-9]/gi, '_') || 'image'
@@ -357,9 +480,9 @@ export function ImageDisplay({
     if (normalizedImage?.isBase64) {
       filename += `.${getFileExtension(normalizedImage.format)}`
     } else {
-      // Try to get extension from URL
+      // Try to get extension from URL (use originalSrc without cache-buster)
       try {
-        const url = new URL(src)
+        const url = new URL(originalSrc)
         const ext = url.pathname.split('.').pop()?.toLowerCase()
         if (ext && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].includes(ext)) {
           filename += `.${ext}`
@@ -372,12 +495,12 @@ export function ImageDisplay({
     }
 
     const link = document.createElement('a')
-    link.href = src
+    link.href = originalSrc  // Use originalSrc for download (without cache-buster)
     link.download = filename
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-  }, [src, alt, normalizedImage])
+  }, [displaySrc, originalSrc, alt, normalizedImage])
 
   const sizeConfig = dashboardComponentSize[size]
 
@@ -390,7 +513,7 @@ export function ImageDisplay({
     } else {
       setImageLoadState('loading')
     }
-  }, [src, loading, hasValidSource])
+  }, [displaySrc, loading, hasValidSource])
 
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')
@@ -427,19 +550,6 @@ export function ImageDisplay({
           <p className="text-muted-foreground text-sm font-medium">No Image Source</p>
           <p className="text-muted-foreground/50 text-xs mt-1">Configure an image URL or data source</p>
         </div>
-        {displaySrc && displaySrc !== '-' && (
-          <details className="mt-2">
-            <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-              View raw data
-            </summary>
-            <div className="mt-2 p-2 bg-background/50 rounded border border-dashed border-border max-w-full">
-              <FileCode className="h-3 w-3 text-muted-foreground mx-auto mb-1" />
-              <p className="text-xs text-muted-foreground font-mono break-all max-h-16 overflow-auto" title={displaySrc}>
-                {displaySrc.slice(0, 100)}{displaySrc.length > 100 ? '...' : ''}
-              </p>
-            </div>
-          </details>
-        )}
       </div>
     )
   }
@@ -478,8 +588,8 @@ export function ImageDisplay({
           className="gap-1.5"
           onClick={() => {
             setImageLoadState('loading')
-            if (imageRef.current && src) {
-              imageRef.current.src = src
+            if (imageRef.current && displaySrc) {
+              imageRef.current.src = displaySrc
             }
           }}
         >
@@ -497,8 +607,8 @@ export function ImageDisplay({
         <div className="relative w-full h-full flex items-center justify-center bg-muted/10">
           <img
             ref={imageRef}
-            key={src}
-            src={src}
+            key={displaySrc}
+            src={displaySrc}
             alt={alt}
             className={cn(
               'w-full h-full transition-transform duration-200',
@@ -559,7 +669,7 @@ export function ImageDisplay({
       {/* Fullscreen view */}
       {isFullscreen && (
         <FullscreenImage
-          src={src}
+          src={originalSrc}
           alt={alt}
           onClose={() => setIsFullscreen(false)}
         />

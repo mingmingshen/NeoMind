@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 interface MarkdownMessageProps {
   content: string
   className?: string
+  variant?: 'user' | 'assistant'
 }
 
 /**
@@ -15,7 +16,7 @@ interface MarkdownMessageProps {
  * - Tables, lists, links, images
  * - Styled for chat interface
  */
-export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
+export function MarkdownMessage({ content, className, variant = 'assistant' }: MarkdownMessageProps) {
   const components: Components = {
     // Custom code block rendering
     pre: ({ node, className, children, ...props }) => (
@@ -55,7 +56,10 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
 
   return (
     <div className={cn(
-      "prose prose-sm dark:prose-invert max-w-none",
+      // Base prose classes
+      variant === 'user'
+        ? "prose prose-sm prose-invert max-w-none"
+        : "prose prose-sm dark:prose-invert max-w-none",
       "prose-p:leading-relaxed prose-p:my-1",
       "prose-headings:font-semibold prose-headings:my-2",
       "prose-h1:text-base prose-h2:text-sm prose-h3:text-xs",

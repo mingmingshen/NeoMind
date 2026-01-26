@@ -18,7 +18,7 @@ export interface DataSourceConfigSectionProps {
   multiple?: boolean
   maxSources?: number
   // Allowed data source types - support both old and new formats
-  allowedTypes?: Array<'device' | 'metric' | 'command' | 'device-metric' | 'device-command' | 'device-info' | 'agent' | 'system'>
+  allowedTypes?: Array<'device' | 'metric' | 'command' | 'device-metric' | 'device-command' | 'device-info'>
 }
 
 export function DataSourceConfigSection({

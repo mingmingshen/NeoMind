@@ -8,6 +8,11 @@ import type { StateCreator } from 'zustand'
 import type { AlertState } from '../types'
 import { api } from '@/lib/api'
 
+// Get auth token
+const getToken = (): string | null => {
+  return localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session')
+}
+
 export interface AlertSlice extends AlertState {
   // Actions
   fetchAlerts: () => Promise<void>
@@ -29,8 +34,27 @@ export const createAlertSlice: StateCreator<
   fetchAlerts: async () => {
     set({ alertsLoading: true })
     try {
-      const data = await api.getAlerts()
-      set({ alerts: data.alerts || [] })
+      const token = getToken()
+      const response = await fetch('/api/alerts', {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      })
+      const rawData = await response.json()
+
+      // Handle different response formats
+      let alertsArray: unknown[] = []
+      if (Array.isArray(rawData)) {
+        alertsArray = rawData
+      } else if (rawData?.data?.alerts && Array.isArray(rawData.data.alerts)) {
+        alertsArray = rawData.data.alerts
+      } else if (rawData?.alerts && Array.isArray(rawData.alerts)) {
+        alertsArray = rawData.alerts
+      } else if (rawData?.data && Array.isArray(rawData.data)) {
+        alertsArray = rawData.data
+      }
+
+      set({ alerts: alertsArray as any })
     } catch (error) {
       console.error('Failed to fetch alerts:', error)
       set({ alerts: [] })
