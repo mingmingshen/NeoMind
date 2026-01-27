@@ -25,6 +25,7 @@ import {
   Circle,
   TrendingUp,
   Layers,
+  Bot,
   // Charts
   LineChart as LineChartIcon,
   BarChart3,
@@ -147,7 +148,7 @@ export const componentRegistry: ComponentRegistry = {
   'progress-bar': {
     type: 'progress-bar',
     name: 'Progress Bar',
-    description: 'Linear progress indicator',
+    description: 'Linear progress indicator with data mapping support',
     category: 'indicators',
     icon: Layers,
     sizeConstraints: getSizeConstraints('progress-bar'),
@@ -157,11 +158,13 @@ export const componentRegistry: ComponentRegistry = {
     acceptsProp: (prop) => [
       'value', 'max', 'color', 'showCard', 'variant', 'title', 'size',
       'warningThreshold', 'dangerThreshold',
-      'dataMapping', 'className'
+      'dataMapping', 'dataSource', 'className'
     ].includes(prop),
     defaultProps: {
       max: 100,
       variant: 'default',
+      warningThreshold: 70,
+      dangerThreshold: 90,
     },
     variants: ['default', 'compact', 'circular'],
   },
@@ -281,18 +284,15 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: false,
     hasActions: true,
     acceptsProp: (prop) => [
-      'label', 'description', 'size', 'variant',
-      'trueLabel', 'falseLabel', 'trueIcon', 'falseIcon',
-      'disabled', 'showCard', 'className'
+      'dataSource', 'title', 'label', 'size',
+      'initialState', 'editMode', 'disabled', 'className'
     ].includes(prop),
     defaultProps: {
       size: 'md',
-      variant: 'default',
-      showCard: true,
-      trueLabel: 'On',
-      falseLabel: 'Off',
+      initialState: false,
+      disabled: false,
     },
-    variants: ['default', 'icon', 'slider', 'pill'],
+    variants: ['default'],
   },
 
   // ============================================================================
@@ -473,14 +473,24 @@ export const componentRegistry: ComponentRegistry = {
   'agent-status-card': {
     type: 'agent-status-card',
     name: 'Agent Status Card',
-    description: 'AI agent status and activity monitor',
+    description: 'AI agent status and activity monitor with real-time execution tracking',
     category: 'indicators',
-    icon: Hash,
+    icon: Bot,
     sizeConstraints: getSizeConstraints('agent-status-card'),
     hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: false,
-    acceptsProp: () => false,
+    hasDisplayConfig: true,
+    hasActions: true,
+    acceptsProp: (prop) => [
+      'agentId', 'agentName', 'title', 'description',
+      'showExecutions', 'showSparkline', 'sparklineData', 'compact',
+      'onExecute', 'onViewDetails', 'dataSource', 'className'
+    ].includes(prop),
+    defaultProps: {
+      showExecutions: true,
+      showSparkline: false,
+      compact: false,
+    },
+    variants: ['default', 'compact'],
   },
 
   'decision-list': {

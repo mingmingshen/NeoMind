@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import {
   Trash2,
@@ -24,6 +26,8 @@ import {
   MapPin,
   Type,
   Sparkles,
+  Edit3,
+  X,
 } from 'lucide-react'
 import { CustomLayer, type LayerBinding, type LayerItem } from './CustomLayer'
 import { useStore } from '@/store'
@@ -86,6 +90,8 @@ export function LayerEditorDialog({
 }: LayerEditorDialogProps) {
   const [bindings, setBindings] = useState<LayerBinding[]>(initialBindings)
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null)
+  const [editingTextBinding, setEditingTextBinding] = useState<string | null>(null)
+  const [editingIconBinding, setEditingIconBinding] = useState<string | null>(null)
 
   // Get devices from store for reactive updates
   const devices = useStore(state => state.devices)
@@ -193,6 +199,47 @@ export function LayerEditorDialog({
     setSelectedBinding(id)
   }, [])
 
+  // Handle text content change
+  const handleTextChange = useCallback((id: string, text: string) => {
+    setBindings(prev => prev.map(b => {
+      if (b.id === id && b.type === 'text') {
+        return { ...b, dataSource: { ...(b.dataSource as any), text } }
+      }
+      return b
+    }))
+  }, [])
+
+  // Handle icon content change
+  const handleIconChange = useCallback((id: string, icon: string) => {
+    setBindings(prev => prev.map(b => {
+      if (b.id === id && b.type === 'icon') {
+        return { ...b, dataSource: { ...(b.dataSource as any), icon } }
+      }
+      return b
+    }))
+  }, [])
+
+  // Common icons for quick selection
+  const commonIcons = ['⭐', '❤️', '🔥', '💡', '🏠', '🚗', '📱', '⚡', '💧', '🌡️', '📊', '📈', '🔔', '🎯', '✅', '❌', '⚠️', '🔴', '🟢', '🔵']
+
+  // Quick position presets
+  const quickPositions = [
+    { label: '左上', x: 10, y: 10 },
+    { label: '上中', x: 50, y: 10 },
+    { label: '右上', x: 90, y: 10 },
+    { label: '左中', x: 10, y: 50 },
+    { label: '中心', x: 50, y: 50 },
+    { label: '右中', x: 90, y: 50 },
+    { label: '左下', x: 10, y: 90 },
+    { label: '下中', x: 50, y: 90 },
+    { label: '右下', x: 90, y: 90 },
+  ]
+
+  // Handle quick position change
+  const handleQuickPosition = useCallback((id: string, x: number, y: number) => {
+    setBindings(prev => prev.map(b => b.id === id ? { ...b, position: { x, y } } : b))
+  }, [])
+
   // Handle save
   const handleSave = useCallback(() => {
     onSave(bindings)
@@ -239,52 +286,188 @@ export function LayerEditorDialog({
                   const config = TYPE_CONFIG[binding.icon || binding.type]
                   const Icon = config.icon
                   const isSelected = selectedBinding === binding.id
+                  const isEditingText = editingTextBinding === binding.id
+                  const isEditingIcon = editingIconBinding === binding.id
+                  const ds = binding.dataSource as any
 
                   return (
                     <div
                       key={binding.id}
                       className={cn(
-                        'group flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer',
+                        'group flex flex-col gap-1 p-2 rounded-lg border transition-all',
                         isSelected
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50 hover:bg-muted/50'
                       )}
-                      onClick={() => handleSelectBinding(binding.id)}
                     >
-                      <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+                      {/* Main row */}
+                      <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
 
-                      <div className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center',
-                        config.bgColor
-                      )}>
-                        <Icon className={cn('h-4 w-4', config.color)} />
-                      </div>
+                        <div className={cn(
+                          'w-8 h-8 rounded-full flex items-center justify-center shrink-0',
+                          config.bgColor
+                        )}>
+                          <Icon className={cn('h-4 w-4', config.color)} />
+                        </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{binding.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          {config.label}
-                          {binding.position && binding.position !== 'auto' && (
-                            <span> • ({binding.position.x.toFixed(0)}%, {binding.position.y.toFixed(0)}%)</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{binding.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {config.label}
+                            {binding.position && binding.position !== 'auto' && (
+                              <span> • ({binding.position.x.toFixed(0)}%, {binding.position.y.toFixed(0)}%)</span>
+                            )}
+                            {binding.position === 'auto' && <span> • 自动定位</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {/* Edit button for text/icon items */}
+                          {(binding.type === 'text' || binding.type === 'icon') && !isEditingText && !isEditingIcon && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (binding.type === 'text') setEditingTextBinding(binding.id)
+                                if (binding.type === 'icon') setEditingIconBinding(binding.id)
+                              }}
+                              title="编辑"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                            </Button>
                           )}
-                          {binding.position === 'auto' && <span> • 自动定位</span>}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleRemoveBinding(binding.id)
+                            }}
+                            title="删除"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleRemoveBinding(binding.id)
-                          }}
-                          title="删除"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
+                      {/* Text editing panel */}
+                      {isEditingText && (
+                        <div className="space-y-2 pl-10 pr-2">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">文本内容:</Label>
+                            <Input
+                              value={ds?.text || ''}
+                              onChange={(e) => handleTextChange(binding.id, e.target.value)}
+                              className="h-7 text-sm"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">名称:</Label>
+                            <Input
+                              value={binding.name}
+                              onChange={(e) => {
+                                setBindings(prev => prev.map(b => b.id === binding.id ? { ...b, name: e.target.value } : b))
+                              }}
+                              className="h-7 text-sm"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditingTextBinding(null)
+                              }}
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              完成
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Icon editing panel */}
+                      {isEditingIcon && (
+                        <div className="space-y-2 pl-10 pr-2">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">图标:</Label>
+                            <Input
+                              value={ds?.icon || ''}
+                              onChange={(e) => handleIconChange(binding.id, e.target.value)}
+                              className="h-7 text-sm flex-1"
+                              placeholder="输入图标"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {commonIcons.map(icon => (
+                              <button
+                                key={icon}
+                                type="button"
+                                className="w-8 h-8 flex items-center justify-center text-lg hover:bg-muted rounded border border-border"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleIconChange(binding.id, icon)
+                                }}
+                              >
+                                {icon}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">名称:</Label>
+                            <Input
+                              value={binding.name}
+                              onChange={(e) => {
+                                setBindings(prev => prev.map(b => b.id === binding.id ? { ...b, name: e.target.value } : b))
+                              }}
+                              className="h-7 text-sm"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditingIconBinding(null)
+                              }}
+                            >
+                              <X className="h-3 w-3 mr-1" />
+                              完成
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quick position buttons for selected item */}
+                      {isSelected && !isEditingText && !isEditingIcon && (
+                        <div className="pl-10 pr-2">
+                          <Label className="text-xs mb-1 block">快速定位:</Label>
+                          <div className="grid grid-cols-5 gap-1">
+                            {quickPositions.map((pos) => (
+                              <button
+                                key={pos.label}
+                                type="button"
+                                className="text-xs px-1 py-1 bg-muted hover:bg-accent rounded border border-border transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleQuickPosition(binding.id, pos.x, pos.y)
+                                }}
+                                title={pos.label}
+                              >
+                                {pos.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })

@@ -43,16 +43,6 @@ export interface ProgressBarProps {
   className?: string
 }
 
-function safeToNumber(value: unknown): number {
-  if (typeof value === 'number') return value
-  if (typeof value === 'string') {
-    const num = parseFloat(value)
-    return isNaN(num) ? 0 : num
-  }
-  if (typeof value === 'boolean') return value ? 1 : 0
-  return 0
-}
-
 // Map percentage to indicator state
 function getProgressState(percentage: number, warningThreshold: number, dangerThreshold: number): IndicatorState {
   if (percentage >= dangerThreshold) return 'error'
@@ -82,9 +72,19 @@ export function ProgressBar({
     fallback: propValue ?? 0,
   })
 
-  // Extract the latest value from telemetry data or use the data directly
-  const rawValue = error ? propValue : toLatestValue(data, propValue ?? 0)
-  const value = safeToNumber(typeof rawValue === 'number' ? rawValue : 0)
+  // Extract value using DataMapper for proper data handling
+  const value = useMemo(() => {
+    // If there's an error, fall back to prop value
+    if (error) return propValue ?? 0
+
+    // If no data source, use prop value
+    if (!hasDataSource) return propValue ?? 0
+
+    // Use DataMapper to extract numeric value from data
+    const extractedValue = DataMapper.extractValue(data, dataMapping)
+    return extractedValue
+  }, [data, error, hasDataSource, propValue, dataMapping])
+
   const percentage = Math.min(100, Math.max(0, (value / max) * 100))
 
   const sizeConfig = dashboardComponentSize[size]

@@ -521,3 +521,26 @@
     height: 0;
   }
 }
+
+/* ============================================================================
+ * Chat message prose text color override
+ * Fix prose class overriding parent text color
+ * ============================================================================ */
+
+/* User message bubble - override prose text color */
+.message-bubble-user .prose {
+  color: hsl(var(--msg-user-text)) !important;
+}
+.message-bubble-user .prose :where(p, li, span, strong),
+.message-bubble-user .prose :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit !important;
+}
+
+/* AI message bubble text color */
+.message-bubble-assistant .prose {
+  color: hsl(var(--msg-ai-text)) !important;
+}
+.message-bubble-assistant .prose :where(p, li, span, strong),
+.message-bubble-assistant .prose :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit !important;
+}

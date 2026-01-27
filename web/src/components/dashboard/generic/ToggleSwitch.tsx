@@ -19,10 +19,14 @@ export interface ToggleSwitchProps {
 
   // Display
   title?: string
+  label?: string  // Alternative to title, displayed in style section
   size?: 'sm' | 'md' | 'lg'
 
   // Initial state for display before command response
   initialState?: boolean
+
+  // Edit mode - disable click when editing dashboard
+  editMode?: boolean
 
   disabled?: boolean
   className?: string
@@ -43,6 +47,7 @@ export function ToggleSwitch({
   title,
   size = 'md',
   initialState = false,
+  editMode = false,
   disabled = false,
   className,
 }: ToggleSwitchProps) {
@@ -55,6 +60,8 @@ export function ToggleSwitch({
   const hasCommand = dataSource?.type === 'command'
 
   const handleClick = async () => {
+    // Don't execute click in edit mode - allows dragging
+    if (editMode) return
     if (disabled || loading || sending || !hasCommand || !sendCommand) return
 
     // Send toggle command with new state
@@ -77,15 +84,16 @@ export function ToggleSwitch({
   return (
     <button
       onClick={handleClick}
-      disabled={disabled || loading || sending || !hasCommand}
+      disabled={disabled || loading || sending || !hasCommand || editMode}
       className={cn(
         dashboardCardBase,
         'flex-row items-center',
         config.contentGap,
         config.padding,
         'transition-all duration-200',
-        !disabled && !sending && hasCommand && 'hover:bg-accent/50',
-        (disabled || sending || !hasCommand) && 'opacity-50 cursor-not-allowed',
+        !disabled && !sending && hasCommand && !editMode && 'hover:bg-accent/50',
+        (disabled || sending || !hasCommand || editMode) && 'opacity-50 cursor-not-allowed',
+        editMode && 'pointer-events-none',  // Allow dragging in edit mode
         className
       )}
     >

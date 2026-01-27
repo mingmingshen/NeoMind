@@ -152,5 +152,16 @@ export default {
       },
     },
   },
-  plugins: [require("@tailwindcss/typography")],
+  plugins: [
+    require("@tailwindcss/typography")({
+      theme: {
+        extend: {
+          colors: {
+            // Override prose default body color to use current color
+            prose: "var(--foreground)",
+          },
+        },
+      },
+    }),
+  ],
 }

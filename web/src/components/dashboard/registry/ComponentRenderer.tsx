@@ -21,6 +21,7 @@ const ValueCard = lazy(() => import('../generic/ValueCard').then(m => ({ default
 const LEDIndicator = lazy(() => import('../generic/LEDIndicator').then(m => ({ default: m.LEDIndicator })))
 const Sparkline = lazy(() => import('../generic/Sparkline').then(m => ({ default: m.Sparkline })))
 const ProgressBar = lazy(() => import('../generic/ProgressBar').then(m => ({ default: m.ProgressBar })))
+const AgentStatusCard = lazy(() => import('../generic/AgentStatusCard').then(m => ({ default: m.AgentStatusCard })))
 
 // Charts
 const LineChart = lazy(() => import('../generic/LineChart').then(m => ({ default: m.LineChart })))
@@ -52,6 +53,7 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
   'led-indicator': LEDIndicator,
   'sparkline': Sparkline,
   'progress-bar': ProgressBar,
+  'agent-status-card': AgentStatusCard,
 
   // Charts
   'line-chart': LineChart,
@@ -162,9 +164,8 @@ export default function ComponentRenderer({
   const dataSource = (component as any).dataSource
   const display = (component as any).display
 
-  // Build props for the component
+  // Build props for the component (NOT including key - key must be passed directly)
   const props = {
-    key: component.id,
     dataSource,
     ...config,
     ...display,
@@ -178,7 +179,7 @@ export default function ComponentRenderer({
 
   return (
     <Suspense fallback={<ComponentSkeleton meta={meta} className={className} />}>
-      <Component {...props} />
+      <Component key={component.id} {...props} />
     </Suspense>
   )
 }

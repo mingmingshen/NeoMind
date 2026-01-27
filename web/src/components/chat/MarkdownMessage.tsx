@@ -57,9 +57,9 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
   return (
     <div className={cn(
       // Base prose classes
-      variant === 'user'
-        ? "prose prose-sm prose-invert max-w-none"
-        : "prose prose-sm dark:prose-invert max-w-none",
+      "prose prose-sm dark:prose-invert max-w-none",
+      // Override prose text color to inherit from parent
+      variant === 'user' && "prose-p:text-inherit prose-li:text-inherit prose-span:text-inherit prose-strong:text-inherit",
       "prose-p:leading-relaxed prose-p:my-1",
       "prose-headings:font-semibold prose-headings:my-2",
       "prose-h1:text-base prose-h2:text-sm prose-h3:text-xs",

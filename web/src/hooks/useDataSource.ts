@@ -407,8 +407,15 @@ export function useDataSource<T = unknown>(
   }
 ): UseDataSourceResult<T> {
   const { enabled = true, transform, fallback, preserveMultiple = false } = options ?? {}
+
+  // Normalize data source immediately to check if we have any
+  const hasDataSourceValue = dataSource !== undefined &&
+                             dataSource !== null &&
+                             (Array.isArray(dataSource) ? dataSource.length > 0 : true)
+
   const [data, setData] = useState<T | null>(fallback ?? null)
-  const [loading, setLoading] = useState(true)
+  // Start with loading=false if there's no data source or we're disabled
+  const [loading, setLoading] = useState(!enabled || !hasDataSourceValue ? false : true)
   const [error, setError] = useState<string | null>(null)
   const [lastUpdate, setLastUpdate] = useState<number | null>(null)
   const [sending, setSending] = useState(false)
@@ -433,6 +440,10 @@ export function useDataSource<T = unknown>(
 
   const dataSourcesRef = useRef(dataSources)
   dataSourcesRef.current = dataSources
+
+  // Ref to track if initial telemetry fetch has completed
+  // This prevents showing loading state on refreshes/updates
+  const initialTelemetryFetchDoneRef = useRef(false)
 
   // Check for command source
   const hasCommandSource = dataSources.some((ds) => ds.type === 'command')
@@ -710,7 +721,17 @@ export function useDataSource<T = unknown>(
 
   // Subscribe to store changes
   useEffect(() => {
-    if (dataSources.length === 0 || !enabled) {
+    if (dataSources.length === 0) {
+      // No data sources - ensure fallback data is set and loading is cleared
+      const { fallback: fallbackVal } = optionsRef.current
+      if (fallbackVal !== undefined) {
+        setData(fallbackVal)
+      }
+      setLoading(false)
+      return
+    }
+
+    if (!enabled) {
       setLoading(false)
       return
     }
@@ -1097,12 +1118,10 @@ export function useDataSource<T = unknown>(
       return
     }
 
-    // Track if initial fetch has completed to avoid showing loading on refreshes
-    let initialFetchCompleted = false
-
     const fetchTelemetryData = async () => {
       // Only show loading state on initial fetch, not on interval refreshes
-      if (!initialFetchCompleted) {
+      // Use ref to persist state across effect re-runs
+      if (!initialTelemetryFetchDoneRef.current) {
         setLoading(true)
       }
       setError(null)
@@ -1119,7 +1138,7 @@ export function useDataSource<T = unknown>(
 
             // Bypass cache on initial fetch to ensure we get the latest data
             // This is especially important for image components that need the most recent value
-            const bypassCache = !initialFetchCompleted
+            const bypassCache = !initialTelemetryFetchDoneRef.current
 
             const response = await fetchHistoricalTelemetry(
               ds.deviceId,
@@ -1215,14 +1234,14 @@ export function useDataSource<T = unknown>(
         const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
         setData(transformedData)
         setLastUpdate(Date.now())
-        initialFetchCompleted = true
+        initialTelemetryFetchDoneRef.current = true
       } catch (err) {
         console.error('[useDataSource] Telemetry fetch error:', err)
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch telemetry'
         setError(errorMessage)
         const fallbackData = optionsRef.current.fallback ?? []
         setData(fallbackData as T)
-        initialFetchCompleted = true
+        initialTelemetryFetchDoneRef.current = true
       } finally {
         // Always set loading to false, even if there's an error
         setLoading(false)

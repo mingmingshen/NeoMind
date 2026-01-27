@@ -161,13 +161,18 @@ export function ComponentConfigDialog({
   const handleDataTransformChange = (updates: Partial<DataSource>) => {
     if (!previewDataSource) return
 
-    // Merge updates with existing data source
-    const updatedDataSource: DataSource = {
-      ...previewDataSource,
-      ...updates,
-    }
+    // Handle both single DataSource and DataSource[] (multiple sources)
+    const sources = normalizeDataSource(previewDataSource)
 
-    dataSourceProps?.onChange(updatedDataSource as any)
+    // Apply transform updates to all sources
+    const updatedSources = sources.map(source => ({
+      ...source,
+      ...updates,
+    }))
+
+    // Return in the same format as input (array or single)
+    const result = Array.isArray(previewDataSource) ? updatedSources : updatedSources[0]
+    dataSourceProps?.onChange(result as any)
   }
 
   // Update style sections to remove data-source section from legacy configs

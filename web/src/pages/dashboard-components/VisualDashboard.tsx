@@ -443,33 +443,11 @@ function getChartHeight(component: DashboardComponent): number | 'auto' {
   return calculatedHeight
 }
 
-function renderDashboardComponent(component: DashboardComponent, devices: Device[]) {
+function renderDashboardComponent(component: DashboardComponent, devices: Device[], editMode?: boolean) {
   const config = (component as any).config || {}
   // dataSource is a separate property on GenericComponent, not part of config
   const dataSource = (component as any).dataSource
 
-  // Debug log for value-card to check dataSource
-  if (component.type === 'value-card') {
-    console.log('=== renderDashboardComponent value-card ===')
-    console.log('component.id:', component.id)
-    console.log('component.type:', component.type)
-    console.log('dataSource:', dataSource)
-    console.log('config:', config)
-    console.log('devices.length:', devices.length)
-    console.log('=====================================')
-  }
-
-  // Debug: log bindings for map-display
-  if (component.type === 'map-display') {
-    console.log('=== renderDashboardComponent map-display ===')
-    console.log('component.id:', component.id)
-    console.log('config.bindings:', config.bindings)
-    console.log('config.bindings length:', config.bindings?.length)
-    console.log('config.keys:', Object.keys(config))
-    console.log('config:', config)
-    console.log('full component:', component)
-    console.log('======================================')
-  }
   const commonProps = getCommonDisplayProps(component)
   const spreadableProps = getSpreadableProps(component.type, commonProps)
 
@@ -551,6 +529,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           variant={config.variant || 'default'}
           warningThreshold={config.warningThreshold}
           dangerThreshold={config.dangerThreshold}
+          dataMapping={config.dataMapping}
           showCard={config.showCard ?? true}
         />
       )
@@ -655,6 +634,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           dataSource={dataSource}
           title={config.label || commonProps.title}
           initialState={config.initialState ?? false}
+          editMode={editMode}
         />
       )
 
@@ -846,13 +826,6 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
       )
 
     case 'custom-layer':
-      // Debug log
-      console.log('=== renderDashboardComponent custom-layer ===')
-      console.log('component.id:', component.id)
-      console.log('config.bindings:', config.bindings)
-      console.log('config.bindings length:', config.bindings?.length)
-      console.log('config:', config)
-      console.log('=====================================')
       return (
         <CustomLayer
           {...spreadableProps}
@@ -1099,7 +1072,6 @@ export function VisualDashboard() {
       const prev = prevComponents[i]
 
       if (!prev) {
-        console.log('[componentsStableKey] New component detected:', curr.id)
         prevComponentsRef.current = components
         return `new-${curr.id}-${curr.type}-${Date.now()}-${configVersion}`
       }
@@ -1114,19 +1086,12 @@ export function VisualDashboard() {
           curr.position.h !== prev.position.h ||
           JSON.stringify(curr.config) !== JSON.stringify(prev.config) ||
           JSON.stringify((curr as any).dataSource) !== JSON.stringify((prev as any).dataSource)) {
-        console.log('[componentsStableKey] Component changed:', curr.id)
-        if (JSON.stringify(curr.config) !== JSON.stringify(prev.config)) {
-          console.log('[componentsStableKey] - Config changed')
-          console.log('[componentsStableKey] - curr.config:', curr.config)
-          console.log('[componentsStableKey] - prev.config:', prev.config)
-        }
         prevComponentsRef.current = components
         return `changed-${curr.id}-${Date.now()}-${configVersion}`
       }
     }
 
     // No actual changes detected - return stable key with version
-    console.log('[componentsStableKey] No changes detected, returning stable key')
     return `stable-${components.length}-${configVersion}`
   }, [currentDashboard?.components, configVersion])
 
@@ -1496,12 +1461,9 @@ export function VisualDashboard() {
   // Note: handleOpenConfig, removeComponent, duplicateComponent are NOT dependencies
   // because they don't affect the rendered output structure, only event handlers
   // devices.length is included to ensure re-render when devices are initially loaded
-  // IMPORTANT: Use currentDashboard directly from store to avoid stale closure issues
+  // IMPORTANT: Use currentDashboard from props (reactive) to ensure updates are reflected
   const gridComponents = useMemo(() => {
-    // Get fresh dashboard reference from store to avoid stale data
-    const freshDashboard = useStore.getState().currentDashboard
-
-    return freshDashboard?.components.map((component) => {
+    return currentDashboard?.components.map((component) => {
       // Get dataSource from component (it should be a separate property, not in config)
       const componentDataSource = (component as any).dataSource
 
@@ -1517,7 +1479,7 @@ export function VisualDashboard() {
             onRemove={removeComponent}
             onDuplicate={duplicateComponent}
           >
-            {renderDashboardComponent(component, devices)}
+            {renderDashboardComponent(component, devices, editMode)}
           </ComponentWrapper>
         ),
       }
@@ -2206,6 +2168,17 @@ export function VisualDashboard() {
                     进度条颜色会根据阈值自动变化：正常 → 警告 → 危险
                   </p>
 
+                  <Field>
+                    <Label>最大值</Label>
+                    <Input
+                      type="number"
+                      value={config.max ?? 100}
+                      onChange={(e) => updateConfig('max')(Number(e.target.value))}
+                      min={1}
+                      className="h-9"
+                    />
+                  </Field>
+
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -2219,7 +2192,21 @@ export function VisualDashboard() {
               ),
             },
           ],
-          displaySections: [],
+          displaySections: [
+            // Data mapping configuration in display section
+            {
+              type: 'custom' as const,
+              render: () => (
+                <DataMappingConfig
+                  dataMapping={config.dataMapping as SingleValueMappingConfig}
+                  onChange={updateDataMapping}
+                  mappingType="single"
+                  label="数据格式"
+                  readonly={!config.dataSource}
+                />
+              ),
+            },
+          ],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2228,36 +2215,6 @@ export function VisualDashboard() {
                 onChange: updateDataSource,
                 allowedTypes: ['device-metric'],
               },
-            },
-            {
-              type: 'custom' as const,
-              render: () => (
-                <div className="space-y-3">
-                  <Field>
-                    <Label>数值（静态）</Label>
-                    <input
-                      type="number"
-                      value={config.value ?? 0}
-                      onChange={(e) => updateConfig('value')(Number(e.target.value))}
-                      min={0}
-                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
-                      disabled={!!config.dataSource}
-                    />
-                    <p className="text-xs text-muted-foreground">绑定数据源后自动禁用</p>
-                  </Field>
-
-                  <Field>
-                    <Label>最大值</Label>
-                    <input
-                      type="number"
-                      value={config.max ?? 100}
-                      onChange={(e) => updateConfig('max')(Number(e.target.value))}
-                      min={1}
-                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
-                    />
-                  </Field>
-                </div>
-              ),
             },
           ],
         }
@@ -3894,9 +3851,6 @@ export function VisualDashboard() {
                 dataSource: config.bindings as any,
                 onChange: (newDataSources: DataSourceOrList | undefined) => {
                   // Convert dataSources to LayerBinding format
-                  console.log('=== Custom Layer dataSource onChange ===')
-                  console.log('newDataSources:', newDataSources)
-
                   // Handle both single object and array
                   const sourcesArray = newDataSources
                     ? Array.isArray(newDataSources)
@@ -4106,21 +4060,77 @@ export function VisualDashboard() {
                         管理图层上的设备、指标、指令等项
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="default"
-                      size="sm"
-                      onClick={() => {
-                        const latestDashboard = useStore.getState().currentDashboard
-                        const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
-                        let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
-                        setLayerEditorBindings(latestBindings)
-                        setLayerEditorOpen(true)
-                      }}
-                    >
-                      <Layers className="h-4 w-4 mr-1" />
-                      打开图层编辑器
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const latestDashboard = useStore.getState().currentDashboard
+                          const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                          let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+
+                          // Create new text binding
+                          const newBinding: LayerBinding = {
+                            id: `text-${Date.now()}`,
+                            type: 'text',
+                            icon: 'text',
+                            name: '新文本',
+                            position: { x: 50, y: 50 },
+                            dataSource: { type: 'static', text: '文本内容' },
+                          }
+
+                          updateConfig('bindings')([...latestBindings, newBinding])
+                          setLayerEditorBindings([...latestBindings, newBinding])
+                          setLayerEditorOpen(true)
+                        }}
+                      >
+                        <Type className="h-4 w-4 mr-1" />
+                        添加文本
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const latestDashboard = useStore.getState().currentDashboard
+                          const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                          let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+
+                          // Create new icon binding
+                          const newBinding: LayerBinding = {
+                            id: `icon-${Date.now()}`,
+                            type: 'icon',
+                            icon: 'icon',
+                            name: '新图标',
+                            position: { x: 50, y: 50 },
+                            dataSource: { type: 'static', icon: '⭐' },
+                          }
+
+                          updateConfig('bindings')([...latestBindings, newBinding])
+                          setLayerEditorBindings([...latestBindings, newBinding])
+                          setLayerEditorOpen(true)
+                        }}
+                      >
+                        <Sparkles className="h-4 w-4 mr-1" />
+                        添加图标
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        onClick={() => {
+                          const latestDashboard = useStore.getState().currentDashboard
+                          const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                          let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+                          setLayerEditorBindings(latestBindings)
+                          setLayerEditorOpen(true)
+                        }}
+                      >
+                        <Layers className="h-4 w-4 mr-1" />
+                        打开图层编辑器
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Bindings List - Grouped by Type */}

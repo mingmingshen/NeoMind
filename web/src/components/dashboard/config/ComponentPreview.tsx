@@ -160,8 +160,12 @@ export const ComponentPreview = memo(function ComponentPreview({
 
   // Update prevDataRef when we successfully get data
   useEffect(() => {
-    if (!loading && !error && data !== null && data !== undefined) {
-      prevDataRef.current = data
+    if (!loading && !error) {
+      if (data !== null && data !== undefined) {
+        prevDataRef.current = data
+      }
+      // Mark as loaded even if data is null (e.g., when no dataSource)
+      // This prevents showing loading skeleton indefinitely
       hasLoadedOnceRef.current = true
     }
   }, [data, loading, error])

@@ -120,6 +120,12 @@ export interface DataSource {
   // Current value for command sources (for display)
   currentValue?: unknown
 
+  // === CustomLayer specific fields ===
+  // Text content for text-type layer items
+  text?: string
+  // Icon content for icon-type layer items
+  icon?: string
+
   // === Telemetry fields ===
   // Legacy: simple time range in hours (kept for backward compatibility)
   timeRange?: number
@@ -174,6 +180,7 @@ export type GenericComponentType =
   | 'led-indicator'
   | 'sparkline'
   | 'progress-bar'
+  | 'agent-status-card'
   // Charts
   | 'line-chart'
   | 'area-chart'
@@ -193,10 +200,9 @@ export type GenericComponentType =
 
 /**
  * Business Component Types
- * NeoTalk-specific business components
+ * NeoTalk-specific business components (not yet implemented)
  */
 export type BusinessComponentType =
-  | 'agent-status-card'
   | 'decision-list'
   | 'device-control'
   | 'rule-status-grid'
@@ -321,6 +327,7 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'led-indicator': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 3, maxH: 2, preserveAspect: true },
   'sparkline': { minW: 2, minH: 1, defaultW: 4, defaultH: 2, maxW: 8, maxH: 3 },
   'progress-bar': { minW: 2, minH: 1, defaultW: 4, defaultH: 1, maxW: 12, maxH: 3 },
+  'agent-status-card': { minW: 2, minH: 2, defaultW: 3, defaultH: 3, maxW: 6, maxH: 5 },
 
   // Charts - slightly larger minimum for readability
   'line-chart': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
@@ -343,7 +350,6 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'custom-layer': { minW: 2, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
 
   // Business Components (deleted but kept for backward compatibility)
-  'agent-status-card': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 6, preserveAspect: true },
   'decision-list': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 10 },
   'device-control': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 6, maxH: 5 },
   'rule-status-grid': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
@@ -379,7 +385,7 @@ export type DashboardComponent = GenericComponent | BusinessComponent
 // Type guards
 export function isGenericComponent(component: DashboardComponent): component is GenericComponent {
   const genericTypes: GenericComponentType[] = [
-    'value-card', 'led-indicator', 'sparkline', 'progress-bar',
+    'value-card', 'led-indicator', 'sparkline', 'progress-bar', 'agent-status-card',
     'line-chart', 'area-chart', 'bar-chart', 'pie-chart',
     'toggle-switch',
     'image-display', 'image-history', 'web-display', 'markdown-display',

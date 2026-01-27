@@ -7,7 +7,7 @@
  * Data binding support similar to Map component with typed bindings.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -493,34 +493,57 @@ export function CustomLayer({
   const devices = useStore(state => state.devices)
   const sendCommand = useStore(state => state.sendCommand)
 
-  // Convert bindings to layer items - similar to MapDisplay's convertBindingsToMarkers
-  const convertBindingsToLayerItems = useCallback((): LayerItem[] => {
+  // Store devices in a ref to avoid unnecessary recalculations
+  // Only update when devices actually change (by content, not reference)
+  const devicesRef = useRef<typeof devices>([])
+
+  // Use a separate ref to track device IDs for comparison
+  const deviceIdsRef = useRef<string[]>([])
+  const currentDeviceIds = devices.map(d => d.id)
+
+  // Only update devicesRef if device IDs actually changed
+  const deviceIdsChanged = currentDeviceIds.length !== deviceIdsRef.current.length ||
+                      currentDeviceIds.some((id, i) => id !== deviceIdsRef.current[i])
+
+  if (deviceIdsChanged) {
+    devicesRef.current = devices
+    deviceIdsRef.current = currentDeviceIds
+  }
+
+  // Data source hook for backward compatibility
+  const { data, loading, error } = useDataSource<LayerItem[]>(dataSource, {
+    fallback: propItems,
+  })
+
+  // Helper functions for device data (use ref to avoid dependency on devices)
+  const getDeviceName = useCallback((deviceId: string) => {
+    const device = devicesRef.current.find(d => d.id === deviceId)
+    return device?.name || deviceId
+  }, [])
+
+  const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
+    const device = devicesRef.current.find(d => d.id === deviceId)
+    if (!device) return undefined
+    return device.online ? 'online' : 'offline'
+  }, [])
+
+  const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
+    const device = devicesRef.current.find(d => d.id === deviceId)
+    if (!device?.current_values) return undefined
+    const value = device.current_values[metricId]
+    if (value !== undefined && value !== null) {
+      return typeof value === 'number' ? value : String(value)
+    }
+    return undefined
+  }, [])
+
+  // Convert bindings to layer items - only depends on bindings, not devices
+  const bindingsItems = useMemo((): LayerItem[] => {
     if (!bindings || bindings.length === 0) return []
-
-    const getDeviceName = (deviceId: string) => {
-      const device = devices.find(d => d.id === deviceId)
-      return device?.name || deviceId
-    }
-
-    const getDeviceStatus = (deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
-      const device = devices.find(d => d.id === deviceId)
-      if (!device) return undefined
-      return device.online ? 'online' : 'offline'
-    }
-
-    const getDeviceMetricValue = (deviceId: string, metricId: string): string | number | undefined => {
-      const device = devices.find(d => d.id === deviceId)
-      if (!device?.current_values) return undefined
-      const value = device.current_values[metricId]
-      if (value !== undefined && value !== null) {
-        return typeof value === 'number' ? value : String(value)
-      }
-      return undefined
-    }
 
     return bindings.map((binding): LayerItem => {
       const position = binding.position === 'auto' || !binding.position
-        ? { x: 50, y: 50 } // Default center position
+        ? { x: 50, y: 50 }
         : binding.position
 
       const ds = binding.dataSource as any
@@ -531,7 +554,6 @@ export function CustomLayer({
         type: binding.type || binding.icon || 'text',
         position,
         label: binding.name,
-        // Apply binding styling
         color: binding.color,
         backgroundColor: binding.backgroundColor,
         fontSize: binding.fontSize,
@@ -541,13 +563,11 @@ export function CustomLayer({
         draggable: true,
       }
 
-      // Set type-specific fields
       if (binding.type === 'metric') {
         item.deviceId = deviceId
         item.metricId = ds?.metricId || ds?.property
         item.deviceName = getDeviceName(deviceId || '')
         item.metricName = ds?.metricId || ds?.property
-        // Get current metric value
         const metricValue = getDeviceMetricValue(deviceId || '', item.metricId || '')
         item.value = metricValue !== undefined ? metricValue : '--'
       } else if (binding.type === 'command') {
@@ -566,45 +586,35 @@ export function CustomLayer({
 
       return item
     })
-  }, [bindings, devices])
-
-  // Data source hook for backward compatibility
-  const { data, loading, error } = useDataSource<LayerItem[]>(dataSource, {
-    fallback: propItems,
-  })
-
-  // Determine final items with priority system:
-  // 1. bindings (highest priority - contains type info from config)
-  // 2. dataSource data (for backward compatibility)
-  // 3. propItems (fallback)
-  const bindingsItems = convertBindingsToLayerItems()
+  }, [bindings, getDeviceName, getDeviceStatus, getDeviceMetricValue])
   const sourceItems = error ? propItems : (data ?? propItems)
-  const items = bindings && bindings.length > 0
-    ? bindingsItems
-    : !dataSource
-      ? propItems
-      : sourceItems
+
+  // Use useMemo to stabilize items reference and prevent infinite loops
+  const items = useMemo(() => {
+    if (bindings && bindings.length > 0) {
+      return bindingsItems
+    }
+    if (!dataSource) {
+      return propItems
+    }
+    return sourceItems
+  }, [bindings, bindingsItems, dataSource, propItems, sourceItems])
 
   const [isEditing, setIsEditing] = useState(editable)
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+
   // Only use internalItems state when NOT using bindings (for dataSource/propItems mode)
   // When using bindings, always use the computed items directly to avoid sync issues
-  const useInternalItems = !(bindings && bindings.length > 0)
-  const [internalItems, setInternalItems] = useState<LayerItem[]>(items)
+  // Memoize this to prevent unnecessary re-renders
+  const useInternalItems = useMemo(() => !(bindings && bindings.length > 0), [bindings])
+  const [internalItems, setInternalItems] = useState<LayerItem[]>([])
 
   // The items to use for rendering - direct from bindings or from internal state
-  const renderItems = useInternalItems ? internalItems : items
-
-  // Debug log for render (after all state is initialized)
-  console.log('[CustomLayer] Render:', {
-    bindingsCount: bindings?.length || 0,
-    devicesCount: devices.length,
-    deviceIds: devices.map(d => d.id),
-    hasBindings: !!(bindings && bindings.length > 0),
-    useInternalItems,
-    renderItemsCount: renderItems.length,
-  })
+  // Use useMemo to prevent unnecessary re-renders
+  const renderItems = useMemo(() => {
+    return useInternalItems ? internalItems : items
+  }, [useInternalItems, internalItems, items])
 
   // Sync isEditing when editable prop changes (e.g., after configuration update)
   useEffect(() => {
@@ -612,18 +622,56 @@ export function CustomLayer({
   }, [editable])
 
   // Sync items when props change (only for dataSource/propItems mode)
+  // Use ref to track previous items and avoid unnecessary updates
+  const prevItemsRef = useRef<LayerItem[] | null>(null)
+
   useEffect(() => {
-    if (useInternalItems) {
-      setInternalItems(items)
+    if (!useInternalItems) {
+      // In bindings mode, clear internal items to free memory
+      if (internalItems.length > 0) {
+        setInternalItems([])
+      }
+      prevItemsRef.current = null
+      return
     }
-  }, [items, useInternalItems])
+
+    // Only update if items actually changed (compare by reference or content)
+    const itemsChanged = prevItemsRef.current !== items &&
+                        (prevItemsRef.current === null ||
+                         prevItemsRef.current.length !== items.length ||
+                         prevItemsRef.current.some((item, i) => item.id !== items[i]?.id))
+
+    if (itemsChanged) {
+      setInternalItems(items)
+      prevItemsRef.current = items
+    }
+  }, [items, useInternalItems, internalItems.length])
 
   // Real-time updates for device/metric bindings (only for dataSource/propItems mode)
   // In bindings mode, items are computed directly from bindings/devices, so no manual update needed
+  const prevDeviceIdsRef = useRef<string[]>([])
+
   useEffect(() => {
     if (!bindings || bindings.length === 0) return
     // Skip this effect in bindings mode - items are computed directly
     if (!useInternalItems) return
+
+    // Check if devices actually changed (by ID, not reference)
+    const currentDeviceIds = devices.map(d => d.id)
+    const prevDeviceIds = prevDeviceIdsRef.current
+    const devicesChanged = currentDeviceIds.length !== prevDeviceIds.length ||
+                        currentDeviceIds.some((id, i) => id !== prevDeviceIds[i])
+
+    if (!devicesChanged) {
+      // Devices haven't changed, skip update
+      // But check if any current_values changed for relevant bindings
+      const hasMetricBindings = bindings.some(b => b.type === 'metric')
+      const hasDeviceBindings = bindings.some(b => b.type === 'device')
+
+      if (!hasMetricBindings && !hasDeviceBindings) return
+    }
+
+    prevDeviceIdsRef.current = currentDeviceIds
 
     // Update items with fresh data from store
     const updateItemFromDevice = (binding: LayerBinding) => {
@@ -660,16 +708,33 @@ export function CustomLayer({
 
     // Update each binding
     bindings.forEach(updateItemFromDevice)
-  }, [devices, bindings])
+  }, [devices, bindings, useInternalItems])
 
   const sizeConfig = dashboardComponentSize[size]
 
-  // Notify parent of items change
+  // Notify parent of items change (debounced to avoid rapid updates)
+  // Only notify in dataSource/propItems mode, not in bindings mode
+  const prevRenderItemsRef = useRef<LayerItem[] | null>(null)
+
   useEffect(() => {
-    if (onItemsChange) {
+    if (!useInternalItems || !onItemsChange) return
+
+    // Only notify if renderItems actually changed
+    const renderItemsChanged = prevRenderItemsRef.current !== renderItems &&
+                              (prevRenderItemsRef.current === null ||
+                               prevRenderItemsRef.current.length !== renderItems.length ||
+                               prevRenderItemsRef.current.some((item, i) => item.id !== renderItems[i]?.id || item.position.x !== renderItems[i]?.position.x || item.position.y !== renderItems[i]?.position.y))
+
+    if (!renderItemsChanged) return
+
+    // Use a small timeout to batch rapid changes
+    const timeoutId = setTimeout(() => {
       onItemsChange(renderItems)
-    }
-  }, [renderItems, onItemsChange])
+      prevRenderItemsRef.current = renderItems
+    }, 100)
+
+    return () => clearTimeout(timeoutId)
+  }, [renderItems, onItemsChange, useInternalItems])
 
   // Handle item position drag - also update bindings
   const handleItemDrag = useCallback((item: LayerItem, newPosition: { x: number; y: number }) => {
