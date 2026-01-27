@@ -1919,6 +1919,10 @@ export interface DashboardComponentResponse {
     y: number
     w: number
     h: number
+    min_w?: number
+    min_h?: number
+    max_w?: number
+    max_h?: number
   }
   title?: string
   config?: Record<string, unknown>

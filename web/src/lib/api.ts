@@ -1604,7 +1604,7 @@ export const api = {
    * POST /api/dashboards
    */
   createDashboard: (dashboard: CreateDashboardRequest) =>
-    fetchAPI<{ id: string; name: string }>('/dashboards', {
+    fetchAPI<DashboardResponse>('/dashboards', {
       method: 'POST',
       body: JSON.stringify(dashboard),
     }),
@@ -1614,7 +1614,7 @@ export const api = {
    * PUT /api/dashboards/:id
    */
   updateDashboard: (id: string, dashboard: UpdateDashboardRequest) =>
-    fetchAPI<{ id: string }>(`/dashboards/${id}`, {
+    fetchAPI<DashboardResponse>(`/dashboards/${id}`, {
       method: 'PUT',
       body: JSON.stringify(dashboard),
     }),
