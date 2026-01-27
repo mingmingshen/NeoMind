@@ -88,7 +88,7 @@ function selectedItemsToDataSource(
     const [type, ...parts] = item.split(':')
 
     if (type === 'device-metric' && parts.length >= 2) {
-      return { type: 'device', deviceId: parts[0], property: parts[1] }
+      return { type: 'metric', deviceId: parts[0], metricId: parts[1], property: parts[1] }
     } else if (type === 'device-command' && parts.length >= 2) {
       return { type: 'command', deviceId: parts[0], command: parts[1] }
     } else if (type === 'device-info' && parts.length >= 2) {
@@ -103,7 +103,7 @@ function selectedItemsToDataSource(
     const [type, ...parts] = item.split(':')
 
     if (type === 'device-metric' && parts.length >= 2) {
-      sources.push({ type: 'device', deviceId: parts[0], property: parts[1] })
+      sources.push({ type: 'metric', deviceId: parts[0], metricId: parts[1], property: parts[1] })
     } else if (type === 'device-command' && parts.length >= 2) {
       sources.push({ type: 'command', deviceId: parts[0], command: parts[1] })
     } else if (type === 'device-info' && parts.length >= 2) {
@@ -168,8 +168,10 @@ export function DataSourceSidebar({
       const newSelectedItems = new Set<SelectedItem>()
 
       for (const ds of currentDataSources) {
-        if (ds.type === 'device' && ds.deviceId && ds.property) {
-          newSelectedItems.add(`device-metric:${ds.deviceId}:${ds.property}`)
+        // Handle metric type (new) or device type with property (legacy)
+        if ((ds.type === 'metric' || ds.type === 'device') && ds.deviceId && (ds.metricId || ds.property)) {
+          const property = ds.metricId || ds.property
+          newSelectedItems.add(`device-metric:${ds.deviceId}:${property}`)
         } else if (ds.type === 'command' && ds.deviceId && ds.command) {
           newSelectedItems.add(`device-command:${ds.deviceId}:${ds.command}`)
         } else if (ds.type === 'device-info' && ds.deviceId && ds.infoProperty) {

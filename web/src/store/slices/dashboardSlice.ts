@@ -184,22 +184,31 @@ export const createDashboardSlice: StateCreator<
 
           // Set current dashboard if not set
           const savedId = (storage as any).getCurrentDashboardId?.()
-          if (!get().currentDashboardId && result.data.length > 0) {
-            const defaultDashboard = result.data.find((d) => d.isDefault) || result.data[0]
-            if (defaultDashboard) {
-              set({
-                currentDashboardId: defaultDashboard.id,
-                currentDashboard: defaultDashboard,
-              })
-            }
-          } else if (savedId) {
+          const currentState = get()
+
+          // Determine which dashboard to set as current
+          let dashboardToSet: Dashboard | null = null
+
+          if (savedId && result.data.length > 0) {
+            // First try to use the saved ID from localStorage
             const savedDashboard = result.data.find((d) => d.id === savedId)
             if (savedDashboard) {
-              set({
-                currentDashboardId: savedDashboard.id,
-                currentDashboard: savedDashboard,
-              })
+              dashboardToSet = savedDashboard
             }
+          }
+
+          // If no saved dashboard or saved ID not found, use default or first
+          if (!dashboardToSet && !currentState.currentDashboardId && result.data.length > 0) {
+            dashboardToSet = result.data.find((d) => d.isDefault) || result.data[0]
+          }
+
+          // Only update if we found a dashboard and don't already have one set
+          if (dashboardToSet && !currentState.currentDashboard) {
+            set({
+              currentDashboardId: dashboardToSet.id,
+              currentDashboard: dashboardToSet,
+            })
+            console.log('[DashboardSlice] Set current dashboard:', dashboardToSet.name)
           }
         }
       } finally {

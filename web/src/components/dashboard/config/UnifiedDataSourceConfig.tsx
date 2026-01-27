@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database, MapPin } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -30,8 +30,8 @@ export interface UnifiedDataSourceConfigProps {
   disabled?: boolean
 }
 
-type CategoryType = 'device-metric' | 'device-command'
-type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device-info:deviceId:property"
+type CategoryType = 'device-metric' | 'device-command' | 'device'
+type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "device-info:deviceId:property"
 
 // ============================================================================
 // Constants
@@ -50,6 +50,7 @@ const DEVICE_INFO_PROPERTIES = [
 
 // Category configuration
 const CATEGORIES = [
+  { id: 'device' as const, name: '设备', icon: MapPin, description: '设备位置标记' },
   { id: 'device-metric' as const, name: '指标', icon: Server, description: '设备的实时数据点' },
   { id: 'device-command' as const, name: '指令', icon: Zap, description: '控制设备的操作' },
 ]
@@ -62,23 +63,26 @@ const CATEGORIES = [
 function normalizeAllowedTypes(
   allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device-metric', 'device-command']
+  if (!allowedTypes) return ['device', 'device-metric', 'device-command']
 
   const result: CategoryType[] = []
+
+  // Device category (for map markers, etc.)
+  if (allowedTypes.includes('device')) result.push('device')
 
   // New format types
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
 
-  // Old format types - map to new format
-  if (allowedTypes.includes('device') || allowedTypes.includes('metric')) {
+  // Old format types - map to new format (but not 'device' since it's distinct now)
+  if (allowedTypes.includes('metric')) {
     if (!result.includes('device-metric')) result.push('device-metric')
   }
   if (allowedTypes.includes('command')) {
     if (!result.includes('device-command')) result.push('device-command')
   }
 
-  return result.length > 0 ? result : ['device-metric', 'device-command']
+  return result.length > 0 ? result : ['device', 'device-metric', 'device-command']
 }
 
 /**
@@ -94,6 +98,12 @@ function selectedItemsToDataSource(
     const [type, deviceId, ...rest] = item.split(':')
 
     switch (type) {
+      case 'device':
+        // Device location marker - just store device reference
+        return {
+          type: 'device',
+          deviceId,
+        }
       case 'device-metric':
         return {
           type: 'telemetry',
@@ -128,6 +138,12 @@ function selectedItemsToDataSource(
     const [type, deviceId, ...rest] = item.split(':')
 
     switch (type) {
+      case 'device':
+        result.push({
+          type: 'device',
+          deviceId,
+        })
+        break
       case 'device-metric':
         result.push({
           type: 'telemetry',
@@ -172,7 +188,8 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
   for (const dataSource of dataSources) {
     switch (dataSource.type) {
       case 'device':
-        items.add(`device-metric:${dataSource.deviceId}:${dataSource.property}` as SelectedItem)
+        // Plain device reference (for map markers) - no property/metric
+        items.add(`device:${dataSource.deviceId}` as SelectedItem)
         break
       case 'telemetry':
         items.add(`device-metric:${dataSource.deviceId}:${dataSource.metricId}` as SelectedItem)
@@ -195,20 +212,20 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
 function getSelectedItemLabel(item: SelectedItem, devices: any[]): string {
   const [type, deviceId, ...rest] = item.split(':')
 
+  const device = devices.find(d => d.id === deviceId)
+  const deviceName = device?.name || deviceId
+
   switch (type) {
+    case 'device':
+      // Plain device marker - just show device name
+      return deviceName
     case 'device-metric':
-      const device1 = devices.find(d => d.id === deviceId)
-      const deviceName1 = device1?.name || deviceId
-      return `${deviceName1} · ${rest.join(':')}`
+      return `${deviceName} · ${rest.join(':')}`
     case 'device-command':
-      const device2 = devices.find(d => d.id === deviceId)
-      const deviceName2 = device2?.name || deviceId
-      return `${deviceName2} · ${rest.join(':')}`
+      return `${deviceName} · ${rest.join(':')}`
     case 'device-info':
-      const device3 = devices.find(d => d.id === deviceId)
-      const deviceName3 = device3?.name || deviceId
       const prop = DEVICE_INFO_PROPERTIES.find(p => p.id === rest.join(':'))
-      return `${deviceName3} · ${prop?.name || rest.join(':')}`
+      return `${deviceName} · ${prop?.name || rest.join(':')}`
     default:
       return item
   }
@@ -241,27 +258,43 @@ export function UnifiedDataSourceConfig({
   )
 
   // Track previous value to detect actual selection changes
-  const prevValueRef = useRef<string>()
+  const prevCoreFieldsRef = useRef<string>()
+  const prevValueRef = useRef<DataSourceOrList>()
+
   // Extract core identifying fields for comparison (ignores transform settings)
   const getCoreFields = (ds: DataSourceOrList | undefined): string => {
     if (!ds) return ''
     const sources = Array.isArray(ds) ? ds : [ds]
     return sources.map(s => {
       // Only include fields that identify the selection, not transform settings
+      // Exclude: timeRange, limit, aggregate, aggregateExt, transform, params, timeWindow
       return `${s.type}:${s.deviceId || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
     }).sort().join('|')
   }
 
-  // Sync selected items when value prop changes
-  // Only update if the core identifying fields change, not when just transform settings change
-  const coreFields = useMemo(() => getCoreFields(value), [value])
+  // Calculate current core fields
+  const currentCoreFields = getCoreFields(value)
 
   useEffect(() => {
-    if (prevValueRef.current !== coreFields) {
-      prevValueRef.current = coreFields
+    // Initialize on first render
+    if (prevValueRef.current === undefined) {
+      prevValueRef.current = value
+      prevCoreFieldsRef.current = currentCoreFields
+      return
+    }
+
+    // Only update if core fields actually changed (selection changed)
+    // Transform settings like timeRange, aggregate, etc. should NOT trigger reset
+    if (prevCoreFieldsRef.current !== currentCoreFields) {
+      prevValueRef.current = value
+      prevCoreFieldsRef.current = currentCoreFields
       setSelectedItems(dataSourceToSelectedItems(value))
     }
-  }, [coreFields])
+    // If only transform settings changed, update the value ref but don't reset selection
+    else if (prevCoreFieldsRef.current === currentCoreFields && value !== prevValueRef.current) {
+      prevValueRef.current = value
+    }
+  }, [value, currentCoreFields])
 
   // Available categories based on allowedTypes
   const availableCategories = useMemo(
@@ -395,8 +428,8 @@ export function UnifiedDataSourceConfig({
   // Convert selected items to array for display
   const selectedItemsArray = useMemo(() => Array.from(selectedItems), [selectedItems])
 
-  // Check if category uses device split layout
-  const usesDeviceSplitLayout = selectedCategory === 'device-metric' || selectedCategory === 'device-command' || selectedCategory === 'device-info'
+  // Check if category uses device split layout (device category uses single column layout)
+  const usesDeviceSplitLayout = selectedCategory === 'device-metric' || selectedCategory === 'device-command'
 
   // Get selected device
   const selectedDevice = devices.find(d => d.id === selectedDeviceId)
@@ -806,6 +839,67 @@ export function UnifiedDataSourceConfig({
         // Split layout handled separately
         return null
 
+      case 'device':
+        // Device category - show device list directly for selection (for map markers)
+        return (
+          <div className="space-y-1">
+            {filteredDevices.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground text-sm">暂无可用设备</div>
+            ) : (
+              filteredDevices.map(device => {
+                const itemKey = `device:${device.id}` as SelectedItem
+                const isSelected = selectedItems.has(itemKey)
+
+                return (
+                  <button
+                    key={device.id}
+                    type="button"
+                    onClick={() => handleSelectItem(itemKey)}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all duration-150',
+                      isSelected
+                        ? 'bg-primary/10 border-primary/50'
+                        : 'bg-card border-border hover:bg-accent/40 hover:border-primary/20'
+                    )}
+                  >
+                    {/* Check icon */}
+                    <div className={cn(
+                      'shrink-0 w-5 h-5 rounded-md flex items-center justify-center transition-colors',
+                      isSelected
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground'
+                    )}>
+                      <Check className={cn(
+                        'h-3.5 w-3.5',
+                        isSelected ? 'opacity-100' : 'opacity-0'
+                      )} />
+                    </div>
+
+                    {/* Device info */}
+                    <div className="flex-1 min-w-0">
+                      <div className={cn(
+                        'text-sm truncate',
+                        isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/80'
+                      )}>
+                        {device.name || device.id}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {device.device_type}
+                      </div>
+                    </div>
+
+                    {/* Status indicator */}
+                    <div className={cn(
+                      'w-2 h-2 rounded-full',
+                      device.online ? 'bg-green-500' : 'bg-muted-foreground/30'
+                    )} />
+                  </button>
+                )
+              })
+            )}
+          </div>
+        )
+
       default:
         return null
     }
@@ -813,46 +907,67 @@ export function UnifiedDataSourceConfig({
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
-      {/* Selected items bar - moved to top */}
+      {/* Selected items bar - compact single row */}
       {selectedItems.size > 0 && (
-        <div className="px-3 py-2 border-b bg-primary/5 flex flex-wrap gap-2 items-center">
+        <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted/20 flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
             <Check className="h-3.5 w-3.5" />
             已选 {selectedItems.size} 项
           </div>
-          <div className="flex-1" />
+          <div className="h-4 w-px bg-border" />
+          <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
+            {selectedItemsArray.slice(0, 3).map(itemKey => {
+              const [type, deviceId, ...rest] = itemKey.split(':')
+              const label = rest.join(':')
+              const device = devices.find(d => d.id === deviceId)
+              const deviceName = device?.name || deviceId
+
+              // Icon and color based on type
+              let TypeIcon = Info
+              let iconColor = 'text-emerald-500'
+              let displayLabel = label
+              let showSeparator = true
+
+              if (type === 'device-metric') {
+                TypeIcon = Server
+                iconColor = 'text-blue-500'
+              } else if (type === 'device-command') {
+                TypeIcon = Zap
+                iconColor = 'text-amber-500'
+              } else if (type === 'device') {
+                TypeIcon = MapPin
+                iconColor = 'text-purple-500'
+                displayLabel = ''  // No label for device type, just device name
+                showSeparator = false
+              }
+
+              return (
+                <div
+                  key={itemKey}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border/50 text-xs group hover:border-primary/40 transition-all max-w-[140px]"
+                >
+                  <TypeIcon className={cn('h-3 w-3 shrink-0', iconColor)} />
+                  <span className="max-w-[80px] truncate text-foreground/70" title={deviceName}>{deviceName}</span>
+                  {showSeparator && <span className="text-muted-foreground/40">·</span>}
+                  {displayLabel && <span className="truncate text-foreground" title={displayLabel}>{displayLabel}</span>}
+                </div>
+              )
+            })}
+            {selectedItemsArray.length > 3 && (
+              <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted/50 text-xs text-muted-foreground">
+                +{selectedItemsArray.length - 3} 更多
+              </div>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleClearSelection}
-            className="h-7 px-2 text-xs hover:bg-destructive/10 hover:text-destructive"
+            className="h-7 px-2 text-xs hover:bg-destructive/10 hover:text-destructive shrink-0"
+            title="清除所有选择"
           >
-            <X className="h-3.5 w-3.5 mr-1" />
-            清除
+            <X className="h-3.5 w-3.5" />
           </Button>
-        </div>
-      )}
-
-      {/* Selected items chips - below the bar */}
-      {selectedItems.size > 0 && (
-        <div className="px-3 py-2 border-b bg-muted/20 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-          {selectedItemsArray.map(itemKey => {
-            const label = getSelectedItemLabel(itemKey, devices)
-            return (
-              <div
-                key={itemKey}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-background border text-xs group hover:border-primary/50 transition-colors"
-              >
-                <span className="max-w-[120px] truncate">{label}</span>
-                <button
-                  onClick={() => handleRemoveItem(itemKey)}
-                  className="opacity-40 group-hover:opacity-100 hover:text-destructive transition-all"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )
-          })}
         </div>
       )}
 

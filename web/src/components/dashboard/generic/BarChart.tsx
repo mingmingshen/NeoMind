@@ -342,10 +342,20 @@ export function BarChart({
   const chartData = useMemo(() => {
     const sources = normalizeDataSource(dataSource)
 
+    // Helper to extract numeric value from data point
+    const extractNumericValue = (item: unknown): number => {
+      if (typeof item === 'number') return item
+      if (typeof item === 'object' && item !== null && 'value' in item) {
+        const val = (item as { value: unknown }).value
+        return typeof val === 'number' ? val : 0
+      }
+      return 0
+    }
+
     // Multi-source data - create grouped bar chart
     // preserveMultiple returns array of arrays where length equals sources length
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
-      // Check if any source contains categorical data
+      // Check if any source contains categorical data (string values)
       const hasCategoricalData = data.some((arr: unknown) => {
         if (Array.isArray(arr) && arr.length > 0) {
           const first = arr[0]
@@ -380,24 +390,47 @@ export function BarChart({
       }
 
       // Numeric data - create grouped bar chart
-      const numberArrays = data as number[][]
-      const maxLength = Math.max(...numberArrays.map(arr => Array.isArray(arr) ? arr.length : 0))
+      // Handle both number[][] and Array<{timestamp, value}> formats
+      const sourceArrays = data as unknown[][]
+      const maxLength = Math.max(...sourceArrays.map(arr => Array.isArray(arr) ? arr.length : 0))
+
+      // Determine if we should use timestamps for labels
+      const useTimestampLabels = sourceArrays.some(arr =>
+        Array.isArray(arr) && arr.length > 0 &&
+        typeof arr[0] === 'object' && arr[0] !== null && 'timestamp' in arr[0]
+      )
 
       return Array.from({ length: maxLength }, (_, idx) => {
-        const point: any = { name: `${idx + 1}` }
+        const point: any = {}
         sources.forEach((ds, i) => {
-          const sourceArray = numberArrays[i]
-          const arrValue = Array.isArray(sourceArray) ? sourceArray[idx] : 0
-          const seriesKey = `series${i}`
-          point[seriesKey] = arrValue ?? 0
-          // Also store the display name for this series key
-          if (i === 0) {
+          const sourceArray = sourceArrays[i]
+          if (!Array.isArray(sourceArray)) {
+            point[`series${i}`] = 0
+            return
+          }
+          const item = sourceArray[idx]
+          const arrValue = extractNumericValue(item)
+
+          // Use timestamp-based labels if available
+          if (idx === 0) {
+            if (useTimestampLabels && typeof item === 'object' && item !== null && 'timestamp' in item) {
+              const ts = (item as { timestamp: number }).timestamp
+              const date = new Date(ts > 10000000000 ? ts : ts * 1000)
+              point.name = !isNaN(date.getTime())
+                ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                : `${idx + 1}`
+            } else {
+              point.name = `${idx + 1}`
+            }
+            // Store series names for legend
             point.seriesNames = sources.map((ds, si) => {
               return ds.deviceId
                 ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
                 : `Series ${si + 1}`
             })
           }
+
+          point[`series${i}`] = arrValue
         })
         return point
       })
@@ -446,7 +479,7 @@ export function BarChart({
       { name: 'May', value: 19 },
       { name: 'Jun', value: 25 },
     ]
-  }, [data, propData, dataSource, loading, dataMapping])
+  }, [data, propData, dataSource, loading, dataMapping, effectiveAggregate])
 
   // Get series info for multi-source rendering
   const seriesInfo = useMemo(() => {
@@ -455,7 +488,7 @@ export function BarChart({
       return sources.map((ds, i) => ({
         dataKey: `series${i}`,
         name: ds.deviceId
-          ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
+          ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
           : `Series ${i + 1}`,
         color: fallbackColors[i % fallbackColors.length],
       }))

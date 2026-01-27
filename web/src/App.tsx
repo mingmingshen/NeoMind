@@ -145,7 +145,7 @@ function App() {
             <ProtectedRoute>
               <div className="flex flex-col h-screen bg-background">
                 <TopNav />
-                <main className="flex-1 min-h-0 overflow-y-auto">
+                <main className="flex-1 min-h-0 overflow-hidden">
                   <Routes>
                     <Route path="/" element={<DashboardPage />} />
                     <Route path="/chat" element={<DashboardPage />} />

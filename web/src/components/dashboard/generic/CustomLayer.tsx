@@ -4,6 +4,7 @@
  * A free-form container component that can hold other components.
  * Supports placing devices, metrics, commands, and other content at custom positions.
  * Can be used as a background layer with overlaid interactive elements.
+ * Data binding support similar to Map component with typed bindings.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
@@ -25,12 +26,34 @@ import {
   Minimize2,
   Image as ImageIcon,
   Square,
+  MapPin,
+  Activity,
+  Zap,
+  Type,
+  Sparkles,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
+import { useStore } from '@/store'
 
 // ============================================================================
 // Types
 // ============================================================================
+
+export type LayerBindingType = 'device' | 'metric' | 'command' | 'text' | 'icon'
+
+export interface LayerBinding {
+  id: string
+  type: LayerBindingType
+  name: string
+  dataSource: DataSource
+  position?: { x: number; y: number } | 'auto' // Relative position (0-100%)
+  icon?: LayerBindingType
+  // Styling options
+  color?: string
+  backgroundColor?: string
+  fontSize?: 'xs' | 'sm' | 'md' | 'lg'
+  fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold'
+}
 
 export interface LayerItem {
   id: string
@@ -62,11 +85,17 @@ export interface LayerItem {
   // Actions
   onClick?: () => void
   onValueChange?: (value: unknown) => void
+
+  // Real-time data tracking
+  deviceName?: string
+  metricName?: string
+  status?: 'online' | 'offline' | 'error' | 'warning'
 }
 
 export interface CustomLayerProps {
   dataSource?: DataSource
   items?: LayerItem[]
+  bindings?: LayerBinding[] // Bindings from config with type and position info
 
   // Layer options
   backgroundType?: 'color' | 'image' | 'transparent' | 'grid'
@@ -84,6 +113,10 @@ export interface CustomLayerProps {
   // Scale options
   maintainAspectRatio?: boolean
   aspectRatio?: number
+
+  // Callbacks
+  onItemsChange?: (items: LayerItem[]) => void
+  onBindingsChange?: (bindings: LayerBinding[]) => void
 
   className?: string
 }

@@ -83,18 +83,26 @@ export function WebDisplay({
   borderless = false,
   className,
 }: WebDisplayProps) {
-  const hasDataSource = dataSource !== undefined
-
-  // Only use useDataSource if we have a dataSource
-  // Otherwise, skip the hook to avoid unnecessary loading states
-  const { data, loading, error } = useDataSource<string>(hasDataSource ? dataSource : undefined, {
+  // Always call useDataSource - it will handle undefined dataSource internally
+  // This ensures proper cleanup when dataSource is removed
+  const { data, loading, error } = useDataSource<string>(dataSource, {
     fallback: propSrc,
   })
 
+  const hasDataSource = dataSource !== undefined
+
   const src = useMemo(() => {
+    // Only use data source when we have one and it's valid
     if (hasDataSource && !error && data !== undefined && data !== null) {
-      return data
+      // Safely convert data to string, handling arrays and other types
+      if (typeof data === 'string') return data
+      if (Array.isArray(data)) {
+        const firstItem = data[0]
+        return typeof firstItem === 'string' ? firstItem : String(firstItem ?? '')
+      }
+      return String(data ?? '')
     }
+    // No data source or error - use propSrc
     return propSrc ?? ''
   }, [hasDataSource, error, data, propSrc])
 

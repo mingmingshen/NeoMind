@@ -239,6 +239,21 @@ export const dashboardCardBase = [
 ].join(' ')
 
 /**
+ * Horizontal card styles (for value-card, compact cards, etc.)
+ * Same visual styling as dashboardCardBase but with horizontal layout
+ */
+export const dashboardCardHorizontal = [
+  // Layout - horizontal instead of vertical
+  'flex flex-row h-full w-full overflow-hidden',
+  // Background & border
+  'bg-card/50 backdrop-blur',
+  // Border & shadow
+  'border border-border/50 shadow-sm hover:shadow-md transition-shadow',
+  // Radius
+  'rounded-lg',
+].join(' ')
+
+/**
  * Card content wrapper styles
  * Ensures content fills available space correctly
  */

@@ -49,16 +49,28 @@ export function PageLayout({
   borderedHeader = false,
 }: PageLayoutProps) {
   return (
-    <div className={cn('mx-auto p-6 md:p-8 pb-24 space-y-6', maxWidthClass[maxWidth], className)}>
+    <div className="flex flex-col h-full">
       {title && (
-        <PageHeader
-          title={title}
-          description={subtitle}
-          actions={actions}
-          variant={borderedHeader ? 'bordered' : 'default'}
-        />
+        <div className="shrink-0 bg-background">
+          <div className={cn('w-full px-6 md:px-8 py-6', maxWidthClass[maxWidth], className)}>
+            <PageHeader
+              title={title}
+              description={subtitle}
+              actions={actions}
+              variant={borderedHeader ? 'bordered' : 'default'}
+            />
+          </div>
+        </div>
       )}
-      {children}
+      {/* Content area - uses flex-col to push sticky elements to bottom when content is short */}
+      <div className={cn('flex-1 flex flex-col overflow-hidden', className)}>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-auto px-6 md:px-8">
+          <div className={cn('mx-auto w-full space-y-6', maxWidthClass[maxWidth])}>
+            {children}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

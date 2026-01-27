@@ -352,14 +352,14 @@ export function PieChart({
         }
 
         // Check if data contains categorical (string) values
-        const firstItem = arr[0]
+        const firstItem = arr[0] as { value?: unknown } | undefined
         const isCategoricalData = typeof firstItem === 'object' && firstItem !== null && 'value' in firstItem && typeof firstItem.value === 'string'
         const forceCounting = effectiveAggregate === 'count'
 
         if (isCategoricalData || forceCounting) {
           // For categorical data, count occurrences of each unique value
           const counts = new Map<string, number>()
-          for (const item of arr) {
+          for (const item of arr as Array<{ value?: unknown }>) {
             if (typeof item === 'object' && item !== null && 'value' in item) {
               const key = String(item.value ?? 'unknown')
               counts.set(key, (counts.get(key) ?? 0) + 1)

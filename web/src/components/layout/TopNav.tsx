@@ -127,17 +127,17 @@ export function TopNav() {
 
   return (
     <TooltipProvider delayDuration={500}>
-      <nav className="h-14 bg-background/95 backdrop-blur flex items-center px-4 shadow-sm z-50 relative">
+      <nav className="h-16 bg-background/95 backdrop-blur flex items-center px-4 sm:px-6 shadow-sm z-50 relative">
         {/* Logo */}
-        <Link to="/chat" className="flex items-center gap-2 mr-6">
-          <div className="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center">
-            <Sparkles className="h-4 w-4 text-background" />
+        <Link to="/chat" className="flex items-center gap-2.5 mr-6">
+          <div className="w-9 h-9 rounded-xl bg-foreground flex items-center justify-center shadow-sm">
+            <Sparkles className="h-4.5 w-4.5 text-background" />
           </div>
-          <span className="font-semibold text-foreground hidden sm:block">NeoTalk</span>
+          <span className="font-semibold text-foreground text-base hidden sm:block">NeoTalk</span>
         </Link>
 
         {/* Desktop Navigation Icons - hidden on mobile */}
-        <div className="hidden md:flex items-center gap-1">
+        <div className="hidden md:flex items-center gap-1.5">
           {navItems.map((item) => {
             const Icon = item.icon
             // Check active with prefix match for nested routes (e.g., /devices/types matches /devices)
@@ -153,17 +153,17 @@ export function TopNav() {
                       variant="ghost"
                       size="icon"
                       className={cn(
-                        "w-10 h-10 rounded-xl transition-all",
+                        "w-11 h-11 rounded-lg transition-all",
                         isActive
                           ? "bg-foreground text-background hover:bg-foreground hover:text-background"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                       )}
                     >
                       <Icon className="h-5 w-5" />
                     </Button>
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
+                <TooltipContent side="bottom" className="text-xs px-2 py-1">
                   {t(item.labelKey)}
                 </TooltipContent>
               </Tooltip>
@@ -178,7 +178,7 @@ export function TopNav() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-9 h-9 rounded-xl"
+                className="w-10 h-10 rounded-lg"
               >
                 {mobileMenuOpen ? (
                   <X className="h-5 w-5" />
@@ -225,13 +225,13 @@ export function TopNav() {
         <div className="flex-1" />
 
         {/* Right side: Status + Language + Theme + User */}
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
           {/* Connection status - icon only on mobile */}
           <Tooltip>
             <TooltipTrigger asChild>
               <div
                 className={cn(
-                  "flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium",
+                  "flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
                   isConnected
                     ? "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
                     : "text-destructive bg-destructive/10"
@@ -259,7 +259,7 @@ export function TopNav() {
                 variant="ghost"
                 size="sm"
                 onClick={toggleLanguage}
-                className="hidden sm:flex h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground text-xs font-medium"
+                className="hidden sm:flex h-10 w-10 rounded-lg text-muted-foreground hover:text-foreground text-xs font-medium"
               >
                 {i18n.language === 'zh' ? '中' : 'EN'}
               </Button>
@@ -280,13 +280,13 @@ export function TopNav() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="w-9 h-9 rounded-xl relative"
+                    className="w-10 h-10 rounded-lg relative"
                   >
                     <BellRing className="h-4 w-4" />
                     {unreadCount > 0 && (
                       <Badge
                         variant="destructive"
-                        className="absolute -top-1 -right-1 h-5 min-w-5 px-1 flex items-center justify-center text-xs"
+                        className="absolute -top-0.5 -right-0.5 h-5 min-w-5 px-1 flex items-center justify-center text-xs"
                       >
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </Badge>
@@ -379,7 +379,7 @@ export function TopNav() {
           {user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Avatar className="h-8 w-8 cursor-pointer">
+                <Avatar className="h-10 w-10 cursor-pointer rounded-lg">
                   <AvatarFallback className="bg-muted text-muted-foreground text-xs font-medium">
                     {getUserInitials(user.username)}
                   </AvatarFallback>

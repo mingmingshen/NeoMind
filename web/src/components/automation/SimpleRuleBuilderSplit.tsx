@@ -264,23 +264,67 @@ function ruleConditionToUiCondition(ruleCond?: RuleCondition): UICondition {
   }
 }
 
+// Helper to get device name from ID
+function getDeviceNameById(
+  deviceId: string,
+  devices: Array<{ id: string; name: string; device_type?: string }>
+): string {
+  const device = devices.find(d => d.id === deviceId)
+  return device?.name || deviceId
+}
+
+// Helper to get the base metric name without duplicate prefix
+// Transform-generated metrics have format "prefix.name" (e.g., "ai_result.poses")
+// If the device type prefix matches the metric prefix, strip it to avoid duplication
+function getMetricPath(
+  metric: string,
+  deviceId: string,
+  devices: Array<{ id: string; name: string; device_type?: string }>
+): string {
+  if (!metric) return 'value'
+
+  // If metric contains a dot, it might have a prefix from transform output
+  const parts = metric.split('.')
+  if (parts.length > 1) {
+    const prefix = parts[0]
+    const device = devices.find(d => d.id === deviceId)
+
+    // Check if the metric prefix matches the device_type
+    // If so, strip the prefix to avoid: device_type.device_type.metric_name
+    if (device?.device_type && prefix === device.device_type) {
+      // Strip the prefix, return just the suffix
+      return parts.slice(1).join('.')
+    }
+
+    // Also check against device name (in case name is used as prefix)
+    const deviceName = device?.name?.toLowerCase().replace(/\s+/g, '_')
+    if (deviceName && prefix === deviceName) {
+      return parts.slice(1).join('.')
+    }
+  }
+
+  // Return metric as-is
+  return metric
+}
+
 function generateRuleDSL(
   name: string,
   condition: RuleCondition,
   actions: RuleAction[],
+  devices: Array<{ id: string; name: string; device_type?: string }>,
   forDuration?: number,
   forUnit?: 'seconds' | 'minutes' | 'hours'
 ): string {
   const lines: string[] = []
   lines.push(`RULE "${name}"`)
-  lines.push(`WHEN ${conditionToDSL(condition)}`)
+  lines.push(`WHEN ${conditionToDSL(condition, devices)}`)
   if (forDuration && forDuration > 0) {
     const unit = forUnit === 'seconds' ? 'seconds' : forUnit === 'hours' ? 'hours' : 'minutes'
     lines.push(`FOR ${forDuration} ${unit}`)
   }
   lines.push('DO')
   for (const action of actions) {
-    lines.push(`    ${actionToDSL(action)}`)
+    lines.push(`    ${actionToDSL(action, devices)}`)
   }
   lines.push('END')
   return lines.join('\n')
@@ -297,48 +341,56 @@ function parseForClauseFromDSL(dsl?: string): { duration: number; unit: 'seconds
   return null
 }
 
-function conditionToDSL(cond: RuleCondition): string {
+function conditionToDSL(
+  cond: RuleCondition,
+  devices: Array<{ id: string; name: string; device_type?: string }>
+): string {
   const op = (cond as any).operator
   if (op === 'and' || op === 'or') {
     const subConds = ((cond as any).conditions || []) as RuleCondition[]
     if (subConds.length === 0) return 'true'
-    const parts = subConds.map(c => conditionToDSL(c))
+    const parts = subConds.map(c => conditionToDSL(c, devices))
     return `(${parts.join(`) ${op.toUpperCase()} (`)})`
   }
   if (op === 'not') {
     const subConds = ((cond as any).conditions || []) as RuleCondition[]
     if (subConds.length === 0) return 'false'
-    return `NOT (${conditionToDSL(subConds[0])})`
+    return `NOT (${conditionToDSL(subConds[0], devices)})`
   }
   if ('range_min' in cond && (cond as any).range_min !== undefined) {
-    const deviceId = cond.device_id || 'device'
-    const metric = cond.metric || 'value'
+    const deviceName = getDeviceNameById(cond.device_id || '', devices)
+    const metric = getMetricPath(cond.metric || 'value', cond.device_id || '', devices)
     const min = (cond as any).range_min
     const max = typeof cond.threshold === 'number' ? cond.threshold : 100
-    return `${deviceId}.${metric} BETWEEN ${min} AND ${max}`
+    return `${deviceName}.${metric} BETWEEN ${min} AND ${max}`
   }
-  const deviceId = cond.device_id || 'device'
-  const metric = cond.metric || 'value'
+  const deviceName = getDeviceNameById(cond.device_id || '', devices)
+  const metric = getMetricPath(cond.metric || 'value', cond.device_id || '', devices)
   const operator = cond.operator || '>'
   let threshold = cond.threshold ?? 0
   if (typeof threshold === 'string') {
     threshold = `"${threshold}"`
   }
-  return `${deviceId}.${metric} ${operator} ${threshold}`
+  return `${deviceName}.${metric} ${operator} ${threshold}`
 }
 
-function actionToDSL(action: RuleAction): string {
+function actionToDSL(
+  action: RuleAction,
+  devices: Array<{ id: string; name: string; device_type?: string }>
+): string {
   switch (action.type) {
     case 'Notify': return `NOTIFY "${action.message}"`
     case 'Execute':
+      const deviceName = getDeviceNameById(action.device_id || '', devices)
       const params = action.params && Object.keys(action.params).length > 0
         ? Object.entries(action.params).map(([k, v]) => `${k}=${v}`).join(', ')
         : ''
-      return params ? `EXECUTE ${action.device_id}.${action.command}(${params})` : `EXECUTE ${action.device_id}.${action.command}`
+      return params ? `EXECUTE ${deviceName}.${action.command}(${params})` : `EXECUTE ${deviceName}.${action.command}`
     case 'Log': return `LOG ${action.level || 'info'}, "${action.message}"`
     case 'Set':
+      const setDeviceName = getDeviceNameById(action.device_id || '', devices)
       const value = typeof action.value === 'string' ? `"${action.value}"` : String(action.value)
-      return `SET ${action.device_id}.${action.property} = ${value}`
+      return `SET ${setDeviceName}.${action.property} = ${value}`
     case 'Delay': return `DELAY ${action.duration}ms`
     case 'CreateAlert': return `ALERT "${action.title}" "${action.message}" ${action.severity || 'info'}`
     case 'HttpRequest': return `HTTP ${action.method} ${action.url}`
@@ -521,7 +573,7 @@ export function SimpleRuleBuilderSplit({
     setSaving(true)
     try {
       const finalCondition = uiConditionToRuleCondition(condition)
-      const dsl = generateRuleDSL(name, finalCondition, actions, forDuration, forUnit)
+      const dsl = generateRuleDSL(name, finalCondition, actions, resources.devices, forDuration, forUnit)
       const ruleData: Partial<Rule> = {
         name,
         description,
@@ -550,7 +602,7 @@ export function SimpleRuleBuilderSplit({
   const isFirstStep = currentStep === 'basic'
 
   // Generate preview DSL
-  const previewDSL = condition ? generateRuleDSL(name || tBuilder('name'), uiConditionToRuleCondition(condition), actions, forDuration, forUnit) : ''
+  const previewDSL = condition ? generateRuleDSL(name || tBuilder('name'), uiConditionToRuleCondition(condition), actions, resources.devices, forDuration, forUnit) : ''
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react'
-import { Check, ChevronDown, Palette } from 'lucide-react'
+import { Check, ChevronDown, Palette, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -18,11 +18,19 @@ import {
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
+// Theme-aware special colors
+const THEME_FOREGROUND = 'hsl(var(--foreground))'
+const THEME_CARD_FOREGROUND = 'hsl(var(--card-foreground))'
+
+// Check if a color is theme-aware
+function isThemeColor(color: string): boolean {
+  return color.startsWith('hsl(var(')
+}
+
 // Preset color palettes
 export const COLOR_PRESETS = {
   primary: [
-    '#000000', // Black
-    '#ffffff', // White
+    THEME_FOREGROUND, // Theme foreground (black in light, white in dark)
     '#ef4444', // Red
     '#f97316', // Orange
     '#eab308', // Yellow
@@ -33,7 +41,7 @@ export const COLOR_PRESETS = {
     '#ec4899', // Pink
   ],
   neutral: [
-    '#000000', // Black
+    THEME_FOREGROUND, // Theme foreground (black in light, white in dark)
     '#171717', // Zinc 950
     '#404040', // Zinc 700
     '#737373', // Zinc 500
@@ -41,7 +49,6 @@ export const COLOR_PRESETS = {
     '#d4d4d4', // Zinc 300
     '#e5e5e5', // Zinc 200
     '#f5f5f5', // Zinc 100
-    '#ffffff', // White
   ],
   semantic: [
     '#22c55e', // Success
@@ -96,6 +103,31 @@ export function ColorPicker({
     onChange?.(color)
   }
 
+  // Check if a preset color is currently selected
+  const isColorSelected = (presetColor: string): boolean => {
+    if (isThemeColor(presetColor) || isThemeColor(value)) {
+      // For theme colors, compare the CSS variable part
+      return presetColor === value
+    }
+    return value.toLowerCase() === presetColor.toLowerCase()
+  }
+
+  // Get display style for a preset color button
+  const getPresetStyle = (color: string) => {
+    if (isThemeColor(color)) {
+      return { backgroundColor: color }
+    }
+    return { backgroundColor: color }
+  }
+
+  // Get icon for theme-aware colors
+  const getThemeIcon = (color: string) => {
+    if (color === THEME_FOREGROUND) {
+      return <Sun className="h-3 w-3 text-foreground drop-shadow-md mx-auto" />
+    }
+    return null
+  }
+
   // Get presets to show
   const getPresetColors = (): string[] => {
     if (presets === 'all') {
@@ -120,7 +152,7 @@ export function ColorPicker({
             >
               <div
                 className="h-5 w-5 rounded-sm"
-                style={{ backgroundColor: value }}
+                style={isThemeColor(value) ? { backgroundColor: value } : { backgroundColor: value }}
               />
             </Button>
           </PopoverTrigger>
@@ -129,25 +161,46 @@ export function ColorPicker({
             {presetColors.length > 0 && (
               <div className="mb-3">
                 <div className="grid grid-cols-8 gap-1">
-                  {presetColors.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => handlePresetClick(color)}
-                      disabled={disabled}
-                      className={cn(
-                        "h-6 w-6 rounded-sm border transition-all hover:scale-110",
-                        value.toLowerCase() === color.toLowerCase()
-                          ? 'ring-2 ring-ring ring-offset-2'
-                          : 'border-border'
-                      )}
-                      style={{ backgroundColor: color }}
-                    >
-                      {value.toLowerCase() === color.toLowerCase() && (
-                        <Check className="h-3 w-3 text-white drop-shadow-md mx-auto" />
-                      )}
-                    </button>
-                  ))}
+                  {presetColors.map((color) => {
+                    const themeIcon = getThemeIcon(color)
+                    const isSelected = isColorSelected(color)
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => handlePresetClick(color)}
+                        disabled={disabled}
+                        className={cn(
+                          "h-6 w-6 rounded-sm border transition-all hover:scale-110 relative",
+                          isSelected
+                            ? 'ring-2 ring-ring ring-offset-2'
+                            : 'border-border'
+                        )}
+                        style={getPresetStyle(color)}
+                      >
+                        {themeIcon && !isSelected && (
+                          <div className="absolute inset-0 flex items-center justify-center opacity-50">
+                            {themeIcon}
+                          </div>
+                        )}
+                        {isSelected && !themeIcon && (
+                          <Check className="h-3 w-3 text-white drop-shadow-md mx-auto" />
+                        )}
+                        {isSelected && themeIcon && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            {themeIcon}
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+                {/* Legend for theme-aware colors */}
+                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground px-1">
+                  <div className="flex items-center gap-1">
+                    <Sun className="h-3 w-3" />
+                    <span>主题前景色</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -175,7 +228,7 @@ export function ColorPicker({
                   onChange?.(newColor)
                 }}
                 className="h-9 w-12 p-1 cursor-pointer"
-                disabled={disabled}
+                disabled={disabled || isThemeColor(value)}
               />
             </div>
           </PopoverContent>
@@ -213,6 +266,22 @@ export function CompactColorPicker({
   disabled = false,
   className,
 }: CompactColorPickerProps) {
+  // Check if a preset color is currently selected
+  const isColorSelected = (presetColor: string): boolean => {
+    if (isThemeColor(presetColor) || isThemeColor(value)) {
+      return presetColor === value
+    }
+    return value.toLowerCase() === presetColor.toLowerCase()
+  }
+
+  // Get icon for theme-aware colors
+  const getThemeIcon = (color: string) => {
+    if (color === THEME_FOREGROUND) {
+      return <Sun className="h-3 w-3" />
+    }
+    return null
+  }
+
   return (
     <div className={cn('flex items-center gap-2', className)}>
       {/* Color input */}
@@ -221,7 +290,7 @@ export function CompactColorPicker({
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
         className="h-9 w-12 p-1 cursor-pointer"
-        disabled={disabled}
+        disabled={disabled || isThemeColor(value)}
       />
       {/* Text input */}
       <Input
@@ -239,21 +308,32 @@ export function CompactColorPicker({
       />
       {/* Presets */}
       <div className="flex gap-1">
-        {presets.map((color) => (
-          <button
-            key={color}
-            type="button"
-            onClick={() => onChange?.(color)}
-            disabled={disabled}
-            className={cn(
-              'h-7 w-7 rounded-sm border transition-all hover:scale-110 shrink-0',
-              value.toLowerCase() === color.toLowerCase()
-                ? 'ring-2 ring-ring ring-offset-2'
-                : 'border-border'
-            )}
-            style={{ backgroundColor: color }}
-          />
-        ))}
+        {presets.map((color) => {
+          const themeIcon = getThemeIcon(color)
+          const isSelected = isColorSelected(color)
+          return (
+            <button
+              key={color}
+              type="button"
+              onClick={() => onChange?.(color)}
+              disabled={disabled}
+              className={cn(
+                'h-7 w-7 rounded-sm border transition-all hover:scale-110 shrink-0 relative flex items-center justify-center',
+                isSelected
+                  ? 'ring-2 ring-ring ring-offset-2'
+                  : 'border-border'
+              )}
+              style={isThemeColor(color) ? { backgroundColor: color } : { backgroundColor: color }}
+              >
+                {themeIcon && !isSelected && (
+                  <div className="opacity-40">{themeIcon}</div>
+                )}
+                {isSelected && themeIcon && (
+                  <div className="text-foreground">{themeIcon}</div>
+                )}
+              </button>
+          )
+        })}
       </div>
     </div>
   )

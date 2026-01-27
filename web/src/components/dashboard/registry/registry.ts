@@ -107,7 +107,7 @@ export const componentRegistry: ComponentRegistry = {
     hasActions: false,
     acceptsProp: (prop) => [
       'title', 'color', 'size', 'variant', 'className',
-      'valueMap', 'defaultState', 'showGlow', 'state',
+      'valueMap', 'defaultState', 'showGlow', 'showAnimation', 'state',
       'dataMapping', 'showCard',
     ].includes(prop),
     defaultProps: {
@@ -115,6 +115,7 @@ export const componentRegistry: ComponentRegistry = {
       variant: 'default',
       defaultState: 'unknown',
       showGlow: true,
+      showAnimation: true,
       valueMap: [],
     },
     variants: ['default', 'labeled'],
@@ -402,15 +403,14 @@ export const componentRegistry: ComponentRegistry = {
     hasDisplayConfig: true,
     hasActions: true,
     acceptsProp: (prop) => [
-      'markers', 'layers', 'center', 'zoom', 'minZoom', 'maxZoom',
-      'showControls', 'showLayers', 'showFullscreen', 'interactive',
+      'markers', 'center', 'zoom', 'minZoom', 'maxZoom',
+      'showControls', 'showFullscreen', 'interactive',
       'tileLayer', 'markerColor', 'size', 'className'
     ].includes(prop),
     defaultProps: {
       center: { lat: 39.9042, lng: 116.4074 },
       zoom: 10,
       showControls: true,
-      showLayers: true,
       interactive: true,
     },
     variants: ['default', 'satellite', 'dark', 'terrain'],

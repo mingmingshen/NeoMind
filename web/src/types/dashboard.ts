@@ -317,7 +317,7 @@ export interface ComponentSizeConstraints {
  */
 export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType, ComponentSizeConstraints>> = {
   // Indicators - compact for mobile
-  'value-card': { minW: 2, minH: 1, defaultW: 3, defaultH: 2, maxW: 6, maxH: 4 },
+  'value-card': { minW: 2, minH: 1, defaultW: 2, defaultH: 1, maxW: 4, maxH: 2 },
   'led-indicator': { minW: 1, minH: 1, defaultW: 2, defaultH: 1, maxW: 3, maxH: 2, preserveAspect: true },
   'sparkline': { minW: 2, minH: 1, defaultW: 4, defaultH: 2, maxW: 8, maxH: 3 },
   'progress-bar': { minW: 2, minH: 1, defaultW: 4, defaultH: 1, maxW: 12, maxH: 3 },
@@ -338,7 +338,7 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'markdown-display': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
 
   // Spatial & Media
-  'map-display': { minW: 3, minH: 2, defaultW: 6, defaultH: 3, maxW: 12, maxH: 12 },
+  'map-display': { minW: 3, minH: 2, defaultW: 4, defaultH: 3, maxW: 12, maxH: 12 },
   'video-display': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
   'custom-layer': { minW: 2, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
 

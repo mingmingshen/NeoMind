@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import type { DataSourceOrList, DataSource } from '@/types/dashboard'
+import type { DataSourceOrList, DataSource, TelemetryAggregate } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
 import { useEvents } from '@/hooks/useEvents'
 import { useStore } from '@/store'
@@ -98,7 +98,7 @@ async function fetchHistoricalTelemetry(
   metricId: string,
   timeRange: number = 1, // hours
   limit: number = 50,
-  aggregate: 'raw' | 'avg' | 'min' | 'max' | 'sum' = 'raw',
+  aggregate: TelemetryAggregate = 'raw',
   includeRawPoints: boolean = false,
   bypassCache: boolean = false
 ): Promise<{ data: number[]; raw?: any[]; success: boolean }> {
@@ -113,9 +113,13 @@ async function fetchHistoricalTelemetry(
   try {
     const api = (await import('@/lib/api')).api
     const now = Date.now()
-    const start = now - timeRange * 60 * 60 * 1000
+    // Ensure minimum time range of 5 minutes for "now" (timeRange = 0) to get at least some data
+    const effectiveTimeRange = timeRange > 0 ? timeRange : 5 / 60
+    const start = now - effectiveTimeRange * 60 * 60 * 1000
 
-    const response = await api.getDeviceTelemetry(deviceId, metricId, Math.floor(start / 1000), Math.floor(now / 1000), limit)
+    // Fetch with larger limit for non-raw aggregates to get enough data points
+    const fetchLimit = aggregate === 'raw' ? limit : Math.max(limit, 100)
+    const response = await api.getDeviceTelemetry(deviceId, metricId, Math.floor(start / 1000), Math.floor(now / 1000), fetchLimit)
 
     // TelemetryDataResponse has structure: { data: Record<string, TelemetryPoint[]> }
     // The actual time series data is in response.data[metricId]
@@ -123,49 +127,114 @@ async function fetchHistoricalTelemetry(
       const metricData = response.data[metricId]
 
       if (Array.isArray(metricData) && metricData.length > 0) {
-        // Extract values from telemetry points
-        // Handles: numbers, strings, and objects with various field names
-        const toNumber = (val: unknown): number => {
-          if (typeof val === 'number') return val
-          if (typeof val === 'string') {
-            const parsed = parseFloat(val)
-            return isNaN(parsed) ? 0 : parsed
+        // Helper to extract value from a point
+        const extractValue = (point: unknown): number => {
+          if (typeof point === 'number') return point
+          if (typeof point === 'object' && point !== null) {
+            const p = point as unknown as Record<string, unknown>
+            const rawValue = p.value ?? p.v ?? p.avg ?? p.min ?? p.max ?? 0
+            if (typeof rawValue === 'number') return rawValue
+            if (typeof rawValue === 'string') {
+              const parsed = parseFloat(rawValue)
+              return isNaN(parsed) ? 0 : parsed
+            }
+            if (typeof rawValue === 'boolean') return rawValue ? 1 : 0
+            return 0
           }
-          if (typeof val === 'boolean') return val ? 1 : 0
           return 0
         }
 
-        const values = metricData
-          .map((point) => {
-            if (typeof point === 'number') return point
-            if (typeof point === 'object' && point !== null) {
-              const p = point as unknown as Record<string, unknown>
-              // Try common value field names and convert to number
-              const rawValue = p.value ?? p.v ?? p.avg ?? p.min ?? p.max ?? 0
-              return toNumber(rawValue)
-            }
-            return 0
-          })
-          .filter((v: number) => typeof v === 'number' && !isNaN(v))
-
-        // For raw points, preserve original structure including string values
-        // This is important for categorical data like status (online/offline)
-        const rawPoints = includeRawPoints ? metricData.map((point) => {
-          if (typeof point === 'number') {
-            return { timestamp: Date.now() / 1000, value: point }
-          }
+        // Helper to extract timestamp from a point
+        const extractTimestamp = (point: unknown): number => {
           if (typeof point === 'object' && point !== null) {
             const p = point as unknown as Record<string, unknown>
-            // Extract timestamp from various field names
-            const timestamp = p.timestamp ?? p.time ?? p.t ?? Date.now() / 1000
-            // Preserve original value (could be string, number, etc.)
-            const value = p.value ?? p.v ?? 0
-            return { timestamp: timestamp as number, value }
+            const timestamp = p.timestamp ?? p.time ?? p.t
+            if (typeof timestamp === 'number') return timestamp
           }
-          return { timestamp: Date.now() / 1000, value: point }
-        }) : undefined
+          return Date.now() / 1000
+        }
 
-        // Cache the result with raw points if requested
+        // Extract all values
+        const allValues = metricData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
+
+        // Apply aggregation
+        let values: number[]
+        let rawPoints: any[] | undefined
+
+        if (aggregate === 'latest') {
+          // Return only the last value
+          const lastValue = allValues[allValues.length - 1] ?? 0
+          values = [lastValue]
+          // Create a single raw point with the original value (could be string, number, etc.)
+          if (includeRawPoints) {
+            const lastPoint = metricData[metricData.length - 1]
+            // Extract the raw value preserving its type
+            const rawValue = typeof lastPoint === 'object' && lastPoint !== null
+              ? (lastPoint as unknown as Record<string, unknown>).value ?? (lastPoint as unknown as Record<string, unknown>).v ?? lastPoint
+              : lastPoint
+            rawPoints = [{
+              timestamp: extractTimestamp(lastPoint),
+              value: rawValue,
+            }]
+          }
+        } else if (aggregate === 'first') {
+          // Return only the first value
+          const firstValue = allValues[0] ?? 0
+          values = [firstValue]
+          if (includeRawPoints) {
+            const firstPoint = metricData[0]
+            const rawValue = typeof firstPoint === 'object' && firstPoint !== null
+              ? (firstPoint as unknown as Record<string, unknown>).value ?? (firstPoint as unknown as Record<string, unknown>).v ?? firstPoint
+              : firstPoint
+            rawPoints = [{
+              timestamp: extractTimestamp(firstPoint),
+              value: rawValue,
+            }]
+          }
+        } else if (aggregate === 'avg') {
+          // Calculate average
+          const sum = allValues.reduce((a, b) => a + b, 0)
+          const avg = allValues.length > 0 ? sum / allValues.length : 0
+          values = [avg]
+        } else if (aggregate === 'min') {
+          // Return minimum value
+          const min = Math.min(...allValues)
+          values = [min]
+        } else if (aggregate === 'max') {
+          // Return maximum value
+          const max = Math.max(...allValues)
+          values = [max]
+        } else if (aggregate === 'sum') {
+          // Return sum
+          const sum = allValues.reduce((a, b) => a + b, 0)
+          values = [sum]
+        } else if (aggregate === 'delta') {
+          // Return change (last - first)
+          const first = allValues[0] ?? 0
+          const last = allValues[allValues.length - 1] ?? 0
+          values = [last - first]
+        } else if (aggregate === 'count') {
+          // Return count
+          values = [allValues.length]
+        } else {
+          // 'raw' or unknown: return all values
+          values = allValues
+          // For raw points, preserve original structure including string values
+          rawPoints = includeRawPoints ? metricData.map((point) => {
+            if (typeof point === 'number') {
+              return { timestamp: Date.now() / 1000, value: point }
+            }
+            if (typeof point === 'object' && point !== null) {
+              const p = point as unknown as Record<string, unknown>
+              const timestamp = p.timestamp ?? p.time ?? p.t ?? Date.now() / 1000
+              const value = p.value ?? p.v ?? 0
+              return { timestamp: timestamp as number, value }
+            }
+            return { timestamp: Date.now() / 1000, value: point }
+          }) : undefined
+        }
+
+        // Cache the result
         telemetryCache.set(cacheKey, {
           data: values,
           raw: rawPoints,
@@ -443,8 +512,16 @@ export function useDataSource<T = unknown>(
 
           case 'device': {
             const deviceId = ds.deviceId!
-            const property = (ds.property as string | undefined) || 'value'
+            const property = ds.property as string | undefined
             const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+
+            // If no property specified, return full device object (for map markers, etc.)
+            if (!property) {
+              result = device ?? null
+              break
+            }
+
+            // Otherwise extract specific property from current_values
             const cacheKey = `${deviceId}:${property}`
 
             if (device?.current_values && typeof device.current_values === 'object' && Object.keys(device.current_values).length > 0) {
@@ -777,7 +854,7 @@ export function useDataSource<T = unknown>(
       // Invalidate telemetry cache for affected sources and trigger refresh
       if (matchingTelemetrySources.length > 0) {
         matchingTelemetrySources.forEach((ds) => {
-          const cacheKey = `${ds.deviceId}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? 'raw'}`
+          const cacheKey = `${ds.deviceId}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
           telemetryCache.delete(cacheKey)
         })
 
@@ -803,7 +880,13 @@ export function useDataSource<T = unknown>(
 
           case 'device': {
             const deviceId = ds.deviceId!
-            const property = (ds.property as string | undefined) || 'value'
+            const property = ds.property as string | undefined
+
+            // If no property specified, return full device object
+            if (!property) {
+              result = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId) ?? null
+              break
+            }
 
             if (isDeviceMetricEvent && eventData.device_id === deviceId) {
               if ('metric' in eventData && eventData.metric === property && 'value' in eventData) {
@@ -993,7 +1076,13 @@ export function useDataSource<T = unknown>(
   const telemetryKey = useMemo(() => {
     return dataSources
       .filter((ds) => ds.type === 'telemetry')
-      .map((ds) => createStableKey({ deviceId: ds.deviceId, metricId: ds.metricId, timeRange: ds.timeRange, limit: ds.limit, aggregate: ds.aggregate }))
+      .map((ds) => createStableKey({
+        deviceId: ds.deviceId,
+        metricId: ds.metricId,
+        timeRange: ds.timeRange,
+        limit: ds.limit,
+        aggregate: ds.aggregate ?? ds.aggregateExt
+      }))
       .join('|')
   }, [dataSources])
 
@@ -1037,7 +1126,7 @@ export function useDataSource<T = unknown>(
               ds.metricId,
               ds.timeRange ?? 1,
               ds.limit ?? 50,
-              ds.aggregate ?? 'raw',
+              ds.aggregate ?? ds.aggregateExt ?? 'raw',
               includeRawPoints,
               bypassCache
             )

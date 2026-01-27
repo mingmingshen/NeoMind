@@ -6,7 +6,7 @@
  * Fully responsive with touch-friendly controls.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   Settings,
   CheckCircle2,
@@ -70,6 +70,20 @@ export function ComponentConfigDialog({
   const hasDisplayConfig = displaySections.length > 0 || allSections.some(s => s.type !== 'data-source')
   const hasAnyConfig = hasDataSource || hasStyleConfig || hasDisplayConfig || allSections.length > 0
 
+  // Mobile: Inner tab state for data source / transform switching
+  const [mobileDataSourceTab, setMobileDataSourceTab] = useState<'datasource' | 'transform'>('datasource')
+
+  // Desktop: Right column tab state for data source / transform switching
+  const [rightDataSourceTab, setRightDataSourceTab] = useState<'datasource' | 'transform'>('datasource')
+
+  // Reset tabs to datasource when dialog opens
+  useEffect(() => {
+    if (open) {
+      setMobileDataSourceTab('datasource')
+      setRightDataSourceTab('datasource')
+    }
+  }, [open])
+
   // Extract data source section props
   const dataSourceSection = [...dataSourceSections, ...allSections].find(s => s.type === 'data-source')
   const dataSourceProps = dataSourceSection?.type === 'data-source' ? dataSourceSection.props : null
@@ -93,17 +107,17 @@ export function ComponentConfigDialog({
       'area-chart',
       'bar-chart',
       'pie-chart',
-      // Indicators
+      // Indicators that have time-series data
       'value-card',
       'sparkline',
-      'led-indicator',
       'progress-bar',
+      // Note: led-indicator doesn't need transform (single state, not time-series)
     ]
     return transformCapableTypes.includes(componentType)
   }, [componentType])
 
   // Map component type to chart type for DataTransformConfig
-  const getChartTypeForTransform = (type: string): 'pie' | 'bar' | 'line' | 'area' | 'card' | 'sparkline' | 'led' | 'progress' => {
+  const getChartTypeForTransform = (type: string): 'pie' | 'bar' | 'line' | 'area' | 'card' | 'sparkline' | 'progress' => {
     if (type.endsWith('-chart')) {
       return type.replace(/-chart$/, '') as 'pie' | 'bar' | 'line' | 'area'
     }
@@ -112,8 +126,6 @@ export function ComponentConfigDialog({
         return 'card'
       case 'sparkline':
         return 'sparkline'
-      case 'led-indicator':
-        return 'led'
       case 'progress-bar':
         return 'progress'
       default:
@@ -131,12 +143,19 @@ export function ComponentConfigDialog({
     dataSourceProps?.onChange(dataSource as any)
   }
 
-  // Create a stable key for ComponentPreview to force re-render when dataSource changes
-  const previewKey = useMemo(() => {
+  // Create a stable key for ComponentPreview to force re-render when dataSource selection changes
+  // The key should NOT change when transform settings change, only when selection changes
+  const [previewKey, setPreviewKey] = useState<string>('preview-no-ds')
+  const coreIdentifier = useMemo(() => {
     if (!previewDataSource) return 'preview-no-ds'
     const sources = normalizeDataSource(previewDataSource)
     return sources.map(s => `${s.type}:${s.deviceId || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`).join('|')
   }, [previewDataSource])
+
+  // Only update the key state when core identifier actually changes
+  useEffect(() => {
+    setPreviewKey(coreIdentifier)
+  }, [coreIdentifier])
 
   // Handle data transform configuration changes
   const handleDataTransformChange = (updates: Partial<DataSource>) => {
@@ -274,30 +293,89 @@ export function ComponentConfigDialog({
 
               {/* Config Tab */}
               <TabsContent value="config" className="flex-1 overflow-y-auto flex flex-col">
-                {/* Data Source Section */}
+                {/* Data Source + Transform Section (Mobile) */}
                 {hasDataSource && (
                   <div className="rounded-xl border bg-card overflow-hidden mx-4 mt-2">
-                    <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
-                      <Settings className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-semibold">数据源配置</span>
-                      {hasConfiguredDataSource && (
-                        <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />
-                      )}
-                    </div>
-                    <div className="p-4">
-                      <UnifiedDataSourceConfig
-                        value={previewDataSource}
-                        onChange={handleDataSourceChange}
-                        allowedTypes={dataSourceProps?.allowedTypes}
-                        multiple={multiple}
-                        maxSources={maxSources}
-                      />
-                    </div>
+                    {/* Tab List - Manual implementation for mobile to avoid nested Tabs */}
+                    {shouldShowDataTransform ? (
+                      <>
+                        <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => setMobileDataSourceTab('datasource')}
+                              className={`px-3 h-8 text-sm rounded-none transition-colors border-b-2 ${
+                                mobileDataSourceTab === 'datasource'
+                                  ? 'border-primary text-foreground'
+                                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              数据源
+                            </button>
+                            <button
+                              onClick={() => setMobileDataSourceTab('transform')}
+                              className={`px-3 h-8 text-sm rounded-none transition-colors border-b-2 ${
+                                mobileDataSourceTab === 'transform'
+                                  ? 'border-primary text-foreground'
+                                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              转换
+                            </button>
+                          </div>
+                          {hasConfiguredDataSource && (
+                            <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />
+                          )}
+                        </div>
+
+                        {/* Data Source Tab Content */}
+                        {mobileDataSourceTab === 'datasource' && (
+                          <div className="p-4">
+                            <UnifiedDataSourceConfig
+                              value={previewDataSource}
+                              onChange={handleDataSourceChange}
+                              allowedTypes={dataSourceProps?.allowedTypes}
+                              multiple={multiple}
+                              maxSources={maxSources}
+                            />
+                          </div>
+                        )}
+
+                        {/* Transform Tab Content */}
+                        {mobileDataSourceTab === 'transform' && (
+                          <div className="p-4">
+                            <DataTransformConfig
+                              dataSource={previewDataSource}
+                              onChange={handleDataTransformChange}
+                              chartType={getChartTypeForTransform(componentType)}
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
+                          <Settings className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-semibold">数据源配置</span>
+                          {hasConfiguredDataSource && (
+                            <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />
+                          )}
+                        </div>
+                        <div className="p-4">
+                          <UnifiedDataSourceConfig
+                            value={previewDataSource}
+                            onChange={handleDataSourceChange}
+                            allowedTypes={dataSourceProps?.allowedTypes}
+                            multiple={multiple}
+                            maxSources={maxSources}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
-                {/* Config Tabs - Style, Display, Data Transform */}
-                {(hasStyleConfig || hasDisplayConfig || shouldShowDataTransform) && (
+                {/* Config Tabs - Style, Display */}
+                {(hasStyleConfig || hasDisplayConfig) && (
                   <Tabs defaultValue="style" className="flex-1 flex flex-col min-h-0 mx-4 mt-3">
                     <TabsList className="w-full justify-start bg-muted/50 p-1 rounded-xl h-11 shrink-0">
                       {hasStyleConfig && (
@@ -308,11 +386,6 @@ export function ComponentConfigDialog({
                       {hasDisplayConfig && (
                         <TabsTrigger value="display" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
                           显示
-                        </TabsTrigger>
-                      )}
-                      {shouldShowDataTransform && (
-                        <TabsTrigger value="transform" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                          转换
                         </TabsTrigger>
                       )}
                     </TabsList>
@@ -326,16 +399,6 @@ export function ComponentConfigDialog({
                     {hasDisplayConfig && (
                       <TabsContent value="display" className="min-h-0 overflow-y-auto mt-3">
                         <ConfigRenderer sections={finalDisplaySections} />
-                      </TabsContent>
-                    )}
-
-                    {shouldShowDataTransform && (
-                      <TabsContent value="transform" className="min-h-0 overflow-y-auto mt-3">
-                        <DataTransformConfig
-                          dataSource={previewDataSource}
-                          onChange={handleDataTransformChange}
-                          chartType={getChartTypeForTransform(componentType)}
-                        />
                       </TabsContent>
                     )}
                   </Tabs>
@@ -359,8 +422,8 @@ export function ComponentConfigDialog({
 
           {/* Large screens: Two-column layout */}
           <div className="hidden lg:flex flex-1 overflow-hidden">
-            {/* Left: Preview + Style/Display Config (40%) */}
-            <div className="w-[40%] min-w-[360px] border-r flex flex-col bg-background overflow-hidden">
+            {/* Left: Preview + Style/Display Config (50%) */}
+            <div className="w-1/2 border-r flex flex-col bg-background overflow-hidden">
               {/* Preview */}
               <div className="shrink-0 border-b overflow-hidden">
                 <ComponentPreview
@@ -373,8 +436,8 @@ export function ComponentConfigDialog({
                 />
               </div>
 
-              {/* Config Tabs - Style, Display, Data Transform */}
-              {(hasStyleConfig || hasDisplayConfig || shouldShowDataTransform) && (
+              {/* Config Tabs - Style, Display */}
+              {(hasStyleConfig || hasDisplayConfig) && (
                 <Tabs defaultValue="style" className="flex-1 flex flex-col min-h-0">
                   <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-3 h-10 shrink-0">
                     {hasStyleConfig && (
@@ -385,11 +448,6 @@ export function ComponentConfigDialog({
                     {hasDisplayConfig && (
                       <TabsTrigger value="display" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
                         显示
-                      </TabsTrigger>
-                    )}
-                    {shouldShowDataTransform && (
-                      <TabsTrigger value="transform" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
-                        转换
                       </TabsTrigger>
                     )}
                   </TabsList>
@@ -405,29 +463,19 @@ export function ComponentConfigDialog({
                       <ConfigRenderer sections={finalDisplaySections} />
                     </TabsContent>
                   )}
-
-                  {shouldShowDataTransform && (
-                    <TabsContent value="transform" className="min-h-0 overflow-y-auto p-3">
-                      <DataTransformConfig
-                        dataSource={previewDataSource}
-                        onChange={handleDataTransformChange}
-                        chartType={getChartTypeForTransform(componentType)}
-                      />
-                    </TabsContent>
-                  )}
                 </Tabs>
               )}
 
               {/* Legacy sections fallback */}
-              {!hasStyleConfig && !hasDisplayConfig && !shouldShowDataTransform && allSections.length > 0 && !hasDataSource && (
+              {!hasStyleConfig && !hasDisplayConfig && allSections.length > 0 && !hasDataSource && (
                 <div className="flex-1 overflow-y-auto p-3">
                   <ConfigRenderer sections={allSections} />
                 </div>
               )}
             </div>
 
-            {/* Right: Title + Data Source Config (60%) */}
-            <div className="flex-1 min-w-[400px] flex flex-col overflow-hidden bg-background">
+            {/* Right: Title + Data Source + Transform Config (50%) */}
+            <div className="w-1/2 flex flex-col overflow-hidden bg-background">
               {/* Title Input (only if not in display sections) */}
               {!showTitleInDisplay && (
                 <div className="px-4 py-3 border-b bg-muted/20">
@@ -443,25 +491,60 @@ export function ComponentConfigDialog({
                 </div>
               )}
 
-              {/* Data Source Section */}
-              <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Data Source + Transform Section */}
+              <div className="flex-1 min-h-0 flex flex-col">
                 {hasDataSource ? (
-                  <div className="flex flex-col h-full">
-                    <div className="flex items-center gap-2 px-5 py-2.5 bg-muted/30 border-b shrink-0">
-                      <Settings className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-semibold">数据源配置</span>
+                  <>
+                    {/* Tab List - External wrapper */}
+                    <div className="flex items-center gap-2 px-4 py-2 bg-muted/30 border-b shrink-0">
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setRightDataSourceTab('datasource')}
+                          className={`px-3 h-8 text-sm rounded-none transition-colors border-b-2 ${
+                            rightDataSourceTab === 'datasource'
+                              ? 'border-primary text-foreground'
+                              : 'border-transparent text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          数据源
+                        </button>
+                        {shouldShowDataTransform && (
+                          <button
+                            onClick={() => setRightDataSourceTab('transform')}
+                            className={`px-3 h-8 text-sm rounded-none transition-colors border-b-2 ${
+                              rightDataSourceTab === 'transform'
+                                ? 'border-primary text-foreground'
+                                : 'border-transparent text-muted-foreground hover:text-foreground'
+                            }`}
+                          >
+                            转换
+                          </button>
+                        )}
+                      </div>
                       {hasConfiguredDataSource && (
                         <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />
                       )}
                     </div>
-                    <div className="flex-1 overflow-hidden">
-                      <UnifiedDataSourceConfig
-                        value={previewDataSource}
-                        onChange={handleDataSourceChange}
-                        allowedTypes={dataSourceProps?.allowedTypes}
-                        multiple={multiple}
-                        maxSources={maxSources}
-                      />
+
+                    {/* Tab Content - Direct rendering without Tabs wrapper */}
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                      {rightDataSourceTab === 'datasource' ? (
+                        <UnifiedDataSourceConfig
+                          value={previewDataSource}
+                          onChange={handleDataSourceChange}
+                          allowedTypes={dataSourceProps?.allowedTypes}
+                          multiple={multiple}
+                          maxSources={maxSources}
+                        />
+                      ) : (
+                        <div className="flex-1 overflow-y-auto p-4">
+                          <DataTransformConfig
+                            dataSource={previewDataSource}
+                            onChange={handleDataTransformChange}
+                            chartType={getChartTypeForTransform(componentType)}
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {/* Other data source related sections */}
@@ -470,7 +553,7 @@ export function ComponentConfigDialog({
                         <ConfigRenderer sections={dataSourceSections.slice(1)} />
                       </div>
                     )}
-                  </div>
+                  </>
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
                     <div className="w-12 h-12 rounded-xl bg-muted/30 flex items-center justify-center mb-3">

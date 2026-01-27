@@ -41,6 +41,7 @@ import {
   ToggleLeft as SwitchIcon,
   Star,
   MapPin,
+  Monitor,
   RotateCw,
   // Media icons
   Image as ImageIcon,
@@ -50,7 +51,6 @@ import {
   Globe,
   QrCode,
   Square as SquareIcon,
-  Map,
   Type,
   Code,
   Link,
@@ -65,6 +65,7 @@ import {
   GitBranch,
   Network,
   Map as MapIcon,
+  Zap,
   Box,
   Cloud,
   // Agent icons
@@ -154,9 +155,14 @@ import {
   MapDisplay,
   VideoDisplay,
   CustomLayer,
+  MapEditorDialog,
+  type MapBinding,
+  type MapBindingType,
+  type MapMarker,
 } from '@/components/dashboard'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
+import type { Device } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
 import { confirm } from '@/hooks/use-confirm'
 
@@ -310,7 +316,7 @@ const COMPONENT_LIBRARY: ComponentCategory[] = [
     categoryLabel: 'Spatial & Media',
     categoryIcon: MapPin,
     items: [
-      { id: 'map-display', name: 'Map Display', description: 'Interactive map with markers', icon: Map },
+      { id: 'map-display', name: 'Map Display', description: 'Interactive map with markers', icon: MapIcon },
       { id: 'video-display', name: 'Video Display', description: 'Video player and streams', icon: Camera },
       { id: 'custom-layer', name: 'Custom Layer', description: 'Free-form container', icon: SquareIcon },
     ],
@@ -433,8 +439,19 @@ function getChartHeight(component: DashboardComponent): number | 'auto' {
   return calculatedHeight
 }
 
-function renderDashboardComponent(component: DashboardComponent) {
+function renderDashboardComponent(component: DashboardComponent, devices: Device[]) {
   const config = (component as any).config || {}
+  // Debug: log bindings for map-display
+  if (component.type === 'map-display') {
+    console.log('=== renderDashboardComponent map-display ===')
+    console.log('component.id:', component.id)
+    console.log('config.bindings:', config.bindings)
+    console.log('config.bindings length:', config.bindings?.length)
+    console.log('config.keys:', Object.keys(config))
+    console.log('config:', config)
+    console.log('full component:', component)
+    console.log('======================================')
+  }
   // dataSource is a separate property on GenericComponent, not part of config
   const dataSource = (component as any).dataSource
   const commonProps = getCommonDisplayProps(component)
@@ -477,6 +494,7 @@ function renderDashboardComponent(component: DashboardComponent) {
           valueMap={config.valueMap}
           defaultState={config.defaultState}
           showGlow={config.showGlow ?? true}
+          showAnimation={config.showAnimation ?? true}
           showCard={config.showCard ?? true}
         />
       )
@@ -697,22 +715,116 @@ function renderDashboardComponent(component: DashboardComponent) {
       )
 
     case 'map-display':
+      // Convert bindings to markers format for MapDisplay
+      console.log('=== Rendering map-display ===')
+      console.log('component.id:', component.id)
+      console.log('config keys:', Object.keys(config))
+      console.log('config.bindings:', config.bindings)
+      console.log('config.bindings length:', config.bindings?.length)
+      console.log('dataSource:', dataSource)
+      console.log('==========================')
+
+      // Get devices from store for metric values and names
+      // Use devices from store hook instead of getState() to ensure reactivity
+      const storeDevices = devices
+
+      // Log all device IDs in store for debugging
+      console.log('[Map] Available devices in store:', storeDevices.map(d => ({ id: d.id, device_id: d.device_id, name: d.name, online: d.online })))
+
+      // Helper to get device name
+      const getDeviceName = (deviceId: string) => {
+        const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
+        return device?.name || device?.device_id || deviceId
+      }
+
+      // Helper to get device status
+      const getDeviceStatus = (deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
+        const device = storeDevices.find(d => d.id === deviceId || d.device_id === deviceId)
+        if (!device) return undefined
+        return device.online ? 'online' : 'offline'
+      }
+
+      const bindingsMarkers = (config.bindings as MapBinding[])?.map((binding): MapMarker => {
+        // Get type from icon first, then fallback to type
+        const markerType = binding.icon || binding.type
+        const ds = binding.dataSource as any
+
+        // Get the device for this binding (used for status, metric values, names)
+        const device = ds?.deviceId ? storeDevices.find(d => d.id === ds.deviceId || d.device_id === ds.deviceId) : undefined
+
+        // Get metric value for metric bindings
+        let metricValue: string | undefined = undefined
+        if (binding.type === 'metric' && ds?.deviceId) {
+          const metricKey = ds.metricId || ds.property
+          if (device?.current_values && metricKey) {
+            const rawValue = device.current_values[metricKey]
+            if (rawValue !== undefined && rawValue !== null) {
+              metricValue = typeof rawValue === 'number'
+                ? rawValue.toFixed(1)
+                : String(rawValue)
+            } else {
+              // Value not found - log for debugging
+              console.log('[Map] Metric value not found:', {
+                deviceId: ds.deviceId,
+                metricKey,
+                availableKeys: Object.keys(device.current_values),
+                current_values: device.current_values,
+              })
+            }
+          } else {
+            console.log('[Map] Device or current_values not found:', {
+            deviceId: ds.deviceId,
+            deviceFound: !!device,
+            hasCurrentValues: !!device?.current_values,
+            metricKey,
+          })
+          }
+        }
+
+        return {
+          id: binding.id,
+          latitude: binding.position === 'auto' || !binding.position
+            ? (config.center as { lat: number; lng: number })?.lat ?? 39.9042
+            : binding.position.lat,
+          longitude: binding.position === 'auto' || !binding.position
+            ? (config.center as { lat: number; lng: number })?.lng ?? 116.4074
+            : binding.position.lng,
+          label: binding.name,
+          markerType,
+          // Device-specific fields - use actual device status
+          deviceId: ds?.deviceId,
+          status: binding.type === 'device' ? getDeviceStatus(ds.deviceId) : undefined,
+          // Metric-specific fields
+          metricValue: binding.type === 'metric' ? (metricValue || '--') : undefined,
+          // Command-specific fields
+          command: binding.type === 'command' ? ds?.command : undefined,
+          // Names for display
+          deviceName: ds?.deviceId ? getDeviceName(ds.deviceId) : undefined,
+          metricName: ds?.metricId || ds?.property,
+          commandName: binding.type === 'command' ? ds?.command : undefined,
+        }
+      }) ?? []
+
+      console.log('Generated bindingsMarkers:', bindingsMarkers)
+      console.log('config.markers:', config.markers)
+
+      // Use bindings markers if available, otherwise fallback to config.markers or empty array
+      const displayMarkers = bindingsMarkers.length > 0 ? bindingsMarkers : (config.markers as MapMarker[] || [])
+      console.log('Final displayMarkers:', displayMarkers)
+
       return (
         <MapDisplay
           {...spreadableProps}
           dataSource={dataSource}
-          markers={config.markers}
-          layers={config.layers}
+          markers={displayMarkers}
           center={config.center}
           zoom={config.zoom}
           minZoom={config.minZoom}
           maxZoom={config.maxZoom}
           showControls={config.showControls ?? true}
-          showLayers={config.showLayers ?? true}
           showFullscreen={config.showFullscreen ?? true}
           interactive={config.interactive ?? true}
           tileLayer={config.tileLayer || 'osm'}
-          markerColor={config.markerColor}
           deviceBinding={config.deviceBinding}
         />
       )
@@ -852,6 +964,10 @@ export function VisualDashboard() {
   const [configOpen, setConfigOpen] = useState(false)
   const [selectedComponent, setSelectedComponent] = useState<DashboardComponent | null>(null)
 
+  // Map editor dialog state
+  const [mapEditorOpen, setMapEditorOpen] = useState(false)
+  const [mapEditorBindings, setMapEditorBindings] = useState<MapBinding[]>([])
+
   // Persist sidebar state to localStorage
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const saved = localStorage.getItem('neotalk_dashboard_sidebar_open')
@@ -923,8 +1039,13 @@ export function VisualDashboard() {
     const components = currentDashboard?.components ?? []
     const prevComponents = prevComponentsRef.current ?? []
 
+    console.log('[componentsStableKey] Recalculating, configVersion:', configVersion)
+    console.log('[componentsStableKey] components.length:', components.length)
+    console.log('[componentsStableKey] prevComponents.length:', prevComponents.length)
+
     // Quick check: if length changed, definitely different
     if (components.length !== prevComponents.length) {
+      console.log('[componentsStableKey] Length changed, returning changed key')
       prevComponentsRef.current = components
       return `changed-${components.length}-${Date.now()}-${configVersion}`
     }
@@ -935,6 +1056,7 @@ export function VisualDashboard() {
       const prev = prevComponents[i]
 
       if (!prev) {
+        console.log('[componentsStableKey] New component detected:', curr.id)
         prevComponentsRef.current = components
         return `new-${curr.id}-${curr.type}-${Date.now()}-${configVersion}`
       }
@@ -949,12 +1071,19 @@ export function VisualDashboard() {
           curr.position.h !== prev.position.h ||
           JSON.stringify(curr.config) !== JSON.stringify(prev.config) ||
           JSON.stringify((curr as any).dataSource) !== JSON.stringify((prev as any).dataSource)) {
+        console.log('[componentsStableKey] Component changed:', curr.id)
+        if (JSON.stringify(curr.config) !== JSON.stringify(prev.config)) {
+          console.log('[componentsStableKey] - Config changed')
+          console.log('[componentsStableKey] - curr.config:', curr.config)
+          console.log('[componentsStableKey] - prev.config:', prev.config)
+        }
         prevComponentsRef.current = components
         return `changed-${curr.id}-${Date.now()}-${configVersion}`
       }
     }
 
     // No actual changes detected - return stable key with version
+    console.log('[componentsStableKey] No changes detected, returning stable key')
     return `stable-${components.length}-${configVersion}`
   }, [currentDashboard?.components, configVersion])
 
@@ -986,6 +1115,16 @@ export function VisualDashboard() {
         if (dataSource?.deviceId) {
           deviceIds.add(dataSource.deviceId)
         }
+        // Also check for devices in map-display bindings
+        if (genericComponent.type === 'map-display') {
+          const bindings = (genericComponent.config as any)?.bindings as MapBinding[] || []
+          for (const binding of bindings) {
+            const ds = binding.dataSource as any
+            if (ds?.deviceId) {
+              deviceIds.add(ds.deviceId)
+            }
+          }
+        }
       }
     }
 
@@ -1013,19 +1152,32 @@ export function VisualDashboard() {
       return
     }
 
-    // Only create if truly no dashboards exist
-    if (dashboards.length === 0 && !currentDashboard) {
+    // Check localStorage to verify if we truly have no dashboards
+    // This prevents creating duplicate when state is out of sync
+    const storedDashboards = localStorage.getItem('neotalk_dashboards')
+    const hasStoredDashboards = storedDashboards && storedDashboards !== '[]' && storedDashboards !== 'null'
+
+    // Don't create if we have:
+    // - Dashboards in localStorage, OR
+    // - Dashboards in state, OR
+    // - Current dashboard already set
+    if (hasStoredDashboards || dashboards.length > 0 || currentDashboard) {
       hasAttemptedCreation.current = true
-      createDashboard({
-        name: 'Overview',
-        layout: {
-          columns: 12,
-          rows: 'auto' as const,
-          breakpoints: { lg: 1200, md: 996, sm: 768, xs: 480 },
-        },
-        components: [],
-      })
+      return
     }
+
+    // Create default dashboard only when truly empty everywhere
+    console.log('[VisualDashboard] Creating default dashboard - no dashboards found')
+    hasAttemptedCreation.current = true
+    createDashboard({
+      name: 'Overview',
+      layout: {
+        columns: 12,
+        rows: 'auto' as const,
+        breakpoints: { lg: 1200, md: 996, sm: 768, xs: 480 },
+      },
+      components: [],
+    })
   }, [dashboards.length, currentDashboard, dashboardsLoading, createDashboard])
 
   // Handle adding a component
@@ -1324,7 +1476,7 @@ export function VisualDashboard() {
           onRemove={removeComponent}
           onDuplicate={duplicateComponent}
         >
-          {renderDashboardComponent(component)}
+          {renderDashboardComponent(component, devices)}
         </ComponentWrapper>
       ),
     })) ?? []
@@ -1352,9 +1504,12 @@ export function VisualDashboard() {
       if (currentJSON !== lastSyncedConfigRef.current) {
         // Separate dataSource from config for proper update
         const { dataSource, ...configOnly } = componentConfig
+        const currentDS = (selectedComponent as any).dataSource
         const updateData: any = { config: configOnly }
-        // Only include dataSource if it exists (for GenericComponent)
-        if (dataSource !== undefined) {
+        // Include dataSource if:
+        // 1. It's defined (has a value), OR
+        // 2. It's undefined but the component previously had a dataSource (need to clear it)
+        if (dataSource !== undefined || currentDS !== undefined) {
           updateData.dataSource = dataSource
         }
         // Update the component with current config for live preview (don't persist yet)
@@ -1379,8 +1534,12 @@ export function VisualDashboard() {
     if (selectedComponent && originalComponentConfig) {
       // Revert to original config (no need to persist - reverting to saved state)
       const { dataSource, ...configOnly } = originalComponentConfig
+      const currentDS = (selectedComponent as any).dataSource
       const updateData: any = { config: configOnly }
-      if (dataSource !== undefined) {
+      // Include dataSource if:
+      // 1. Original config had dataSource, OR
+      // 2. Original config didn't have dataSource but current component does (need to clear it)
+      if (dataSource !== undefined || currentDS !== undefined) {
         updateData.dataSource = dataSource
       }
       updateComponent(selectedComponent.id, updateData, false)
@@ -1395,9 +1554,127 @@ export function VisualDashboard() {
 
   // Handle saving component config - persist the dashboard to localStorage
   const handleSaveConfig = async () => {
+    if (selectedComponent) {
+      console.log('=== handleSaveConfig ===')
+
+      // Get the latest component from the store to merge with local changes
+      const latestDashboard = useStore.getState().currentDashboard
+      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
+
+      console.log('selectedComponent.id:', selectedComponent.id)
+      console.log('local componentConfig:', componentConfig)
+      console.log('latestComponent config:', (latestComponent as any)?.config)
+
+      // Merge local config changes with the latest component config
+      // Local changes take precedence
+      const mergedConfig = {
+        ...(latestComponent as any)?.config || {},
+        ...componentConfig,
+      }
+
+      console.log('mergedConfig:', mergedConfig)
+
+      // Update the component in the store
+      updateComponent(selectedComponent.id, {
+        config: mergedConfig,
+        title: configTitle,
+      }, false)
+
+      // Verify after update
+      setTimeout(() => {
+        const verifyDashboard = useStore.getState().currentDashboard
+        const verifyComponent = verifyDashboard?.components.find(c => c.id === selectedComponent.id)
+        console.log('=== After saveConfig verification ===')
+        console.log('verifyComponent.config:', (verifyComponent as any)?.config)
+        console.log('verifyComponent.config.bindings:', ((verifyComponent as any)?.config)?.bindings)
+      }, 50)
+    }
     // Persist all changes to localStorage
     await persistDashboard()
     setConfigOpen(false)
+  }
+
+  // Handle saving map editor bindings
+  const handleMapEditorSave = async (bindings: MapBinding[]) => {
+    console.log('=== handleMapEditorSave ===')
+    console.log('bindings received:', bindings)
+    console.log('bindings count:', bindings?.length)
+
+    // Fix any duplicate IDs in bindings before saving
+    const idCount = new Map<string, number>() as Map<string, number>
+    const fixedBindings = bindings.map((binding, index) => {
+      const ds = binding.dataSource as any
+      const currentId = binding.id
+      idCount.set(currentId, (idCount.get(currentId) || 0) + 1)
+
+      // If ID is duplicated, regenerate it
+      if (idCount.get(currentId)! > 1) {
+        let newId: string
+        if (binding.type === 'metric' || ds?.type === 'telemetry') {
+          newId = `metric-${ds?.deviceId}-${ds?.metricId || ds?.property || index}`
+        } else if (binding.type === 'command') {
+          newId = `command-${ds?.deviceId}-${ds?.command}`
+        } else {
+          newId = `device-${ds?.deviceId}-${index}`
+        }
+        console.log(`Fixing duplicate ID in save: ${currentId} -> ${newId}`)
+        return { ...binding, id: newId }
+      }
+      return binding
+    })
+
+    if (selectedComponent) {
+      // CRITICAL FIX: Get the latest component config from the store to avoid stale state
+      const latestDashboard = useStore.getState().currentDashboard
+      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
+
+      console.log('selectedComponent.id:', selectedComponent.id)
+      console.log('latestComponent found:', !!latestComponent)
+
+      const latestConfig = (latestComponent as any)?.config || {}
+      const latestDataSource = (latestComponent as any)?.dataSource
+
+      console.log('latestConfig keys:', Object.keys(latestConfig))
+      console.log('latestConfig.bindings:', latestConfig.bindings)
+      console.log('latestDataSource:', latestDataSource)
+
+      // Merge the latest config with the new bindings, preserving dataSource
+      const newConfig = { ...latestConfig, bindings: fixedBindings }
+      const updateData: any = { config: newConfig }
+
+      // CRITICAL: Preserve dataSource when updating
+      if (latestDataSource) {
+        updateData.dataSource = latestDataSource
+      }
+
+      console.log('updateData to save:', updateData)
+      console.log('updateData.config.bindings:', updateData.config.bindings)
+
+      // Update the store with both config and dataSource
+      updateComponent(selectedComponent.id, updateData, false)
+
+      // Force immediate re-render by incrementing configVersion
+      setConfigVersion(v => v + 1)
+
+      // Update local config state
+      setComponentConfig(prev => ({ ...prev, bindings: fixedBindings }))
+
+      // Verify after update
+      setTimeout(() => {
+        const verifyDashboard = useStore.getState().currentDashboard
+        const verifyComponent = verifyDashboard?.components.find(c => c.id === selectedComponent.id)
+        console.log('=== After save verification ===')
+        console.log('verifyComponent.config:', (verifyComponent as any)?.config)
+        console.log('verifyComponent.config.bindings:', ((verifyComponent as any)?.config)?.bindings)
+        console.log('verifyComponent.dataSource:', (verifyComponent as any)?.dataSource)
+        console.log('=============================')
+      }, 50)
+    }
+
+    // Persist to localStorage
+    await persistDashboard()
+
+    setMapEditorOpen(false)
   }
 
   // Handle title change
@@ -1923,6 +2200,17 @@ export function VisualDashboard() {
                       />
                       <label htmlFor="showGlow" className="text-sm cursor-pointer">
                         发光效果
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="showAnimation"
+                        checked={config.showAnimation ?? true}
+                        onCheckedChange={(checked) => updateConfig('showAnimation')(checked === true)}
+                      />
+                      <label htmlFor="showAnimation" className="text-sm cursor-pointer">
+                        动画效果
                       </label>
                     </div>
 
@@ -2827,7 +3115,7 @@ export function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['static', 'device', 'device-info', 'telemetry', 'api'],
+                allowedTypes: ['device', 'device-info'],
               },
             },
           ],
@@ -2961,8 +3249,96 @@ export function VisualDashboard() {
               type: 'data-source' as const,
               props: {
                 dataSource: config.dataSource,
-                onChange: updateDataSource,
-                allowedTypes: ['static', 'device', 'api'],
+                onChange: (newSource: DataSourceOrList | DataSource | undefined) => {
+                  console.log('=== DataSource onChange ===')
+                  console.log('newSource:', newSource)
+
+                  updateDataSource(newSource)
+                  // When data source changes, update bindings automatically
+                  if (Array.isArray(newSource) && newSource.length > 0) {
+                    const newBindings: MapBinding[] = newSource.map((ds, index) => {
+                      console.log(`=== Processing dataSource[${index}] ===`)
+                      console.log('  ds:', JSON.stringify(ds))
+
+                      // Determine type based on dataSource type
+                      let bindingType: MapBindingType = 'device'
+                      if (ds.type === 'metric' || ds.type === 'telemetry') bindingType = 'metric'
+                      else if (ds.type === 'command') bindingType = 'command'
+
+                      console.log(`  ds.type="${ds.type}" -> bindingType="${bindingType}"`)
+
+                      // Use metricId for metrics/telemetry, deviceId for devices/commands
+                      const identifier = (ds.type === 'metric' || ds.type === 'telemetry')
+                        ? (ds.metricId || ds.property || 'unknown')
+                        : (ds.deviceId || ds.command || 'unknown')
+
+                      console.log(`  identifier="${identifier}"`)
+
+                      // Look for existing binding - match by dataSource content
+                      // We match regardless of type to allow type corrections
+                      const existingBinding = (config.bindings as MapBinding[])?.find(b => {
+                        if (!b.dataSource) return false
+                        const bDs = b.dataSource as any
+
+                        // Match by deviceId+metricId/property for metric/telemetry
+                        if (bindingType === 'metric' || ds.type === 'telemetry') {
+                          return (bDs.deviceId === ds.deviceId) && (
+                            bDs.metricId === ds.metricId ||
+                            bDs.property === ds.metricId ||
+                            bDs.property === ds.property
+                          )
+                        }
+                        // Match by deviceId+command for command
+                        if (bindingType === 'command') {
+                          return (bDs.deviceId === ds.deviceId) && (bDs.command === ds.command)
+                        }
+                        // Match by deviceId for device
+                        return bDs.deviceId === ds.deviceId && !ds.metricId && !ds.property && !ds.command
+                      })
+
+                      // Create or update binding - update type if changed
+                      // Generate unique ID: type-deviceId-metricId/command or type-deviceId-index
+                      const generateBindingId = () => {
+                        if (ds.type === 'metric' || ds.type === 'telemetry') {
+                          return `${bindingType}-${ds.deviceId}-${ds.metricId || ds.property || index}`
+                        } else if (ds.type === 'command') {
+                          return `${bindingType}-${ds.deviceId}-${ds.command}`
+                        } else {
+                          return `${bindingType}-${ds.deviceId}-${index}`
+                        }
+                      }
+
+                      const baseBinding = existingBinding || {
+                        id: generateBindingId(),
+                        position: { lat: 39.9042, lng: 116.4074 },
+                      }
+
+                      const newBinding = {
+                        ...baseBinding,
+                        id: existingBinding?.id || generateBindingId(), // Preserve existing ID if available
+                        type: bindingType,
+                        icon: bindingType,
+                        name: (ds.type === 'metric' || ds.type === 'telemetry')
+                          ? (ds.metricId || ds.property || `指标${index + 1}`)
+                          : ds.type === 'command'
+                            ? `${ds.deviceId || ''} → ${ds.command || ''}`
+                            : (ds.deviceId || `设备${index + 1}`),
+                        dataSource: ds,
+                        // Preserve position if existing
+                        position: existingBinding?.position || baseBinding.position,
+                      }
+
+                      console.log(`  -> Created binding:`, newBinding)
+                      return newBinding
+                    })
+
+                    console.log('Final newBindings:', newBindings)
+                    updateConfig('bindings')(newBindings)
+                  }
+                },
+                allowedTypes: ['device', 'metric', 'command'],
+                multiple: true,
+                maxSources: 50,
               },
             },
           ],
@@ -2971,17 +3347,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="map-display-title">显示标题</Label>
-                    <Input
-                      id="map-display-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder="输入组件标题..."
-                      className="h-10"
-                    />
-                  </Field>
-
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>纬度</Label>
@@ -3114,62 +3479,288 @@ export function VisualDashboard() {
                       </select>
                     </Field>
                   </div>
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-4">
+                  <Field>
+                    <Label htmlFor="map-display-title">显示标题</Label>
+                    <Input
+                      id="map-display-title"
+                      value={config.title as string || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="输入组件标题..."
+                      className="h-10"
+                    />
+                  </Field>
 
-                  {/* Device Binding Options */}
-                  <div className="space-y-3 pt-3 border-t">
-                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">设备数据绑定</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field>
-                        <Label>纬度字段</Label>
-                        <Input
-                          placeholder="lat, latitude"
-                          value={config.deviceBinding?.latField || ''}
-                          onChange={(e) => updateConfig('deviceBinding')({ ...(config.deviceBinding as Record<string, unknown> || {}), latField: e.target.value })}
-                          className="h-9"
-                        />
-                      </Field>
-                      <Field>
-                        <Label>经度字段</Label>
-                        <Input
-                          placeholder="lng, lon, longitude"
-                          value={config.deviceBinding?.lngField || ''}
-                          onChange={(e) => updateConfig('deviceBinding')({ ...(config.deviceBinding as Record<string, unknown> || {}), lngField: e.target.value })}
-                          className="h-9"
-                        />
-                      </Field>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">标记绑定</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        管理地图上的设备、指标、指令标记
+                      </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field>
-                        <Label>标签字段</Label>
-                        <Input
-                          placeholder="name, id"
-                          value={config.deviceBinding?.labelField || ''}
-                          onChange={(e) => updateConfig('deviceBinding')({ ...(config.deviceBinding as Record<string, unknown> || {}), labelField: e.target.value })}
-                          className="h-9"
-                        />
-                      </Field>
-                      <Field>
-                        <Label>数值字段</Label>
-                        <Input
-                          placeholder="value, temperature"
-                          value={config.deviceBinding?.valueField || ''}
-                          onChange={(e) => updateConfig('deviceBinding')({ ...(config.deviceBinding as Record<string, unknown> || {}), valueField: e.target.value })}
-                          className="h-9"
-                        />
-                      </Field>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={() => {
+                        // Get the latest bindings from the store, not just local state
+                        const latestDashboard = useStore.getState().currentDashboard
+                        const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                        let latestBindings = (latestComponent as any)?.config?.bindings as MapBinding[] || []
+
+                        // Fix duplicate IDs - regenerate IDs for bindings with duplicate IDs
+                        const idCount = new Map<string, number>()
+                        latestBindings = latestBindings.map((binding, index) => {
+                          const ds = binding.dataSource as any
+                          const currentId = binding.id
+
+                          // Check if this ID is duplicated
+                          idCount.set(currentId, (idCount.get(currentId) || 0) + 1)
+
+                          // If ID will be duplicated or uses old format, regenerate it
+                          if (idCount.get(currentId)! > 1 || binding.type === 'device' && ds?.metricId) {
+                            // Generate unique ID based on type and data
+                            let newId: string
+                            if (binding.type === 'metric' || ds?.type === 'telemetry') {
+                              newId = `metric-${ds?.deviceId}-${ds?.metricId || ds?.property || index}`
+                            } else if (binding.type === 'command') {
+                              newId = `command-${ds?.deviceId}-${ds?.command}`
+                            } else {
+                              newId = `device-${ds?.deviceId}-${index}`
+                            }
+                            console.log(`Fixing duplicate ID: ${currentId} -> ${newId}`)
+                            return { ...binding, id: newId }
+                          }
+
+                          return binding
+                        })
+
+                        console.log('Opening map editor with bindings from store:', latestBindings)
+                        setMapEditorBindings(latestBindings)
+                        setMapEditorOpen(true)
+                      }}
+                    >
+                      <MapIcon className="h-4 w-4 mr-1" />
+                      打开地图编辑器
+                    </Button>
+                  </div>
+
+                  {/* Bindings List - Grouped by Type */}
+                  <div className="border rounded-lg overflow-hidden">
+                    {(() => {
+                      // Get the latest bindings from the store for display
+                      const latestDashboard = useStore.getState().currentDashboard
+                      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                      let displayBindings = (latestComponent as any)?.config?.bindings as MapBinding[] || []
+
+                      // Fix duplicate IDs for display and interaction
+                      const idCount = new Map<string, number>()
+                      displayBindings = displayBindings.map((binding, index) => {
+                        const ds = binding.dataSource as any
+                        const currentId = binding.id
+                        idCount.set(currentId, (idCount.get(currentId) || 0) + 1)
+
+                        // If ID is duplicated or binding type is wrong (e.g., telemetry marked as device)
+                        if (idCount.get(currentId)! > 1 || (binding.type === 'device' && ds?.type === 'telemetry')) {
+                          let newId: string
+                          let newType = binding.type
+
+                          // Fix type for telemetry bindings
+                          if (ds?.type === 'telemetry' || ds?.type === 'metric') {
+                            newType = 'metric'
+                          }
+
+                          if (newType === 'metric' || ds?.type === 'telemetry') {
+                            newId = `metric-${ds?.deviceId}-${ds?.metricId || ds?.property || index}`
+                          } else if (newType === 'command') {
+                            newId = `command-${ds?.deviceId}-${ds?.command}`
+                          } else {
+                            newId = `device-${ds?.deviceId}-${index}`
+                          }
+                          console.log(`Fixing binding: ${currentId} -> ${newId}, type: ${binding.type} -> ${newType}`)
+                          return { ...binding, id: newId, type: newType as any, icon: newType as any }
+                        }
+                        return binding
+                      })
+
+                      // Debug logging for bindings
+                      console.log('=== Display Bindings Debug ===')
+                      console.log('displayBindings count:', displayBindings.length)
+                      displayBindings.forEach((b, i) => {
+                        console.log(`  [${i}] id="${b.id}" type="${b.type}" name="${b.name}"`)
+                      })
+
+                      // Group by type
+                      const groupedBindings = {
+                        device: displayBindings.filter(b => b.type === 'device'),
+                        metric: displayBindings.filter(b => b.type === 'metric'),
+                        command: displayBindings.filter(b => b.type === 'command'),
+                        marker: displayBindings.filter(b => b.type === 'marker'),
+                      }
+
+                      console.log('Grouped counts:', {
+                        device: groupedBindings.device.length,
+                        metric: groupedBindings.metric.length,
+                        command: groupedBindings.command.length,
+                        marker: groupedBindings.marker.length,
+                      })
+
+                      const TYPE_CONFIG = {
+                        device: {
+                          label: '设备',
+                          color: 'bg-green-500',
+                          textColor: 'text-green-600',
+                          bgColor: 'bg-green-50 dark:bg-green-950/30',
+                          borderColor: 'border-green-200 dark:border-green-800',
+                          icon: MapPin,
+                          description: '显示设备位置和状态'
+                        },
+                        metric: {
+                          label: '指标',
+                          color: 'bg-purple-500',
+                          textColor: 'text-purple-600',
+                          bgColor: 'bg-purple-50 dark:bg-purple-950/30',
+                          borderColor: 'border-purple-200 dark:border-purple-800',
+                          icon: Activity,
+                          description: '显示指标数值和趋势'
+                        },
+                        command: {
+                          label: '指令',
+                          color: 'bg-blue-500',
+                          textColor: 'text-blue-600',
+                          bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+                          borderColor: 'border-blue-200 dark:border-blue-800',
+                          icon: Zap,
+                          description: '快速执行设备指令'
+                        },
+                        marker: {
+                          label: '位置标记',
+                          color: 'bg-orange-500',
+                          textColor: 'text-orange-600',
+                          bgColor: 'bg-orange-50 dark:bg-orange-950/30',
+                          borderColor: 'border-orange-200 dark:border-orange-800',
+                          icon: Monitor,
+                          description: '自定义位置标记'
+                        },
+                      } as const
+
+                      if (displayBindings.length === 0) {
+                        return (
+                          <div className="p-6 text-center text-muted-foreground">
+                            <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">暂无标记绑定</p>
+                            <p className="text-xs mt-1">请先在上方添加数据源，然后点击"打开地图编辑器"设置位置</p>
+                          </div>
+                        )
+                      }
+
+                      return (Object.keys(groupedBindings) as Array<keyof typeof groupedBindings>).map(type => {
+                        const typeBindings = groupedBindings[type]
+                        if (typeBindings.length === 0) return null
+
+                        const config = TYPE_CONFIG[type]
+                        const Icon = config.icon
+
+                        return (
+                          <div key={type} className="border-b last:border-b-0">
+                            {/* Type Header */}
+                            <div className={`px-3 py-2 ${config.bgColor} border-b ${config.borderColor} flex items-center justify-between`}>
+                              <div className="flex items-center gap-2">
+                                <div className={`w-5 h-5 rounded-full ${config.color} flex items-center justify-center`}>
+                                  <Icon className="h-3 w-3 text-white" />
+                                </div>
+                                <span className="text-sm font-medium">{config.label}</span>
+                                <span className="text-xs text-muted-foreground">({typeBindings.length})</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{config.description}</span>
+                            </div>
+
+                            {/* Bindings of this type */}
+                            <div className="divide-y">
+                              {typeBindings.map((binding) => {
+                                const positionText = binding.position && binding.position !== 'auto'
+                                  ? `(${binding.position.lat.toFixed(4)}, ${binding.position.lng.toFixed(4)})`
+                                  : '自动定位'
+
+                                // Get device/metric info from dataSource
+                                const deviceId = (binding.dataSource as any)?.deviceId
+                                const metricId = (binding.dataSource as any)?.metricId
+                                const command = (binding.dataSource as any)?.command
+
+                                return (
+                                  <div
+                                    key={binding.id}
+                                    className={`flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors cursor-pointer`}
+                                    onClick={() => {
+                                      // Different interactions based on type
+                                      if (type === 'device') {
+                                        // Show device details
+                                        console.log('Device clicked:', deviceId)
+                                        // TODO: Open device details panel
+                                      } else if (type === 'metric') {
+                                        // Show metric value/trend
+                                        console.log('Metric clicked:', deviceId, metricId)
+                                        // TODO: Show metric tooltip
+                                      } else if (type === 'command') {
+                                        // Execute command
+                                        console.log('Command clicked:', deviceId, command)
+                                        // TODO: Execute command
+                                      }
+                                    }}
+                                  >
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${config.color}/20 ${config.textColor}`}>
+                                      <Icon className="h-4 w-4" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate">{binding.name}</div>
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <span>{positionText}</span>
+                                        {deviceId && <span>• {deviceId.slice(0, 8)}...</span>}
+                                        {metricId && <span>• {metricId}</span>}
+                                        {command && <span>• {command}</span>}
+                                      </div>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {type === 'device' && <span className="text-blue-500">查看详情</span>}
+                                      {type === 'metric' && <span className="text-green-500">查看数值</span>}
+                                      {type === 'command' && <span className="text-orange-500">执行</span>}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                      <span>设备</span>
                     </div>
-                    <Field>
-                      <Label>状态字段</Label>
-                      <Input
-                        placeholder="status, online"
-                        value={config.deviceBinding?.statusField || ''}
-                        onChange={(e) => updateConfig('deviceBinding')({ ...(config.deviceBinding as Record<string, unknown> || {}), statusField: e.target.value })}
-                        className="h-9"
-                      />
-                    </Field>
-                    <p className="text-xs text-muted-foreground">
-                      指定设备数据中包含位置信息的字段名。留空则使用默认字段名（lat/lng/latitude/longitude等）。
-                    </p>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                      <span>指标</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                      <span>指令</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-purple-500"></div>
+                      <span>位置标记</span>
+                    </div>
                   </div>
                 </div>
               ),
@@ -3214,7 +3805,7 @@ export function VisualDashboard() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-background">
       {/* Sidebar - Dashboard List */}
       <DashboardListSidebar
         dashboards={dashboards}
@@ -3229,8 +3820,8 @@ export function VisualDashboard() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-border bg-background">
+        {/* Header - fixed at top */}
+        <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-background z-10">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -3361,6 +3952,17 @@ export function VisualDashboard() {
         previewDataSource={componentConfig.dataSource}
         previewConfig={componentConfig}
         showTitleInDisplay={isTitleInDisplayComponent(selectedComponent?.type)}
+      />
+
+      {/* Map Editor Dialog */}
+      <MapEditorDialog
+        open={mapEditorOpen}
+        onOpenChange={setMapEditorOpen}
+        bindings={mapEditorBindings}
+        center={(componentConfig.center as { lat: number; lng: number }) || { lat: 39.9042, lng: 116.4074 }}
+        zoom={componentConfig.zoom as number || 10}
+        tileLayer={componentConfig.tileLayer as string || 'osm'}
+        onSave={handleMapEditorSave}
       />
     </div>
   )

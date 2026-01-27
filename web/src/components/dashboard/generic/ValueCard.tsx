@@ -10,7 +10,7 @@ import { useMemo } from 'react'
 import { ArrowUpRight, ArrowDownRight, Minus, Activity, TrendingUp, TrendingDown } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn, getIconForEntity } from '@/lib/utils'
-import { chartColors, indicatorFontWeight, indicatorColors, dashboardCardBase } from '@/design-system'
+import { chartColors, indicatorFontWeight, indicatorColors, dashboardCardBase, dashboardCardHorizontal } from '@/design-system'
 import { valueCardSize, type ValueCardSize } from '@/design-system/tokens/size'
 import type { DataSourceOrList } from '@/types/dashboard'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -199,21 +199,32 @@ export function ValueCard({
 
   // Format the value with unit and prefix - uses raw data
   // For arrays, use the last value (latest telemetry data)
-  // For objects, extract the 'value' property
+  // For objects, extract the 'value' property (handles both {value} and {time, value} formats)
   const formattedValue = useMemo(() => {
     if (error || data === null || data === undefined) {
       return '-'
     }
 
     // If data is an array, get the last value (latest)
-    let rawValue = data
+    let rawValue: unknown = data
     if (Array.isArray(data) && data.length > 0) {
       rawValue = data[data.length - 1]
     }
 
-    // If rawValue is an object, extract the 'value' property
-    if (typeof rawValue === 'object' && rawValue !== null && 'value' in rawValue) {
-      rawValue = (rawValue as any).value
+    // If rawValue is an object, extract the value from various possible formats
+    // Handles: { value: ... }, { time, value }, { v: ... }, telemetry point objects
+    if (typeof rawValue === 'object' && rawValue !== null) {
+      // Try common value property names
+      const obj = rawValue as Record<string, unknown>
+      const extractedValue = obj.value ?? obj.v ?? obj.avg ?? obj.min ?? obj.max ?? obj.result
+      if (extractedValue !== undefined) {
+        rawValue = extractedValue
+      }
+    }
+
+    // Handle null/undefined after extraction
+    if (rawValue === null || rawValue === undefined) {
+      return '-'
     }
 
     // Convert to string and add prefix/unit
@@ -388,7 +399,7 @@ export function ValueCard({
   // ============================================================================
 
   return (
-    <div className={cn(dashboardCardBase, 'flex-row items-center', sizeConfig.contentGap, sizeConfig.padding, className)}>
+    <div className={cn(dashboardCardHorizontal, 'items-center', sizeConfig.contentGap, sizeConfig.padding, className)}>
       {/* Icon section */}
       <div className={cn('flex items-center justify-center shrink-0', sizeConfig.iconContainer)}>
         <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />

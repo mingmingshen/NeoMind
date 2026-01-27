@@ -182,11 +182,12 @@ export function DashboardGrid({
     // Force re-render to update layouts prop with new drag positions
     setDragKey(k => k + 1)
 
-    // Notify parent component
-    if (onLayoutChange) {
+    // Only notify parent during edit mode (user drag/resize)
+    // Ignore automatic layout changes from responsive resizing
+    if (onLayoutChange && editMode) {
       onLayoutChange(currentLayout as readonly any[])
     }
-  }, [onLayoutChange])
+  }, [onLayoutChange, editMode])
 
   // Track drag start
   const handleDragStart = useCallback(() => {
@@ -235,12 +236,13 @@ export function DashboardGrid({
           overflow: hidden;
         }
 
-        /* Drag placeholder */
+        /* Drag placeholder - use !important to override library defaults */
         .react-grid-placeholder {
-          background: hsl(var(--primary) / 0.08);
-          border: 2px dashed hsl(var(--primary) / 0.3);
-          border-radius: 0.375rem;
+          background: rgba(148, 163, 184, 0.15) !important;
+          border: 1px dashed rgba(148, 163, 184, 0.3) !important;
+          border-radius: 0.5rem;
           margin: 0;
+          transition: all 150ms ease;
         }
 
         /* Edit mode styles - no additional outline/border, components handle their own styling */

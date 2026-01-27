@@ -254,10 +254,10 @@ export class DataMapper {
       return item ? 1 : 0
     }
 
-    // Array - take first element
+    // Array - take last element (most recent for telemetry data)
     if (Array.isArray(item)) {
       if (item.length > 0) {
-        return this.extractValue(item[0], config)
+        return this.extractValue(item[item.length - 1], config)
       }
       return 0
     }

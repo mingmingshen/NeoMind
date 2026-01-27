@@ -109,21 +109,27 @@ export function MarkdownDisplay({
   maxLines,
   className,
 }: MarkdownDisplayProps) {
-  // When there's no dataSource, use propContent directly for preview updates
-  const hasDataSource = dataSource !== undefined
-
-  // Only use useDataSource if we have a dataSource
-  // Otherwise, skip the hook to avoid unnecessary loading states
-  const { data, loading, error } = useDataSource<string>(hasDataSource ? dataSource : undefined, {
+  // Always call useDataSource - it will handle undefined dataSource internally
+  // This ensures proper cleanup when dataSource is removed
+  const { data, loading, error } = useDataSource<string>(dataSource, {
     fallback: propContent,
   })
 
+  const hasDataSource = dataSource !== undefined
+
   // Content determination: use fetched data if available, otherwise use prop
   const content = useMemo(() => {
+    // Only use data source when we have one and it's valid
     if (hasDataSource && !error && data !== undefined && data !== null) {
-      return data
+      // Safely convert data to string, handling arrays and other types
+      if (typeof data === 'string') return data
+      if (Array.isArray(data)) {
+        const firstItem = data[0]
+        return typeof firstItem === 'string' ? firstItem : String(firstItem ?? '')
+      }
+      return String(data ?? '')
     }
-    // No dataSource or error - use propContent directly for immediate preview updates
+    // No dataSource or error - use propContent directly
     return propContent ?? ''
   }, [hasDataSource, error, data, propContent])
 

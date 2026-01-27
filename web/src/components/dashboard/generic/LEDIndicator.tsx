@@ -15,7 +15,6 @@ import { dashboardComponentSize, dashboardCardBase } from '@/design-system/token
 import {
   indicatorFontWeight,
   indicatorColors,
-  getLedAnimation,
   type IndicatorState,
 } from '@/design-system/tokens/indicator'
 import type { DataSource } from '@/types/dashboard'
@@ -41,6 +40,7 @@ export interface LEDIndicatorProps {
   color?: string
   showCard?: boolean
   showGlow?: boolean
+  showAnimation?: boolean  // Control pulse/breathing animation
 
   // Data mapping configuration (enhances valueMap with thresholds)
   // stateThresholds is now part of SingleValueMappingConfig
@@ -78,6 +78,43 @@ const stateConfig = {
   },
 }
 
+// Extract value for matching - handles objects and arrays
+function extractValueForMatching(value: unknown): string {
+  if (value === null || value === undefined) {
+    return ''
+  }
+
+  // Direct string or number
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value).trim().toLowerCase()
+  }
+
+  // Boolean
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false'
+  }
+
+  // Array - take last element (most recent)
+  if (Array.isArray(value)) {
+    if (value.length > 0) {
+      return extractValueForMatching(value[value.length - 1])
+    }
+    return ''
+  }
+
+  // Object - try to extract value field
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>
+    // Try common value fields
+    const valueField = obj.value ?? obj.v ?? obj.val ?? obj.result ?? obj.data ?? obj.state
+    if (valueField !== undefined) {
+      return extractValueForMatching(valueField)
+    }
+  }
+
+  return String(value).trim().toLowerCase()
+}
+
 // Match value to state
 function matchValueToState(
   value: unknown,
@@ -88,7 +125,7 @@ function matchValueToState(
     return defaultState
   }
 
-  const normalizedValue = String(value).trim().toLowerCase()
+  const normalizedValue = extractValueForMatching(value)
 
   for (const mapping of valueMap) {
     if (mapping.values) {
@@ -120,7 +157,7 @@ function getCustomLabel(
 ): string | undefined {
   if (!valueMap) return undefined
 
-  const normalizedValue = String(value).trim().toLowerCase()
+  const normalizedValue = extractValueForMatching(value)
 
   for (const mapping of valueMap) {
     if (mapping.state === matchedState && mapping.label) {
@@ -152,7 +189,7 @@ function getCustomColor(
 ): string | undefined {
   if (!valueMap) return undefined
 
-  const normalizedValue = String(value).trim().toLowerCase()
+  const normalizedValue = extractValueForMatching(value)
 
   for (const mapping of valueMap) {
     if (mapping.state === matchedState && mapping.color) {
@@ -226,6 +263,7 @@ export function LEDIndicator({
   color,
   showCard = true,
   showGlow = true,
+  showAnimation = true,
   dataMapping,
   className,
 }: LEDIndicatorProps) {
@@ -254,6 +292,9 @@ export function LEDIndicator({
 
     // Third try: Auto-detect boolean/string states
     if (data !== null && data !== undefined) {
+      // Extract value for matching (handles objects and arrays)
+      const dataStr = extractValueForMatching(data)
+
       // Check for boolean-like values
       const boolValue = DataMapper.mapToBoolean(data, {
         valueMapping: {
@@ -267,7 +308,6 @@ export function LEDIndicator({
       }
 
       // Check for string states
-      const dataStr = String(data).trim().toLowerCase()
       if (['on', 'true', '1', 'yes', 'enabled', 'active', 'online'].includes(dataStr)) {
         return 'on'
       }
@@ -306,7 +346,9 @@ export function LEDIndicator({
 
   const finalColor = customColor || color || stateCfg.color.base
   const colorConfig = stateCfg.color
-  const animation = getLedAnimation(indicatorState, false)
+
+  // Animation: all active states (on, error, warning) get pulse effect when showAnimation is true
+  const animationClassName = showAnimation && isActive ? 'animate-pulse' : ''
 
   // Convert hex to rgba for background opacity
   const hexToRgba = (hex: string, alpha: number) => {
@@ -350,7 +392,7 @@ export function LEDIndicator({
         'flex items-center justify-center shrink-0 rounded-full',
         config.iconContainer,
         !containerBgColor && (isActive ? colorConfig.bg : 'bg-muted/30'),
-        animation.className
+        animationClassName
       )}
       style={{
         backgroundColor: containerBgColor,

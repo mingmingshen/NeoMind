@@ -458,7 +458,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-56px)]">
+    <div className="flex h-full">
       {/* Desktop Sidebar - fixed on left */}
       {isDesktop && (
         <SessionSidebar

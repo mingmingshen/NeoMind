@@ -6,7 +6,7 @@
  * Shows selected items with individual remove buttons.
  */
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Search, Server, Check, Zap, Info, ChevronRight, X, ChevronDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -227,10 +227,46 @@ export function DataSourceSelectorContent({
     dataSourceToSelectedItems(currentDataSource)
   )
 
-  // Sync selected items when currentDataSource prop changes (e.g., when cleared from outside)
+  // Track previous value to detect actual selection changes
+  const prevCoreFieldsRef = useRef<string>()
+  const prevValueRef = useRef<DataSourceOrList>()
+
+  // Extract core identifying fields for comparison (ignores transform settings)
+  const getCoreFields = (ds: DataSourceOrList | undefined): string => {
+    if (!ds) return ''
+    const sources = Array.isArray(ds) ? ds : [ds]
+    return sources.map(s => {
+      // Only include fields that identify the selection, not transform settings
+      // Exclude: timeRange, limit, aggregate, aggregateExt, transform, params, timeWindow
+      return `${s.type}:${s.deviceId || ''}:${s.metricId || s.property || s.infoProperty || ''}:${s.command || ''}`
+    }).sort().join('|')
+  }
+
+  // Calculate current core fields
+  const currentCoreFields = getCoreFields(currentDataSource)
+
+  // Sync selected items when currentDataSource prop changes
+  // Only reset if core fields changed, not when just transform settings changed
   useEffect(() => {
-    setSelectedItems(dataSourceToSelectedItems(currentDataSource))
-  }, [currentDataSource])
+    // Initialize on first render
+    if (prevValueRef.current === undefined) {
+      prevValueRef.current = currentDataSource
+      prevCoreFieldsRef.current = currentCoreFields
+      return
+    }
+
+    // Only update if core fields actually changed (selection changed)
+    // Transform settings like timeRange, aggregate, etc. should NOT trigger reset
+    if (prevCoreFieldsRef.current !== currentCoreFields) {
+      prevValueRef.current = currentDataSource
+      prevCoreFieldsRef.current = currentCoreFields
+      setSelectedItems(dataSourceToSelectedItems(currentDataSource))
+    }
+    // If only transform settings changed, update the value ref but don't reset selection
+    else if (prevCoreFieldsRef.current === currentCoreFields && currentDataSource !== prevValueRef.current) {
+      prevValueRef.current = currentDataSource
+    }
+  }, [currentDataSource, currentCoreFields])
 
   // Available categories based on allowedTypes
   const availableCategories = useMemo(
@@ -394,7 +430,7 @@ export function DataSourceSelectorContent({
 
       {/* Selected Items Panel (shown when there are selections in multiple mode) */}
       {multiple && selectedItems.size > 0 && (
-        <div className="px-3 py-2 border-b bg-muted/20 shrink-0">
+        <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted/20 shrink-0">
           <button
             onClick={() => setShowSelectedItems(!showSelectedItems)}
             className="flex items-center justify-between w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -411,21 +447,32 @@ export function DataSourceSelectorContent({
           {showSelectedItems && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {selectedItemsArray.map(item => {
-                const label = getSelectedItemLabel(item, devices)
+                const [type, deviceId, ...rest] = item.split(':')
+                const label = rest.join(':')
+                const device = devices.find(d => d.id === deviceId)
+                const deviceName = device?.name || deviceId
+
+                // Icon based on type
+                const TypeIcon = type === 'device-metric' ? Server : type === 'device-command' ? Zap : Info
+                const iconColor = type === 'device-metric' ? 'text-blue-500' : type === 'device-command' ? 'text-amber-500' : 'text-emerald-500'
+
                 return (
-                  <span
+                  <div
                     key={item}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md text-xs"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border border-border/50 text-xs group hover:border-primary/40 transition-all"
                   >
-                    <span className="max-w-[120px] truncate">{label}</span>
+                    <TypeIcon className={cn('h-3 w-3 shrink-0', iconColor)} />
+                    <span className="max-w-[60px] truncate text-foreground/70" title={deviceName}>{deviceName}</span>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="max-w-[80px] truncate text-foreground" title={label}>{label}</span>
                     <button
                       onClick={() => handleRemoveItem(item)}
-                      className="hover:text-destructive transition-colors"
+                      className="ml-0.5 opacity-40 group-hover:opacity-100 hover:text-destructive transition-all"
                       title="移除"
                     >
                       <X className="h-3 w-3" />
                     </button>
-                  </span>
+                  </div>
                 )
               })}
             </div>

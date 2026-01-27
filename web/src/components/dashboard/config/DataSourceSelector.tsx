@@ -133,7 +133,8 @@ export function DataSourceSelector({
       const newSelectedItems = new Set<SelectedItem>()
 
       for (const ds of currentDataSources) {
-        if (ds.type === 'device' && ds.deviceId && ds.property) {
+        // Handle metric type (new) or device type with property (legacy)
+        if ((ds.type === 'metric' || ds.type === 'device') && ds.deviceId && ds.property) {
           newSelectedItems.add(`device-metric:${ds.deviceId}:${ds.property}`)
         } else if (ds.type === 'command' && ds.deviceId && ds.command) {
           newSelectedItems.add(`device-command:${ds.deviceId}:${ds.command}`)
@@ -250,8 +251,9 @@ export function DataSourceSelector({
       if (category === 'device-metric') {
         const [deviceId, property] = rest
         return {
-          type: 'device',
+          type: 'metric',
           deviceId,
+          metricId: property,
           property,
           refresh: 5,
         }

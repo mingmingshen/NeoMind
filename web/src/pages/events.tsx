@@ -335,7 +335,7 @@ export function EventsPage() {
       </Card>
 
       {totalCount > ITEMS_PER_PAGE && (
-        <div className="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-4 pb-2 border-t mt-4">
+        <div className="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-4 pb-2">
           <Pagination
             total={totalCount}
             pageSize={ITEMS_PER_PAGE}

@@ -22,7 +22,7 @@ export function ThemeToggle() {
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
+          className="w-10 h-10 rounded-lg"
         >
           {getIcon()}
         </Button>

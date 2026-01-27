@@ -342,6 +342,9 @@ export function Sparkline({
     const limit = 50 // Default limit for sparkline
     const timeRange = timeWindowToHours(effectiveTimeWindow)
 
+    // Determine aggregate value with proper type
+    const aggregateValue: 'raw' | 'avg' | 'min' | 'max' | 'sum' = effectiveAggregate === 'raw' ? 'raw' : 'avg'
+
     return sources.map(ds => {
       // If already telemetry type, update with settings
       if (ds.type === 'telemetry') {
@@ -349,7 +352,7 @@ export function Sparkline({
           ...ds,
           limit: ds.limit ?? limit,
           timeRange: ds.timeRange ?? timeRange,
-          aggregate: ds.aggregate ?? (effectiveAggregate === 'raw' ? 'raw' : 'avg'),
+          aggregate: ds.aggregate ?? aggregateValue,
           params: {
             ...ds.params,
             includeRawPoints: true,
@@ -365,7 +368,7 @@ export function Sparkline({
           metricId: ds.metricId ?? ds.property ?? 'value',
           timeRange: timeRange,
           limit: limit,
-          aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
+          aggregate: aggregateValue,
           params: {
             includeRawPoints: true,
           },

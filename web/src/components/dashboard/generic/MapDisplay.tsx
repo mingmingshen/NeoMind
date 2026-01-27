@@ -17,15 +17,22 @@ import {
   Navigation,
   ZoomIn,
   ZoomOut,
-  Layers,
   RefreshCw,
   Map as MapIcon,
   Maximize2,
   Minimize2,
   X,
+  Activity,
+  Zap,
+  Monitor,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 import { EmptyState } from '../shared'
+import type { MapBinding } from './MapEditorDialog'
+import { useStore } from '@/store'
+
+// Get sendCommand from store
+const useSendCommand = () => useStore(state => state.sendCommand)
 
 // ============================================================================
 // Types
@@ -42,20 +49,18 @@ export interface MapMarker {
   onClick?: () => void
   metricValue?: string
   command?: string
-}
-
-export interface MapLayer {
-  id: string
-  name: string
-  type: 'devices' | 'metrics' | 'commands' | 'custom'
-  visible: boolean
-  markers?: MapMarker[]
+  // Names for tooltip display
+  deviceName?: string
+  metricName?: string
+  commandName?: string
+  // Marker type for styling
+  markerType?: 'device' | 'metric' | 'command' | 'marker'
 }
 
 export interface MapDisplayProps {
   dataSource?: DataSource
   markers?: MapMarker[]
-  layers?: MapLayer[]
+  bindings?: MapBinding[]  // Bindings from config with type and position info
 
   // Map options
   center?: { lat: number; lng: number }
@@ -66,7 +71,6 @@ export interface MapDisplayProps {
   // Display options
   size?: 'sm' | 'md' | 'lg'
   showControls?: boolean
-  showLayers?: boolean
   showFullscreen?: boolean
   interactive?: boolean
 
@@ -74,6 +78,9 @@ export interface MapDisplayProps {
   tileLayer?: string
   markerColor?: string
   className?: string
+
+  // Editor mode - callback for map click
+  onMapClick?: (lat: number, lng: number) => void
 
   // Device binding options
   deviceBinding?: {
@@ -100,49 +107,183 @@ const TILE_LAYERS: Record<string, string> = {
 interface MapMarkerDotProps {
   marker: MapMarker
   onClick: () => void
+  isSelected?: boolean
 }
 
-function MapMarkerDot({ marker, onClick }: MapMarkerDotProps) {
+function MapMarkerDot({ marker, onClick, isSelected = false }: MapMarkerDotProps) {
+  // Marker type config for colors and icons
+  const getMarkerConfig = () => {
+    const type = marker.markerType || 'device'
+    switch (type) {
+      case 'device':
+        return {
+          bgColor: 'bg-green-500',
+          pingColor: 'bg-green-400',
+          icon: MapPin,
+        }
+      case 'metric':
+        return {
+          bgColor: 'bg-purple-500',
+          pingColor: 'bg-purple-400',
+          icon: Activity,
+        }
+      case 'command':
+        return {
+          bgColor: 'bg-blue-500',
+          pingColor: 'bg-blue-400',
+          icon: Zap,
+        }
+      case 'marker':
+        return {
+          bgColor: 'bg-orange-500',
+          pingColor: 'bg-orange-400',
+          icon: Monitor,
+        }
+      default:
+        return {
+          bgColor: 'bg-green-500',
+          pingColor: 'bg-green-400',
+          icon: MapPin,
+        }
+    }
+  }
+
+  // Status color override (for device online/offline status)
   const getStatusColor = (status?: string) => {
     switch (status) {
       case 'online': return 'bg-green-500'
       case 'offline': return 'bg-gray-400'
       case 'error': return 'bg-red-500'
       case 'warning': return 'bg-yellow-500'
-      default: return 'bg-blue-500'
+      default: return null
+    }
+  }
+
+  const markerConfig = getMarkerConfig()
+  const statusColor = getStatusColor(marker.status)
+  const finalBgColor = statusColor || markerConfig.bgColor
+  const Icon = markerConfig.icon
+
+  // Get tooltip content based on marker type
+  const getTooltipContent = () => {
+    const baseInfo = (
+      <div className="font-medium">{marker.label || 'Unnamed'}</div>
+    )
+
+    switch (marker.markerType) {
+      case 'device':
+        return (
+          <>
+            {baseInfo}
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <span className={`w-2 h-2 rounded-full ${
+                marker.status === 'online' ? 'bg-green-500' :
+                marker.status === 'offline' ? 'bg-gray-400' :
+                marker.status === 'error' ? 'bg-red-500' : 'bg-yellow-500'
+              }`}></span>
+              <span>{marker.status || 'unknown'}</span>
+            </div>
+            {marker.deviceName && marker.deviceName !== marker.label && (
+              <div className="text-xs text-muted-foreground">设备: {marker.deviceName}</div>
+            )}
+          </>
+        )
+
+      case 'metric':
+        return (
+          <>
+            {baseInfo}
+            <div className="text-green-500 font-semibold">值: {marker.metricValue || '--'}</div>
+            {marker.deviceName && (
+              <div className="text-xs text-muted-foreground">设备: {marker.deviceName}</div>
+            )}
+            {marker.metricName && (
+              <div className="text-xs text-muted-foreground">指标: {marker.metricName}</div>
+            )}
+          </>
+        )
+
+      case 'command':
+        return (
+          <>
+            {baseInfo}
+            {marker.commandName && (
+              <div className="text-orange-500 text-sm">指令: {marker.commandName}</div>
+            )}
+            {marker.deviceName && (
+              <div className="text-xs text-muted-foreground mb-2">设备: {marker.deviceName}</div>
+            )}
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-blue-500 hover:bg-blue-600 text-white"
+              onClick={async (e) => {
+                e.stopPropagation()
+                if (marker.deviceId && marker.command) {
+                  const sendCommand = useStore.getState().sendCommand
+                  try {
+                    await sendCommand(marker.deviceId, marker.command)
+                  } catch (error) {
+                    console.error('Failed to execute command:', error)
+                  }
+                }
+              }}
+            >
+              执行指令
+            </Button>
+          </>
+        )
+
+      default:
+        return baseInfo
     }
   }
 
   return (
     <button
-      onClick={onClick}
-      className="absolute transform -translate-x-1/2 -translate-y-1/2 group"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={cn(
+        "absolute transform -translate-x-1/2 -translate-y-1/2 group",
+        isSelected && "z-20"
+      )}
       style={{ left: '50%', top: '50%' }}
     >
-      {/* Pulsing effect for online devices */}
+      {/* Pulsing effect for online devices or active markers */}
       {marker.status === 'online' && (
-        <span className="absolute inline-flex h-full w-full animate-ping opacity-75 rounded-full bg-green-400" />
+        <span className={cn(
+          "absolute inline-flex h-full w-full animate-ping opacity-75 rounded-full",
+          markerConfig.pingColor
+        )} />
       )}
 
-      {/* Marker dot */}
+      {/* Marker with icon */}
       <span
         className={cn(
           'relative inline-flex rounded-full items-center justify-center',
-          getStatusColor(marker.status),
-          'h-4 w-4 border-2 border-background shadow-sm',
-          'group-hover:scale-125 transition-transform'
+          finalBgColor,
+          'h-7 w-7 border-2 border-background shadow-sm',
+          'group-hover:scale-125 transition-transform',
+          isSelected && 'ring-2 ring-white ring-offset-2'
         )}
-      />
+      >
+        {/* Icon inside marker */}
+        <Icon className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+      </span>
 
-      {/* Label tooltip */}
-      {marker.label && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-background/95 rounded shadow-lg text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <div className="font-medium">{marker.label}</div>
-          {marker.metricValue && (
-            <div className="text-muted-foreground">{marker.metricValue}</div>
-          )}
+      {/* Enhanced tooltip - always visible when selected, or on hover */}
+      <div
+        className={cn(
+          "absolute bottom-full left-0 mb-2 px-3 py-2 bg-background/95 backdrop-blur rounded-lg shadow-lg border min-w-[140px] transition-opacity text-left",
+          isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          isSelected ? "pointer-events-auto" : "pointer-events-none"
+        )}
+      >
+        <div className="text-sm">
+          {getTooltipContent()}
         </div>
-      )}
+      </div>
     </button>
   )
 }
@@ -163,6 +304,8 @@ interface SimpleSvgMapProps {
   onCenterChange?: (newCenter: { lat: number; lng: number }) => void
   interactive: boolean
   tileLayer: string
+  onMapClick?: (lat: number, lng: number) => void
+  selectedMarkerId?: string | null
 }
 
 function SimpleSvgMap({
@@ -177,10 +320,15 @@ function SimpleSvgMap({
   onCenterChange,
   interactive,
   tileLayer,
+  onMapClick,
+  selectedMarkerId,
 }: SimpleSvgMapProps) {
+  // Debug: log markers received by SimpleSvgMap
+  console.log('SimpleSvgMap received markers:', markers, 'count:', markers?.length)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const dragStartRef = useRef({ x: 0, y: 0 })
+  const mouseDownRef = useRef({ x: 0, y: 0 }) // Track mouse down position for click detection
   const mapRef = useRef<HTMLDivElement>(null)
   const [actualSize, setActualSize] = useState({ width, height })
 
@@ -305,10 +453,37 @@ function SimpleSvgMap({
     return { x, y }
   }
 
+  // Convert viewport pixel coordinates to lat/lng (for click handling)
+  const viewportToLatLng = (pixelX: number, pixelY: number) => {
+    const n = Math.pow(2, zoom)
+    const containerWidth = actualSize.width || width
+    const containerHeight = actualSize.height || height
+    const centerTile = getTileCoords(center.lat, center.lng, zoom)
+    const centerOffset = getPixelOffsetInTile(center.lat, center.lng, zoom)
+
+    // Calculate pixel distance from center
+    const dx = pixelX - containerWidth / 2 - dragOffset.x
+    const dy = pixelY - containerHeight / 2 - dragOffset.y
+
+    // Convert back to world coordinates
+    const worldX = centerTile.x * TILE_SIZE + centerOffset.x + dx
+    const worldY = centerTile.y * TILE_SIZE + centerOffset.y + dy
+
+    // Convert to lng
+    const lng = (worldX / (n * TILE_SIZE)) * 360 - 180
+
+    // Convert to lat
+    const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * worldY / (n * TILE_SIZE))))
+    const lat = latRad * 180 / Math.PI
+
+    return { lat, lng }
+  }
+
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!interactive) return
     setIsDragging(true)
     dragStartRef.current = { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y }
+    mouseDownRef.current = { x: e.clientX, y: e.clientY }
   }
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -319,11 +494,21 @@ function SimpleSvgMap({
     })
   }
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
+    const wasDragging = isDragging
+    const hadDragOffset = dragOffset.x !== 0 || dragOffset.y !== 0
     setIsDragging(false)
 
+    // Check if this was a click (not a drag)
+    const mouseUpPos = { x: e.clientX, y: e.clientY }
+    const mouseDownPos = mouseDownRef.current
+    const distance = Math.sqrt(
+      Math.pow(mouseUpPos.x - mouseDownPos.x, 2) +
+      Math.pow(mouseUpPos.y - mouseDownPos.y, 2)
+    )
+
     // Update center position based on drag offset
-    if (onCenterChange && (dragOffset.x !== 0 || dragOffset.y !== 0)) {
+    if (onCenterChange && hadDragOffset) {
       const n = Math.pow(2, zoom)
       const containerWidth = actualSize.width || width
       const containerHeight = actualSize.height || height
@@ -348,6 +533,27 @@ function SimpleSvgMap({
 
   const visibleTiles = getVisibleTiles()
 
+  // Handle click on map - only use onClick handler, not mouseUp
+  // This prevents duplicate calls and ensures clicks work properly
+  const handleMapContainerClick = (e: React.MouseEvent) => {
+    if (!onMapClick || !interactive) return
+
+    // Don't trigger if clicking on interactive elements (buttons, etc.)
+    const target = e.target as HTMLElement
+    if (target.tagName === 'BUTTON' || target.closest('button')) {
+      return
+    }
+
+    const rect = mapRef.current?.getBoundingClientRect()
+    if (rect) {
+      const clickX = e.clientX - rect.left
+      const clickY = e.clientY - rect.top
+      const { lat, lng } = viewportToLatLng(clickX, clickY)
+      console.log('Map clicked:', { lat, lng, clickX, clickY, target: target.className })
+      onMapClick(lat, lng)
+    }
+  }
+
   return (
     <div
       ref={mapRef}
@@ -356,6 +562,7 @@ function SimpleSvgMap({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
+      onClick={handleMapContainerClick}
       style={{ cursor: interactive ? 'grab' : 'default' }}
     >
       {/* Render map tiles */}
@@ -379,6 +586,9 @@ function SimpleSvgMap({
       {/* Render markers as absolute positioned elements */}
       {markers.map((marker) => {
         const pos = latLngToViewport(marker.latitude, marker.longitude)
+        console.log(`Rendering marker ${marker.id} (${marker.label}): lat=${marker.latitude}, lng=${marker.longitude}, screenPos=`, pos)
+
+        const isSelected = selectedMarkerId === marker.id
 
         return (
           <div
@@ -393,6 +603,7 @@ function SimpleSvgMap({
             <MapMarkerDot
               marker={marker}
               onClick={() => onMarkerClick(marker)}
+              isSelected={isSelected}
             />
           </div>
         )
@@ -462,21 +673,78 @@ function determineStatus(value: unknown): 'online' | 'offline' | 'error' | 'warn
 export function MapDisplay({
   dataSource,
   markers: propMarkers = [],
-  layers: propLayers = [],
+  bindings,
   center = { lat: 39.9042, lng: 116.4074 }, // Default: Beijing
   zoom = 10,
   minZoom = 2,
   maxZoom = 18,
   size = 'md',
   showControls = true,
-  showLayers = true,
   showFullscreen = true,
   interactive = true,
   tileLayer = 'osm',
   markerColor,
   className,
   deviceBinding,
+  onMapClick,
 }: MapDisplayProps) {
+  // Convert bindings to markers - this preserves the type info from bindings
+  const convertBindingsToMarkers = useCallback((bindings: MapBinding[] | undefined): MapMarker[] => {
+    if (!bindings || bindings.length === 0) return []
+
+    // Get devices from store for name lookup
+    const devices = useStore.getState().devices
+    const getDeviceName = (deviceId: string) => {
+      const device = devices.find(d => d.id === deviceId)
+      return device?.name || deviceId
+    }
+
+    console.log('=== convertBindingsToMarkers ===')
+    console.log('bindings:', bindings)
+
+    return bindings.map((binding): MapMarker => {
+      const position = binding.position === 'auto' || !binding.position
+        ? center
+        : binding.position
+
+      const ds = binding.dataSource as any
+      const deviceId = ds?.deviceId
+
+      const marker: MapMarker = {
+        id: binding.id,
+        deviceId,
+        latitude: position.lat,
+        longitude: position.lng,
+        label: binding.name,
+        // IMPORTANT: Use binding.type to set markerType
+        markerType: binding.type || binding.icon || 'device',
+      }
+
+      // Set type-specific fields
+      if (binding.type === 'metric') {
+        marker.metricValue = '--' // Will be updated with actual value
+        marker.markerType = 'metric'
+        marker.deviceName = getDeviceName(deviceId || '')
+        marker.metricName = ds?.metricId || ds?.property || ''
+      } else if (binding.type === 'command') {
+        marker.command = ds?.command
+        marker.markerType = 'command'
+        marker.deviceName = getDeviceName(deviceId || '')
+        marker.commandName = ds?.command || ''
+      } else if (binding.type === 'device') {
+        marker.status = 'online' // Default status
+        marker.markerType = 'device'
+        marker.deviceName = getDeviceName(deviceId || '')
+      } else if (binding.type === 'marker') {
+        marker.markerType = 'marker'
+      }
+
+      console.log(`  -> binding "${binding.name}" type="${binding.type}" -> markerType="${marker.markerType}"`)
+
+      return marker
+    })
+  }, [center])
+
   // Transform function to convert device data to MapMarker format
   const transformDeviceDataToMarkers = useCallback((rawData: unknown): MapMarker[] => {
     // If already in correct format, return as-is
@@ -501,15 +769,18 @@ export function MapDisplay({
         const label = extractValue(data, deviceBinding?.labelField, ['name', 'id', 'device_id', 'label'])
         const value = extractValue(data, deviceBinding?.valueField, ['value', 'metric', 'temperature', 'humidity'])
         const status = extractValue(data, deviceBinding?.statusField, ['status', 'online', 'state'])
+        const deviceId = data.id || data.device_id
 
         markers.push({
-          id: String(label || data.id || data.device_id || 'marker'),
+          id: String(label || deviceId || 'marker'),
+          deviceId: deviceId ? String(deviceId) : undefined,
           latitude: Number(lat),
           longitude: Number(lng),
           label: String(label || ''),
           value: value !== null ? Number(value) : undefined,
           status: determineStatus(status),
           metricValue: value !== null ? String(value) : undefined,
+          markerType: 'device',  // Device marker
         })
       }
 
@@ -528,15 +799,18 @@ export function MapDisplay({
             const label = extractValue(data, deviceBinding?.labelField, ['name', 'id', 'device_id', 'label'])
             const value = extractValue(data, deviceBinding?.valueField, ['value', 'metric', 'temperature', 'humidity'])
             const status = extractValue(data, deviceBinding?.statusField, ['status', 'online', 'state'])
+            const deviceId = data.id || data.device_id
 
             return [{
-              id: String(label || data.id || data.device_id || `marker-${Math.random()}`),
+              id: String(label || deviceId || `marker-${Math.random()}`),
+              deviceId: deviceId ? String(deviceId) : undefined,
               latitude: Number(lat),
               longitude: Number(lng),
               label: String(label || ''),
               value: value !== null ? Number(value) : undefined,
               status: determineStatus(status),
               metricValue: value !== null ? String(value) : undefined,
+              markerType: 'device',  // Device marker
             } as MapMarker]
           }
         }
@@ -552,12 +826,41 @@ export function MapDisplay({
     transform: transformDeviceDataToMarkers,
   })
 
-  const markers = error ? propMarkers : (data ?? propMarkers)
+  // Convert bindings to markers - bindings take priority over dataSource data
+  const bindingsMarkers = convertBindingsToMarkers(bindings)
+
+  // Determine final markers with priority:
+  // 1. bindings (highest priority - contains type info from config)
+  // 2. dataSource data (for backward compatibility)
+  // 3. propMarkers (fallback)
+  const markers = bindings && bindings.length > 0
+    ? bindingsMarkers
+    : !dataSource
+      ? propMarkers
+      : (error
+        ? propMarkers
+        : ((data && data.length > 0) ? data : propMarkers))
+
+  // Debug: log markers to see what's being rendered
+  console.log('=== MapDisplay markers calculation ===')
+  console.log('  bindings:', bindings)
+  console.log('  bindingsMarkers:', bindingsMarkers)
+  console.log('  dataSource:', !!dataSource)
+  console.log('  propMarkers:', propMarkers)
+  console.log('  data:', data)
+  console.log('  error:', error)
+  console.log('  -> final markers:', markers)
+  console.log('  -> markers by type:', {
+    device: markers.filter(m => m.markerType === 'device').length,
+    metric: markers.filter(m => m.markerType === 'metric').length,
+    command: markers.filter(m => m.markerType === 'command').length,
+    marker: markers.filter(m => m.markerType === 'marker').length,
+  })
+  console.log('===============================')
   const [currentZoom, setCurrentZoom] = useState(zoom)
   const [currentCenter, setCurrentCenter] = useState(center)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [selectedMarker, setSelectedMarker] = useState<MapMarker | null>(null)
-  const [showLayerPanel, setShowLayerPanel] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerSize, setContainerSize] = useState({ width: 400, height: 300 })
 
@@ -598,30 +901,7 @@ export function MapDisplay({
 
   const sizeConfig = dashboardComponentSize[size]
 
-  // Default layers
-  const defaultLayers: MapLayer[] = [
-    {
-      id: 'devices',
-      name: 'Devices',
-      type: 'devices',
-      visible: true,
-      markers: markers.filter(m => m.deviceId),
-    },
-    {
-      id: 'metrics',
-      name: 'Metrics',
-      type: 'metrics',
-      visible: true,
-      markers: markers.filter(m => m.metricValue),
-    },
-  ]
-
-  const layers = propLayers.length > 0 ? propLayers : defaultLayers
-
-  // Get visible markers
-  const visibleMarkers = markers.filter(marker => {
-    return layers.some(layer => layer.visible && layer.markers?.includes(marker))
-  })
+  console.log('Displaying markers:', markers)
 
   const handleZoomIn = useCallback(() => {
     setCurrentZoom(prev => Math.min(prev + 1, maxZoom))
@@ -633,21 +913,45 @@ export function MapDisplay({
 
   const handleMarkerClick = useCallback((marker: MapMarker) => {
     if (!interactive) return
+
+    // Toggle selection: if clicking the same marker, deselect it
+    if (selectedMarker?.id === marker.id) {
+      setSelectedMarker(null)
+      return
+    }
+
+    // Different actions based on marker type
+    switch (marker.markerType) {
+      case 'device':
+        // For devices: show device details (status, last seen, etc.)
+        // TODO: Show device detail panel or navigate to device page
+        break
+
+      case 'metric':
+        // For metrics: show current value and trend
+        // TODO: Show metric value tooltip or panel
+        break
+
+      case 'command':
+        // For commands: execute the command
+        // TODO: Execute command via API
+        break
+
+      default:
+        // For regular markers: just show tooltip
+        break
+    }
+
     setSelectedMarker(marker)
 
-    // Execute marker's click handler
+    // Execute marker's click handler if defined
     if (marker.onClick) {
       marker.onClick()
     }
-  }, [interactive])
+  }, [interactive, selectedMarker])
 
-  const toggleLayer = useCallback((layerId: string) => {
-    // This would update layer visibility - for now just a placeholder
-    // In a real implementation, you'd update state or parent component
-  }, [])
-
-  // Loading state
-  if (loading) {
+  // Loading state - only show loading when we have a dataSource to load
+  if (loading && dataSource) {
     return (
       <div className={cn(dashboardCardBase, 'flex items-center justify-center', sizeConfig.padding, className)}>
         <Skeleton className={cn('w-full h-full rounded-lg')} />
@@ -670,16 +974,6 @@ export function MapDisplay({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {showLayers && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setShowLayerPanel(!showLayerPanel)}
-                >
-                  <Layers className="h-3.5 w-3.5" />
-                </Button>
-              )}
               {showFullscreen && !isFullscreen && (
                 <Button
                   variant="ghost"
@@ -704,68 +998,16 @@ export function MapDisplay({
             zoom={currentZoom}
             width={containerSize.width}
             height={containerSize.height}
-            markers={visibleMarkers}
+            markers={markers}
             onMarkerClick={handleMarkerClick}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
             onCenterChange={setCurrentCenter}
             interactive={interactive}
             tileLayer={tileLayer}
+            onMapClick={onMapClick}
+            selectedMarkerId={selectedMarker?.id}
           />
-
-          {/* Layer panel */}
-          {showLayerPanel && showLayers && (
-            <div className="absolute top-2 left-2 bg-background/95 backdrop-blur rounded-lg shadow-lg border p-2 min-w-[150px]">
-              <div className="text-xs font-medium mb-2">Layers</div>
-              <div className="space-y-1">
-                {layers.map((layer) => (
-                  <label
-                    key={layer.id}
-                    className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 px-2 py-1 rounded"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={layer.visible}
-                      onChange={() => toggleLayer(layer.id)}
-                      className="h-3 w-3"
-                    />
-                    <span>{layer.name}</span>
-                    {layer.markers && (
-                      <span className="text-muted-foreground">({layer.markers.length})</span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Selected marker info */}
-          {selectedMarker && (
-            <div className="absolute bottom-2 left-2 right-2 bg-background/95 backdrop-blur rounded-lg shadow-lg border p-3">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="font-medium text-sm">{selectedMarker.label || 'Marker'}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {selectedMarker.latitude.toFixed(4)}, {selectedMarker.longitude.toFixed(4)}
-                  </div>
-                  {selectedMarker.metricValue && (
-                    <div className="text-sm mt-1">{selectedMarker.metricValue}</div>
-                  )}
-                  {selectedMarker.deviceId && (
-                    <div className="text-xs text-muted-foreground mt-1">Device: {selectedMarker.deviceId}</div>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => setSelectedMarker(null)}
-                >
-                  ×
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -782,16 +1024,6 @@ export function MapDisplay({
               </span>
             </div>
             <div className="flex items-center gap-1">
-              {showLayers && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setShowLayerPanel(!showLayerPanel)}
-                >
-                  <Layers className="h-3.5 w-3.5" />
-                </Button>
-              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -810,68 +1042,17 @@ export function MapDisplay({
               zoom={currentZoom}
               width={containerSize.width}
               height={containerSize.height}
-              markers={visibleMarkers}
+              markers={markers}
               onMarkerClick={handleMarkerClick}
               onZoomIn={handleZoomIn}
               onZoomOut={handleZoomOut}
               onCenterChange={setCurrentCenter}
               interactive={interactive}
               tileLayer={tileLayer}
+              onMapClick={onMapClick}
+              selectedMarkerId={selectedMarker?.id}
             />
 
-            {/* Layer panel */}
-            {showLayerPanel && showLayers && (
-              <div className="absolute top-2 left-2 bg-background/95 backdrop-blur rounded-lg shadow-lg border p-2 min-w-[150px]">
-                <div className="text-xs font-medium mb-2">Layers</div>
-                <div className="space-y-1">
-                  {layers.map((layer) => (
-                    <label
-                      key={layer.id}
-                      className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 px-2 py-1 rounded"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={layer.visible}
-                        onChange={() => toggleLayer(layer.id)}
-                        className="h-3 w-3"
-                      />
-                      <span>{layer.name}</span>
-                      {layer.markers && (
-                        <span className="text-muted-foreground">({layer.markers.length})</span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Selected marker info */}
-            {selectedMarker && (
-              <div className="absolute bottom-4 left-4 right-4 bg-background/95 backdrop-blur rounded-lg shadow-lg border p-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="font-medium text-sm">{selectedMarker.label || 'Marker'}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {selectedMarker.latitude.toFixed(4)}, {selectedMarker.longitude.toFixed(4)}
-                    </div>
-                    {selectedMarker.metricValue && (
-                      <div className="text-sm mt-1">{selectedMarker.metricValue}</div>
-                    )}
-                    {selectedMarker.deviceId && (
-                      <div className="text-xs text-muted-foreground mt-1">Device: {selectedMarker.deviceId}</div>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setSelectedMarker(null)}
-                  >
-                    ×
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -879,7 +1060,7 @@ export function MapDisplay({
   )
 
   // Fullscreen overlay (rendered via Portal to document.body)
-  const fullscreenOverlay = isFullscreen && createPortal(
+  const fullscreenOverlay = isFullscreen ? createPortal(
     <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-background/95">
@@ -891,16 +1072,6 @@ export function MapDisplay({
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {showLayers && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setShowLayerPanel(!showLayerPanel)}
-            >
-              <Layers className="h-3.5 w-3.5" />
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="icon"
@@ -919,72 +1090,20 @@ export function MapDisplay({
           zoom={currentZoom}
           width={containerSize.width}
           height={containerSize.height}
-          markers={visibleMarkers}
+          markers={markers}
           onMarkerClick={handleMarkerClick}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onCenterChange={setCurrentCenter}
           interactive={interactive}
           tileLayer={tileLayer}
+          onMapClick={onMapClick}
+          selectedMarkerId={selectedMarker?.id}
         />
-
-        {/* Layer panel */}
-        {showLayerPanel && showLayers && (
-          <div className="absolute top-2 left-2 bg-background/95 backdrop-blur rounded-lg shadow-lg border p-2 min-w-[150px]">
-            <div className="text-xs font-medium mb-2">Layers</div>
-            <div className="space-y-1">
-              {layers.map((layer) => (
-                <label
-                  key={layer.id}
-                  className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 px-2 py-1 rounded"
-                >
-                  <input
-                    type="checkbox"
-                    checked={layer.visible}
-                    onChange={() => toggleLayer(layer.id)}
-                    className="h-3 w-3"
-                  />
-                  <span>{layer.name}</span>
-                  {layer.markers && (
-                    <span className="text-muted-foreground">({layer.markers.length})</span>
-                  )}
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Selected marker info */}
-        {selectedMarker && (
-          <div className="absolute bottom-4 left-4 right-4 bg-background/95 backdrop-blur rounded-lg shadow-lg border p-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="font-medium text-sm">{selectedMarker.label || 'Marker'}</div>
-                <div className="text-xs text-muted-foreground">
-                  {selectedMarker.latitude.toFixed(4)}, {selectedMarker.longitude.toFixed(4)}
-                </div>
-                {selectedMarker.metricValue && (
-                  <div className="text-sm mt-1">{selectedMarker.metricValue}</div>
-                )}
-                {selectedMarker.deviceId && (
-                  <div className="text-xs text-muted-foreground mt-1">Device: {selectedMarker.deviceId}</div>
-                )}
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setSelectedMarker(null)}
-              >
-                ×
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
     </div>,
     document.body
-  )
+  ) : null
 
   return (
     <>

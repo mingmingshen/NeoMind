@@ -6,7 +6,7 @@
  * Compatible with camera feeds and video sources.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -343,7 +343,27 @@ export function VideoDisplay({
     fallback: propSrc,
   })
 
-  const rawSrc = error ? propSrc : (data ?? propSrc ?? '')
+  // Safely convert data to string, handling arrays and other types
+  const rawSrc = useMemo(() => {
+    if (error) return propSrc ?? ''
+
+    // Handle undefined/null data
+    if (data === undefined || data === null) return propSrc ?? ''
+
+    // If data is already a string, use it
+    if (typeof data === 'string') return (data ?? '') || (propSrc ?? '')
+
+    // If data is an array, try to get the first element or join
+    if (Array.isArray(data)) {
+      const firstItem = data[0]
+      if (typeof firstItem === 'string') return (firstItem ?? '') || (propSrc ?? '')
+      return String(firstItem ?? propSrc ?? '')
+    }
+
+    // Convert any other type to string
+    const converted = String(data)
+    return (converted ?? '') || (propSrc ?? '')
+  }, [error, data, propSrc])
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
