@@ -815,6 +815,247 @@ Respond in JSON format:
         data: &[DataCollected],
         parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
     ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
+        // Try LLM-based analysis first
+        if let Ok(Some(llm)) = self.get_llm_runtime_for_agent(agent).await {
+            if let Ok(result) = self.analyze_with_llm(llm, agent, data, parsed_intent).await {
+                tracing::info!(
+                    agent_id = %agent.id,
+                    "LLM-based analysis completed successfully"
+                );
+                return Ok(result);
+            }
+        }
+
+        // Fall back to rule-based logic
+        tracing::warn!(
+            agent_id = %agent.id,
+            "LLM not available, falling back to rule-based analysis"
+        );
+        self.analyze_rule_based(agent, data, parsed_intent).await
+    }
+
+    /// Analyze situation using LLM for intelligent decision making.
+    async fn analyze_with_llm(
+        &self,
+        llm: Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>,
+        agent: &AiAgent,
+        data: &[DataCollected],
+        parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
+    ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
+        use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
+
+        // Build context from data
+        let data_summary = if data.is_empty() {
+            "No data available".to_string()
+        } else {
+            data.iter()
+                .map(|d| format!("- {}: {} = {}", d.source, d.data_type, d.values))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Build intent context
+        let intent_context = if let Some(ref intent) = parsed_intent.or(agent.parsed_intent.as_ref()) {
+            format!(
+                "\n意图类型: {:?}\n目标指标: {:?}\n条件: {:?}\n动作: {:?}",
+                intent.intent_type, intent.target_metrics, intent.conditions, intent.actions
+            )
+        } else {
+            "".to_string()
+        };
+
+        // Build history context from conversation turns
+        let history_context = if !agent.conversation_history.is_empty() {
+            let recent: Vec<_> = agent.conversation_history
+                .iter()
+                .rev()
+                .take(3)
+                .collect();
+            format!(
+                "\n## 历史执行记录 (最近{}次)\n{}",
+                recent.len(),
+                recent.iter().rev().enumerate()
+                    .map(|(i, turn)| format!(
+                        "{}. 触发: {}, 分析: {}, 结论: {}",
+                        i + 1,
+                        turn.trigger_type,
+                        turn.output.situation_analysis,
+                        turn.output.conclusion
+                    ))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        } else {
+            "".to_string()
+        };
+
+        // Build system prompt for the agent role
+        let role_prompt = match agent.role {
+            AgentRole::Monitor => "你是一个监控智能体，负责监控IoT设备和指标。分析当前数据，判断是否异常或需要告警。",
+            AgentRole::Executor => "你是一个执行智能体，负责根据条件执行控制操作。分析当前数据，决定是否需要执行动作。",
+            AgentRole::Analyst => "你是一个分析智能体，负责分析数据趋势和模式。深入分析数据，提供有价值的洞察。",
+        };
+
+        let system_prompt = format!(
+            "{}\n\n## 你的任务\n\
+            用户指令: {}\n\
+            {}\n\
+            {}\n\
+            \n\
+            ## 分析步骤\n\
+            1. 理解当前数据和用户指令\n\
+            2. 检查是否有异常或需要响应的情况\n\
+            3. 基于历史数据判断趋势\n\
+            4. 决定需要采取的行动\n\
+            \n\
+            ## 响应格式\n\
+            请以JSON格式回复:\n\
+            {{\n\
+              \"situation_analysis\": \"情况分析描述\",\n\
+              \"reasoning_steps\": [\n\
+                {{\"step\": 1, \"description\": \"步骤描述\", \"confidence\": 0.9}}\n\
+              ],\n\
+              \"decisions\": [\n\
+                {{\n\
+                  \"decision_type\": \"类型\",\n\
+                  \"description\": \"决策描述\",\n\
+                  \"action\": \"动作名称\",\n\
+                  \"rationale\": \"决策理由\",\n\
+                  \"confidence\": 0.85\n\
+                }}\n\
+              ],\n\
+              \"conclusion\": \"总结结论\"\n\
+            }}",
+            role_prompt,
+            agent.user_prompt,
+            intent_context,
+            history_context
+        );
+
+        let user_prompt = format!(
+            "## 当前数据\n\n{}\n\n请分析上述数据并做出决策。",
+            data_summary
+        );
+
+        let messages = vec![
+            Message::new(MessageRole::System, Content::text(system_prompt)),
+            Message::new(MessageRole::User, Content::text(user_prompt)),
+        ];
+
+        let input = LlmInput {
+            messages,
+            params: GenerationParams {
+                temperature: Some(0.7),
+                max_tokens: Some(1000),
+                ..Default::default()
+            },
+            model: None,
+            stream: false,
+            tools: Some(Vec::new()),
+        };
+
+        match llm.generate(input).await {
+            Ok(output) => {
+                let json_str = output.text.trim();
+                // Extract JSON if wrapped in markdown
+                let json_str = if json_str.contains("```json") {
+                    json_str.split("```json").nth(1)
+                        .and_then(|s| s.split("```").next())
+                        .unwrap_or(json_str)
+                        .trim()
+                } else if json_str.contains("```") {
+                    json_str.split("```").nth(1)
+                        .unwrap_or(json_str)
+                        .trim()
+                } else {
+                    json_str
+                };
+
+                // Parse the LLM response
+                #[derive(serde::Deserialize)]
+                struct LlmResponse {
+                    situation_analysis: String,
+                    reasoning_steps: Vec<ReasoningFromLlm>,
+                    decisions: Vec<DecisionFromLlm>,
+                    conclusion: String,
+                }
+
+                #[derive(serde::Deserialize)]
+                struct ReasoningFromLlm {
+                    step: u32,
+                    description: String,
+                    #[serde(default)]
+                    confidence: f32,
+                }
+
+                #[derive(serde::Deserialize)]
+                struct DecisionFromLlm {
+                    decision_type: String,
+                    description: String,
+                    action: String,
+                    rationale: String,
+                    #[serde(default)]
+                    confidence: f32,
+                }
+
+                match serde_json::from_str::<LlmResponse>(json_str) {
+                    Ok(response) => {
+                        let reasoning_steps = response.reasoning_steps
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, step)| ReasoningStep {
+                                step_number: step.step as u32,
+                                description: step.description,
+                                step_type: "llm_analysis".to_string(),
+                                input: Some(data_summary.clone()),
+                                output: response.situation_analysis.clone(),
+                                confidence: step.confidence,
+                            })
+                            .collect();
+
+                        let decisions = response.decisions
+                            .into_iter()
+                            .map(|d| Decision {
+                                decision_type: d.decision_type,
+                                description: d.description,
+                                action: d.action,
+                                rationale: d.rationale,
+                                expected_outcome: response.conclusion.clone(),
+                            })
+                            .collect();
+
+                        Ok((
+                            response.situation_analysis,
+                            reasoning_steps,
+                            decisions,
+                            response.conclusion,
+                        ))
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            response = %json_str,
+                            "Failed to parse LLM response, using fallback"
+                        );
+                        // Fall back to rule-based on parse error
+                        self.analyze_rule_based(agent, data, parsed_intent).await
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "LLM generation failed");
+                Err(AgentError::Llm(format!("LLM generation failed: {}", e)))
+            }
+        }
+    }
+
+    /// Rule-based analysis fallback.
+    async fn analyze_rule_based(
+        &self,
+        agent: &AiAgent,
+        data: &[DataCollected],
+        parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
+    ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
         let mut reasoning_steps = Vec::new();
         let mut decisions = Vec::new();
 
@@ -835,7 +1076,6 @@ Respond in JSON format:
         });
 
         // Step 2: Evaluate conditions based on parsed intent
-        // Use the parsed_intent passed in (which may have been freshly parsed)
         let intent = parsed_intent.or(agent.parsed_intent.as_ref());
         if let Some(ref intent) = intent {
             for condition in &intent.conditions {
