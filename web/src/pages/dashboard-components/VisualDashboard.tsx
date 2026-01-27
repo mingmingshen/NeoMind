@@ -68,6 +68,7 @@ import {
   Zap,
   Box,
   Cloud,
+  Sparkles,
   // Agent icons
   Bot,
   ListTodo,
@@ -155,10 +156,13 @@ import {
   MapDisplay,
   VideoDisplay,
   CustomLayer,
+  LayerEditorDialog,
   MapEditorDialog,
   type MapBinding,
   type MapBindingType,
   type MapMarker,
+  type LayerBinding,
+  type LayerBindingType,
 } from '@/components/dashboard'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
@@ -441,6 +445,20 @@ function getChartHeight(component: DashboardComponent): number | 'auto' {
 
 function renderDashboardComponent(component: DashboardComponent, devices: Device[]) {
   const config = (component as any).config || {}
+  // dataSource is a separate property on GenericComponent, not part of config
+  const dataSource = (component as any).dataSource
+
+  // Debug log for value-card to check dataSource
+  if (component.type === 'value-card') {
+    console.log('=== renderDashboardComponent value-card ===')
+    console.log('component.id:', component.id)
+    console.log('component.type:', component.type)
+    console.log('dataSource:', dataSource)
+    console.log('config:', config)
+    console.log('devices.length:', devices.length)
+    console.log('=====================================')
+  }
+
   // Debug: log bindings for map-display
   if (component.type === 'map-display') {
     console.log('=== renderDashboardComponent map-display ===')
@@ -452,8 +470,6 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
     console.log('full component:', component)
     console.log('======================================')
   }
-  // dataSource is a separate property on GenericComponent, not part of config
-  const dataSource = (component as any).dataSource
   const commonProps = getCommonDisplayProps(component)
   const spreadableProps = getSpreadableProps(component.type, commonProps)
 
@@ -829,6 +845,29 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
         />
       )
 
+    case 'custom-layer':
+      // Debug log
+      console.log('=== renderDashboardComponent custom-layer ===')
+      console.log('component.id:', component.id)
+      console.log('config.bindings:', config.bindings)
+      console.log('config.bindings length:', config.bindings?.length)
+      console.log('config:', config)
+      console.log('=====================================')
+      return (
+        <CustomLayer
+          {...spreadableProps}
+          bindings={config.bindings}
+          backgroundType={config.backgroundType || 'grid'}
+          backgroundColor={config.backgroundColor}
+          backgroundImage={config.backgroundImage}
+          gridSize={config.gridSize}
+          showControls={config.showControls ?? true}
+          showFullscreen={config.showFullscreen ?? true}
+          interactive={config.interactive ?? true}
+          editable={config.editable}
+        />
+      )
+
     // Business Components (not implemented)
     case 'agent-status-card':
     case 'decision-list':
@@ -967,6 +1006,10 @@ export function VisualDashboard() {
   // Map editor dialog state
   const [mapEditorOpen, setMapEditorOpen] = useState(false)
   const [mapEditorBindings, setMapEditorBindings] = useState<MapBinding[]>([])
+
+  // Layer editor dialog state
+  const [layerEditorOpen, setLayerEditorOpen] = useState(false)
+  const [layerEditorBindings, setLayerEditorBindings] = useState<LayerBinding[]>([])
 
   // Persist sidebar state to localStorage
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -1134,6 +1177,11 @@ export function VisualDashboard() {
     }
   }, [devices.length, dashboards, currentDashboard, fetchDevicesCurrentBatch])
 
+  // Initialize: fetch dashboards on mount
+  useEffect(() => {
+    fetchDashboards()
+  }, [])
+
   // Re-load dashboards if array becomes empty but we have a current ID
   useEffect(() => {
     if (dashboards.length === 0 && currentDashboardId) {
@@ -1142,43 +1190,9 @@ export function VisualDashboard() {
     }
   }, [dashboards.length, currentDashboardId, fetchDashboards])
 
-  // Create default dashboard if needed
-  // Use a ref to track if we've already attempted creation to avoid duplicates
-  const hasAttemptedCreation = useRef(false)
-
-  useEffect(() => {
-    // Skip if we've already attempted or if dashboards are loading
-    if (hasAttemptedCreation.current || dashboardsLoading) {
-      return
-    }
-
-    // Check localStorage to verify if we truly have no dashboards
-    // This prevents creating duplicate when state is out of sync
-    const storedDashboards = localStorage.getItem('neotalk_dashboards')
-    const hasStoredDashboards = storedDashboards && storedDashboards !== '[]' && storedDashboards !== 'null'
-
-    // Don't create if we have:
-    // - Dashboards in localStorage, OR
-    // - Dashboards in state, OR
-    // - Current dashboard already set
-    if (hasStoredDashboards || dashboards.length > 0 || currentDashboard) {
-      hasAttemptedCreation.current = true
-      return
-    }
-
-    // Create default dashboard only when truly empty everywhere
-    console.log('[VisualDashboard] Creating default dashboard - no dashboards found')
-    hasAttemptedCreation.current = true
-    createDashboard({
-      name: 'Overview',
-      layout: {
-        columns: 12,
-        rows: 'auto' as const,
-        breakpoints: { lg: 1200, md: 996, sm: 768, xs: 480 },
-      },
-      components: [],
-    })
-  }, [dashboards.length, currentDashboard, dashboardsLoading, createDashboard])
+  // Note: Removed auto-create dashboard logic
+  // Users should explicitly create dashboards via the UI
+  // This prevents creating duplicate dashboards on refresh
 
   // Handle adding a component
   const handleAddComponent = (componentType: string) => {
@@ -1307,6 +1321,16 @@ export function VisualDashboard() {
           ],
         }
         break
+      case 'custom-layer':
+        defaultConfig = {
+          backgroundType: 'grid',
+          gridSize: 20,
+          showControls: true,
+          showFullscreen: true,
+          interactive: true,
+          editable: false,
+        }
+        break
       // Business Components (not implemented)
       case 'agent-status-card':
       case 'decision-list':
@@ -1406,6 +1430,12 @@ export function VisualDashboard() {
     const component = currentDashboard?.components.find(c => c.id === componentId)
     if (!component) return
 
+    console.log('=== handleOpenConfig ===')
+    console.log('component.id:', component.id)
+    console.log('component.type:', component.type)
+    console.log('component.config:', (component as any).config)
+    console.log('component.dataSource:', (component as any).dataSource)
+
     setSelectedComponent(component)
     // Extract both config and dataSource (they are separate properties on GenericComponent)
     const config = { ...((component as any).config || {}) }
@@ -1414,6 +1444,8 @@ export function VisualDashboard() {
     const configWithTitle = { ...config, title: component.title }
     // Merge dataSource into config for unified state management
     const mergedConfig = dataSource ? { ...configWithTitle, dataSource } : configWithTitle
+
+    console.log('mergedConfig to set as componentConfig:', mergedConfig)
 
     // Store original config for revert on cancel
     setOriginalComponentConfig(mergedConfig)
@@ -1463,24 +1495,34 @@ export function VisualDashboard() {
   // Only recalculate when actual component data changes (detected via stableKey)
   // Note: handleOpenConfig, removeComponent, duplicateComponent are NOT dependencies
   // because they don't affect the rendered output structure, only event handlers
+  // devices.length is included to ensure re-render when devices are initially loaded
+  // IMPORTANT: Use currentDashboard directly from store to avoid stale closure issues
   const gridComponents = useMemo(() => {
-    return currentDashboard?.components.map((component) => ({
-      id: component.id,
-      position: component.position,
-      children: (
-        <ComponentWrapper
-          key={component.id}
-          component={component}
-          editMode={editMode}
-          onOpenConfig={handleOpenConfig}
-          onRemove={removeComponent}
-          onDuplicate={duplicateComponent}
-        >
-          {renderDashboardComponent(component, devices)}
-        </ComponentWrapper>
-      ),
-    })) ?? []
-  }, [componentsStableKey, editMode, configVersion])
+    // Get fresh dashboard reference from store to avoid stale data
+    const freshDashboard = useStore.getState().currentDashboard
+
+    return freshDashboard?.components.map((component) => {
+      // Get dataSource from component (it should be a separate property, not in config)
+      const componentDataSource = (component as any).dataSource
+
+      return {
+        id: component.id,
+        position: component.position,
+        children: (
+          <ComponentWrapper
+            key={component.id}
+            component={component}
+            editMode={editMode}
+            onOpenConfig={handleOpenConfig}
+            onRemove={removeComponent}
+            onDuplicate={duplicateComponent}
+          >
+            {renderDashboardComponent(component, devices)}
+          </ComponentWrapper>
+        ),
+      }
+    }) ?? []
+  }, [componentsStableKey, editMode, configVersion, devices.length])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)
@@ -1563,7 +1605,29 @@ export function VisualDashboard() {
 
       console.log('selectedComponent.id:', selectedComponent.id)
       console.log('local componentConfig:', componentConfig)
-      console.log('latestComponent config:', (latestComponent as any)?.config)
+      console.log('latestComponent:', latestComponent)
+
+      // Extract dataSource from multiple possible locations:
+      // 1. componentConfig.dataSource (newly selected/changed in config dialog)
+      // 2. componentConfig.config.dataSource (from handleOpenConfig merge)
+      // 3. mergedConfig.dataSource (already in merged config)
+      // 4. latestComponent.dataSource (existing on component, separate property)
+      // 5. latestComponent.config.dataSource (existing in component's config)
+      const configDataSource = componentConfig.dataSource
+      const nestedConfigDataSource = (componentConfig.config as any)?.dataSource
+      const latestConfigDataSource = (latestComponent as any)?.config?.dataSource
+      const latestComponentDataSource = (latestComponent as any)?.dataSource
+
+      // Priority: componentConfig.dataSource > nested config.dataSource > latest component.dataSource > latest config.dataSource
+      const finalDataSource = configDataSource ?? nestedConfigDataSource ?? latestComponentDataSource ?? latestConfigDataSource
+
+      console.log('dataSource sources:', {
+        configDataSource,
+        nestedConfigDataSource,
+        latestConfigDataSource,
+        latestComponentDataSource,
+        finalDataSource,
+      })
 
       // Merge local config changes with the latest component config
       // Local changes take precedence
@@ -1572,13 +1636,28 @@ export function VisualDashboard() {
         ...componentConfig,
       }
 
-      console.log('mergedConfig:', mergedConfig)
+      // IMPORTANT: Remove dataSource from mergedConfig to avoid confusion
+      // dataSource should be stored as a separate property, not inside config
+      delete (mergedConfig as any).dataSource
+
+      console.log('mergedConfig (after dataSource extraction):', mergedConfig)
 
       // Update the component in the store
-      updateComponent(selectedComponent.id, {
+      // CRITICAL: dataSource must be saved as a separate property, not inside config
+      const updateData: any = {
         config: mergedConfig,
         title: configTitle,
-      }, false)
+      }
+      if (finalDataSource !== undefined) {
+        updateData.dataSource = finalDataSource
+      }
+
+      console.log('updateData to save:', updateData)
+
+      updateComponent(selectedComponent.id, updateData, false)
+
+      // Force immediate re-render by incrementing configVersion
+      setConfigVersion(v => v + 1)
 
       // Verify after update
       setTimeout(() => {
@@ -1586,7 +1665,7 @@ export function VisualDashboard() {
         const verifyComponent = verifyDashboard?.components.find(c => c.id === selectedComponent.id)
         console.log('=== After saveConfig verification ===')
         console.log('verifyComponent.config:', (verifyComponent as any)?.config)
-        console.log('verifyComponent.config.bindings:', ((verifyComponent as any)?.config)?.bindings)
+        console.log('verifyComponent.dataSource:', (verifyComponent as any)?.dataSource)
       }, 50)
     }
     // Persist all changes to localStorage
@@ -1675,6 +1754,44 @@ export function VisualDashboard() {
     await persistDashboard()
 
     setMapEditorOpen(false)
+  }
+
+  // Handle saving layer editor bindings
+  const handleLayerEditorSave = async (bindings: LayerBinding[]) => {
+    console.log('=== handleLayerEditorSave ===')
+    console.log('bindings received:', bindings)
+    console.log('bindings count:', bindings?.length)
+
+    if (selectedComponent) {
+      const latestDashboard = useStore.getState().currentDashboard
+      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent.id)
+
+      const latestConfig = (latestComponent as any)?.config || {}
+      const latestDataSource = (latestComponent as any)?.dataSource
+
+      // Merge the latest config with the new bindings, preserving dataSource
+      const newConfig = { ...latestConfig, bindings }
+      const updateData: any = { config: newConfig }
+
+      // Preserve dataSource when updating
+      if (latestDataSource) {
+        updateData.dataSource = latestDataSource
+      }
+
+      // Update the store
+      updateComponent(selectedComponent.id, updateData, false)
+
+      // Force re-render
+      setConfigVersion(v => v + 1)
+
+      // Update local config state
+      setComponentConfig(prev => ({ ...prev, bindings }))
+    }
+
+    // Persist to localStorage
+    await persistDashboard()
+
+    setLayerEditorOpen(false)
   }
 
   // Handle title change
@@ -3768,6 +3885,381 @@ export function VisualDashboard() {
           ],
         }
 
+      case 'custom-layer':
+        return {
+          dataSourceSections: [
+            {
+              type: 'data-source' as const,
+              props: {
+                dataSource: config.bindings as any,
+                onChange: (newDataSources: DataSourceOrList | undefined) => {
+                  // Convert dataSources to LayerBinding format
+                  console.log('=== Custom Layer dataSource onChange ===')
+                  console.log('newDataSources:', newDataSources)
+
+                  // Handle both single object and array
+                  const sourcesArray = newDataSources
+                    ? Array.isArray(newDataSources)
+                      ? newDataSources
+                      : [newDataSources]
+                    : []
+
+                  const newBindings = sourcesArray.map((ds: any, index: number) => {
+                    // Determine type based on dataSource type
+                    let bindingType: LayerBindingType = 'device'
+                    if (ds.type === 'metric' || ds.type === 'telemetry') bindingType = 'metric'
+                    else if (ds.type === 'command') bindingType = 'command'
+
+                    // Look for existing binding
+                    const existingBinding = (config.bindings as LayerBinding[])?.find(b => {
+                      if (!b.dataSource) return false
+                      const bDs = b.dataSource as any
+                      return bDs.deviceId === ds.deviceId &&
+                        bDs.metricId === ds.metricId &&
+                        bDs.property === ds.property &&
+                        bDs.command === ds.command
+                    })
+
+                    // Generate unique ID
+                    const generateBindingId = () => {
+                      if (ds.type === 'metric' || ds.type === 'telemetry') {
+                        return `${bindingType}-${ds.deviceId}-${ds.metricId || ds.property || index}`
+                      } else if (ds.type === 'command') {
+                        return `${bindingType}-${ds.deviceId}-${ds.command}`
+                      } else {
+                        return `${bindingType}-${ds.deviceId}-${index}`
+                      }
+                    }
+
+                    const baseBinding = existingBinding || {
+                      id: generateBindingId(),
+                      position: { x: 50, y: 50 },
+                    }
+
+                    return {
+                      ...baseBinding,
+                      id: existingBinding?.id || generateBindingId(),
+                      type: bindingType,
+                      icon: bindingType,
+                      name: (ds.type === 'metric' || ds.type === 'telemetry')
+                        ? (ds.metricId || ds.property || `指标${index + 1}`)
+                        : ds.type === 'command'
+                          ? `${ds.deviceId || ''} → ${ds.command || ''}`
+                          : (ds.deviceId || `设备${index + 1}`),
+                      dataSource: ds,
+                      position: existingBinding?.position || baseBinding.position,
+                    } as LayerBinding
+                  })
+
+                  // Preserve existing text/icon bindings that aren't in the data sources
+                  const existingTextIconBindings = (config.bindings as LayerBinding[])?.filter(b => {
+                    if (b.type === 'text' || b.type === 'icon') return true
+                    // Also check if this binding is from a dataSource that's no longer present
+                    const ds = b.dataSource as any
+                    if (ds && ds.deviceId) {
+                      return !sourcesArray.some((s: any) => s.deviceId === ds.deviceId)
+                    }
+                    return false
+                  }) || []
+
+                  updateConfig('bindings')([...newBindings, ...existingTextIconBindings])
+                },
+                allowedTypes: ['device', 'metric', 'command'],
+                multiple: true,
+                maxSources: 20,
+              },
+            },
+          ],
+          styleSections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <SelectField
+                    label="背景类型"
+                    value={config.backgroundType || 'grid'}
+                    onChange={updateConfig('backgroundType')}
+                    options={[
+                      { value: 'grid', label: '网格' },
+                      { value: 'color', label: '纯色' },
+                      { value: 'image', label: '图片' },
+                      { value: 'transparent', label: '透明' },
+                    ]}
+                  />
+
+                  {config.backgroundType === 'color' && (
+                    <Field>
+                      <Label>背景颜色</Label>
+                      <Input
+                        type="color"
+                        value={config.backgroundColor || '#f0f0f0'}
+                        onChange={(e) => updateConfig('backgroundColor')(e.target.value)}
+                        className="h-9 w-full"
+                      />
+                    </Field>
+                  )}
+
+                  {config.backgroundType === 'image' && (
+                    <>
+                      <Field>
+                        <Label>背景图片 URL</Label>
+                        <Input
+                          value={config.backgroundImage || ''}
+                          onChange={(e) => updateConfig('backgroundImage')(e.target.value)}
+                          placeholder="https://example.com/image.png"
+                          className="h-9"
+                        />
+                      </Field>
+                      <Field>
+                        <Label>或上传图片</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (file) {
+                                const reader = new FileReader()
+                                reader.onload = (e) => {
+                                  updateConfig('backgroundImage')(e.target?.result as string)
+                                }
+                                reader.readAsDataURL(file)
+                              }
+                            }}
+                            className="h-9"
+                          />
+                          {config.backgroundImage && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateConfig('backgroundImage')('')}
+                            >
+                              清除
+                            </Button>
+                          )}
+                        </div>
+                      </Field>
+                      {config.backgroundImage && (
+                        <div className="mt-2">
+                          <Label className="text-xs text-muted-foreground">预览</Label>
+                          <div
+                            className="w-full h-24 bg-muted rounded-md bg-cover bg-center border"
+                            style={{ backgroundImage: `url(${config.backgroundImage})` }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {config.backgroundType === 'grid' && (
+                    <Field>
+                      <Label>网格大小</Label>
+                      <Input
+                        type="number"
+                        min={10}
+                        max={50}
+                        value={config.gridSize ?? 20}
+                        onChange={(e) => updateConfig('gridSize')(Number(e.target.value))}
+                        className="h-9"
+                      />
+                    </Field>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <Label>显示控制栏</Label>
+                      <select
+                        value={String(config.showControls ?? true)}
+                        onChange={(e) => updateConfig('showControls')(e.target.value === 'true')}
+                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      >
+                        <option value="true">显示</option>
+                        <option value="false">隐藏</option>
+                      </select>
+                    </Field>
+                    <Field>
+                      <Label>显示全屏按钮</Label>
+                      <select
+                        value={String(config.showFullscreen ?? true)}
+                        onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
+                        className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
+                      >
+                        <option value="true">显示</option>
+                        <option value="false">隐藏</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium">图层项绑定</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        管理图层上的设备、指标、指令等项
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={() => {
+                        const latestDashboard = useStore.getState().currentDashboard
+                        const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                        let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+                        setLayerEditorBindings(latestBindings)
+                        setLayerEditorOpen(true)
+                      }}
+                    >
+                      <Layers className="h-4 w-4 mr-1" />
+                      打开图层编辑器
+                    </Button>
+                  </div>
+
+                  {/* Bindings List - Grouped by Type */}
+                  <div className="border rounded-lg overflow-hidden">
+                    {(() => {
+                      const latestDashboard = useStore.getState().currentDashboard
+                      const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                      let displayBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+
+                      // Group by type
+                      const groupedBindings = {
+                        device: displayBindings.filter(b => b.type === 'device'),
+                        metric: displayBindings.filter(b => b.type === 'metric'),
+                        command: displayBindings.filter(b => b.type === 'command'),
+                        text: displayBindings.filter(b => b.type === 'text'),
+                        icon: displayBindings.filter(b => b.type === 'icon'),
+                      }
+
+                      const LAYER_TYPE_CONFIG = {
+                        device: {
+                          label: '设备',
+                          color: 'bg-green-500',
+                          textColor: 'text-green-600',
+                          bgColor: 'bg-green-50 dark:bg-green-950/30',
+                          borderColor: 'border-green-200 dark:border-green-800',
+                          icon: MapPin,
+                          description: '显示设备状态'
+                        },
+                        metric: {
+                          label: '指标',
+                          color: 'bg-purple-500',
+                          textColor: 'text-purple-600',
+                          bgColor: 'bg-purple-50 dark:bg-purple-950/30',
+                          borderColor: 'border-purple-200 dark:border-purple-800',
+                          icon: Activity,
+                          description: '显示指标数值'
+                        },
+                        command: {
+                          label: '指令',
+                          color: 'bg-blue-500',
+                          textColor: 'text-blue-600',
+                          bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+                          borderColor: 'border-blue-200 dark:border-blue-800',
+                          icon: Zap,
+                          description: '快速执行指令'
+                        },
+                        text: {
+                          label: '文本',
+                          color: 'bg-gray-500',
+                          textColor: 'text-gray-600',
+                          bgColor: 'bg-gray-50 dark:bg-gray-950/30',
+                          borderColor: 'border-gray-200 dark:border-gray-800',
+                          icon: Type,
+                          description: '显示静态文本'
+                        },
+                        icon: {
+                          label: '图标',
+                          color: 'bg-orange-500',
+                          textColor: 'text-orange-600',
+                          bgColor: 'bg-orange-50 dark:bg-orange-950/30',
+                          borderColor: 'border-orange-200 dark:border-orange-800',
+                          icon: Sparkles,
+                          description: '显示图标'
+                        },
+                      } as const
+
+                      if (displayBindings.length === 0) {
+                        return (
+                          <div className="p-6 text-center text-muted-foreground">
+                            <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">暂无图层项绑定</p>
+                            <p className="text-xs mt-1">请先在上方添加数据源，然后点击"打开图层编辑器"设置位置</p>
+                          </div>
+                        )
+                      }
+
+                      return (Object.keys(groupedBindings) as Array<keyof typeof groupedBindings>).map(type => {
+                        const typeBindings = groupedBindings[type]
+                        if (typeBindings.length === 0) return null
+
+                        const typeConfig = LAYER_TYPE_CONFIG[type]
+                        const Icon = typeConfig.icon
+
+                        return (
+                          <div key={type} className="border-b last:border-b-0">
+                            <div className={`px-3 py-2 ${typeConfig.bgColor} border-b ${typeConfig.borderColor} flex items-center justify-between`}>
+                              <div className="flex items-center gap-2">
+                                <div className={`w-5 h-5 rounded-full ${typeConfig.color} flex items-center justify-center`}>
+                                  <Icon className="h-3 w-3 text-white" />
+                                </div>
+                                <span className="text-sm font-medium">{typeConfig.label}</span>
+                                <span className="text-xs text-muted-foreground">({typeBindings.length})</span>
+                              </div>
+                              <span className="text-xs text-muted-foreground">{typeConfig.description}</span>
+                            </div>
+
+                            <div className="divide-y">
+                              {typeBindings.map((binding) => {
+                                const positionText = binding.position && binding.position !== 'auto'
+                                  ? `(${binding.position.x.toFixed(0)}%, ${binding.position.y.toFixed(0)}%)`
+                                  : '中心'
+
+                                const ds = binding.dataSource as any
+                                const deviceId = ds?.deviceId
+                                const metricId = ds?.metricId || ds?.property
+                                const command = ds?.command
+
+                                return (
+                                  <div
+                                    key={binding.id}
+                                    className="flex items-center gap-3 p-3 hover:bg-muted/50 transition-colors"
+                                  >
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${typeConfig.color}/20 ${typeConfig.textColor}`}>
+                                      <Icon className="h-4 w-4" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate">{binding.name}</div>
+                                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <span>{positionText}</span>
+                                        {deviceId && <span>• {deviceId.slice(0, 8)}...</span>}
+                                        {metricId && <span>• {metricId}</span>}
+                                        {command && <span>• {command}</span>}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+                </div>
+              ),
+            },
+          ],
+        }
+
       // ========== Business Components ==========
       case 'agent-status-card':
       case 'decision-list':
@@ -3795,10 +4287,32 @@ export function VisualDashboard() {
   }
 
   if (!currentDashboard) {
+    // Show loading state only if we're still loading
+    if (dashboardsLoading) {
+      return (
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <h2 className="text-lg font-medium mb-2">Loading Dashboard...</h2>
+          </div>
+        </div>
+      )
+    }
+
+    // No dashboard found - show empty state with create button
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <h2 className="text-lg font-medium mb-2">Loading Dashboard...</h2>
+        <div className="text-center space-y-4">
+          <LayoutDashboard className="h-16 w-16 mx-auto text-muted-foreground" />
+          <div>
+            <h2 className="text-lg font-medium mb-1">No Dashboard Found</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Create your first dashboard to get started
+            </p>
+            <Button onClick={() => handleDashboardCreate('Overview')}>
+              <Plus className="h-4 w-4 mr-1" />
+              Create Dashboard
+            </Button>
+          </div>
         </div>
       </div>
     )
@@ -3963,6 +4477,17 @@ export function VisualDashboard() {
         zoom={componentConfig.zoom as number || 10}
         tileLayer={componentConfig.tileLayer as string || 'osm'}
         onSave={handleMapEditorSave}
+      />
+
+      {/* Layer Editor Dialog */}
+      <LayerEditorDialog
+        open={layerEditorOpen}
+        onOpenChange={setLayerEditorOpen}
+        bindings={layerEditorBindings}
+        backgroundType={componentConfig.backgroundType as 'color' | 'image' | 'transparent' | 'grid' || 'grid'}
+        backgroundColor={componentConfig.backgroundColor as string}
+        backgroundImage={componentConfig.backgroundImage as string}
+        onSave={handleLayerEditorSave}
       />
     </div>
   )
