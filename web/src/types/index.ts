@@ -1623,6 +1623,60 @@ export interface AgentStats {
 }
 
 /**
+ * Available resources for an Agent
+ * This represents all devices, metrics, and commands that the AI can use
+ */
+export interface AgentAvailableResources {
+  /**
+   * All devices in the system
+   */
+  devices: Array<{
+    id: string
+    name: string
+    type: string
+    online: boolean
+    capabilities: string[]
+  }>
+
+  /**
+   * All available metrics grouped by device
+   */
+  metrics: Array<{
+    device_id: string
+    device_name: string
+    metrics: Array<{
+      name: string
+      display_name: string
+      unit?: string
+      data_type: string
+    }>
+  }>
+
+  /**
+   * All available commands grouped by device
+   */
+  commands: Array<{
+    device_id: string
+    device_name: string
+    commands: Array<{
+      name: string
+      display_name: string
+      parameters?: Record<string, unknown>
+    }>
+  }>
+
+  /**
+   * Summary counts
+   */
+  summary: {
+    total_devices: number
+    online_devices: number
+    total_metrics: number
+    total_commands: number
+  }
+}
+
+/**
  * Agent execution record - matches backend AgentExecutionDto
  */
 export interface AgentExecution {

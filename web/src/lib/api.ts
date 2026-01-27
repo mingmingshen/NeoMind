@@ -70,6 +70,8 @@ import type {
   ExecuteAgentRequest,
   AgentListResponse,
   AgentExecutionsResponse,
+  ParsedIntent,
+  AgentAvailableResources,
   // Dashboard Types
   DashboardResponse,
   CreateDashboardRequest,
@@ -1580,6 +1582,24 @@ export const api = {
    */
   getAgentStats: (id: string) =>
     fetchAPI<AgentStats>(`/agents/${id}/stats`),
+
+  /**
+   * Get agent available resources (devices, metrics, commands)
+   * This helps the AI understand what assets are available in the system
+   * GET /api/agents/:id/available-resources
+   */
+  getAgentAvailableResources: (id: string) =>
+    fetchAPI<AgentAvailableResources>(`/agents/${id}/available-resources`),
+
+  /**
+   * Parse natural language intent
+   * POST /api/agents/parse-intent
+   */
+  parseAgentIntent: (prompt: string, llmBackendId?: string) =>
+    fetchAPI<ParsedIntent>('/agents/parse-intent', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, llm_backend_id: llmBackendId }),
+    }),
 
   // ==========================================================================
   // Dashboard APIs
