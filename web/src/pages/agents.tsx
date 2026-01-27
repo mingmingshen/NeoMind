@@ -2,7 +2,7 @@
  * NeoTalk AI Agents Page
  *
  * User-defined AI Agents for autonomous IoT automation.
- * Two-column layout: Agent list (left) + Agent detail (right)
+ * Card grid layout with detail dialog for viewing individual agent details.
  */
 
 import { useState, useCallback, useEffect } from "react"
@@ -11,17 +11,25 @@ import { PageLayout } from "@/components/layout/PageLayout"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
-import { useAgentEvents, useAgentStatus } from "@/hooks/useAgentEvents"
+import { Loader2 } from "lucide-react"
 import type { AiAgent, AiAgentDetail } from "@/types"
 
 // Import components
-import { AgentListPanel } from "./agents-components/AgentListPanel"
-import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
+import { AgentCard, CreateCard } from "./agents-components/AgentCard"
 import { AgentCreatorDialog } from "./agents-components/AgentCreatorDialog"
 import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog"
 
 // Import dialogs
 import { AgentMemoryDialog } from "./agents-components/AgentMemoryDialog"
+
+// Import detail panel content for reuse in dialog
+import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 export function AgentsPage() {
   const { t: tCommon } = useTranslation('common')
@@ -32,6 +40,7 @@ export function AgentsPage() {
   const [showAgentDialog, setShowAgentDialog] = useState(false)
   const [memoryDialogOpen, setMemoryDialogOpen] = useState(false)
   const [executionDetailOpen, setExecutionDetailOpen] = useState(false)
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
 
   // Dialog data states
   const [memoryAgentId, setMemoryAgentId] = useState('')
@@ -41,10 +50,10 @@ export function AgentsPage() {
 
   // Editing states
   const [editingAgent, setEditingAgent] = useState<AiAgentDetail | undefined>(undefined)
+  const [selectedAgent, setSelectedAgent] = useState<AiAgentDetail | null>(null)
 
   // Data state
   const [agents, setAgents] = useState<AiAgent[]>([])
-  const [selectedAgent, setSelectedAgent] = useState<AiAgentDetail | null>(null)
   const [loading, setLoading] = useState(false)
 
   // Resources for dialogs
@@ -84,14 +93,6 @@ export function AgentsPage() {
   useEffect(() => {
     loadItems()
   }, [loadItems])
-
-  // When selected agent changes, fetch its details
-  useEffect(() => {
-    if (selectedAgent) {
-      // Refresh agent details
-      api.getAgent(selectedAgent.id).then(setSelectedAgent).catch(console.error)
-    }
-  }, [agents])
 
   // Handlers
   const handleCreate = () => {
@@ -212,11 +213,12 @@ export function AgentsPage() {
     setExecutionDetailOpen(true)
   }
 
-  // Select an agent to view details
-  const handleSelectAgent = async (agent: AiAgent) => {
+  // Open detail dialog for an agent
+  const handleViewDetail = async (agent: AiAgent) => {
     try {
       const detail = await api.getAgent(agent.id)
       setSelectedAgent(detail)
+      setDetailDialogOpen(true)
     } catch (error) {
       console.error('Failed to load agent details:', error)
       toast({
@@ -227,40 +229,43 @@ export function AgentsPage() {
     }
   }
 
+  // Refresh detail when dialog is open
+  useEffect(() => {
+    if (detailDialogOpen && selectedAgent) {
+      api.getAgent(selectedAgent.id).then(setSelectedAgent).catch(console.error)
+    }
+  }, [agents, detailDialogOpen, selectedAgent?.id])
+
   return (
     <PageLayout
       title={tAgent('title')}
       subtitle={tAgent('description')}
     >
-      {/* Two-column layout */}
-      <div className="flex h-[calc(100vh-8rem)] gap-6">
-        {/* Left: Agent List Panel */}
-        <div className="w-80 shrink-0">
-          <AgentListPanel
-            agents={agents}
-            loading={loading}
-            selectedAgent={selectedAgent}
-            onSelectAgent={handleSelectAgent}
-            onCreate={handleCreate}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onToggleStatus={handleToggleStatus}
-            onExecute={handleExecute}
-            onViewMemory={handleViewMemory}
-          />
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
-
-        {/* Right: Agent Detail Panel */}
-        <div className="flex-1 min-w-0">
-          <AgentDetailPanel
-            agent={selectedAgent}
-            onEdit={handleEdit}
-            onExecute={handleExecute}
-            onViewExecutionDetail={handleViewExecutionDetail}
-            onRefresh={loadItems}
-          />
+      ) : agents.length === 0 ? (
+        <div className="flex items-center justify-center py-20">
+          <CreateCard onClick={handleCreate} />
         </div>
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {agents.map((agent) => (
+            <AgentCard
+              key={agent.id}
+              agent={agent}
+              onToggleStatus={handleToggleStatus}
+              onExecute={handleExecute}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onViewMemory={handleViewMemory}
+              onClick={() => handleViewDetail(agent)}
+            />
+          ))}
+          <CreateCard onClick={handleCreate} />
+        </div>
+      )}
 
       {/* Agent Creator/Editor Dialog */}
       <AgentCreatorDialog
@@ -271,6 +276,27 @@ export function AgentsPage() {
         deviceTypes={deviceTypes}
         onSave={handleSave}
       />
+
+      {/* Agent Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+            <DialogTitle className="text-lg">智能体详情</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[calc(90vh-100px)]">
+            {selectedAgent && (
+              <AgentDetailPanel
+                agent={selectedAgent}
+                onEdit={handleEdit}
+                onExecute={handleExecute}
+                onViewExecutionDetail={handleViewExecutionDetail}
+                onRefresh={loadItems}
+                inlineMode
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Agent Memory Dialog */}
       <AgentMemoryDialog

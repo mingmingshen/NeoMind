@@ -6,7 +6,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Card } from "@/components/ui/card"
 import { EmptyStateInline } from "@/components/shared"
 import { Clock, AlertCircle, FileText } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -56,7 +55,7 @@ export function AgentExecutionsList({
   }
 
   return (
-    <Card>
+    <div className="p-4">
       <Table>
         <TableHeader>
           <TableRow>
@@ -127,6 +126,6 @@ export function AgentExecutionsList({
           )}
         </TableBody>
       </Table>
-    </Card>
+    </div>
   )
 }
