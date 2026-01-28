@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, GripVertical } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,15 +32,22 @@ interface ValueMapEditorProps {
   onChange: (valueMap: ValueStateMapping[]) => void
 }
 
-const STATE_OPTIONS = [
-  { value: 'on' as LEDState, label: '开启', color: 'text-green-600' },
-  { value: 'off' as LEDState, label: '关闭', color: 'text-muted-foreground' },
-  { value: 'error' as LEDState, label: '错误', color: 'text-red-600' },
-  { value: 'warning' as LEDState, label: '警告', color: 'text-yellow-600' },
-  { value: 'unknown' as LEDState, label: '未知', color: 'text-muted-foreground' },
-]
+// State options factory (uses translations)
+function getStateOptions(t: (key: string) => string) {
+  return [
+    { value: 'on' as LEDState, label: t('valueMap.state.on'), color: 'text-green-600' },
+    { value: 'off' as LEDState, label: t('valueMap.state.off'), color: 'text-muted-foreground' },
+    { value: 'error' as LEDState, label: t('valueMap.state.error'), color: 'text-red-600' },
+    { value: 'warning' as LEDState, label: t('valueMap.state.warning'), color: 'text-yellow-600' },
+    { value: 'unknown' as LEDState, label: t('valueMap.state.unknown'), color: 'text-muted-foreground' },
+  ]
+}
 
 export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
+  const { t } = useTranslation('dashboardComponents')
+
+  const stateOptions = getStateOptions(t)
+
   const [newMapping, setNewMapping] = useState<ValueStateMapping>({
     id: '',
     values: '',
@@ -72,9 +80,9 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium">值状态映射</Label>
+        <Label className="text-sm font-medium">{t('valueMap.title')}</Label>
         <span className="text-xs text-muted-foreground">
-          {valueMap.length} 条规则
+          {valueMap.length} {t('valueMap.rules')}
         </span>
       </div>
 
@@ -82,11 +90,11 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
       <div className="space-y-2">
         {valueMap.length === 0 ? (
           <div className="text-center py-4 px-3 rounded-md border border-dashed text-muted-foreground text-sm">
-            暂无映射规则，点击下方按钮添加
+            {t('valueMap.noRules')}
           </div>
         ) : (
           valueMap.map((mapping, index) => {
-            const stateInfo = STATE_OPTIONS.find(s => s.value === mapping.state)
+            const stateInfo = stateOptions.find(s => s.value === mapping.state)
             return (
               <div
                 key={mapping.id}
@@ -97,18 +105,18 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
                   <div className="flex-1 min-w-0 space-y-2">
                     {/* Values */}
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground shrink-0">值:</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{t('valueMap.values')}:</span>
                       <Input
                         value={mapping.values}
                         onChange={(e) => updateMapping(mapping.id, { values: e.target.value })}
-                        placeholder="1, true, yes"
+                        placeholder={t('valueMap.valuesPlaceholder')}
                         className="h-8 text-sm"
                       />
                     </div>
 
                     {/* State */}
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground shrink-0">状态:</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{t('valueMap.state')}:</span>
                       <Select
                         value={mapping.state}
                         onValueChange={(val) => updateMapping(mapping.id, { state: val as LEDState })}
@@ -117,7 +125,7 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {STATE_OPTIONS.map(opt => (
+                          {stateOptions.map(opt => (
                             <SelectItem key={opt.value} value={opt.value}>
                               <span className={cn(opt.color)}>{opt.label}</span>
                             </SelectItem>
@@ -128,18 +136,18 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
 
                     {/* Optional: Label */}
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground shrink-0">标签:</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{t('valueMap.label')}:</span>
                       <Input
                         value={mapping.label || ''}
                         onChange={(e) => updateMapping(mapping.id, { label: e.target.value || undefined })}
-                        placeholder="可选"
+                        placeholder={t('valueMap.labelPlaceholder')}
                         className="h-8 text-sm"
                       />
                     </div>
 
                     {/* Optional: Color */}
                     <div className="flex items-center gap-1">
-                      <span className="text-xs text-muted-foreground shrink-0">颜色:</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{t('valueMap.color')}:</span>
                       <CompactColorPicker
                         value={mapping.color || '#000000'}
                         onChange={(color) => updateMapping(mapping.id, { color: color || undefined })}
@@ -170,7 +178,7 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
           <Input
             value={newMapping.values}
             onChange={(e) => setNewMapping({ ...newMapping, values: e.target.value })}
-            placeholder="值 (如: 1, true, yes)"
+            placeholder={t('valueMap.valuePlaceholder')}
             className="flex-1 h-9"
           />
           <Select
@@ -181,7 +189,7 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STATE_OPTIONS.map(opt => (
+              {stateOptions.map(opt => (
                 <SelectItem key={opt.value} value={opt.value}>
                   {opt.label}
                 </SelectItem>
@@ -198,7 +206,7 @@ export function ValueMapEditor({ valueMap, onChange }: ValueMapEditorProps) {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          当数据值匹配时，LED 将显示对应状态。支持逗号分隔的多个值。
+          {t('valueMap.hint')}
         </p>
       </div>
     </div>

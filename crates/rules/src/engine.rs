@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::dependencies::DependencyManager;
-use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError, ComparisonOperator, AlertSeverity};
+use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 
 /// Optional alert manager for creating alerts from rule actions.
 /// Wrapped in Option to allow RuleEngine to function without it.
@@ -100,6 +100,9 @@ pub struct CompiledRule {
     pub state: RuleState,
     /// When the rule was created.
     pub created_at: DateTime<Utc>,
+    /// Frontend UI state for proper restoration on edit (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<serde_json::Value>,
 }
 
 impl CompiledRule {
@@ -126,6 +129,7 @@ impl CompiledRule {
                 condition_true_since: None,
             },
             created_at: Utc::now(),
+            source: None,
         }
     }
 
@@ -164,31 +168,103 @@ impl CompiledRule {
         self.state.last_evaluation = condition_met;
     }
 
+    /// Build a device name → device ID mapping from source.uiCondition.
+    /// This resolves the issue where DSL contains device names but evaluation needs device IDs.
+    fn build_device_id_mapping(&self) -> std::collections::HashMap<String, String> {
+        let mut mapping = std::collections::HashMap::new();
+        if let Some(source) = &self.source {
+            self.extract_device_ids_from_ui_condition(source.get("uiCondition"), &mut mapping);
+        }
+        mapping
+    }
+
+    /// Recursively extract device_id from uiCondition structure.
+    fn extract_device_ids_from_ui_condition(
+        &self,
+        ui_cond: Option<&serde_json::Value>,
+        mapping: &mut std::collections::HashMap<String, String>,
+    ) {
+        if let Some(cond) = ui_cond {
+            // For simple conditions, map the device name (derived from device_id during parsing)
+            if let Some(device_id) = cond.get("device_id").and_then(|v| v.as_str()) {
+                // Also check if there's a device name that needs to be mapped
+                if let Some(name) = cond.get("deviceName").and_then(|v| v.as_str()) {
+                    if !name.is_empty() && !device_id.is_empty() {
+                        mapping.insert(name.to_string(), device_id.to_string());
+                    }
+                }
+                // Direct mapping: the parsed DSL uses device_id as the key
+                // but the value is stored under the actual device ID
+                if !device_id.is_empty() {
+                    mapping.insert(device_id.to_string(), device_id.to_string());
+                }
+            }
+
+            // Handle nested conditions for AND/OR
+            if let Some(conditions) = cond.get("conditions").and_then(|v| v.as_array()) {
+                for sub_cond in conditions {
+                    self.extract_device_ids_from_ui_condition(Some(sub_cond), mapping);
+                }
+            }
+
+            // Handle NOT condition
+            if let Some(sub_cond) = cond.get("condition") {
+                self.extract_device_ids_from_ui_condition(Some(sub_cond), mapping);
+            }
+        }
+    }
+
+    /// Resolve device_id using the source.uiCondition mapping.
+    /// Returns the actual device ID if found, otherwise returns the original device_id.
+    fn resolve_device_id(&self, dsl_device_id: &str, mapping: &std::collections::HashMap<String, String>) -> String {
+        // First check if the dsl_device_id is already a valid device ID
+        if let Some(resolved) = mapping.get(dsl_device_id) {
+            return resolved.clone();
+        }
+        // If not found, return the original (might already be a device ID)
+        dsl_device_id.to_string()
+    }
+
     /// Evaluate a condition with the given value provider.
     fn evaluate_condition(&self, condition: &RuleCondition, value_provider: &dyn ValueProvider) -> bool {
+        // Build device ID mapping from source (cache this for efficiency)
+        let device_id_mapping = self.build_device_id_mapping();
+
+        self.evaluate_condition_with_mapping(condition, value_provider, &device_id_mapping)
+    }
+
+    /// Evaluate a condition with device ID mapping.
+    fn evaluate_condition_with_mapping(
+        &self,
+        condition: &RuleCondition,
+        value_provider: &dyn ValueProvider,
+        device_id_mapping: &std::collections::HashMap<String, String>,
+    ) -> bool {
         match condition {
             RuleCondition::Simple { device_id, metric, operator, threshold } => {
-                if let Some(value) = value_provider.get_value(device_id, metric) {
+                let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
+                if let Some(value) = value_provider.get_value(&resolved_id, metric) {
                     operator.evaluate(value, *threshold)
                 } else {
                     false
                 }
             }
             RuleCondition::Range { device_id, metric, min, max } => {
-                if let Some(value) = value_provider.get_value(device_id, metric) {
+                let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
+                if let Some(value) = value_provider.get_value(&resolved_id, metric) {
                     value >= *min && value <= *max
                 } else {
                     false
                 }
             }
             RuleCondition::And(conditions) => {
-                conditions.iter().all(|c| self.evaluate_condition(c, value_provider))
+                conditions.iter().all(|c| self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping))
             }
             RuleCondition::Or(conditions) => {
-                conditions.iter().any(|c| self.evaluate_condition(c, value_provider))
+                conditions.iter().any(|c| self.evaluate_condition_with_mapping(c, value_provider, device_id_mapping))
             }
             RuleCondition::Not(condition) => {
-                !self.evaluate_condition(condition, value_provider)
+                !self.evaluate_condition_with_mapping(condition, value_provider, device_id_mapping)
             }
         }
     }
@@ -379,6 +455,11 @@ impl RuleEngine {
     /// Get the current value for a device metric.
     pub fn get_value(&self, device_id: &str, metric: &str) -> Option<f64> {
         self.value_provider.get_value(device_id, metric)
+    }
+
+    /// Get a reference to the value provider for updating values.
+    pub fn get_value_provider(&self) -> Arc<dyn ValueProvider> {
+        self.value_provider.clone()
     }
 
     /// Evaluate all active rules.

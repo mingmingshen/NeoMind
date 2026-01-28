@@ -70,7 +70,9 @@ impl SimulationContext {
             time_series_storage: Some(time_series.clone()),
             device_service: None,
             event_bus: Some(event_bus.clone()),
+            alert_manager: Some(alert_manager.clone()),
             llm_runtime: Some(llm_runtime.clone() as Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>),
+            llm_backend_store: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;

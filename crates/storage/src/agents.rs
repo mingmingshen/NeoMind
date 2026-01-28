@@ -38,6 +38,9 @@ pub struct AiAgent {
     /// Agent role (Monitor, Executor, Analyst)
     #[serde(default)]
     pub role: AgentRole,
+    /// User-provided description (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// User's natural language description of requirements
     pub user_prompt: String,
     /// Optional LLM backend ID for this agent (uses default if not specified)

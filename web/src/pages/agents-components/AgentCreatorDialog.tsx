@@ -180,6 +180,8 @@ function BasicInfoStep({
   setName,
   role,
   setRole,
+  description,
+  setDescription,
   userPrompt,
   setUserPrompt,
   llmBackendId,
@@ -189,6 +191,8 @@ function BasicInfoStep({
   setName: (v: string) => void
   role: AgentRole
   setRole: (v: AgentRole) => void
+  description: string
+  setDescription: (v: string) => void
   userPrompt: string
   setUserPrompt: (v: string) => void
   llmBackendId: string | null
@@ -220,7 +224,7 @@ function BasicInfoStep({
       {/* Role Selection */}
       <div>
         <Label className="text-sm font-medium mb-3 block">{t('creator.basicInfo.selectRole')}</Label>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-4">
           {ROLES.map((r) => {
             const Icon = r.icon
             const isSelected = role === r.value
@@ -231,12 +235,12 @@ function BasicInfoStep({
                 type="button"
                 onClick={() => setRole(r.value)}
                 className={cn(
-                  "relative p-4 rounded-lg border-2 text-left transition-all",
+                  "relative p-5 rounded-xl border-2 text-left transition-all",
                   isSelected ? r.color : "border-border hover:border-muted-foreground/30 bg-background"
                 )}
               >
-                <div className={cn("flex items-center justify-center w-10 h-10 rounded-lg mb-3", isSelected ? "bg-current/10" : "bg-muted")}>
-                  <Icon className={cn("h-5 w-5", isSelected ? "" : "text-muted-foreground")} />
+                <div className={cn("flex items-center justify-center w-12 h-12 rounded-lg mb-3", isSelected ? "bg-current/10" : "bg-muted")}>
+                  <Icon className={cn("h-6 w-6", isSelected ? "" : "text-muted-foreground")} />
                 </div>
                 <div className={cn("text-sm font-semibold mb-1", isSelected ? "" : "text-muted-foreground")}>
                   {t(`creator.basicInfo.roles.${roleKey}.label`)}
@@ -246,8 +250,8 @@ function BasicInfoStep({
                 </div>
                 {isSelected && (
                   <div className="absolute top-2 right-2">
-                    <div className="w-5 h-5 rounded-full bg-current flex items-center justify-center">
-                      <Check className="h-3 w-3 text-background" />
+                    <div className="w-6 h-6 rounded-full bg-current flex items-center justify-center">
+                      <Check className="h-3.5 w-3.5 text-background" />
                     </div>
                   </div>
                 )}
@@ -267,7 +271,24 @@ function BasicInfoStep({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('creator.basicInfo.namePlaceholder')}
-          className="mt-2 h-10"
+          className="mt-2 h-11 text-base"
+        />
+      </div>
+
+      {/* Description */}
+      <div>
+        <Label htmlFor="agent-description" className="text-sm font-medium">
+          {t('creator.basicInfo.description')}
+        </Label>
+        <p className="text-xs text-muted-foreground mt-1 mb-2">
+          {t('creator.basicInfo.descriptionHint')}
+        </p>
+        <Input
+          id="agent-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder={t('creator.basicInfo.descriptionPlaceholder')}
+          className="h-11 text-base"
         />
       </div>
 
@@ -283,8 +304,8 @@ function BasicInfoStep({
           value={userPrompt}
           onChange={(e) => setUserPrompt(e.target.value)}
           placeholder={t('creator.basicInfo.requirementPlaceholder')}
-          rows={5}
-          className="resize-none text-sm"
+          rows={6}
+          className="resize-none text-base"
         />
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <Info className="h-3.5 w-3.5" />
@@ -472,84 +493,84 @@ function ScheduleStep({
       {/* Schedule Type Selection */}
       <div>
         <Label className="text-sm font-medium mb-3 block">{t('creator.schedule.selectStrategy')}</Label>
-        <div className="grid grid-cols-6 gap-2">
+        <div className="grid grid-cols-6 gap-3">
           <button
             type="button"
             onClick={() => setScheduleType('interval')}
             className={cn(
-              "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+              "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               scheduleType === 'interval'
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <Clock className={cn("h-5 w-5", scheduleType === 'interval' ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", scheduleType === 'interval' ? "text-primary" : "")}>{t('creator.schedule.strategies.interval')}</span>
+            <span className={cn("text-sm font-medium", scheduleType === 'interval' ? "text-primary" : "")}>{t('creator.schedule.strategies.interval')}</span>
           </button>
           <button
             type="button"
             onClick={() => setScheduleType('daily')}
             className={cn(
-              "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+              "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               scheduleType === 'daily'
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <Zap className={cn("h-5 w-5", scheduleType === 'daily' ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", scheduleType === 'daily' ? "text-primary" : "")}>{t('creator.schedule.strategies.daily')}</span>
+            <span className={cn("text-sm font-medium", scheduleType === 'daily' ? "text-primary" : "")}>{t('creator.schedule.strategies.daily')}</span>
           </button>
           <button
             type="button"
             onClick={() => setScheduleType('weekly')}
             className={cn(
-              "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+              "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               scheduleType === 'weekly'
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <Target className={cn("h-5 w-5", scheduleType === 'weekly' ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", scheduleType === 'weekly' ? "text-primary" : "")}>{t('creator.schedule.strategies.weekly')}</span>
+            <span className={cn("text-sm font-medium", scheduleType === 'weekly' ? "text-primary" : "")}>{t('creator.schedule.strategies.weekly')}</span>
           </button>
           <button
             type="button"
             onClick={() => setScheduleType('monthly')}
             className={cn(
-              "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+              "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               scheduleType === 'monthly'
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <Bell className={cn("h-5 w-5", scheduleType === 'monthly' ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", scheduleType === 'monthly' ? "text-primary" : "")}>{t('creator.schedule.strategies.monthly')}</span>
+            <span className={cn("text-sm font-medium", scheduleType === 'monthly' ? "text-primary" : "")}>{t('creator.schedule.strategies.monthly')}</span>
           </button>
           <button
             type="button"
             onClick={() => setScheduleType('event')}
             className={cn(
-              "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+              "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               scheduleType === 'event'
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <Target className={cn("h-5 w-5", scheduleType === 'event' ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", scheduleType === 'event' ? "text-primary" : "")}>{t('creator.schedule.strategies.event')}</span>
+            <span className={cn("text-sm font-medium", scheduleType === 'event' ? "text-primary" : "")}>{t('creator.schedule.strategies.event')}</span>
           </button>
           <button
             type="button"
             onClick={() => setScheduleType('once')}
             className={cn(
-              "flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all",
+              "flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all",
               scheduleType === 'once'
                 ? "border-primary bg-primary/5"
                 : "border-border hover:border-muted-foreground/30"
             )}
           >
             <Check className={cn("h-5 w-5", scheduleType === 'once' ? "text-primary" : "text-muted-foreground")} />
-            <span className={cn("text-xs font-medium", scheduleType === 'once' ? "text-primary" : "")}>{t('creator.schedule.strategies.once')}</span>
+            <span className={cn("text-sm font-medium", scheduleType === 'once' ? "text-primary" : "")}>{t('creator.schedule.strategies.once')}</span>
           </button>
         </div>
       </div>
@@ -1245,6 +1266,43 @@ function ResourceStep({
     setSelectedResources(newResources)
   }
 
+  const toggleAllMetrics = (deviceId: string, metrics: MetricInfo[], selectAll: boolean) => {
+    const device = devices.find(d => d.device_id === deviceId)
+    if (!device) return
+
+    let newResources = [...selectedResources]
+    let existing = newResources.findIndex(r => r.deviceId === deviceId)
+
+    if (selectAll) {
+      // Add all metrics
+      if (existing < 0) {
+        newResources.push({
+          deviceId,
+          deviceName: device.name,
+          deviceType: device.device_type,
+          metrics: metrics.map(m => ({ name: m.name, displayName: m.display_name })),
+          commands: existing >= 0 ? newResources[existing].commands : []
+        })
+      } else {
+        const existingMetrics = new Set(newResources[existing].metrics.map(m => m.name))
+        metrics.forEach(m => {
+          if (!existingMetrics.has(m.name)) {
+            newResources[existing].metrics.push({ name: m.name, displayName: m.display_name })
+          }
+        })
+      }
+    } else {
+      // Remove all metrics
+      if (existing >= 0) {
+        newResources[existing].metrics = []
+        if (newResources[existing].commands.length === 0) {
+          newResources.splice(existing, 1)
+        }
+      }
+    }
+    setSelectedResources(newResources)
+  }
+
   const toggleCommand = (deviceId: string, commandName: string, displayName: string) => {
     const existing = selectedResources.findIndex(r => r.deviceId === deviceId)
     if (existing < 0) {
@@ -1272,6 +1330,43 @@ function ResourceStep({
     setSelectedResources(newResources)
   }
 
+  const toggleAllCommands = (deviceId: string, commands: Array<{ name: string; display_name: string }>, selectAll: boolean) => {
+    const device = devices.find(d => d.device_id === deviceId)
+    if (!device) return
+
+    let newResources = [...selectedResources]
+    let existing = newResources.findIndex(r => r.deviceId === deviceId)
+
+    if (selectAll) {
+      // Add all commands
+      if (existing < 0) {
+        newResources.push({
+          deviceId,
+          deviceName: device.name,
+          deviceType: device.device_type,
+          metrics: [],
+          commands: commands.map(c => ({ name: c.name, displayName: c.display_name }))
+        })
+      } else {
+        const existingCommands = new Set(newResources[existing].commands.map(c => c.name))
+        commands.forEach(c => {
+          if (!existingCommands.has(c.name)) {
+            newResources[existing].commands.push({ name: c.name, displayName: c.display_name })
+          }
+        })
+      }
+    } else {
+      // Remove all commands
+      if (existing >= 0) {
+        newResources[existing].commands = []
+        if (newResources[existing].metrics.length === 0) {
+          newResources.splice(existing, 1)
+        }
+      }
+    }
+    setSelectedResources(newResources)
+  }
+
   const getDeviceIcon = (deviceType: string) => {
     const type = deviceTypes.find(dt => dt.device_type === deviceType)
     const category = type?.categories?.[0] || 'default'
@@ -1295,6 +1390,20 @@ function ResourceStep({
     return selectedResources.find(r => r.deviceId === deviceId)?.commands.some(c => c.name === commandName) || false
   }
 
+  const areAllMetricsSelected = (deviceId: string, metrics: MetricInfo[]) => {
+    if (metrics.length === 0) return false
+    const resource = selectedResources.find(r => r.deviceId === deviceId)
+    if (!resource) return false
+    return metrics.every(m => resource.metrics.some(rm => rm.name === m.name))
+  }
+
+  const areAllCommandsSelected = (deviceId: string, commands: Array<{ name: string }>) => {
+    if (commands.length === 0) return false
+    const resource = selectedResources.find(r => r.deviceId === deviceId)
+    if (!resource) return false
+    return commands.every(c => resource.commands.some(rc => rc.name === c.name))
+  }
+
   const filteredDevices = devices.filter(device => {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
@@ -1302,12 +1411,13 @@ function ResourceStep({
   })
 
   const selectedCount = selectedResources.reduce((acc, r) => acc + r.metrics.length + r.commands.length, 0)
+  const selectedDeviceCount = selectedResources.length
 
   return (
     <div className="space-y-4">
       {/* Search & Summary */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={searchQuery}
@@ -1317,13 +1427,30 @@ function ResourceStep({
           />
         </div>
         {selectedCount > 0 && (
-          <Badge variant="secondary" className="h-7 px-3">
-            {t('creator.resources.selectedCount', { count: selectedCount })}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="h-7 px-3">
+              {selectedDeviceCount} {t('creator.resources.devices')}
+            </Badge>
+            <Badge variant="default" className="h-7 px-3">
+              {selectedCount} {t('creator.resources.selected')}
+            </Badge>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                setSelectedResources([])
+                setExpandedDevices(new Set())
+              }}
+            >
+              {t('creator.resources.clearAll')}
+            </Button>
+          </div>
         )}
       </div>
 
-      {/* Device List */}
+      {/* Device List - Grid Layout */}
       <div className="flex-1 overflow-y-auto -mx-1">
         {filteredDevices.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
@@ -1331,7 +1458,7 @@ function ResourceStep({
             <p className="text-sm">{t('creator.resources.noDevicesFound')}</p>
           </div>
         ) : (
-          <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto pr-1">
             {filteredDevices.map((device) => {
               const isExpanded = expandedDevices.has(device.device_id)
               const Icon = getDeviceIcon(device.device_type)
@@ -1341,6 +1468,8 @@ function ResourceStep({
               const metrics = getDeviceMetrics(device.device_id)
               const isLoading = loadingMetrics[device.device_id]
               const commands = getDeviceCommands(device.device_id)
+              const allMetricsSelected = areAllMetricsSelected(device.device_id, metrics)
+              const allCommandsSelected = areAllCommandsSelected(device.device_id, commands)
 
               return (
                 <div
@@ -1350,54 +1479,116 @@ function ResourceStep({
                     hasSelection ? "border-primary/50 bg-primary/5" : "border-border"
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => void toggleDeviceExpanded(device.device_id)}
-                    className="w-full px-3 py-2.5 flex items-center gap-3 hover:bg-muted/30 text-left"
-                  >
-                    <div className="p-1.5 rounded bg-muted">{Icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{device.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{device.device_type}</div>
-                    </div>
-                    {(metricCount > 0 || commandCount > 0) && (
-                      <Badge variant="secondary" className="text-xs h-5 mr-1">
-                        {metricCount > 0 && t('creator.resources.metricCount', { count: metricCount })}
-                        {metricCount > 0 && commandCount > 0 && ' + '}
-                        {commandCount > 0 && t('creator.resources.commandCount', { count: commandCount })}
-                      </Badge>
-                    )}
-                    <ChevronDown className={cn(
-                      "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0",
-                      isExpanded && "rotate-180"
-                    )} />
-                  </button>
+                  {/* Device Header - Always Visible with Quick Select */}
+                  <div className="p-3 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => void toggleDeviceExpanded(device.device_id)}
+                      className="w-full flex items-center gap-2 text-left group"
+                    >
+                      <div className={cn(
+                        "p-1.5 rounded transition-colors",
+                        hasSelection ? "bg-primary/20" : "bg-muted group-hover:bg-muted/70"
+                      )}>
+                        {Icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{device.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">{device.device_type}</div>
+                      </div>
+                      {(metricCount > 0 || commandCount > 0) && (
+                        <div className="flex items-center gap-1 mr-1">
+                          {metricCount > 0 && (
+                            <Badge variant="secondary" className="text-xs h-5 px-1.5">
+                              {metricCount}
+                            </Badge>
+                          )}
+                          {commandCount > 0 && (
+                            <Badge variant="outline" className="text-xs h-5 px-1.5">
+                              {commandCount}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      <ChevronDown className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform flex-shrink-0",
+                        isExpanded && "rotate-180"
+                      )} />
+                    </button>
 
+                    {/* Quick Select Buttons - Show summary even when collapsed */}
+                    {(metrics.length > 0 || commands.length > 0) && (
+                      <div className="flex items-center gap-2 pl-8">
+                        {metrics.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleAllMetrics(device.device_id, metrics, !allMetricsSelected)}
+                            className={cn(
+                              "text-xs px-2 py-1 rounded transition-colors",
+                              allMetricsSelected
+                                ? "bg-primary/20 text-primary hover:bg-primary/30"
+                                : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                            )}
+                          >
+                            {allMetricsSelected ? `✓ ${metrics.length} ${t('creator.resources.metrics')}` : `+${metrics.length} ${t('creator.resources.metrics')}`}
+                          </button>
+                        )}
+                        {commands.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleAllCommands(device.device_id, commands, !allCommandsSelected)}
+                            className={cn(
+                              "text-xs px-2 py-1 rounded transition-colors",
+                              allCommandsSelected
+                                ? "bg-primary/20 text-primary hover:bg-primary/30"
+                                : "bg-muted/50 text-muted-foreground hover:bg-muted"
+                            )}
+                          >
+                            {allCommandsSelected ? `✓ ${commands.length} ${t('creator.resources.commands')}` : `+${commands.length} ${t('creator.resources.commands')}`}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expanded Metrics/Commands */}
                   {isExpanded && (
-                    <div className="border-t p-2.5 bg-muted/20 space-y-3">
+                    <div className="border-t bg-muted/20">
                       {isLoading ? (
-                        <div className="flex items-center justify-center py-3">
+                        <div className="flex items-center justify-center py-6">
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                         </div>
                       ) : (
-                        <>
+                        <div className="p-3 space-y-3">
                           {metrics.length > 0 && (
                             <div>
-                              <div className="text-xs text-muted-foreground mb-2 px-1">{t('creator.resources.metrics')}</div>
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex items-center justify-between mb-2 px-1">
+                                <span className="text-xs text-muted-foreground">{t('creator.resources.metrics')}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAllMetrics(device.device_id, metrics, !allMetricsSelected)}
+                                  className="text-xs text-primary hover:underline"
+                                >
+                                  {allMetricsSelected ? t('creator.resources.deselectAll') : t('creator.resources.selectAll')}
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
                                 {metrics.map((metric) => (
                                   <button
                                     key={metric.name}
                                     type="button"
                                     onClick={() => toggleMetric(device.device_id, metric.name, metric.display_name)}
                                     className={cn(
-                                      "text-xs px-2.5 py-1 rounded-md transition-colors",
+                                      "text-xs px-2 py-1.5 rounded transition-colors text-left flex items-center gap-1.5",
                                       isMetricSelected(device.device_id, metric.name)
                                         ? "bg-primary text-primary-foreground font-medium"
                                         : "bg-background hover:bg-muted border"
                                     )}
                                   >
-                                    {metric.display_name}
+                                    <span className="flex-1 truncate">{metric.display_name}</span>
+                                    {isMetricSelected(device.device_id, metric.name) && (
+                                      <Check className="h-3 w-3 shrink-0" />
+                                    )}
                                   </button>
                                 ))}
                               </div>
@@ -1405,27 +1596,39 @@ function ResourceStep({
                           )}
                           {commands.length > 0 && (
                             <div>
-                              <div className="text-xs text-muted-foreground mb-2 px-1">{t('creator.resources.commands')}</div>
-                              <div className="flex flex-wrap gap-1.5">
+                              <div className="flex items-center justify-between mb-2 px-1">
+                                <span className="text-xs text-muted-foreground">{t('creator.resources.commands')}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAllCommands(device.device_id, commands, !allCommandsSelected)}
+                                  className="text-xs text-primary hover:underline"
+                                >
+                                  {allCommandsSelected ? t('creator.resources.deselectAll') : t('creator.resources.selectAll')}
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
                                 {commands.map((command) => (
                                   <button
                                     key={command.name}
                                     type="button"
                                     onClick={() => toggleCommand(device.device_id, command.name, command.display_name)}
                                     className={cn(
-                                      "text-xs px-2.5 py-1 rounded-md transition-colors",
+                                      "text-xs px-2 py-1.5 rounded transition-colors text-left flex items-center gap-1.5",
                                       isCommandSelected(device.device_id, command.name)
                                         ? "bg-primary text-primary-foreground font-medium"
                                         : "bg-background hover:bg-muted border"
                                     )}
                                   >
-                                    {command.display_name}
+                                    <span className="flex-1 truncate">{command.display_name}</span>
+                                    {isCommandSelected(device.device_id, command.name) && (
+                                      <Check className="h-3 w-3 shrink-0" />
+                                    )}
                                   </button>
                                 ))}
                               </div>
                             </div>
                           )}
-                        </>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1482,6 +1685,7 @@ export function AgentCreatorDialog({
   // Form state
   const [name, setName] = useState("")
   const [role, setRole] = useState<AgentRole>('Monitor')
+  const [description, setDescription] = useState("")
   const [userPrompt, setUserPrompt] = useState("")
   const [llmBackendId, setLlmBackendId] = useState<string | null>(null)
   const [scheduleType, setScheduleType] = useState<'interval' | 'daily' | 'weekly' | 'monthly' | 'event' | 'once'>('interval')
@@ -1512,9 +1716,11 @@ export function AgentCreatorDialog({
     if (open) {
       setCurrentStep(0)
       if (agent) {
-        setName(agent.name)
+        // Basic info - ensure fields are loaded even if empty
+        setName(agent.name || '')
         setRole(agent.role || 'Monitor')
-        setUserPrompt(agent.user_prompt)
+        setDescription(agent.description || '')
+        setUserPrompt(agent.user_prompt || '')
         setLlmBackendId(agent.llm_backend_id || null)
         // Parse schedule...
         if (agent.schedule) {
@@ -1609,6 +1815,7 @@ export function AgentCreatorDialog({
       } else {
         setName("")
         setRole('Monitor')
+        setDescription("")
         setUserPrompt("")
         setLlmBackendId(null)
         setScheduleType('interval')
@@ -1714,11 +1921,29 @@ export function AgentCreatorDialog({
       }
 
       if (isEditing && agent) {
-        await onSave({ name: name.trim(), role, user_prompt: userPrompt.trim() })
+        // Build update data with all fields
+        const updateData: Partial<AiAgentDetail> = {
+          name: name.trim(),
+          description: description.trim(),
+          role,
+          user_prompt: userPrompt.trim(),
+          llm_backend_id: llmBackendId ?? undefined,
+          schedule: {
+            schedule_type: finalScheduleType,
+            interval_seconds: intervalSeconds,
+            cron_expression: cronExpression,
+            timezone: timezone,
+            event_filter: eventFilter,
+          },
+          // Note: resources update requires a separate approach
+          // The backend may need to handle resources separately
+        }
+        await onSave(updateData)
       } else {
         const data: CreateAgentRequest = {
           name: name.trim(),
           role,
+          description: description.trim(),
           user_prompt: userPrompt.trim(),
           device_ids: selectedResources.map(r => r.deviceId),
           metrics: selectedResources.flatMap(r =>
@@ -1749,7 +1974,7 @@ export function AgentCreatorDialog({
 
   // Progress indicator
   const StepProgress = () => (
-    <div className="flex items-center justify-center gap-2 px-6 py-4">
+    <div className="flex items-center justify-center gap-2 px-8 py-4">
       {steps.map((step, index) => (
         <div key={step} className="flex items-center">
           <button
@@ -1757,7 +1982,7 @@ export function AgentCreatorDialog({
             onClick={() => index < currentStep && setCurrentStep(index)}
             disabled={index >= currentStep || saving}
             className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+              "flex items-center gap-3 px-5 py-2.5 rounded-full text-base font-medium transition-all",
               index === currentStep
                 ? "bg-primary text-primary-foreground"
                 : index < currentStep
@@ -1766,15 +1991,15 @@ export function AgentCreatorDialog({
             )}
           >
             {index < currentStep ? (
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-4 w-4" />
             ) : (
-              <span className="w-3.5 h-3.5 flex items-center justify-center text-xs">{index + 1}</span>
+              <span className="w-4 h-4 flex items-center justify-center text-xs">{index + 1}</span>
             )}
             <span>{step}</span>
           </button>
           {index < steps.length - 1 && (
             <div className={cn(
-              "w-8 h-px mx-1",
+              "w-12 h-px mx-1",
               index < currentStep ? "bg-primary" : "bg-border"
             )} />
           )}
@@ -1785,8 +2010,8 @@ export function AgentCreatorDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !saving && onOpenChange(v)}>
-      <DialogContent className="max-w-4xl h-[90vh] p-0 gap-0 flex flex-col [&>[data-radix-dialog-close]]:right-4 [&>[data-radix-dialog-close]]:top-4">
-        <DialogHeader className="px-6 py-4 border-b shrink-0">
+      <DialogContent className="fixed left-0 top-0 bottom-0 right-0 h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 rounded-none border-0 p-0 gap-0 flex flex-col [&>[data-radix-dialog-close]]:right-6 [&>[data-radix-dialog-close]]:top-6 [&>[data-radix-dialog-close]]:z-50">
+        <DialogHeader className="px-8 py-5 border-b shrink-0">
           <DialogTitle className="text-lg">
             {isEditing ? t('creator.editTitle') : t('creator.title')}
           </DialogTitle>
@@ -1796,7 +2021,7 @@ export function AgentCreatorDialog({
         <StepProgress />
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-8 py-6">
           {/* Validation Errors */}
           {validationErrors.length > 0 && (
             <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive flex items-start gap-2">
@@ -1813,6 +2038,8 @@ export function AgentCreatorDialog({
                 setName={setName}
                 role={role}
                 setRole={setRole}
+                description={description}
+                setDescription={setDescription}
                 userPrompt={userPrompt}
                 setUserPrompt={setUserPrompt}
                 llmBackendId={llmBackendId}
@@ -1891,6 +2118,8 @@ export function AgentCreatorDialog({
                   setName={setName}
                   role={role}
                   setRole={setRole}
+                  description={description}
+                  setDescription={setDescription}
                   userPrompt={userPrompt}
                   setUserPrompt={setUserPrompt}
                   llmBackendId={llmBackendId}
@@ -1946,7 +2175,7 @@ export function AgentCreatorDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t bg-muted/20 shrink-0">
+        <div className="flex items-center justify-between px-8 py-5 border-t bg-muted/20 shrink-0">
           <Button
             variant="ghost"
             size="sm"

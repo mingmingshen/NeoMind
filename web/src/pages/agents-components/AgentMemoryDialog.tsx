@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { Brain, TrendingUp, Trash2, RefreshCw } from "lucide-react"
 import { api } from "@/lib/api"
+import { formatTimestamp } from "@/lib/utils/format"
 import type { AgentMemory } from "@/types"
 import { confirm } from "@/hooks/use-confirm"
 
@@ -71,13 +72,6 @@ export function AgentMemoryDialog({
     } finally {
       setLoading(false)
     }
-  }
-
-  const formatDate = (timestamp: string | number) => {
-    if (typeof timestamp === 'string') {
-      return new Date(timestamp).toLocaleString()
-    }
-    return new Date(timestamp * 1000).toLocaleString()
   }
 
   return (
@@ -175,7 +169,7 @@ export function AgentMemoryDialog({
 
               {/* Updated At */}
               <div className="text-xs text-muted-foreground">
-                {t('agents:memory.updatedAt')}: {formatDate(memory.updated_at)}
+                {t('agents:memory.updatedAt')}: {formatTimestamp(memory.updated_at)}
               </div>
             </div>
           </ScrollArea>

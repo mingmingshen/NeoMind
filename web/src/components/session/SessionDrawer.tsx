@@ -17,6 +17,7 @@ import {
 import { useStore } from "@/store"
 import type { ChatSession } from "@/types"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 import { confirm } from "@/hooks/use-confirm"
 
 interface SessionDrawerProps {
@@ -32,18 +33,6 @@ interface GroupedSessions {
   yesterday: ChatSession[]
   week: ChatSession[]
   older: ChatSession[]
-}
-
-function formatTimeAgo(timestamp: number | undefined, t: (key: string, params?: any) => string): string {
-  if (!timestamp) return ""
-  const now = Date.now()
-  const diff = now - timestamp
-
-  if (diff < 60 * 1000) return t('justNow')
-  if (diff < 60 * 60 * 1000) return t('minutesAgo', { count: Math.floor(diff / (60 * 1000)) })
-  if (diff < 24 * 60 * 60 * 1000) return t('hoursAgo', { count: Math.floor(diff / (60 * 60 * 1000)) })
-  if (diff < 7 * 24 * 60 * 60 * 1000) return t('daysAgo', { count: Math.floor(diff / (24 * 60 * 60 * 1000)) })
-  return new Date(timestamp).toLocaleDateString()
 }
 
 function groupSessionsByTime(sessions: ChatSession[]): GroupedSessions {
@@ -109,7 +98,7 @@ function SessionItem({
               isActive ? "text-foreground/70" : "text-muted-foreground"
             )}>
               <Clock className="h-3 w-3" />
-              {formatTimeAgo(session.updatedAt, t)}
+              {session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : '-'}
             </span>
           </div>
           {session.preview && (

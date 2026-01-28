@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Search, Server, Database, Check, Zap, ChevronRight, Info, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -38,23 +39,27 @@ export interface DataSourceSelectorProps {
 type CategoryType = 'device-metric' | 'device-command' | 'device-info'
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
 
-// Device info property definitions
-const DEVICE_INFO_PROPERTIES = [
-  { id: 'name', name: '设备名称', description: '设备的显示名称' },
-  { id: 'status', name: '状态', description: '当前状态文本' },
-  { id: 'online', name: '在线状态', description: '是否在线' },
-  { id: 'last_seen', name: '最后上线', description: '最后通信时间' },
-  { id: 'device_type', name: '设备类型', description: '设备类型标识' },
-  { id: 'plugin_name', name: '适配器', description: '连接的插件名称' },
-  { id: 'adapter_id', name: '适配器ID', description: '适配器唯一标识' },
-]
+// Device info property definitions factory (uses translations)
+function getDeviceInfoProperties(t: (key: string) => string) {
+  return [
+    { id: 'name', name: t('dataSource.deviceName'), description: t('dataSource.deviceNameDesc') },
+    { id: 'status', name: t('dataSource.status'), description: t('dataSource.statusDesc') },
+    { id: 'online', name: t('dataSource.onlineStatus'), description: t('dataSource.onlineStatusDesc') },
+    { id: 'last_seen', name: t('dataSource.lastSeen'), description: t('dataSource.lastSeenDesc') },
+    { id: 'device_type', name: t('dataSource.deviceType'), description: t('dataSource.deviceTypeDesc') },
+    { id: 'plugin_name', name: t('dataSource.adapter'), description: t('dataSource.adapterDesc') },
+    { id: 'adapter_id', name: t('dataSource.adapterId'), description: t('dataSource.adapterIdDesc') },
+  ]
+}
 
-// Category configuration
-const CATEGORIES = [
-  { id: 'device-metric' as const, name: '指标', icon: Server, description: '设备的实时数据点' },
-  { id: 'device-command' as const, name: '指令', icon: Zap, description: '控制设备的操作' },
-  { id: 'device-info' as const, name: '基本信息', icon: Info, description: '设备的属性和状态' },
-]
+// Category configuration factory (uses translations)
+function getCategories(t: (key: string) => string) {
+  return [
+    { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
+    { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
+    { id: 'device-info' as const, name: t('dataSource.basicInfo'), icon: Info, description: t('dataSource.basicInfoDesc') },
+  ]
+}
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
@@ -89,6 +94,7 @@ export function DataSourceSelector({
   multiple = false,
   maxSources = 10,
 }: DataSourceSelectorProps) {
+  const { t } = useTranslation('dashboardComponents')
   const { devices, deviceTypes, fetchDeviceTypes, fetchDevices } = useStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('device-metric')
@@ -114,8 +120,8 @@ export function DataSourceSelector({
   // Filter allowed categories
   const availableCategories = useMemo(() => {
     const allowed = normalizeAllowedTypes(allowedTypes)
-    return CATEGORIES.filter(cat => allowed.includes(cat.id))
-  }, [allowedTypes])
+    return getCategories(t).filter(cat => allowed.includes(cat.id))
+  }, [allowedTypes, t])
 
   // Set initial category based on allowed types
   useEffect(() => {
@@ -166,12 +172,12 @@ export function DataSourceSelector({
       } else {
         // Fallback metrics for devices without type definition
         const fallbackMetrics: MetricDefinition[] = [
-          { name: 'temperature', display_name: '温度', data_type: 'float', unit: '°C' },
-          { name: 'humidity', display_name: '湿度', data_type: 'float', unit: '%' },
-          { name: 'value', display_name: '数值', data_type: 'float', unit: '' },
-          { name: 'state', display_name: '状态', data_type: 'string', unit: '' },
-          { name: 'status', display_name: '状态', data_type: 'string', unit: '' },
-          { name: 'online', display_name: '在线状态', data_type: 'boolean', unit: '' },
+          { name: 'temperature', display_name: t('chart.temperature'), data_type: 'float', unit: '°C' },
+          { name: 'humidity', display_name: t('chart.humidity'), data_type: 'float', unit: '%' },
+          { name: 'value', display_name: t('chart.value'), data_type: 'float', unit: '' },
+          { name: 'state', display_name: t('dataSource.status'), data_type: 'string', unit: '' },
+          { name: 'status', display_name: t('dataSource.status'), data_type: 'string', unit: '' },
+          { name: 'online', display_name: t('dataSource.onlineStatus'), data_type: 'boolean', unit: '' },
         ]
         // Try to use current_values from device to infer available metrics
         if (device.current_values && typeof device.current_values === 'object') {
@@ -188,7 +194,7 @@ export function DataSourceSelector({
       }
     }
     return map
-  }, [devices, deviceTypes])
+  }, [devices, deviceTypes, t])
 
   // Build device commands map
   const deviceCommandsMap = useMemo(() => {
@@ -201,16 +207,16 @@ export function DataSourceSelector({
       } else {
         // Fallback commands for devices without type definition
         const fallbackCommands: CommandDefinition[] = [
-          { name: 'setValue', display_name: '设置值', payload_template: '${value}', parameters: [] },
-          { name: 'toggle', display_name: '切换', payload_template: '', parameters: [] },
-          { name: 'on', display_name: '开启', payload_template: '{"state":"on"}', parameters: [] },
-          { name: 'off', display_name: '关闭', payload_template: '{"state":"off"}', parameters: [] },
+          { name: 'setValue', display_name: t('dataSource.command.setValue'), payload_template: '${value}', parameters: [] },
+          { name: 'toggle', display_name: t('dataSource.command.toggle'), payload_template: '', parameters: [] },
+          { name: 'on', display_name: t('dataSource.command.on'), payload_template: '{"state":"on"}', parameters: [] },
+          { name: 'off', display_name: t('dataSource.command.off'), payload_template: '{"state":"off"}', parameters: [] },
         ]
         map.set(device.id, fallbackCommands)
       }
     }
     return map
-  }, [devices, deviceTypes])
+  }, [devices, deviceTypes, t])
 
   // Toggle device expansion
   const toggleDeviceExpansion = (deviceId: string) => {
@@ -322,13 +328,13 @@ export function DataSourceSelector({
               </div>
               <div>
                 <DialogTitle className="text-base font-semibold p-0 h-auto">
-                  选择数据源
+                  {t('dataSource.title')}
                 </DialogTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {multiple ? (
-                    <>已选择 {totalSelected} / {maxSources} 项</>
+                    <>{t('dataSource.selectedItems', { count: totalSelected, max: maxSources })}</>
                   ) : (
-                    '选择设备指标、指令或基本信息'
+                    t('dataSource.selectPrompt')
                   )}
                 </p>
               </div>
@@ -351,7 +357,7 @@ export function DataSourceSelector({
               <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索设备、指标或指令..."
+                placeholder={t('dataSource.searchPlaceholder')}
                 className="pl-9 h-9"
               />
             </div>
@@ -410,7 +416,7 @@ export function DataSourceSelector({
                             )} />
                             <span className="text-sm font-medium">{device.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              {metrics.length} 个指标
+                              {metrics.length} {t('dataSource.metrics')}
                             </span>
                           </div>
                           <ChevronRight className={cn(
@@ -472,7 +478,7 @@ export function DataSourceSelector({
               ) : (
                 <div className="text-center py-10 text-muted-foreground">
                   <Server className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">暂无设备</p>
+                  <p className="text-sm">{t('dataSource.noDevices')}</p>
                 </div>
               )}
             </TabsContent>
@@ -503,7 +509,7 @@ export function DataSourceSelector({
                             )} />
                             <span className="text-sm font-medium">{device.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              {commands.length} 个指令
+                              {commands.length} {t('dataSource.commands')}
                             </span>
                           </div>
                           <ChevronRight className={cn(
@@ -562,7 +568,7 @@ export function DataSourceSelector({
               ) : (
                 <div className="text-center py-10 text-muted-foreground">
                   <Zap className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">暂无设备</p>
+                  <p className="text-sm">{t('dataSource.noDevices')}</p>
                 </div>
               )}
             </TabsContent>
@@ -573,7 +579,8 @@ export function DataSourceSelector({
                 <div className="space-y-3">
                   {devices.map(device => {
                     const isExpanded = expandedDevices.has(device.id)
-                    const hasMatchingInfo = DEVICE_INFO_PROPERTIES.some(p =>
+                    const deviceInfoProps = getDeviceInfoProperties(t)
+                    const hasMatchingInfo = deviceInfoProps.some(p =>
                       filterMatches(p.name) || filterMatches(p.description) || filterMatches(device.name)
                     )
 
@@ -592,7 +599,7 @@ export function DataSourceSelector({
                             )} />
                             <span className="text-sm font-medium">{device.name}</span>
                             <span className="text-xs text-muted-foreground">
-                              基本信息
+                              {t('dataSource.basicInfo')}
                             </span>
                           </div>
                           <ChevronRight className={cn(
@@ -603,7 +610,7 @@ export function DataSourceSelector({
 
                         {isExpanded && (
                           <div className="border-t divide-y max-h-60 overflow-y-auto">
-                            {DEVICE_INFO_PROPERTIES.map(infoProp => {
+                            {deviceInfoProps.map(infoProp => {
                               const itemId = `device-info:${device.id}:${infoProp.id}`
                               const selected = isSelected(itemId)
                               const disabled = multiple && !selected && !canSelectMore
@@ -615,7 +622,7 @@ export function DataSourceSelector({
                                 switch (infoProp.id) {
                                   case 'name': return device.name
                                   case 'status': return device.status
-                                  case 'online': return device.online ? '在线' : '离线'
+                                  case 'online': return device.online ? t('mapDisplay.online') : t('mapDisplay.offline')
                                   case 'device_type': return device.device_type
                                   case 'plugin_name': return device.plugin_name || '-'
                                   case 'adapter_id': return device.adapter_id || '-'
@@ -647,7 +654,7 @@ export function DataSourceSelector({
                                     <div className="flex-1">
                                       <p className="text-sm font-medium">{infoProp.name}</p>
                                       <p className="text-xs text-muted-foreground">
-                                        {infoProp.description} · 当前: {getPreviewValue()}
+                                        {infoProp.description} · {t('dataSource.current')}: {getPreviewValue()}
                                       </p>
                                     </div>
                                   </div>
@@ -666,7 +673,7 @@ export function DataSourceSelector({
               ) : (
                 <div className="text-center py-10 text-muted-foreground">
                   <Info className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">暂无设备</p>
+                  <p className="text-sm">{t('dataSource.noDevices')}</p>
                 </div>
               )}
             </TabsContent>
@@ -676,14 +683,14 @@ export function DataSourceSelector({
         {/* Footer */}
         <div className="px-6 py-4 border-t flex justify-between items-center shrink-0">
           <Button variant="ghost" onClick={onClose} className="h-9">
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             onClick={handleSelect}
             disabled={selectedItems.size === 0}
             className="h-9"
           >
-            确认 {totalSelected > 0 && `(${totalSelected})`}
+            {t('common.confirm')} {totalSelected > 0 && `(${totalSelected})`}
           </Button>
         </div>
       </DialogContent>

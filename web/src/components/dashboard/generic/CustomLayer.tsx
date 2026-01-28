@@ -8,6 +8,8 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -56,6 +58,8 @@ export interface LayerBinding {
   backgroundColor?: string
   fontSize?: 'xs' | 'sm' | 'md' | 'lg'
   fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold'
+  opacity?: number // Icon opacity (0-100)
+  markerSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' // Marker/icon size
 }
 
 export interface LayerItem {
@@ -79,6 +83,8 @@ export interface LayerItem {
   borderColor?: string
   fontSize?: 'xs' | 'sm' | 'md' | 'lg'
   fontWeight?: 'normal' | 'medium' | 'semibold' | 'bold'
+  opacity?: number // Icon opacity (0-100)
+  markerSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' // Marker/icon size
 
   // State
   visible?: boolean
@@ -138,6 +144,7 @@ interface LayerItemComponentProps {
   onToggleVisibility: (id: string) => void
   onToggleLock: (id: string) => void
   onExecuteCommand?: (deviceId: string, command: string) => Promise<void>
+  t: (key: string) => string
 }
 
 // Type config for styling similar to MapDisplay
@@ -189,66 +196,86 @@ function LayerItemComponent({
   onToggleVisibility,
   onToggleLock,
   onExecuteCommand,
+  t,
 }: LayerItemComponentProps) {
   const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [position, setPosition] = useState(item.position)
+  const [hasMoved, setHasMoved] = useState(false) // Track if mouse moved during drag
+  const [dragStartMouse, setDragStartMouse] = useState({ x: 0, y: 0 })
+  const [dragStartItem, setDragStartItem] = useState({ x: 0, y: 0 })
+  const [showDetails, setShowDetails] = useState(false)
   const itemRef = useRef<HTMLDivElement>(null)
+  const rafRef = useRef<number | null>(null)
 
-  useEffect(() => {
-    setPosition(item.position)
-  }, [item.position])
+  // Determine if this is a text-only item (shows full label, others show icon only)
+  const isTextOnly = item.type === 'text' && !item.icon
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Allow dragging unless explicitly locked
+    // Only drag with left click, not for clicking to view details
     if (item.locked) return
+    if (e.button !== 0) return
     e.stopPropagation()
+    setHasMoved(false) // Reset movement flag
     setIsDragging(true)
-    // Store the starting mouse position and current item position
-    setDragStart({ x: e.clientX, y: e.clientY })
+    // Store both mouse start AND item start positions
+    setDragStartMouse({ x: e.clientX, y: e.clientY })
+    setDragStartItem({ x: item.position.x, y: item.position.y })
     onSelect()
-  }, [item.locked, onSelect])
+  }, [item.locked, item.position, onSelect])
 
   useEffect(() => {
     if (!isDragging) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      // Calculate delta from mouse movement
-      const deltaX = e.clientX - dragStart.x
-      const deltaY = e.clientY - dragStart.y
+      // Mark that we've moved
+      setHasMoved(true)
 
-      // Get the transform container to account for zoom
-      const canvas = itemRef.current?.closest('[style*="transform"]') as HTMLElement
-      const container = itemRef.current?.parentElement
-
-      if (container) {
-        const containerWidth = container.offsetWidth
-        const containerHeight = container.offsetHeight
-
-        // Get current zoom factor
-        const currentZoom = canvas ? parseFloat(canvas.style.transform?.match(/scale\(([^)]+)\)/)?.[1] || '1') : 1
-
-        // Convert pixel delta to percentage, accounting for zoom
-        const percentDeltaX = (deltaX / containerWidth / currentZoom) * 100
-        const percentDeltaY = (deltaY / containerHeight / currentZoom) * 100
-
-        // Calculate new position
-        const newX = position.x + percentDeltaX
-        const newY = position.y + percentDeltaY
-
-        // Clamp to bounds (keep at least 5% inside)
-        const clampedX = Math.max(5, Math.min(95, newX))
-        const clampedY = Math.max(5, Math.min(95, newY))
-
-        setPosition({ x: clampedX, y: clampedY })
+      // Cancel any pending animation frame
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
       }
+
+      // Use requestAnimationFrame for smooth updates
+      rafRef.current = requestAnimationFrame(() => {
+        // Calculate delta from initial positions
+        const deltaX = e.clientX - dragStartMouse.x
+        const deltaY = e.clientY - dragStartMouse.y
+
+        // Get the canvas container and zoom level
+        const canvas = itemRef.current?.closest('[style*="transform"]') as HTMLElement
+        const container = itemRef.current?.closest('.relative.w-full.h-full')?.parentElement
+
+        if (container) {
+          const containerWidth = container.offsetWidth
+          const containerHeight = container.offsetHeight
+
+          // Get current zoom factor from the transform style
+          const currentZoom = canvas ? parseFloat(canvas.style.transform?.match(/scale\(([^)]+)\)/)?.[1] || '1') : 1
+
+          // Convert pixel delta to percentage, accounting for zoom
+          const percentDeltaX = (deltaX / containerWidth / currentZoom) * 100
+          const percentDeltaY = (deltaY / containerHeight / currentZoom) * 100
+
+          // Calculate new position from INITIAL item position + delta
+          const newX = dragStartItem.x + percentDeltaX
+          const newY = dragStartItem.y + percentDeltaY
+
+          // Clamp to bounds (keep at least 5% inside)
+          const clampedX = Math.max(5, Math.min(95, newX))
+          const clampedY = Math.max(5, Math.min(95, newY))
+
+          // Directly update the parent via callback
+          onDrag(item, { x: clampedX, y: clampedY })
+        }
+      })
     }
 
     const handleMouseUp = () => {
       setIsDragging(false)
-      onDrag(item, position)
-      // Update dragStart to current position for next drag
-      setDragStart({ x: 0, y: 0 })
+      setHasMoved(false) // Reset movement flag
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -257,8 +284,11 @@ function LayerItemComponent({
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current)
+      }
     }
-  }, [isDragging, dragStart, position, item, onDrag])
+  }, [isDragging, dragStartMouse, dragStartItem, item, onDrag])
 
   const getFontSizeClass = () => {
     switch (item.fontSize) {
@@ -277,6 +307,28 @@ function LayerItemComponent({
       case 'semibold': return 'font-semibold'
       case 'bold': return 'font-bold'
       default: return 'font-medium'
+    }
+  }
+
+  const getMarkerSizeClass = () => {
+    switch (item.markerSize) {
+      case 'xs': return 'w-6 h-6' // 24px
+      case 'sm': return 'w-8 h-8' // 32px
+      case 'md': return 'w-10 h-10' // 40px (default)
+      case 'lg': return 'w-12 h-12' // 48px
+      case 'xl': return 'w-16 h-16' // 64px
+      default: return 'w-10 h-10'
+    }
+  }
+
+  const getIconSizeClass = () => {
+    switch (item.markerSize) {
+      case 'xs': return 'h-3 w-3' // 12px
+      case 'sm': return 'h-4 w-4' // 16px
+      case 'md': return 'h-5 w-5' // 20px (default)
+      case 'lg': return 'h-6 w-6' // 24px
+      case 'xl': return 'h-8 w-8' // 32px
+      default: return 'h-5 w-5'
     }
   }
 
@@ -300,149 +352,262 @@ function LayerItemComponent({
     }
   }
 
+  // Handle click to show details (for non-text items)
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Only show details if we didn't drag (hasMoved would be true if we dragged)
+    if (hasMoved) return
+    if (!isTextOnly) {
+      // Show details popup for non-text items
+      setShowDetails(true)
+    }
+    if (item.onClick) {
+      e.stopPropagation()
+      item.onClick()
+    }
+  }, [hasMoved, isTextOnly, item.onClick])
+
   return (
-    <div
-      ref={itemRef}
-      className={cn(
-        'absolute transform -translate-x-1/2 -translate-y-1/2',
-        // Always show grab cursor for draggable items (unless locked)
-        !item.locked && 'cursor-grab hover:cursor-grab',
-        isDragging && '!cursor-grabbing',
-        isSelected && 'ring-2 ring-primary ring-offset-2'
-      )}
-      style={{
-        left: `${position.x}%`,
-        top: `${position.y}%`,
-        width: item.size?.width ? `${item.size.width}px` : 'auto',
-        height: item.size?.height ? `${item.size.height}px` : 'auto',
-      }}
-      onMouseDown={handleMouseDown}
-      onClick={(e) => {
-        if (!isDragging && item.onClick) {
-          e.stopPropagation()
-          item.onClick()
-        }
-      }}
-    >
-      {/* Content based on type */}
+    <>
       <div
+        ref={itemRef}
         className={cn(
-          'inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border shadow-sm',
-          getFontSizeClass(),
-          getFontWeightClass(),
-          !item.backgroundColor && typeConfig.bgColor,
-          !item.borderColor && typeConfig.borderColor,
-          !item.color && typeConfig.color
+          'absolute transform -translate-x-1/2 -translate-y-1/2',
+          // Always show grab cursor for draggable items (unless locked)
+          !item.locked && 'cursor-grab active:cursor-grabbing'
+          // Selection border removed for cleaner appearance
         )}
         style={{
-          backgroundColor: item.backgroundColor,
-          borderColor: item.borderColor,
-          color: item.color,
+          left: `${item.position.x}%`,
+          top: `${item.position.y}%`,
         }}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
       >
-        {/* Icon based on type */}
-        {item.type === 'device' && (
-          <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-        )}
-        {item.type === 'metric' && (
-          <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-        )}
-        {item.type === 'command' && (
-          <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-        )}
-        {item.type === 'text' && !item.icon && (
-          <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        )}
-        {item.type === 'icon' && !item.icon && (
-          <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-        )}
-
-        {/* Custom icon from prop */}
-        {item.icon && item.type !== 'device' && item.type !== 'metric' && item.type !== 'command' && (
-          <span className="flex-shrink-0">{item.icon}</span>
-        )}
-
-        {/* Label */}
-        {item.label && (
-          <span className={cn(
-            item.type === 'device' && 'font-medium'
-          )}>
-            {item.label}
-          </span>
-        )}
-
-        {/* Value for metrics */}
-        {item.value !== undefined && item.type === 'metric' && (
-          <span className={cn(
-            'tabular-nums font-semibold',
-            typeConfig.color
-          )}>
-            {item.value}
-          </span>
-        )}
-
-        {/* Value for other types */}
-        {item.value !== undefined && item.type !== 'metric' && (
-          <span className="tabular-nums">
-            {item.value}
-          </span>
-        )}
-
-        {/* Status indicator for devices */}
-        {item.type === 'device' && item.status && (
-          <span className={cn(
-            'w-2 h-2 rounded-full flex-shrink-0',
-            getStatusColor()
-          )} />
-        )}
-
-        {/* Command button for command type */}
-        {item.type === 'command' && !isEditing && (
-          <Button
-            size="sm"
-            className="h-5 px-1.5 text-xs bg-blue-500 hover:bg-blue-600 text-white"
-            onClick={async (e) => {
-              e.stopPropagation()
-              if (onExecuteCommand && item.deviceId && item.command) {
-                await onExecuteCommand(item.deviceId, item.command)
-              }
+        {/* Icon-only display for non-text items */}
+        {!isTextOnly ? (
+          <div
+            className={cn(
+              'relative rounded-full flex items-center justify-center border-2 shadow-lg',
+              getMarkerSizeClass(),
+              typeConfig.bgColor,
+              typeConfig.borderColor,
+            )}
+            style={{
+              backgroundColor: item.backgroundColor,
+              borderColor: item.borderColor,
+              opacity: item.opacity !== undefined ? item.opacity / 100 : undefined,
             }}
           >
-            执行
-          </Button>
+            <Icon className={cn(getIconSizeClass(), typeConfig.color)} style={{ color: item.color }} />
+
+            {/* Status indicator for devices */}
+            {item.type === 'device' && item.status && (
+              <span className={cn(
+                'absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-background',
+                getStatusColor()
+              )} />
+            )}
+
+            {/* Command indicator */}
+            {item.type === 'command' && (
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-blue-500 rounded-full border-2 border-background animate-pulse" />
+            )}
+          </div>
+        ) : (
+          // Full text display for text items
+          <div
+            className={cn(
+              'inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border shadow-sm',
+              getFontSizeClass(),
+              getFontWeightClass(),
+              !item.backgroundColor && typeConfig.bgColor,
+              !item.borderColor && typeConfig.borderColor,
+              !item.color && typeConfig.color
+            )}
+            style={{
+              backgroundColor: item.backgroundColor,
+              borderColor: item.borderColor,
+              color: item.color,
+              opacity: item.opacity !== undefined ? item.opacity / 100 : undefined,
+            }}
+          >
+            {/* Icon for text items if specified */}
+            {item.icon ? (
+              <span className="flex-shrink-0">{item.icon}</span>
+            ) : (
+              <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+            )}
+
+            {/* Label */}
+            {item.label && (
+              <span className={cn(item.type === 'device' && 'font-medium')}>
+                {item.label}
+              </span>
+            )}
+
+            {/* Value */}
+            {item.value !== undefined && (
+              <span className={cn(
+                'tabular-nums',
+                item.type === 'metric' ? 'font-semibold' : ''
+              )}>
+                {item.value}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Edit controls */}
+        {isEditing && isSelected && (
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1">
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-5 w-5 bg-background/90"
+              onClick={(e) => { e.stopPropagation(); onToggleVisibility(item.id); }}
+              title={(item.visible as boolean | undefined) === false ? t('customLayer.show') : t('customLayer.hide')}
+            >
+              {(item.visible as boolean | undefined) === false ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-5 w-5 bg-background/90"
+              onClick={(e) => { e.stopPropagation(); onToggleLock(item.id); }}
+            >
+              {item.locked ? <Lock className="h-2.5 w-2.5" /> : <Unlock className="h-2.5 w-2.5" />}
+            </Button>
+          </div>
         )}
       </div>
 
-      {/* Edit controls */}
-      {isEditing && isSelected && (
-        <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1">
-          <Button
-            variant="secondary"
-            size="icon"
-            className="h-5 w-5 bg-background/90"
-            onClick={(e) => { e.stopPropagation(); onToggleVisibility(item.id); }}
-            title={(item.visible as boolean | undefined) === false ? '显示' : '隐藏'}
+      {/* Details Popup */}
+      {showDetails && !isTextOnly && (
+        <div
+          className={cn(
+            'absolute z-50 min-w-[200px] max-w-[280px] rounded-lg shadow-xl border',
+            'bg-background/95 backdrop-blur',
+            'p-3 animate-in fade-in zoom-in-95 duration-150'
+          )}
+          style={{
+            left: `${item.position.x}%`,
+            top: `${item.position.y + 8}%`,
+            transform: 'translate(-50%, 0)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Close button */}
+          <button
+            className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+            onClick={() => setShowDetails(false)}
           >
-            {(item.visible as boolean | undefined) === false ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon"
-            className="h-5 w-5 bg-background/90"
-            onClick={(e) => { e.stopPropagation(); onToggleLock(item.id); }}
-          >
-            {item.locked ? <Lock className="h-2.5 w-2.5" /> : <Unlock className="h-2.5 w-2.5" />}
-          </Button>
-        </div>
-      )}
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
 
-      {/* Drag handle */}
-      {isEditing && (item.locked !== true) && (
-        <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 hover:opacity-100 group-hover:opacity-100">
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
+          {/* Header with icon and type */}
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b">
+            <div className={cn('p-1.5 rounded-md', typeConfig.bgColor)}>
+              <Icon className={cn('h-4 w-4', typeConfig.color)} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-muted-foreground uppercase">
+                {item.type === 'device' && t('customLayer.device')}
+                {item.type === 'metric' && t('customLayer.metric')}
+                {item.type === 'command' && t('customLayer.command')}
+                {item.type === 'icon' && t('customLayer.iconLabel')}
+              </p>
+              <p className="text-sm font-semibold truncate">{item.label || item.deviceId || item.id}</p>
+            </div>
+          </div>
+
+          {/* Content based on type */}
+          <div className="space-y-1.5 text-sm">
+            {item.type === 'device' && (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.deviceId')}:</span>
+                  <span className="font-mono text-xs">{item.deviceId}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.status')}:</span>
+                  <span className={cn(
+                    'flex items-center gap-1.5',
+                    item.status === 'online' && 'text-green-600',
+                    item.status === 'offline' && 'text-gray-500'
+                  )}>
+                    <span className={cn('w-2 h-2 rounded-full', getStatusColor())} />
+                    {item.status === 'online' ? t('customLayer.online') : t('customLayer.offline')}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {item.type === 'metric' && (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.device')}:</span>
+                  <span className="text-xs">{item.deviceName || item.deviceId}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.metric')}:</span>
+                  <span className="text-xs font-mono">{item.metricName || item.metricId}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.currentValue')}:</span>
+                  <span className={cn('text-lg font-bold tabular-nums', typeConfig.color)}>
+                    {item.value !== undefined ? item.value : '--'}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {item.type === 'command' && (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.device')}:</span>
+                  <span className="text-xs">{item.deviceName || item.deviceId}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.command')}:</span>
+                  <span className="text-xs font-mono">{item.command}</span>
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full mt-2 bg-blue-500 hover:bg-blue-600 text-white"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    if (onExecuteCommand && item.deviceId && item.command) {
+                      await onExecuteCommand(item.deviceId, item.command)
+                    }
+                    setShowDetails(false)
+                  }}
+                >
+                  <Zap className="h-3.5 w-3.5 mr-1" />
+                  {t('mapDisplay.executeCommand')}
+                </Button>
+              </>
+            )}
+
+            {item.type === 'icon' && (
+              <>
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">{t('customLayer.label')}:</span>
+                  <span>{item.label || '-'}</span>
+                </div>
+                {item.value !== undefined && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">{t('customLayer.value')}:</span>
+                    <span className="tabular-nums">{item.value}</span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
@@ -495,8 +660,8 @@ function getBackgroundStyle(
     case 'grid':
       backgroundStyle.backgroundColor = color || 'hsl(var(--background))'
       backgroundStyle.backgroundImage = `
-        linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px),
-        linear-gradient(to bottom, hsl(var(--border)) 1px, transparent 1px)
+        linear-gradient(to right, hsl(var(--border) / 0.3) 1px, transparent 1px),
+        linear-gradient(to bottom, hsl(var(--border) / 0.3) 1px, transparent 1px)
       `
       backgroundStyle.backgroundSize = `${gridSize}px ${gridSize}px`
       break
@@ -546,55 +711,41 @@ export function CustomLayer({
   onLayerClick,
   className,
 }: CustomLayerProps) {
+  const { t } = useTranslation('dashboardComponents')
+
   // Get store for device data and command execution
   const devices = useStore(state => state.devices)
   const sendCommand = useStore(state => state.sendCommand)
-
-  // Store devices in a ref to avoid unnecessary recalculations
-  // Only update when devices actually change (by content, not reference)
-  const devicesRef = useRef<typeof devices>([])
-
-  // Use a separate ref to track device IDs for comparison
-  const deviceIdsRef = useRef<string[]>([])
-  const currentDeviceIds = devices.map(d => d.id)
-
-  // Only update devicesRef if device IDs actually changed
-  const deviceIdsChanged = currentDeviceIds.length !== deviceIdsRef.current.length ||
-                      currentDeviceIds.some((id, i) => id !== deviceIdsRef.current[i])
-
-  if (deviceIdsChanged) {
-    devicesRef.current = devices
-    deviceIdsRef.current = currentDeviceIds
-  }
 
   // Data source hook for backward compatibility
   const { data, loading, error } = useDataSource<LayerItem[]>(dataSource, {
     fallback: propItems,
   })
 
-  // Helper functions for device data (use ref to avoid dependency on devices)
+  // Helper functions for device data - use devices directly to get real-time updates
   const getDeviceName = useCallback((deviceId: string) => {
-    const device = devicesRef.current.find(d => d.id === deviceId)
+    const device = devices.find(d => d.id === deviceId)
     return device?.name || deviceId
-  }, [])
+  }, [devices])
 
   const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
-    const device = devicesRef.current.find(d => d.id === deviceId)
+    const device = devices.find(d => d.id === deviceId)
     if (!device) return undefined
     return device.online ? 'online' : 'offline'
-  }, [])
+  }, [devices])
 
   const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
-    const device = devicesRef.current.find(d => d.id === deviceId)
+    const device = devices.find(d => d.id === deviceId)
     if (!device?.current_values) return undefined
     const value = device.current_values[metricId]
     if (value !== undefined && value !== null) {
       return typeof value === 'number' ? value : String(value)
     }
     return undefined
-  }, [])
+  }, [devices])
 
-  // Convert bindings to layer items - only depends on bindings, not devices
+  // Convert bindings to layer items - recomputes when bindings or devices change
+  // This ensures metric values and device status are updated in real-time
   const bindingsItems = useMemo((): LayerItem[] => {
     if (!bindings || bindings.length === 0) return []
 
@@ -615,6 +766,8 @@ export function CustomLayer({
         backgroundColor: binding.backgroundColor,
         fontSize: binding.fontSize,
         fontWeight: binding.fontWeight,
+        opacity: binding.opacity,
+        markerSize: binding.markerSize,
         visible: true,
         locked: false,
         draggable: true,
@@ -816,7 +969,16 @@ export function CustomLayer({
       )
       onBindingsChange(updatedBindings)
     }
-  }, [bindings, onBindingsChange, useInternalItems])
+
+    // Also notify parent via onItemsChange for bindings mode
+    // This allows LayerEditorDialog to receive drag updates
+    if (bindings && onItemsChange) {
+      const updatedItems = items.map(i =>
+        i.id === item.id ? { ...i, position: newPosition } : i
+      )
+      onItemsChange(updatedItems)
+    }
+  }, [bindings, onBindingsChange, onItemsChange, useInternalItems, items])
 
   // Handle toggle visibility
   const handleToggleVisibility = useCallback((id: string) => {
@@ -882,10 +1044,9 @@ export function CustomLayer({
 
   // Pan handlers
   const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
-    // Middle mouse button or space+click for panning
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
-      e.preventDefault()
-      e.stopPropagation()
+    // Left-click on canvas background for panning
+    // Items will stop propagation so they can be dragged independently
+    if (e.button === 0) {
       setIsDragging(true)
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
     }
@@ -932,7 +1093,6 @@ export function CustomLayer({
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Custom Layer</span>
-            <span className="text-xs text-muted-foreground">({renderItems.length} items)</span>
           </div>
           <div className="flex items-center gap-1">
             {/* Zoom controls */}
@@ -941,7 +1101,7 @@ export function CustomLayer({
               size="icon"
               className="h-7 w-7"
               onClick={handleZoomOut}
-              title="缩小"
+              title={t('customLayer.zoomOut')}
             >
               <ZoomOut className="h-3.5 w-3.5" />
             </Button>
@@ -951,7 +1111,7 @@ export function CustomLayer({
               size="icon"
               className="h-7 w-7"
               onClick={handleZoomIn}
-              title="放大"
+              title={t('customLayer.zoomIn')}
             >
               <ZoomIn className="h-3.5 w-3.5" />
             </Button>
@@ -961,7 +1121,7 @@ export function CustomLayer({
                 size="icon"
                 className="h-7 w-7"
                 onClick={handleResetZoom}
-                title="重置"
+                title={t('customLayer.reset')}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </Button>
@@ -1004,14 +1164,10 @@ export function CustomLayer({
       {/* Layer canvas - fill remaining space */}
       <div
         ref={canvasRef}
-        className={cn(
-          'relative flex-1 min-h-0 overflow-hidden cursor-crosshair',
-          isFullscreen ? 'fixed inset-0 z-50' : ''
-        )}
-        style={getBackgroundStyle(backgroundType, backgroundColor, backgroundImage, gridSize, maintainAspectRatio, aspectRatio)}
+        className="relative flex-1 min-h-0 overflow-hidden cursor-crosshair"
         onMouseDown={handleCanvasMouseDown}
       >
-        {/* Transform container for zoom and pan */}
+        {/* Transform container for zoom and pan - includes background and items */}
         <div
           className="absolute inset-0"
           style={{
@@ -1020,6 +1176,12 @@ export function CustomLayer({
             transition: isDragging ? 'none' : 'transform 150ms ease-out',
           }}
         >
+          {/* Grid background - scales with items */}
+          <div
+            className="absolute inset-0 -z-10"
+            style={getBackgroundStyle(backgroundType, backgroundColor, backgroundImage, gridSize, maintainAspectRatio, aspectRatio)}
+          />
+
           {/* Items container */}
           <div className="relative w-full h-full">
             {/* Render items */}
@@ -1034,6 +1196,7 @@ export function CustomLayer({
                 onToggleVisibility={handleToggleVisibility}
                 onToggleLock={handleToggleLock}
                 onExecuteCommand={handleExecuteCommand}
+                t={t}
               />
             ))}
           </div>
@@ -1042,7 +1205,7 @@ export function CustomLayer({
         {/* Edit mode indicator */}
         {isEditing && (
           <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-accent-foreground rounded text-xs font-medium z-50">
-            编辑模式 (Alt+拖动移动画布)
+            {t('customLayer.editMode')}
           </div>
         )}
 
@@ -1056,7 +1219,127 @@ export function CustomLayer({
     </div>
   )
 
-  return content
+  // Fullscreen overlay (rendered via Portal to document.body)
+  const fullscreenOverlay = isFullscreen ? createPortal(
+    <div className="fixed inset-0 z-[9999] flex flex-col bg-background">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b bg-background/95">
+        <div className="flex items-center gap-2">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Custom Layer</span>
+        </div>
+        <div className="flex items-center gap-1">
+          {/* Zoom controls */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleZoomOut}
+            title={t('customLayer.zoomOut')}
+          >
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleZoomIn}
+            title={t('customLayer.zoomIn')}
+          >
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+          {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleResetZoom}
+              title={t('customLayer.reset')}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="w-px h-5 bg-border mx-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setIsFullscreen(false)}
+            title={t('customLayer.exitFullscreen')}
+          >
+            <Minimize2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Fullscreen canvas */}
+      <div className="flex-1 relative overflow-hidden">
+        <div
+          ref={canvasRef}
+          className="absolute inset-0 cursor-crosshair"
+          onMouseDown={handleCanvasMouseDown}
+        >
+          {/* Transform container for zoom and pan - includes background and items */}
+          <div
+            className="absolute inset-0"
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: '0 0',
+              transition: isDragging ? 'none' : 'transform 150ms ease-out',
+            }}
+          >
+            {/* Grid background - scales with items */}
+            <div
+              className="absolute inset-0 -z-10"
+              style={getBackgroundStyle(backgroundType, backgroundColor, backgroundImage, gridSize, maintainAspectRatio, aspectRatio)}
+            />
+
+            {/* Items container */}
+            <div className="relative w-full h-full">
+              {/* Render items */}
+              {renderItems.map((item) => (
+                <LayerItemComponent
+                  key={item.id}
+                  item={item}
+                  isEditing={isEditing}
+                  isSelected={selectedItem === item.id}
+                  onSelect={() => setSelectedItem(item.id)}
+                  onDrag={handleItemDrag}
+                  onToggleVisibility={handleToggleVisibility}
+                  onToggleLock={handleToggleLock}
+                  onExecuteCommand={handleExecuteCommand}
+                  t={t}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Edit mode indicator */}
+          {isEditing && (
+            <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-accent-foreground rounded text-xs font-medium z-50">
+              {t('customLayer.editMode')}
+            </div>
+          )}
+
+          {/* Zoom indicator */}
+          {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+            <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/50 text-white rounded text-xs z-50">
+              {Math.round(zoom * 100)}% | {Math.round(pan.x)}, {Math.round(pan.y)}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null
+
+  return (
+    <>
+      {content}
+      {fullscreenOverlay}
+    </>
+  )
 }
 
 // Export the editor dialog

@@ -55,13 +55,17 @@
   "roles": {
     "monitor": "Monitor",
     "executor": "Executor",
-    "analyst": "Analyst"
+    "analyst": "Analyst",
+    "scheduler": "Scheduler",
+    "notifier": "Notifier",
+    "controller": "Controller"
   },
   "stats": "Stats",
   "time": {
     "justNow": "Just now",
-    "minutesAgo": "min ago",
-    "hoursAgo": "hours ago"
+    "minutesAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}} hr ago",
+    "daysAgo": "{{count}} days ago"
   },
   "status": {
     "active": "Active",
@@ -99,6 +103,7 @@
     "conclusion": "Conclusion",
     "generatedReport": "Generated Report",
     "actionsExecuted": "Actions Executed",
+    "notificationsSent": "Notifications Sent",
     "input": "Input",
     "output": "Output",
     "action": "Action",
@@ -127,10 +132,30 @@
         "analyst": {
           "label": "Analyst",
           "description": "Analyze data trends, generate reports, and provide decision recommendations"
+        },
+        "scheduler": {
+          "label": "Scheduler",
+          "description": "Schedule and coordinate automated tasks based on time or events"
+        },
+        "notifier": {
+          "label": "Notifier",
+          "description": "Send notifications and alerts to users or external systems"
+        },
+        "controller": {
+          "label": "Controller",
+          "description": "Manage and control multiple devices in coordination"
+        },
+        "custom": {
+          "label": "Custom",
+          "description": "Define your own custom role",
+          "placeholder": "Custom role name"
         }
       },
       "name": "Name",
       "namePlaceholder": "e.g., Warehouse Temperature Monitor, Equipment Anomaly Analysis",
+      "description": "Description",
+      "descriptionHint": "Brief description of this agent's purpose (optional)",
+      "descriptionPlaceholder": "e.g., Monitor warehouse environment, Analyze equipment energy trends",
       "requirement": "Requirements",
       "requirementHint": "Describe the goals you want the agent to accomplish in natural language",
       "requirementPlaceholder": "e.g.:\n• Send alert when temperature exceeds 30°C\n• Generate device status report at 9 AM daily\n• Detect abnormal energy consumption and analyze causes",
@@ -185,6 +210,7 @@
         "events": {
           "device.online": "Device Online",
           "device.offline": "Device Offline",
+          "device.metric": "Data Update",
           "metric.threshold": "Metric Threshold",
           "metric.anomaly": "Anomaly Detection",
           "manual": "Manual Trigger"
@@ -229,6 +255,7 @@
       "searchPlaceholder": "Search device name or type...",
       "selectedCount": "{{count}} selected",
       "noDevicesFound": "No devices found",
+      "selectDevice": "Select a device from the left panel",
       "metrics": "Metrics",
       "commands": "Commands",
       "metricCount": "{{count}} metrics",
@@ -241,12 +268,31 @@
       "moreCommands": "+{{count}} commands",
       "dataInput": "Data Input",
       "dataOutput": "Data Output",
-      "selectAfterShow": "Select device resources to show topology"
+      "selectAfterShow": "Select device resources to show topology",
+      "devices": "devices",
+      "selected": "selected",
+      "clearAll": "Clear All",
+      "selectAll": "Select All",
+      "deselectAll": "Deselect All"
+    },
+    "advanced": {
+      "title": "Advanced",
+      "dataCollection": "Data Collection Config",
+      "selectMetricsFirst": "Please select metrics first"
+    },
+    "dataCollection": {
+      "title": "Data Collection Config",
+      "timeRange": "Time Range",
+      "includeHistory": "Historical Data",
+      "includeTrend": "Trend Data",
+      "includeBaseline": "Baseline Comparison",
+      "hint": "Configure data collection method for each metric. Different scenarios may require different configurations"
     },
     "validation": {
       "nameRequired": "Please enter agent name",
       "requirementRequired": "Please describe your requirements",
-      "resourceRequired": "Please select at least one device resource"
+      "resourceRequired": "Please select at least one device resource",
+      "customRoleRequired": "Please enter custom role name"
     },
     "actions": {
       "cancel": "Cancel",

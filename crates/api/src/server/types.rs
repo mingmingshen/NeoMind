@@ -106,6 +106,12 @@ pub struct ServerState {
     pub started_at: i64,
     /// Dashboard store for visual dashboard persistence.
     pub dashboard_store: Arc<DashboardStore>,
+    /// Flag to track if agent events have been initialized (prevents duplicate subscribers).
+    agent_events_initialized: Arc<std::sync::atomic::AtomicBool>,
+    /// Flag to track if rule engine events have been initialized (prevents duplicate subscribers).
+    rule_engine_events_initialized: Arc<std::sync::atomic::AtomicBool>,
+    /// Cached rule engine event service instance (prevents duplicate instances).
+    rule_engine_event_service: Arc<tokio::sync::Mutex<Option<crate::event_persistence::RuleEngineEventService>>>,
 }
 
 impl ServerState {
@@ -403,6 +409,10 @@ impl ServerState {
                 }
             },
             started_at,
+            // Initialization flags to prevent duplicate event subscribers
+            agent_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            rule_engine_events_initialized: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            rule_engine_event_service: Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -679,6 +689,23 @@ impl ServerState {
     /// Starts a background task that subscribes to device metric events
     /// and automatically evaluates rules when relevant data is received.
     pub async fn init_rule_engine_events(&self) {
+        // Prevent duplicate initialization - use compare_exchange for atomic check-and-set
+        if self.rule_engine_events_initialized.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst
+        ).is_err() {
+            tracing::debug!("Rule engine event service already initialized, skipping");
+            return;
+        }
+
+        tracing::info!("Initializing rule engine event service...");
+        tracing::info!(
+            "event_bus available: {}, rule_engine available: true",
+            self.event_bus.is_some()
+        );
+
         let (event_bus, rule_engine) = match (&self.event_bus, &self.rule_engine) {
             (Some(bus), engine) => (bus, engine),
             _ => {
@@ -689,12 +716,24 @@ impl ServerState {
 
         use crate::event_persistence::RuleEngineEventService;
 
-        let service = RuleEngineEventService::new(
-            (*event_bus).clone(),
-            rule_engine.clone(),
-        );
+        // Get or create the service instance (cached in ServerState)
+        {
+            let mut cached_service = self.rule_engine_event_service.lock().await;
+            if cached_service.is_none() {
+                let device_registry = self.device_service.get_registry().await;
+                *cached_service = Some(RuleEngineEventService::new(
+                    (*event_bus).clone(),
+                    rule_engine.clone(),
+                ).with_device_registry(device_registry));
+            }
+        }
 
-        let running = service.start();
+        // Start the service (compare_exchange inside prevents duplicate tasks)
+        let running = {
+            let cached_service = self.rule_engine_event_service.lock().await;
+            cached_service.as_ref().unwrap().start()
+        };
+
         if running.load(std::sync::atomic::Ordering::Relaxed) {
             tracing::info!(
                 category = "rule_engine",
@@ -703,6 +742,80 @@ impl ServerState {
         } else {
             tracing::warn!("Rule engine event service failed to start");
         }
+
+        // Start a task to update the InMemoryValueProvider when device metrics arrive
+        // This is needed for rule evaluation to work with current values
+        let mut rx = event_bus.filter().device_events();
+        let value_provider = rule_engine.get_value_provider();
+        let rule_engine_for_update = rule_engine.clone();
+
+        tokio::spawn(async move {
+            use edge_ai_core::{MetricValue, NeoTalkEvent};
+
+            tracing::info!("Starting value provider update task for rule engine");
+
+            while let Some((event, _metadata)) = rx.recv().await {
+                if let NeoTalkEvent::DeviceMetric {
+                    device_id,
+                    metric,
+                    value,
+                    timestamp: _,
+                    quality: _,
+                } = event
+                {
+                    tracing::debug!(
+                        "Received device metric: {} {} = {:?}",
+                        device_id, metric, value
+                    );
+
+                    // Extract numeric value for rule evaluation
+                    let numeric_value = match &value {
+                        MetricValue::Float(v) => Some(*v),
+                        MetricValue::Integer(v) => Some(*v as f64),
+                        MetricValue::Boolean(v) => Some(if *v { 1.0 } else { 0.0 }),
+                        _ => None,
+                    };
+
+                    if let Some(num_value) = numeric_value {
+                        // Update the InMemoryValueProvider with the new value
+                        if let Some(provider) = value_provider.as_any().downcast_ref::<InMemoryValueProvider>() {
+                            // Store with original metric key
+                            provider.set_value(&device_id, &metric, num_value);
+
+                            // Also store with common prefixes stripped for rule matching
+                            // Rules might reference "battery" while events use "values.battery"
+                            let common_prefixes = ["values.", "value.", "data.", "telemetry.", "metrics.", "state."];
+                            for prefix in &common_prefixes {
+                                if metric.starts_with(prefix) {
+                                    let stripped_metric = &metric[prefix.len()..];
+                                    provider.set_value(&device_id, stripped_metric, num_value);
+                                    tracing::debug!(
+                                        "Also stored with stripped metric: {} {} = {}",
+                                        device_id, stripped_metric, num_value
+                                    );
+                                    break;
+                                }
+                            }
+
+                            tracing::info!(
+                                "Updated value provider: {} {} = {}",
+                                device_id, metric, num_value
+                            );
+                        }
+
+                        // Update rule states (for FOR clauses)
+                        rule_engine_for_update.update_states().await;
+                    } else {
+                        tracing::warn!(
+                            "Could not extract numeric value from: {} {} = {:?}",
+                            device_id, metric, value
+                        );
+                    }
+                }
+            }
+
+            tracing::warn!("Value provider update task ended");
+        });
     }
 
     /// Initialize auto-onboarding event listener.
@@ -1000,6 +1113,7 @@ impl ServerState {
             time_series_storage: time_series_store,
             device_service: Some(self.device_service.clone()),
             event_bus: self.event_bus.clone(),
+            alert_manager: Some(self.alert_manager.clone()),
             llm_runtime,
             llm_backend_store,
         };
@@ -1032,6 +1146,12 @@ impl ServerState {
     /// Starts a background task that listens for device events and triggers
     /// event-scheduled agents.
     pub async fn init_agent_events(&self) {
+        // Prevent duplicate initialization
+        if self.agent_events_initialized.fetch_or(true, std::sync::atomic::Ordering::Relaxed) {
+            tracing::debug!("Agent event listener already initialized, skipping");
+            return;
+        }
+
         let manager = match self.get_or_init_agent_manager().await {
             Ok(m) => m,
             Err(e) => {

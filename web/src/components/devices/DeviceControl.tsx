@@ -46,6 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { EmptyStateInline } from "@/components/shared"
+import { formatTimestamp as formatTs } from "@/lib/utils/format"
 
 export interface CommandDefinition {
   name: string
@@ -237,18 +238,6 @@ export function DeviceControl({
       timeout: "超时",
     }
     return labels[status]
-  }, [])
-
-  // Format timestamp
-  const formatTimestamp = useCallback((timestamp: number): string => {
-    const date = new Date(timestamp * 1000)
-    return date.toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
   }, [])
 
   // Handle device selection
@@ -722,7 +711,7 @@ export function DeviceControl({
                             onClick={() => toggleHistoryExpansion(entry.id)}
                           >
                             <TableCell className="text-sm text-muted-foreground">
-                              {formatTimestamp(entry.timestamp)}
+                              {formatTs(entry.timestamp)}
                             </TableCell>
                             <TableCell>{entry.deviceName}</TableCell>
                             <TableCell className="font-mono text-xs">{entry.command}</TableCell>

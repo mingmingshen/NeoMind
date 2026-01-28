@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { SessionSidebar } from "@/components/session/SessionSidebar"
 import { WelcomeArea } from "@/components/chat/WelcomeArea"
+import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
 import { ToolCallVisualization } from "@/components/chat/ToolCallVisualization"
 import { QuickActions } from "@/components/chat/QuickActions"
@@ -21,6 +22,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { ws } from "@/lib/websocket"
 import type { Message, ServerMessage, ChatImage } from "@/types"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 
 /** Image gallery component for user messages */
 function MessageImages({ images }: { images: ChatImage[] }) {
@@ -118,31 +120,6 @@ function useIsDesktop() {
   return isDesktop
 }
 
-// Format timestamp to readable time
-function formatTime(timestamp: number | undefined): string {
-  // Guard against invalid timestamps
-  if (!timestamp || timestamp < 1000000000000) {
-    // Timestamp missing or before year 2001 (likely seconds instead of ms, or invalid)
-    return ""
-  }
-  
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / (1000 * 60))
-
-  if (diffMins < 1) return "刚刚"
-  if (diffMins < 60) return `${diffMins}分钟前`
-
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours}小时前`
-
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 7) return `${diffDays}天前`
-
-  return date.toLocaleDateString()
-}
-
 // Check if active backend supports multimodal
 function getActiveBackendSupportsMultimodal(llmBackends: any[], activeBackendId: string | null): boolean {
   if (!activeBackendId) return false
@@ -225,6 +202,23 @@ export function DashboardPage() {
       })
     }
   }, [urlSessionId, sessionId, switchSession])
+
+  // Sync URL with sessionId - ensure we're always on /chat or /chat/:sessionId
+  useEffect(() => {
+    const currentPath = window.location.pathname
+    // If on root path without sessionId, redirect to /chat
+    if (currentPath === '/' && !urlSessionId) {
+      if (sessionId) {
+        navigate(`/chat/${sessionId}`, { replace: true })
+      } else {
+        navigate('/chat', { replace: true })
+      }
+    }
+    // If sessionId changes but we're still on /chat (no sessionId in URL), update it
+    if (currentPath === '/chat' && sessionId && !urlSessionId) {
+      navigate(`/chat/${sessionId}`, { replace: true })
+    }
+  }, [sessionId, urlSessionId, navigate])
 
   // Sync WebSocket sessionId when store sessionId changes
   useEffect(() => {
@@ -397,7 +391,7 @@ export function DashboardPage() {
       }
     } catch (error) {
       console.error('Failed to process images:', error)
-      alert('Failed to process images. Please try again.')
+      alert(t('imageProcessFailed'))
     } finally {
       setIsUploadingImage(false)
       // Reset file input
@@ -449,9 +443,17 @@ export function DashboardPage() {
             <Settings className="h-8 w-8 text-muted-foreground" />
           </div>
           <h2 className="mb-3 text-lg font-semibold">{t('dashboard:llmNotConfigured') || 'LLM 未配置'}</h2>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-6">
             {t('dashboard:llmNotConfiguredDesc') || '请先配置 LLM 后端以使用聊天功能'}
           </p>
+          <Button
+            onClick={() => navigate('/plugins')}
+            className="gap-2"
+            size="default"
+          >
+            <Settings className="h-4 w-4" />
+            {t('dashboard:goToSettings') || '前往设置'}
+          </Button>
         </div>
       </div>
     )
@@ -540,6 +542,7 @@ export function DashboardPage() {
                           : "bg-muted text-foreground"
                       )}
                     >
+                      <div className={message.role === "user" ? "message-bubble-user" : "message-bubble-assistant"}>
                       {/* Images for user messages */}
                       {message.role === "user" && message.images && message.images.length > 0 && (
                         <MessageImages images={message.images} />
@@ -549,10 +552,9 @@ export function DashboardPage() {
                         <ToolCallVisualization toolCalls={message.tool_calls} isStreaming={false} />
                       )}
                       {message.content && (
-                        <div className="prose prose-sm max-w-none dark:prose-invert">
-                          {message.content}
-                        </div>
+                        <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
                       )}
+                      </div>
                     </div>
 
                     {message.role === "assistant" && (
@@ -560,7 +562,7 @@ export function DashboardPage() {
                     )}
 
                     <p className="text-xs text-muted-foreground mt-1 px-1">
-                      {formatTime(message.timestamp)}
+                      {formatTimestamp(message.timestamp / 1000, false)}
                     </p>
                   </div>
 
@@ -582,14 +584,13 @@ export function DashboardPage() {
                   </div>
                   <div className="max-w-[85%] sm:max-w-[80%]">
                     <div className="rounded-2xl px-3 py-2 sm:px-4 sm:py-3 bg-muted text-foreground">
+                      <div className="message-bubble-assistant">
                       {streamingThinking && <ThinkingBlock thinking={streamingThinking} />}
                       {streamingToolCalls.length > 0 && (
                         <ToolCallVisualization toolCalls={streamingToolCalls} isStreaming={true} />
                       )}
                       {streamingContent && (
-                        <div className="prose prose-sm max-w-none dark:prose-invert">
-                          {streamingContent}
-                        </div>
+                        <MarkdownMessage content={streamingContent} variant="assistant" />
                       )}
                       {!streamingContent && !streamingThinking && streamingToolCalls.length === 0 && (
                         <div className="flex items-center gap-1">
@@ -598,6 +599,7 @@ export function DashboardPage() {
                           <span key="dot-3" className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: "300ms" }} />
                         </div>
                       )}
+                      </div>
                     </div>
                   </div>
                 </div>

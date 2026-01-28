@@ -42,7 +42,9 @@ impl RealPerfTestContext {
             time_series_storage: Some(time_series.clone()),
             device_service: None,
             event_bus: Some(event_bus.clone()),
+            alert_manager: None,
             llm_runtime: Some(llm_runtime.clone()),
+            llm_backend_store: None,
         };
         let executor = AgentExecutor::new(executor_config).await?;
 
@@ -297,7 +299,9 @@ async fn test_llm_vs_mock_comparison() -> anyhow::Result<()> {
         time_series_storage: Some(ctx.time_series.clone()),
         device_service: None,
         event_bus: Some(ctx.event_bus.clone()),
+        alert_manager: None,
         llm_runtime: None, // 没有LLM
+        llm_backend_store: None,
     };
 
     let executor = AgentExecutor::new(executor_config).await?;

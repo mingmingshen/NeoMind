@@ -1549,6 +1549,8 @@ export interface AiAgent {
   name: string
   role: AgentRole
   status: AgentStatus
+  description?: string
+  user_prompt?: string
   created_at: string
   last_execution_at: string | null
   execution_count: number
@@ -1581,7 +1583,7 @@ export interface AiAgentDetail extends AiAgent {
  * Agent schedule configuration
  */
 export interface AgentSchedule {
-  schedule_type: 'interval' | 'cron' | 'event'
+  schedule_type: 'interval' | 'cron' | 'event' | 'once'
   interval_seconds?: number
   cron_expression?: string
   timezone?: string
@@ -1705,7 +1707,7 @@ export type ExecutionStatus = 'Running' | 'Completed' | 'Failed' | 'Cancelled'
 /**
  * Agent role defining its core responsibility
  */
-export type AgentRole = 'Monitor' | 'Executor' | 'Analyst'
+export type AgentRole = 'Monitor' | 'Executor' | 'Analyst' | 'Scheduler' | 'Notifier' | 'Controller' | (string & {})
 
 /**
  * Input for a single conversation turn (execution)
@@ -1754,6 +1756,7 @@ export interface AgentResource {
 export interface CreateAgentRequest {
   name: string
   role: AgentRole
+  description?: string
   user_prompt: string
   device_ids: string[]
   metrics: MetricSelectionRequest[]
@@ -1769,6 +1772,16 @@ export interface MetricSelectionRequest {
   device_id: string
   metric_name: string
   display_name: string
+  /** Data collection configuration for this metric */
+  config?: {
+    data_collection?: {
+      time_range_minutes?: number
+      include_history?: boolean
+      max_points?: number
+      include_trend?: boolean
+      include_baseline?: boolean
+    }
+  }
 }
 
 /**

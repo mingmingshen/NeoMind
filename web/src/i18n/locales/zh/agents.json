@@ -55,13 +55,17 @@
   "roles": {
     "monitor": "监控专员",
     "executor": "执行专员",
-    "analyst": "分析专员"
+    "analyst": "分析专员",
+    "scheduler": "调度专员",
+    "notifier": "通知专员",
+    "controller": "控制专员"
   },
   "stats": "统计",
   "time": {
     "justNow": "刚刚",
-    "minutesAgo": "分钟前",
-    "hoursAgo": "小时前"
+    "minutesAgo": "{{count}}分钟前",
+    "hoursAgo": "{{count}}小时前",
+    "daysAgo": "{{count}}天前"
   },
   "status": {
     "active": "运行中",
@@ -99,6 +103,7 @@
     "conclusion": "结论",
     "generatedReport": "生成的报告",
     "actionsExecuted": "执行的操作",
+    "notificationsSent": "发送的通知",
     "input": "输入",
     "output": "输出",
     "action": "操作",
@@ -127,10 +132,30 @@
         "analyst": {
           "label": "分析专员",
           "description": "分析数据趋势，生成报告并提供决策建议"
+        },
+        "scheduler": {
+          "label": "调度专员",
+          "description": "根据时间或事件自动调度和协调任务"
+        },
+        "notifier": {
+          "label": "通知专员",
+          "description": "向用户或外部系统发送通知和告警"
+        },
+        "controller": {
+          "label": "控制专员",
+          "description": "统一管理和协调控制多个设备"
+        },
+        "custom": {
+          "label": "自定义",
+          "description": "定义您自己的角色",
+          "placeholder": "自定义角色名称"
         }
       },
       "name": "名称",
       "namePlaceholder": "例如：仓库温度监控、设备异常分析",
+      "description": "描述",
+      "descriptionHint": "简短描述此智能体的用途（可选）",
+      "descriptionPlaceholder": "例如：监控仓库环境、分析设备能耗趋势",
       "requirement": "需求描述",
       "requirementHint": "用自然语言描述你希望智能体完成的目标",
       "requirementPlaceholder": "例如：\n• 当温度超过30度时发送告警\n• 每天早上9点生成设备状态报告\n• 检测异常能耗并分析原因",
@@ -185,6 +210,7 @@
         "events": {
           "device.online": "设备上线",
           "device.offline": "设备离线",
+          "device.metric": "数据更新",
           "metric.threshold": "指标阈值",
           "metric.anomaly": "异常检测",
           "manual": "手动触发"
@@ -229,6 +255,7 @@
       "searchPlaceholder": "搜索设备名称或类型...",
       "selectedCount": "已选 {{count}} 项",
       "noDevicesFound": "没有找到设备",
+      "selectDevice": "请从左侧选择一个设备",
       "metrics": "监控指标",
       "commands": "执行指令",
       "metricCount": "{{count}}指标",
@@ -241,12 +268,31 @@
       "moreCommands": "+{{count}} 个指令",
       "dataInput": "数据输入",
       "dataOutput": "结果输出",
-      "selectAfterShow": "选择设备资源后显示拓扑"
+      "selectAfterShow": "选择设备资源后显示拓扑",
+      "devices": "个设备",
+      "selected": "项已选",
+      "clearAll": "清空",
+      "selectAll": "全选",
+      "deselectAll": "取消全选"
+    },
+    "advanced": {
+      "title": "高级配置",
+      "dataCollection": "数据收集配置",
+      "selectMetricsFirst": "请先选择指标"
+    },
+    "dataCollection": {
+      "title": "数据收集配置",
+      "timeRange": "时间范围",
+      "includeHistory": "历史数据",
+      "includeTrend": "趋势数据",
+      "includeBaseline": "基线对比",
+      "hint": "为每个指标配置数据收集方式，不同场景可能需要不同的配置"
     },
     "validation": {
       "nameRequired": "请输入智能体名称",
       "requirementRequired": "请描述你的需求",
-      "resourceRequired": "请至少选择一个设备资源"
+      "resourceRequired": "请至少选择一个设备资源",
+      "customRoleRequired": "请输入自定义角色名称"
     },
     "actions": {
       "cancel": "取消",

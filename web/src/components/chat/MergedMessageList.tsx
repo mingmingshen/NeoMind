@@ -14,6 +14,7 @@ import { MarkdownMessage } from "./MarkdownMessage"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Sparkles } from "lucide-react"
 import { useStore } from "@/store"
+import { formatTimestamp } from "@/lib/utils/format"
 
 /** Image gallery component for user messages */
 function MessageImages({ images }: { images: ChatImage[] }) {
@@ -39,25 +40,6 @@ interface MergedMessageListProps {
   streamingContent?: string
   streamingThinking?: string
   streamingToolCalls?: any[]
-}
-
-// Format timestamp to readable time
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / (1000 * 60))
-
-  if (diffMins < 1) return "刚刚"
-  if (diffMins < 60) return `${diffMins}分钟前`
-
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours}小时前`
-
-  const diffDays = Math.floor(diffHours / 24)
-  if (diffDays < 7) return `${diffDays}天前`
-
-  return date.toLocaleDateString()
 }
 
 /**
@@ -265,7 +247,7 @@ export function MergedMessageList({
 
             {/* Timestamp */}
             <p className="text-xs text-muted-foreground mt-1 px-1">
-              {formatTime(message.timestamp)}
+              {formatTimestamp(message.timestamp / 1000, false)}
             </p>
           </div>
 

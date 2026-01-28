@@ -52,9 +52,9 @@ const MIN_PREVIEW_HEIGHT = 140
  * Format data source label for display
  */
 function formatDataSourceLabel(ds: DataSource | undefined, t: (key: string) => string): string {
-  if (!ds) return t('dashboardComponents:componentPreview.noDataSource')
+  if (!ds) return t('componentPreview.noDataSource')
 
-  const tc = (key: string) => t(`dashboardComponents:componentPreview.${key}`)
+  const tc = (key: string) => t(`componentPreview.${key}`)
 
   switch (ds.type) {
     case 'device':
@@ -62,13 +62,13 @@ function formatDataSourceLabel(ds: DataSource | undefined, t: (key: string) => s
     case 'device-info':
       return `${tc('deviceInfo')}: ${ds.deviceId}${ds.infoProperty ? ` (${ds.infoProperty})` : ''}`
     case 'metric':
-      return `${tc('metric')}: ${ds.metricId || t('dashboardComponents:componentPreview.notSpecified')}`
+      return `${tc('metric')}: ${ds.metricId || t('componentPreview.notSpecified')}`
     case 'command':
       return `${tc('command')}: ${ds.deviceId} → ${ds.command || 'toggle'}`
     case 'telemetry':
       return `${tc('telemetry')}: ${ds.deviceId} / ${ds.metricId || 'raw'}`
     case 'api':
-      return `API: ${ds.endpoint || t('dashboardComponents:componentPreview.custom')}`
+      return `API: ${ds.endpoint || t('componentPreview.custom')}`
     case 'websocket':
       return `WebSocket: ${ds.endpoint || tc('realTime')}`
     case 'static':

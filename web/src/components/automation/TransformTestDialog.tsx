@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, Play, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { formatTimestamp } from '@/lib/utils/format'
 import { api } from '@/lib/api'
 
 interface TransformTestDialogProps {
@@ -205,7 +206,7 @@ export function TransformTestDialog({ open, onOpenChange, transformId, devices }
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {metric.device_id} @ {new Date(metric.timestamp * 1000).toLocaleString()}
+                        {metric.device_id} @ {formatTimestamp(metric.timestamp)}
                       </div>
                     </div>
                   ))}

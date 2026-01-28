@@ -6,6 +6,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database, MapPin } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -37,23 +38,27 @@ type SelectedItem = string // Format: "device-metric:deviceId:property" or "devi
 // Constants
 // ============================================================================
 
-// Device info property definitions
-const DEVICE_INFO_PROPERTIES = [
-  { id: 'name', name: '设备名称' },
-  { id: 'status', name: '状态' },
-  { id: 'online', name: '在线状态' },
-  { id: 'last_seen', name: '最后上线' },
-  { id: 'device_type', name: '设备类型' },
-  { id: 'plugin_name', name: '适配器' },
-  { id: 'adapter_id', name: '适配器ID' },
-]
+// Device info property definitions factory (uses translations)
+function getDeviceInfoProperties(t: (key: string) => string) {
+  return [
+    { id: 'name', name: t('dataSource.deviceName') },
+    { id: 'status', name: t('dataSource.status') },
+    { id: 'online', name: t('dataSource.onlineStatus') },
+    { id: 'last_seen', name: t('dataSource.lastSeen') },
+    { id: 'device_type', name: t('dataSource.deviceType') },
+    { id: 'plugin_name', name: t('dataSource.adapter') },
+    { id: 'adapter_id', name: t('dataSource.adapterId') },
+  ]
+}
 
-// Category configuration
-const CATEGORIES = [
-  { id: 'device' as const, name: '设备', icon: MapPin, description: '设备位置标记' },
-  { id: 'device-metric' as const, name: '指标', icon: Server, description: '设备的实时数据点' },
-  { id: 'device-command' as const, name: '指令', icon: Zap, description: '控制设备的操作' },
-]
+// Category configuration factory (uses translations)
+function getCategories(t: (key: string) => string) {
+  return [
+    { id: 'device' as const, name: t('dataSource.device'), icon: MapPin, description: t('dataSource.deviceDesc') },
+    { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
+    { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
+  ]
+}
 
 // ============================================================================
 // Helper Functions
@@ -209,7 +214,7 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
 /**
  * Get a readable label for a selected item
  */
-function getSelectedItemLabel(item: SelectedItem, devices: any[]): string {
+function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: string) => string): string {
   const [type, deviceId, ...rest] = item.split(':')
 
   const device = devices.find(d => d.id === deviceId)
@@ -224,7 +229,7 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[]): string {
     case 'device-command':
       return `${deviceName} · ${rest.join(':')}`
     case 'device-info':
-      const prop = DEVICE_INFO_PROPERTIES.find(p => p.id === rest.join(':'))
+      const prop = getDeviceInfoProperties(t).find((p: { id: string; name: string }) => p.id === rest.join(':'))
       return `${deviceName} · ${prop?.name || rest.join(':')}`
     default:
       return item
@@ -243,6 +248,7 @@ export function UnifiedDataSourceConfig({
   maxSources = 10,
   className,
 }: UnifiedDataSourceConfigProps) {
+  const { t } = useTranslation('dashboardComponents')
   const { devices, deviceTypes } = useStore()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -298,8 +304,8 @@ export function UnifiedDataSourceConfig({
 
   // Available categories based on allowedTypes
   const availableCategories = useMemo(
-    () => CATEGORIES.filter(c => normalizeAllowedTypes(allowedTypes).includes(c.id)),
-    [allowedTypes]
+    () => getCategories(t).filter(c => normalizeAllowedTypes(allowedTypes).includes(c.id)),
+    [allowedTypes, t]
   )
 
   // Set initial category to first available
@@ -329,12 +335,12 @@ export function UnifiedDataSourceConfig({
           }))
           map.set(device.id, dynamicMetrics)
         } else {
-          map.set(device.id, [{ name: 'value', display_name: '数值', data_type: 'float' as const, unit: '' }])
+          map.set(device.id, [{ name: 'value', display_name: t('chart.value'), data_type: 'float' as const, unit: '' }])
         }
       }
     }
     return map
-  }, [devices, deviceTypes])
+  }, [devices, deviceTypes, t])
 
   // Check data availability when device is selected (for metrics category)
   useEffect(() => {
@@ -356,11 +362,11 @@ export function UnifiedDataSourceConfig({
       if (deviceType?.commands && deviceType.commands.length > 0) {
         map.set(device.id, deviceType.commands)
       } else {
-        map.set(device.id, [{ name: 'toggle', display_name: '切换', parameters: [] }])
+        map.set(device.id, [{ name: 'toggle', display_name: t('dataSource.commandToggle'), parameters: [] }])
       }
     }
     return map
-  }, [devices, deviceTypes])
+  }, [devices, deviceTypes, t])
 
   // Handle item selection
   const handleSelectItem = (itemKey: SelectedItem) => {
@@ -412,7 +418,7 @@ export function UnifiedDataSourceConfig({
   }
 
   // Get current category config
-  const categoryConfig = CATEGORIES.find(c => c.id === selectedCategory)
+  const categoryConfig = getCategories(t).find(c => c.id === selectedCategory)
 
   // Filter devices by search query
   const filteredDevices = useMemo(() => {
@@ -443,7 +449,7 @@ export function UnifiedDataSourceConfig({
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
-              placeholder="搜索设备..."
+              placeholder={t('dataSource.searchPlaceholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-8 pl-8 text-xs"
@@ -453,15 +459,15 @@ export function UnifiedDataSourceConfig({
 
         {/* Device list header with count */}
         <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
-          <span>设备列表</span>
+          <span>{t('dataSource.deviceList')}</span>
           <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
-            {filteredDevices.length} 个
+            {filteredDevices.length} {t('dataSource.count')}
           </span>
         </div>
 
         {/* Device list */}
         {filteredDevices.length === 0 ? (
-          <div className="p-4 text-center text-muted-foreground text-xs">暂无可用设备</div>
+          <div className="p-4 text-center text-muted-foreground text-xs">{t('dataSource.noDevices')}</div>
         ) : (
           <div className="flex-1 overflow-y-auto">
             {filteredDevices.map(device => {
@@ -503,7 +509,7 @@ export function UnifiedDataSourceConfig({
                         <>
                           <span className="text-muted-foreground/30">•</span>
                           <span className="text-muted-foreground/70">
-                            {selectedCategory === 'device-metric' ? `${availableCount} 个指标` : `${availableCount} 个指令`}
+                            {selectedCategory === 'device-metric' ? `${availableCount} ${t('dataSource.metricsCount')}` : `${availableCount} ${t('dataSource.commandsCount')}`}
                           </span>
                         </>
                       )}
@@ -528,7 +534,7 @@ export function UnifiedDataSourceConfig({
     if (!selectedDevice) {
       return (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-          请选择一个设备
+          {t('dataSource.selectDevice')}
         </div>
       )
     }
@@ -596,7 +602,7 @@ export function UnifiedDataSourceConfig({
       }
 
       // Add device info properties
-      for (const infoProp of DEVICE_INFO_PROPERTIES) {
+      for (const infoProp of getDeviceInfoProperties(t)) {
         const itemKey = `device-info:${selectedDevice.id}:${infoProp.id}` as SelectedItem
         let currentValue: unknown = undefined
 
@@ -643,23 +649,23 @@ export function UnifiedDataSourceConfig({
       })
 
       if (items.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground text-sm">该设备暂无可用指标</div>
+        return <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noAvailableMetrics')}</div>
       }
 
       // Helper to format current value
       const formatValue = (val: unknown): string => {
         if (val === null || val === undefined) return '-'
-        if (typeof val === 'number') return val.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
-        if (typeof val === 'boolean') return val ? '是' : '否'
+        if (typeof val === 'number') return val.toLocaleString('en-US', { maximumFractionDigits: 2 })
+        if (typeof val === 'boolean') return val ? t('dataSource.yes') : t('dataSource.no')
         return String(val)
       }
 
       // Badge component for item type
       const ItemBadge = ({ itemType }: { itemType: 'template' | 'virtual' | 'info' }) => {
         const config = {
-          template: { label: '原生', className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
-          virtual: { label: '虚拟', className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
-          info: { label: '信息', className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+          template: { label: t('dataSource.badgeTemplate'), className: 'bg-blue-500/10 text-blue-600 border-blue-500/20' },
+          virtual: { label: t('dataSource.badgeVirtual'), className: 'bg-purple-500/10 text-purple-600 border-purple-500/20' },
+          info: { label: t('dataSource.badgeInfo'), className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
         }[itemType]
         return (
           <span className={cn('px-1.5 py-0.5 text-[10px] font-medium rounded-[3px] border shrink-0', config.className)}>
@@ -672,7 +678,7 @@ export function UnifiedDataSourceConfig({
       const DataIndicator = ({ hasData, count }: { hasData: boolean | null; count?: number }) => {
         if (hasData === true) {
           return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20" title={`有历史数据 (${count ?? 0} 个数据点)`}>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20" title={`${t('dataSource.hasHistoricalData')} (${count ?? 0} ${t('dataSource.dataPoints')})`}>
               <Circle className="h-1.5 w-1.5 fill-green-500 text-green-500" />
               <span className="text-[10px] text-green-600 font-medium">{count ?? 0}</span>
             </div>
@@ -680,9 +686,9 @@ export function UnifiedDataSourceConfig({
         }
         if (hasData === false) {
           return (
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/30 border border-muted/30" title="暂无历史数据">
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/30 border border-muted/30" title={t('dataSource.noHistoricalData')}>
               <Circle className="h-1.5 w-1.5 fill-muted-foreground/40 text-muted-foreground/40" />
-              <span className="text-[10px] text-muted-foreground">无数据</span>
+              <span className="text-[10px] text-muted-foreground">{t('dataSource.noData')}</span>
             </div>
           )
         }
@@ -694,10 +700,10 @@ export function UnifiedDataSourceConfig({
           <div className="px-3 py-2.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <Database className="h-3.5 w-3.5" />
-              {selectedDevice.name || selectedDevice.id} 的指标
+              {t('dataSource.metricsOf', { device: selectedDevice.name || selectedDevice.id })}
             </span>
             <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
-              {items.length} 个
+              {items.length} {t('dataSource.count')}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -754,7 +760,7 @@ export function UnifiedDataSourceConfig({
                       {item.currentValue !== undefined && item.currentValue !== null && (
                         <>
                           <span className="text-muted-foreground/20">·</span>
-                          <span className="text-foreground/60">当前: {formatValue(item.currentValue)}</span>
+                          <span className="text-foreground/60">{t('dataSource.current')}: {formatValue(item.currentValue)}</span>
                           {item.unit && item.unit !== '-' && (
                             <>
                               <span className="text-muted-foreground/20">·</span>
@@ -793,13 +799,13 @@ export function UnifiedDataSourceConfig({
       }
 
       if (items.length === 0) {
-        return <div className="p-4 text-center text-muted-foreground text-sm">该设备暂无可用指令</div>
+        return <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noAvailableCommands')}</div>
       }
 
       return (
         <div className="flex flex-col h-full">
           <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted/30">
-            {selectedDevice.name || selectedDevice.id} 的指令
+            {t('dataSource.commandsOf', { device: selectedDevice.name || selectedDevice.id })}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
             {items.map(item => (
@@ -844,7 +850,7 @@ export function UnifiedDataSourceConfig({
         return (
           <div className="space-y-1">
             {filteredDevices.length === 0 ? (
-              <div className="p-4 text-center text-muted-foreground text-sm">暂无可用设备</div>
+              <div className="p-4 text-center text-muted-foreground text-sm">{t('dataSource.noDevices')}</div>
             ) : (
               filteredDevices.map(device => {
                 const itemKey = `device:${device.id}` as SelectedItem
@@ -912,7 +918,7 @@ export function UnifiedDataSourceConfig({
         <div className="px-3 py-2 border-b bg-gradient-to-r from-primary/5 via-primary/5 to-muted/20 flex flex-wrap gap-2 items-center">
           <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
             <Check className="h-3.5 w-3.5" />
-            已选 {selectedItems.size} 项
+            {t('dataSource.selectedItems', { count: selectedItems.size })}
           </div>
           <div className="h-4 w-px bg-border" />
           <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
@@ -955,7 +961,7 @@ export function UnifiedDataSourceConfig({
             })}
             {selectedItemsArray.length > 3 && (
               <div className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted/50 text-xs text-muted-foreground">
-                +{selectedItemsArray.length - 3} 更多
+                +{selectedItemsArray.length - 3} {t('dataSource.more')}
               </div>
             )}
           </div>
@@ -964,7 +970,7 @@ export function UnifiedDataSourceConfig({
             size="sm"
             onClick={handleClearSelection}
             className="h-7 px-2 text-xs hover:bg-destructive/10 hover:text-destructive shrink-0"
-            title="清除所有选择"
+            title={t('dataSource.clearAllSelections')}
           >
             <X className="h-3.5 w-3.5" />
           </Button>

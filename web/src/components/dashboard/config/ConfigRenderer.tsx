@@ -291,7 +291,7 @@ const ConfigSectionItem = function ConfigSectionItem({ section }: { section: Con
             )}
             value={props.content}
             onChange={(e) => props.onChange?.(e.target.value)}
-            placeholder={props.placeholder || '输入内容...'}
+            placeholder={props.placeholder || t('configRenderer.contentPlaceholder')}
             rows={props.rows || 3}
           />
         </Field>

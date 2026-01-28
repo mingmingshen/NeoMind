@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { formatTimestamp as formatTs } from "@/lib/utils/format"
 
 export interface DeviceMetric {
   name: string
@@ -282,24 +283,6 @@ export function DeviceRealtime({
     })
   }
 
-  // Format timestamp for display
-  const formatTimestamp = useCallback((timestamp: number): string => {
-    const date = new Date(timestamp * 1000)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-
-    if (diff < 60000) return t('devices:realtime.timeAgo.justNow')
-    if (diff < 3600000) return t('devices:realtime.timeAgo.minutesAgo', { minutes: Math.floor(diff / 60000) })
-    if (diff < 86400000) return t('devices:realtime.timeAgo.hoursAgo', { hours: Math.floor(diff / 3600000) })
-
-    return date.toLocaleString("zh-CN", {
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  }, [t])
-
   // Format metric value for display
   const formatValue = useCallback((value: number | string | boolean | null, dataType?: string): string => {
     if (value === null || value === undefined) return "-"
@@ -436,7 +419,7 @@ export function DeviceRealtime({
                     )}
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {status?.lastSeen ? formatTimestamp(status.lastSeen) : "-"}
+                      {status?.lastSeen ? formatTs(status.lastSeen) : "-"}
                     </div>
                   </div>
                 </CardContent>
@@ -481,7 +464,7 @@ export function DeviceRealtime({
                         {metric.quality !== undefined && (
                           <span className="shrink-0">{t('devices:realtime.quality', { quality: metric.quality })}</span>
                         )}
-                        <span className="shrink-0">{formatTimestamp(metric.timestamp)}</span>
+                        <span className="shrink-0">{formatTs(metric.timestamp)}</span>
                       </div>
                     </div>
                   ))}
@@ -533,7 +516,7 @@ export function DeviceRealtime({
                               })()}
                             </div>
                             <div className="text-xs text-muted-foreground mt-0.5">
-                              {formatTimestamp(event.timestamp)}
+                              {formatTs(event.timestamp)}
                             </div>
                           </div>
                         </div>

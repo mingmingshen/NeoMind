@@ -119,13 +119,15 @@ export const DEFAULT_TEMPLATES: DashboardTemplate[] = [
  */
 function updateDashboardInState(
   dashboards: Dashboard[],
-  currentDashboardId: string | null,
-  updates: Partial<Dashboard>
+  targetId: string,  // ID of the dashboard to update
+  updates: Partial<Dashboard>,
+  currentDashboardId: string | null  // Current active dashboard ID
 ): { dashboards: Dashboard[]; currentDashboard: Dashboard | null } {
   const updatedDashboards = dashboards.map((d) =>
-    d.id === currentDashboardId ? { ...d, ...updates, updatedAt: Date.now() } : d
+    d.id === targetId ? { ...d, ...updates } : d
   )
 
+  // If the updated dashboard is the current one, update currentDashboard too
   const currentDashboard = updatedDashboards.find((d) => d.id === currentDashboardId) || null
 
   return { dashboards: updatedDashboards, currentDashboard }
@@ -262,40 +264,28 @@ export const createDashboardSlice: StateCreator<
     },
 
     createDashboard: async (dashboard) => {
-      // Don't generate ID locally - let the server do it
-      const dashboardForCreate: Omit<Dashboard, 'id' | 'createdAt' | 'updatedAt'> = {
+      // Always create locally first (fast, reliable)
+      const localDashboard: Dashboard = {
         ...dashboard,
+        id: generateId(),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
       }
 
-      // Persist to API first to get server-generated ID
-      const result = await storage.sync(dashboardForCreate as Dashboard)
-
-      if (result.error || !result.data) {
-        console.error('[DashboardSlice] Failed to create dashboard:', result.error)
-        // Fallback: generate local ID
-        const fallbackDashboard: Dashboard = {
-          ...dashboardForCreate,
-          id: generateId(),
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        }
-        set((state) => ({
-          dashboards: [...state.dashboards, fallbackDashboard],
-          currentDashboardId: fallbackDashboard.id,
-          currentDashboard: fallbackDashboard,
-        }))
-        return fallbackDashboard.id
-      }
-
-      // Use the server-returned dashboard
-      const serverDashboard = result.data
+      // Update state immediately
       set((state) => ({
-        dashboards: [...state.dashboards, serverDashboard],
-        currentDashboardId: serverDashboard.id,
-        currentDashboard: serverDashboard,
+        dashboards: [...state.dashboards, localDashboard],
+        currentDashboardId: localDashboard.id,
+        currentDashboard: localDashboard,
       }))
 
-      return serverDashboard.id
+      // Persist to storage (localStorage + try API in background)
+      storage.sync(localDashboard).catch((err) => {
+        // Sync failed - but dashboard is already saved locally
+        console.warn('[DashboardSlice] Background sync failed:', err)
+      })
+
+      return localDashboard.id
     },
 
     updateDashboard: async (id, updates) => {
@@ -307,21 +297,21 @@ export const createDashboardSlice: StateCreator<
       } as Partial<Dashboard>
 
       const { dashboards: updatedDashboards, currentDashboard } =
-        updateDashboardInState(dashboards, id, updated)
+        updateDashboardInState(dashboards, id, updated, currentDashboardId)
 
+      // Update state immediately
       set({
         dashboards: updatedDashboards,
         currentDashboard: currentDashboardId === id ? currentDashboard : get().currentDashboard,
       })
 
-      // Persist
-      if (currentDashboard) {
-        await storage.sync(currentDashboard)
-      } else {
-        const targetDashboard = dashboards.find((d) => d.id === id)
-        if (targetDashboard) {
-          await storage.sync({ ...targetDashboard, ...updated })
-        }
+      // Persist to storage in background
+      const targetDashboard = updatedDashboards.find(d => d.id === id)
+      if (targetDashboard) {
+        storage.sync(targetDashboard).catch((err) => {
+          // Sync failed - but state is already saved locally
+          console.warn('[DashboardSlice] Background sync failed:', err)
+        })
       }
     },
 

@@ -130,7 +130,7 @@ impl Dashboard {
     pub fn new(name: String, layout: DashboardLayout) -> Self {
         let now = chrono::Utc::now().timestamp();
         Self {
-            id: format!("dashboard_{}", now),
+            id: uuid::Uuid::new_v4().to_string(),
             name,
             layout,
             components: Vec::new(),

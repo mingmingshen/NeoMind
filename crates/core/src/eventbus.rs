@@ -231,6 +231,12 @@ impl FilterBuilder {
         FilteredReceiver::new(rx, NeoTalkEvent::is_workflow_event)
     }
 
+    /// Subscribe to agent events only.
+    pub fn agent_events(&self) -> FilteredReceiver<fn(&NeoTalkEvent) -> bool> {
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(rx, NeoTalkEvent::is_agent_event)
+    }
+
     /// Subscribe to LLM events only.
     pub fn llm_events(&self) -> FilteredReceiver<fn(&NeoTalkEvent) -> bool> {
         let rx = self.tx.subscribe();

@@ -7,6 +7,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { DataMapper, type SingleValueMappingConfig } from '@/lib/dataMapping'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -49,33 +50,35 @@ export interface LEDIndicatorProps {
   className?: string
 }
 
-// State configuration
-const stateConfig = {
-  on: {
-    indicatorState: 'success' as IndicatorState,
-    label: '开启',
-    color: indicatorColors.success,
-  },
-  off: {
-    indicatorState: 'neutral' as IndicatorState,
-    label: '关闭',
-    color: indicatorColors.neutral,
-  },
-  error: {
-    indicatorState: 'error' as IndicatorState,
-    label: '错误',
-    color: indicatorColors.error,
-  },
-  warning: {
-    indicatorState: 'warning' as IndicatorState,
-    label: '警告',
-    color: indicatorColors.warning,
-  },
-  unknown: {
-    indicatorState: 'neutral' as IndicatorState,
-    label: '未知',
-    color: indicatorColors.neutral,
-  },
+// State configuration factory (uses translations)
+function getStateConfig(t: (key: string) => string) {
+  return {
+    on: {
+      indicatorState: 'success' as IndicatorState,
+      label: t('ledIndicator.on'),
+      color: indicatorColors.success,
+    },
+    off: {
+      indicatorState: 'neutral' as IndicatorState,
+      label: t('ledIndicator.off'),
+      color: indicatorColors.neutral,
+    },
+    error: {
+      indicatorState: 'error' as IndicatorState,
+      label: t('ledIndicator.error'),
+      color: indicatorColors.error,
+    },
+    warning: {
+      indicatorState: 'warning' as IndicatorState,
+      label: t('ledIndicator.warning'),
+      color: indicatorColors.warning,
+    },
+    unknown: {
+      indicatorState: 'neutral' as IndicatorState,
+      label: t('ledIndicator.unknown'),
+      color: indicatorColors.neutral,
+    },
+  }
 }
 
 // Extract value for matching - handles objects and arrays
@@ -267,6 +270,8 @@ export function LEDIndicator({
   dataMapping,
   className,
 }: LEDIndicatorProps) {
+  const { t } = useTranslation('dashboardComponents')
+  const stateConfig = getStateConfig(t)
   const { data, loading, error } = useDataSource<unknown>(dataSource)
 
   // Determine the final state

@@ -9,6 +9,7 @@ import {
 import { EmptyStateInline } from "@/components/shared"
 import { Clock, AlertCircle, FileText } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { formatTimestamp } from "@/lib/utils/format"
 import type { AgentExecution } from "@/types"
 
 interface AgentExecutionsListProps {
@@ -25,14 +26,6 @@ export function AgentExecutionsList({
   onViewDetail,
 }: AgentExecutionsListProps) {
   const { t } = useTranslation(['common', 'agents'])
-
-  const formatDateTime = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleString()
-    } catch {
-      return '-'
-    }
-  }
 
   const getStatusLabel = (status: string) => {
     switch (status) {
@@ -86,7 +79,7 @@ export function AgentExecutionsList({
                 <TableCell className="text-sm">
                   <div className="flex items-center gap-2">
                     <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    {formatDateTime(execution.timestamp)}
+                    {formatTimestamp(execution.timestamp, false)}
                   </div>
                 </TableCell>
                 <TableCell>

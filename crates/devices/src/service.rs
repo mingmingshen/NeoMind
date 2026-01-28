@@ -849,6 +849,18 @@ impl DeviceService {
         self.registry.get_device(device_id).await
     }
 
+    /// Find a device by its name (not ID)
+    /// Returns the device config if found, None otherwise
+    pub async fn get_device_by_name(&self, name: &str) -> Option<DeviceConfig> {
+        let devices = self.list_devices().await;
+        for device in devices {
+            if device.name == name {
+                return Some(device);
+            }
+        }
+        None
+    }
+
     /// List all device configurations
     pub async fn list_devices(&self) -> Vec<DeviceConfig> {
         self.registry.list_devices().await

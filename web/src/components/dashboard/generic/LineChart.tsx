@@ -12,6 +12,7 @@
  */
 
 import { useMemo, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   LineChart as RechartsLineChart,
   AreaChart as RechartsAreaChart,
@@ -143,7 +144,7 @@ function transformTelemetryToChartData(
       if (p.timestamp) {
         const date = new Date(p.timestamp > 10000000000 ? p.timestamp : p.timestamp * 1000)
         if (!isNaN(date.getTime())) {
-          return date.toLocaleTimeString('zh-CN', {
+          return date.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
@@ -168,7 +169,7 @@ function formatTimestamp(timestamp: string | number | undefined): string {
   const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp)
   if (isNaN(date.getTime())) return String(timestamp)
 
-  return date.toLocaleTimeString('zh-CN', {
+  return date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -259,6 +260,7 @@ export function LineChart({
   dataMapping,
   className,
 }: LineChartProps) {
+  const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
   // Get effective aggregate from dataSource or props
@@ -296,18 +298,18 @@ export function LineChart({
 
   // Get device names for series labels
   const getDeviceName = (deviceId?: string): string => {
-    if (!deviceId) return 'Value'
+    if (!deviceId) return t('chart.value')
     return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 
   // Get property name for series labels
   const getPropertyDisplayName = (property?: string): string => {
-    if (!property) return 'Value'
+    if (!property) return t('chart.value')
     const propertyNames: Record<string, string> = {
-      temperature: '温度',
-      humidity: '湿度',
-      temp: '温度',
-      value: '数值',
+      temperature: t('chart.temperature'),
+      humidity: t('chart.humidity'),
+      temp: t('chart.temperature'),
+      value: t('chart.value'),
     }
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }
@@ -334,7 +336,7 @@ export function LineChart({
 
         const seriesName = ds.deviceId
           ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-          : `Series ${idx + 1}`
+          : t('chart.series', { count: idx + 1 })
         return {
           name: seriesName,
           data: values,
@@ -401,7 +403,7 @@ export function LineChart({
             const ts = item.timestamp ?? item.t ?? item.time
             if (typeof ts === 'number') {
               const date = new Date(ts * 1000)
-              return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             }
             return String(ts ?? '')
           })
@@ -611,6 +613,7 @@ export function AreaChart({
   dataMapping,
   className,
 }: AreaChartProps) {
+  const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
   const effectiveSeries = propSeries || DEFAULT_AREA_DATA
 
@@ -647,17 +650,17 @@ export function AreaChart({
 
   // Get device names for series labels
   const getDeviceName = (deviceId?: string): string => {
-    if (!deviceId) return 'Value'
+    if (!deviceId) return t('chart.value')
     return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 
   const getPropertyDisplayName = (property?: string): string => {
-    if (!property) return 'Value'
+    if (!property) return t('chart.value')
     const propertyNames: Record<string, string> = {
-      temperature: '温度',
-      humidity: '湿度',
-      temp: '温度',
-      value: '数值',
+      temperature: t('chart.temperature'),
+      humidity: t('chart.humidity'),
+      temp: t('chart.temperature'),
+      value: t('chart.value'),
     }
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }
@@ -683,7 +686,7 @@ export function AreaChart({
 
         const seriesName = ds.deviceId
           ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.property)}`
-          : `Series ${idx + 1}`
+          : t('chart.series', { count: idx + 1 })
         return {
           name: seriesName,
           data: values,
@@ -742,7 +745,7 @@ export function AreaChart({
             const ts = item.timestamp ?? item.t ?? item.time
             if (typeof ts === 'number') {
               const date = new Date(ts * 1000)
-              return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             }
             return String(ts ?? '')
           })

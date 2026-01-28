@@ -9,12 +9,14 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { cn } from '@/lib/utils'
 import {
   Trash2,
@@ -35,39 +37,41 @@ import { useStore } from '@/store'
 // Re-export types for convenience
 export type { LayerBinding, LayerItem }
 
-// Type config matching CustomLayer
-const TYPE_CONFIG = {
-  device: {
-    label: '设备',
-    icon: MapPin,
-    color: 'text-green-600 dark:text-green-400',
-    bgColor: 'bg-green-500/20',
-  },
-  metric: {
-    label: '指标',
-    icon: Activity,
-    color: 'text-purple-600 dark:text-purple-400',
-    bgColor: 'bg-purple-500/20',
-  },
-  command: {
-    label: '指令',
-    icon: Zap,
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-500/20',
-  },
-  text: {
-    label: '文本',
-    icon: Type,
-    color: 'text-foreground',
-    bgColor: 'bg-muted/50',
-  },
-  icon: {
-    label: '图标',
-    icon: Sparkles,
-    color: 'text-orange-600 dark:text-orange-400',
-    bgColor: 'bg-orange-500/20',
-  },
-} as const
+// Type config factory matching CustomLayer
+function getTypeConfig(t: (key: string) => string) {
+  return {
+    device: {
+      label: t('customLayer.device'),
+      icon: MapPin,
+      color: 'text-green-600 dark:text-green-400',
+      bgColor: 'bg-green-500/20',
+    },
+    metric: {
+      label: t('customLayer.metric'),
+      icon: Activity,
+      color: 'text-purple-600 dark:text-purple-400',
+      bgColor: 'bg-purple-500/20',
+    },
+    command: {
+      label: t('customLayer.command'),
+      icon: Zap,
+      color: 'text-blue-600 dark:text-blue-400',
+      bgColor: 'bg-blue-500/20',
+    },
+    text: {
+      label: t('customLayer.text'),
+      icon: Type,
+      color: 'text-foreground',
+      bgColor: 'bg-muted/50',
+    },
+    icon: {
+      label: t('customLayer.iconLabel'),
+      icon: Sparkles,
+      color: 'text-orange-600 dark:text-orange-400',
+      bgColor: 'bg-orange-500/20',
+    },
+  } as const
+}
 
 interface LayerEditorDialogProps {
   open: boolean
@@ -88,6 +92,9 @@ export function LayerEditorDialog({
   backgroundImage,
   onSave,
 }: LayerEditorDialogProps) {
+  const { t } = useTranslation('dashboardComponents')
+  const typeConfig = getTypeConfig(t)
+
   const [bindings, setBindings] = useState<LayerBinding[]>(initialBindings)
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null)
   const [editingTextBinding, setEditingTextBinding] = useState<string | null>(null)
@@ -144,6 +151,8 @@ export function LayerEditorDialog({
         backgroundColor: binding.backgroundColor,
         fontSize: binding.fontSize,
         fontWeight: binding.fontWeight,
+        opacity: binding.opacity,
+        markerSize: binding.markerSize,
         visible: true,
         locked: false,
         draggable: true,
@@ -222,22 +231,14 @@ export function LayerEditorDialog({
   // Common icons for quick selection
   const commonIcons = ['⭐', '❤️', '🔥', '💡', '🏠', '🚗', '📱', '⚡', '💧', '🌡️', '📊', '📈', '🔔', '🎯', '✅', '❌', '⚠️', '🔴', '🟢', '🔵']
 
-  // Quick position presets
-  const quickPositions = [
-    { label: '左上', x: 10, y: 10 },
-    { label: '上中', x: 50, y: 10 },
-    { label: '右上', x: 90, y: 10 },
-    { label: '左中', x: 10, y: 50 },
-    { label: '中心', x: 50, y: 50 },
-    { label: '右中', x: 90, y: 50 },
-    { label: '左下', x: 10, y: 90 },
-    { label: '下中', x: 50, y: 90 },
-    { label: '右下', x: 90, y: 90 },
-  ]
+  // Handle opacity change
+  const handleOpacityChange = useCallback((id: string, opacity: number) => {
+    setBindings(prev => prev.map(b => b.id === id ? { ...b, opacity } : b))
+  }, [])
 
-  // Handle quick position change
-  const handleQuickPosition = useCallback((id: string, x: number, y: number) => {
-    setBindings(prev => prev.map(b => b.id === id ? { ...b, position: { x, y } } : b))
+  // Handle marker size change
+  const handleMarkerSizeChange = useCallback((id: string, markerSize: 'xs' | 'sm' | 'md' | 'lg' | 'xl') => {
+    setBindings(prev => prev.map(b => b.id === id ? { ...b, markerSize } : b))
   }, [])
 
   // Handle save
@@ -262,7 +263,7 @@ export function LayerEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 py-4 border-b">
-          <DialogTitle className="text-lg">编辑图层项</DialogTitle>
+          <DialogTitle className="text-lg">{t('customLayer.editorTitle')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 flex overflow-hidden">
@@ -270,7 +271,7 @@ export function LayerEditorDialog({
           <div className="w-80 border-r bg-muted/20 flex flex-col">
             <div className="p-3 border-b bg-muted/30">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                已绑定项目 ({bindings.length})
+                {t('customLayer.boundItems')} ({bindings.length})
               </div>
             </div>
 
@@ -278,12 +279,12 @@ export function LayerEditorDialog({
               {bindings.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">暂无项目</p>
-                  <p className="text-xs mt-1">请在配置面板中添加数据源</p>
+                  <p className="text-sm">{t('customLayer.noItems')}</p>
+                  <p className="text-xs mt-1">{t('customLayer.addDataSourceHint')}</p>
                 </div>
               ) : (
                 bindings.map((binding) => {
-                  const config = TYPE_CONFIG[binding.icon || binding.type]
+                  const config = typeConfig[binding.icon || binding.type]
                   const Icon = config.icon
                   const isSelected = selectedBinding === binding.id
                   const isEditingText = editingTextBinding === binding.id
@@ -294,11 +295,12 @@ export function LayerEditorDialog({
                     <div
                       key={binding.id}
                       className={cn(
-                        'group flex flex-col gap-1 p-2 rounded-lg border transition-all',
+                        'group flex flex-col gap-1 p-2 rounded-lg border transition-all cursor-pointer',
                         isSelected
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50 hover:bg-muted/50'
                       )}
+                      onClick={() => handleSelectBinding(binding.id)}
                     >
                       {/* Main row */}
                       <div className="flex items-center gap-2">
@@ -318,7 +320,7 @@ export function LayerEditorDialog({
                             {binding.position && binding.position !== 'auto' && (
                               <span> • ({binding.position.x.toFixed(0)}%, {binding.position.y.toFixed(0)}%)</span>
                             )}
-                            {binding.position === 'auto' && <span> • 自动定位</span>}
+                            {binding.position === 'auto' && <span> • {t('customLayer.autoPosition')}</span>}
                           </div>
                         </div>
 
@@ -334,7 +336,7 @@ export function LayerEditorDialog({
                                 if (binding.type === 'text') setEditingTextBinding(binding.id)
                                 if (binding.type === 'icon') setEditingIconBinding(binding.id)
                               }}
-                              title="编辑"
+                              title={t('common.edit')}
                             >
                               <Edit3 className="h-3 w-3" />
                             </Button>
@@ -347,7 +349,7 @@ export function LayerEditorDialog({
                               e.stopPropagation()
                               handleRemoveBinding(binding.id)
                             }}
-                            title="删除"
+                            title={t('common.delete')}
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -358,7 +360,7 @@ export function LayerEditorDialog({
                       {isEditingText && (
                         <div className="space-y-2 pl-10 pr-2">
                           <div className="flex items-center gap-2">
-                            <Label className="text-xs">文本内容:</Label>
+                            <Label className="text-xs">{t('customLayer.textContent')}:</Label>
                             <Input
                               value={ds?.text || ''}
                               onChange={(e) => handleTextChange(binding.id, e.target.value)}
@@ -367,7 +369,7 @@ export function LayerEditorDialog({
                             />
                           </div>
                           <div className="flex items-center gap-2">
-                            <Label className="text-xs">名称:</Label>
+                            <Label className="text-xs">{t('customLayer.name')}:</Label>
                             <Input
                               value={binding.name}
                               onChange={(e) => {
@@ -386,7 +388,7 @@ export function LayerEditorDialog({
                               }}
                             >
                               <X className="h-3 w-3 mr-1" />
-                              完成
+                              {t('common.done')}
                             </Button>
                           </div>
                         </div>
@@ -396,12 +398,12 @@ export function LayerEditorDialog({
                       {isEditingIcon && (
                         <div className="space-y-2 pl-10 pr-2">
                           <div className="flex items-center gap-2">
-                            <Label className="text-xs">图标:</Label>
+                            <Label className="text-xs">{t('customLayer.icon')}:</Label>
                             <Input
                               value={ds?.icon || ''}
                               onChange={(e) => handleIconChange(binding.id, e.target.value)}
                               className="h-7 text-sm flex-1"
-                              placeholder="输入图标"
+                              placeholder={t('customLayer.iconPlaceholder')}
                               onClick={(e) => e.stopPropagation()}
                             />
                           </div>
@@ -421,7 +423,49 @@ export function LayerEditorDialog({
                             ))}
                           </div>
                           <div className="flex items-center gap-2">
-                            <Label className="text-xs">名称:</Label>
+                            <Label className="text-xs w-16">{t('common.opacity')}:</Label>
+                            <div className="flex-1 flex items-center gap-2">
+                              <Slider
+                                value={[binding.opacity ?? 100]}
+                                min={0}
+                                max={100}
+                                step={5}
+                                onValueChange={(values) => {
+                                  handleOpacityChange(binding.id, values[0])
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-1"
+                              />
+                              <span className="text-xs text-muted-foreground w-8 text-right">
+                                {binding.opacity ?? 100}%
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs w-16">{t('common.size')}:</Label>
+                            <div className="flex-1 flex items-center gap-1">
+                              {(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((size) => (
+                                <button
+                                  key={size}
+                                  type="button"
+                                  className={cn(
+                                    'flex-1 h-7 rounded border text-xs font-medium transition-colors',
+                                    (binding.markerSize || 'md') === size
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'bg-muted hover:bg-accent border-border'
+                                  )}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleMarkerSizeChange(binding.id, size)
+                                  }}
+                                >
+                                  {size.toUpperCase()}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">{t('customLayer.name')}:</Label>
                             <Input
                               value={binding.name}
                               onChange={(e) => {
@@ -440,31 +484,59 @@ export function LayerEditorDialog({
                               }}
                             >
                               <X className="h-3 w-3 mr-1" />
-                              完成
+                              {t('common.done')}
                             </Button>
                           </div>
                         </div>
                       )}
 
-                      {/* Quick position buttons for selected item */}
+                      {/* Size and opacity controls for selected item */}
                       {isSelected && !isEditingText && !isEditingIcon && (
-                        <div className="pl-10 pr-2">
-                          <Label className="text-xs mb-1 block">快速定位:</Label>
-                          <div className="grid grid-cols-5 gap-1">
-                            {quickPositions.map((pos) => (
-                              <button
-                                key={pos.label}
-                                type="button"
-                                className="text-xs px-1 py-1 bg-muted hover:bg-accent rounded border border-border transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleQuickPosition(binding.id, pos.x, pos.y)
+                        <div className="pl-10 pr-2 space-y-2">
+                          {/* Marker size selector */}
+                          <div>
+                            <Label className="text-xs mb-1 block">{t('common.size')}:</Label>
+                            <div className="flex items-center gap-1">
+                              {(['xs', 'sm', 'md', 'lg', 'xl'] as const).map((size) => (
+                                <button
+                                  key={size}
+                                  type="button"
+                                  className={cn(
+                                    'flex-1 h-7 rounded border text-xs font-medium transition-colors',
+                                    (binding.markerSize || 'md') === size
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'bg-muted hover:bg-accent border-border'
+                                  )}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleMarkerSizeChange(binding.id, size)
+                                  }}
+                                >
+                                  {size.toUpperCase()}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Opacity slider */}
+                          <div>
+                            <Label className="text-xs mb-1 block">{t('common.opacity')}:</Label>
+                            <div className="flex items-center gap-2">
+                              <Slider
+                                value={[binding.opacity ?? 100]}
+                                min={0}
+                                max={100}
+                                step={5}
+                                onValueChange={(values) => {
+                                  handleOpacityChange(binding.id, values[0])
                                 }}
-                                title={pos.label}
-                              >
-                                {pos.label}
-                              </button>
-                            ))}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-1"
+                              />
+                              <span className="text-xs text-muted-foreground w-10 text-right">
+                                {binding.opacity ?? 100}%
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -484,7 +556,7 @@ export function LayerEditorDialog({
                 backgroundColor={backgroundColor}
                 backgroundImage={backgroundImage}
                 showControls={true}
-                showFullscreen={false}
+                showFullscreen={true}
                 interactive={true}
                 editable={false}
                 size="md"
@@ -497,7 +569,7 @@ export function LayerEditorDialog({
             {/* Positioning mode indicator */}
             {selectedBinding && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium shadow-lg">
-                点击图层设置项目位置
+                {t('customLayer.clickToSetPosition')}
               </div>
             )}
           </div>
@@ -505,11 +577,11 @@ export function LayerEditorDialog({
 
         <DialogFooter className="px-6 py-4 border-t bg-muted/20">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSave}>
             <Check className="h-4 w-4 mr-1" />
-            保存更改
+            {t('common.saveChanges')}
           </Button>
         </DialogFooter>
       </DialogContent>

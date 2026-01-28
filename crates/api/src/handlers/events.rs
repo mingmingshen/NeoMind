@@ -216,6 +216,11 @@ fn create_filtered_receiver(event_bus: &EventBus, category: &Option<String>) -> 
             drop(filtered);
             event_bus.subscribe()
         }
+        Some("agent") => {
+            let filtered = event_bus.filter().agent_events();
+            drop(filtered);
+            event_bus.subscribe()
+        }
         Some("llm") => {
             let filtered = event_bus.filter().llm_events();
             drop(filtered);

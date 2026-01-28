@@ -6,6 +6,7 @@
  */
 
 import { useState, useRef, useMemo, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -83,6 +84,8 @@ export function WebDisplay({
   borderless = false,
   className,
 }: WebDisplayProps) {
+  const { t } = useTranslation('dashboardComponents')
+
   // Always call useDataSource - it will handle undefined dataSource internally
   // This ensures proper cleanup when dataSource is removed
   const { data, loading, error } = useDataSource<string>(dataSource, {
@@ -155,8 +158,8 @@ export function WebDisplay({
         size={size}
         className={className}
         icon={<Globe />}
-        message="No URL specified"
-        subMessage="Configure a data source or URL"
+        message={t('webDisplay.noUrlSpecified')}
+        subMessage={t('webDisplay.configureUrl')}
       />
     )
   }
@@ -203,7 +206,7 @@ export function WebDisplay({
         type="url"
         value={currentUrl}
         onChange={(e) => setCurrentUrl(e.target.value)}
-        placeholder="https://example.com"
+        placeholder={t('webDisplay.urlPlaceholder')}
         className="h-8 text-xs"
       />
     </form>

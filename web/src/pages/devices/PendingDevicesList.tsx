@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 import { useToast } from "@/hooks/use-toast"
 import { useEvents } from "@/hooks/useEvents"
 import { api } from "@/lib/api"
@@ -375,23 +376,6 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
     )
   }
 
-  // Format time for display
-  const formatTime = (timestamp: number): string => {
-    // Handle both seconds and milliseconds timestamps
-    // If timestamp is less than 10000000000 (seconds), convert to milliseconds
-    const ms = timestamp < 10000000000 ? timestamp * 1000 : timestamp
-    const date = new Date(ms)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-
-    if (diffMins < 1) return t('devices:pending.time.justNow')
-    if (diffMins < 60) return `${diffMins} ${t('devices:pending.time.minutesAgo')}`
-    const diffHours = Math.floor(diffMins / 60)
-    if (diffHours < 24) return `${diffHours} ${t('devices:pending.time.hoursAgo')}`
-    return date.toLocaleDateString()
-  }
-
   return (
     <>
       <Card className="overflow-hidden">
@@ -527,7 +511,7 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
                     </TableCell>
                     <TableCell>
                       <span className="text-xs text-muted-foreground">
-                        {formatTime(draft.discovered_at)}
+                        {formatTimestamp(draft.discovered_at, false)}
                       </span>
                     </TableCell>
                     <TableCell>

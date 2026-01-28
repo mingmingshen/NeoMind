@@ -83,7 +83,6 @@ function CategorySection({ category, components, onAddComponent }: CategorySecti
       <div className="flex items-center gap-2 px-1">
         <CategoryIcon className="w-4 h-4 text-muted-foreground" />
         <h3 className="text-sm font-medium text-muted-foreground">{categoryInfo.name}</h3>
-        <span className="text-xs text-muted-foreground/60">({components.length})</span>
       </div>
 
       <div className="space-y-1">

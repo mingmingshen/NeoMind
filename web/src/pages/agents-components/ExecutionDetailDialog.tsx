@@ -24,6 +24,7 @@ import {
   ChevronRight,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { formatTimestamp } from "@/lib/utils/format"
 import type { AgentExecutionDetail, DataCollected, ReasoningStep, Decision } from "@/types"
 
 interface ExecutionDetailDialogProps {
@@ -59,13 +60,6 @@ export function ExecutionDetailDialog({
     } finally {
       setLoading(false)
     }
-  }
-
-  const formatDate = (timestamp: string | number) => {
-    if (typeof timestamp === 'string') {
-      return new Date(timestamp).toLocaleString()
-    }
-    return new Date(timestamp * 1000).toLocaleString()
   }
 
   const getStatusIcon = (status: string) => {
@@ -114,7 +108,7 @@ export function ExecutionDetailDialog({
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {formatDate(execution.timestamp)}
+                    {formatTimestamp(execution.timestamp, false)}
                   </span>
                   <span>{execution.duration_ms}ms</span>
                 </div>

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Settings, FileCode, Info, Loader2 } from "lucide-react"
 import { useStore } from "@/store"
+import { formatTimestamp } from "@/lib/utils/format"
 import type { Extension, ExtensionStatsDto } from "@/types"
 
 interface ExtensionConfigDialogProps {
@@ -186,7 +187,7 @@ export function ExtensionConfigDialog({
               {extension.loaded_at && (
                 <div>
                   <Label className="text-muted-foreground text-xs">Loaded At</Label>
-                  <p className="text-sm">{new Date(extension.loaded_at * 1000).toLocaleString()}</p>
+                  <p className="text-sm">{formatTimestamp(extension.loaded_at)}</p>
                 </div>
               )}
             </TabsContent>

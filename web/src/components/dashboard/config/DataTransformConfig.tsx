@@ -6,6 +6,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Clock, BarChart3, Sliders } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import {
@@ -38,69 +39,89 @@ export interface DataTransformConfigProps {
 // Options Data
 // ============================================================================
 
-// Time window options
-const TIME_WINDOW_OPTIONS: Array<{ value: TimeWindowType; label: string }> = [
-  { value: 'now', label: '当前值' },
-  { value: 'last_5min', label: '最近5分钟' },
-  { value: 'last_15min', label: '最近15分钟' },
-  { value: 'last_30min', label: '最近30分钟' },
-  { value: 'last_1hour', label: '最近1小时' },
-  { value: 'last_6hours', label: '最近6小时' },
-  { value: 'last_24hours', label: '最近24小时' },
-  { value: 'today', label: '今天' },
-  { value: 'yesterday', label: '昨天' },
-  { value: 'this_week', label: '本周' },
-]
+// Time window options factory (uses translations)
+function getTimeWindowOptions(t: (key: string) => string): Array<{ value: TimeWindowType; label: string }> {
+  return [
+    { value: 'now', label: t('dataTransform.timeWindow.now') },
+    { value: 'last_5min', label: t('dataTransform.timeWindow.last5min') },
+    { value: 'last_15min', label: t('dataTransform.timeWindow.last15min') },
+    { value: 'last_30min', label: t('dataTransform.timeWindow.last30min') },
+    { value: 'last_1hour', label: t('dataTransform.timeWindow.last1hour') },
+    { value: 'last_6hours', label: t('dataTransform.timeWindow.last6hours') },
+    { value: 'last_24hours', label: t('dataTransform.timeWindow.last24hours') },
+    { value: 'today', label: t('dataTransform.timeWindow.today') },
+    { value: 'yesterday', label: t('dataTransform.timeWindow.yesterday') },
+    { value: 'this_week', label: t('dataTransform.timeWindow.thisWeek') },
+  ]
+}
 
-// Aggregation method options
-const AGGREGATE_OPTIONS: Array<{ value: TelemetryAggregate; label: string }> = [
-  { value: 'latest', label: '最新值' },
-  { value: 'first', label: '首个值' },
-  { value: 'avg', label: '平均值' },
-  { value: 'min', label: '最小值' },
-  { value: 'max', label: '最大值' },
-  { value: 'sum', label: '总和' },
-  { value: 'count', label: '计数' },
-  { value: 'delta', label: '变化量' },
-  { value: 'rate', label: '变化率' },
-  { value: 'raw', label: '原始数据' },
-]
+// Aggregation method options factory (uses translations)
+function getAggregateOptions(t: (key: string) => string): Array<{ value: TelemetryAggregate; label: string }> {
+  return [
+    { value: 'latest', label: t('dataTransform.aggregate.latest') },
+    { value: 'first', label: t('dataTransform.aggregate.first') },
+    { value: 'avg', label: t('dataTransform.aggregate.avg') },
+    { value: 'min', label: t('dataTransform.aggregate.min') },
+    { value: 'max', label: t('dataTransform.aggregate.max') },
+    { value: 'sum', label: t('dataTransform.aggregate.sum') },
+    { value: 'count', label: t('dataTransform.aggregate.count') },
+    { value: 'delta', label: t('dataTransform.aggregate.delta') },
+    { value: 'rate', label: t('dataTransform.aggregate.rate') },
+    { value: 'raw', label: t('dataTransform.aggregate.raw') },
+  ]
+}
 
-// Chart view mode options
-const CHART_VIEW_OPTIONS: Array<{ value: ChartViewMode; label: string }> = [
-  { value: 'timeseries', label: '时序图' },
-  { value: 'snapshot', label: '快照对比' },
-  { value: 'distribution', label: '分布图' },
-  { value: 'histogram', label: '直方图' },
-]
+// Chart view mode options factory (uses translations)
+function getChartViewOptions(t: (key: string) => string): Array<{ value: ChartViewMode; label: string }> {
+  return [
+    { value: 'timeseries', label: t('dataTransform.chartViewTimeseries') },
+    { value: 'snapshot', label: t('dataTransform.chartViewSnapshot') },
+    { value: 'distribution', label: t('dataTransform.chartViewDistribution') },
+    { value: 'histogram', label: t('dataTransform.chartViewHistogram') },
+  ]
+}
 
-// Data point limit options
-const DATA_POINT_OPTIONS: Array<{ value: number; label: string }> = [
-  { value: 12, label: '12点' },
-  { value: 24, label: '24点' },
-  { value: 50, label: '50点' },
-  { value: 100, label: '100点' },
-  { value: 200, label: '200点' },
-]
+// Data point limit options factory (uses translations)
+function getDataPointOptions(t: (key: string) => string): Array<{ value: number; label: string }> {
+  return [
+    { value: 12, label: t('dataTransform.dataPoints.12') },
+    { value: 24, label: t('dataTransform.dataPoints.24') },
+    { value: 50, label: t('dataTransform.dataPoints.50') },
+    { value: 100, label: t('dataTransform.dataPoints.100') },
+    { value: 200, label: t('dataTransform.dataPoints.200') },
+  ]
+}
 
-// Fill missing strategy options
-const FILL_MISSING_OPTIONS: Array<{ value: FillMissingStrategy; label: string }> = [
-  { value: 'none', label: '无' },
-  { value: 'zero', label: '填充零' },
-  { value: 'previous', label: '前向填充' },
-  { value: 'linear', label: '线性插值' },
-]
+// Fill missing strategy options factory (uses translations)
+function getFillMissingOptions(t: (key: string) => string): Array<{ value: FillMissingStrategy; label: string }> {
+  return [
+    { value: 'none', label: t('dataTransform.fillMissing.none') },
+    { value: 'zero', label: t('dataTransform.fillMissing.zero') },
+    { value: 'previous', label: t('dataTransform.fillMissing.previous') },
+    { value: 'linear', label: t('dataTransform.fillMissing.linear') },
+  ]
+}
 
-// Sample interval options (seconds)
-const SAMPLE_INTERVAL_OPTIONS: Array<{ value: number; label: string }> = [
-  { value: 30, label: '30秒' },
-  { value: 60, label: '1分钟' },
-  { value: 300, label: '5分钟' },
-  { value: 600, label: '10分钟' },
-  { value: 900, label: '15分钟' },
-  { value: 1800, label: '30分钟' },
-  { value: 3600, label: '1小时' },
-]
+// Sample interval options factory (uses translations)
+function getSampleIntervalOptions(t: (key: string) => string): Array<{ value: number; label: string }> {
+  return [
+    { value: 30, label: t('dataTransform.sampleInterval.30') },
+    { value: 60, label: t('dataTransform.sampleInterval.60') },
+    { value: 300, label: t('dataTransform.sampleInterval.300') },
+    { value: 600, label: t('dataTransform.sampleInterval.600') },
+    { value: 900, label: t('dataTransform.sampleInterval.900') },
+    { value: 1800, label: t('dataTransform.sampleInterval.1800') },
+    { value: 3600, label: t('dataTransform.sampleInterval.3600') },
+  ]
+}
+
+// Simplified aggregate options factory (uses translations)
+function getSimplifiedAggregateOptions(t: (key: string) => string): Array<{ value: TelemetryAggregate; label: string }> {
+  return [
+    { value: 'latest', label: t('dataTransform.aggregate.latest') },
+    { value: 'avg', label: t('dataTransform.aggregate.avg') },
+  ]
+}
 
 // ============================================================================
 // Defaults by Chart Type
@@ -117,12 +138,6 @@ const DEFAULTS_BY_CHART: Record<string, { aggregate: TelemetryAggregate; limit: 
   progress: { aggregate: 'latest', limit: 1 },
 }
 
-// Simplified aggregate options for single-value components (only latest makes sense)
-const SIMPLIFIED_AGGREGATE_OPTIONS: Array<{ value: TelemetryAggregate; label: string }> = [
-  { value: 'latest', label: '最新值' },
-  { value: 'avg', label: '平均值' },
-]
-
 // ============================================================================
 // Component
 // ============================================================================
@@ -134,6 +149,8 @@ export function DataTransformConfig({
   readonly = false,
   simplified = false,
 }: DataTransformConfigProps) {
+  const { t } = useTranslation('dashboardComponents')
+
   // Determine if this is a single-value component that needs simplified options
   const isSimplified = simplified || ['card', 'led', 'progress'].includes(chartType)
 
@@ -163,7 +180,7 @@ export function DataTransformConfig({
   }, [dataSource])
 
   // Choose aggregate options based on mode
-  const aggregateOptions = isSimplified ? SIMPLIFIED_AGGREGATE_OPTIONS : AGGREGATE_OPTIONS
+  const aggregateOptions = isSimplified ? getSimplifiedAggregateOptions(t) : getAggregateOptions(t)
 
   // Update handlers
   const handleAggregateChange = (value: string) => {
@@ -205,13 +222,13 @@ export function DataTransformConfig({
     <div className="space-y-3">
       {/* Time Window - simplified mode only shows now and last_1hour */}
       <Field>
-        <Label>时间范围</Label>
+        <Label>{t('dataTransform.timeRange')}</Label>
         <Select value={currentTimeWindow} onValueChange={handleTimeWindowChange} disabled={readonly}>
           <SelectTrigger>
-            <SelectValue placeholder="选择时间范围" />
+            <SelectValue placeholder={t('dataTransform.selectTimeRange')} />
           </SelectTrigger>
           <SelectContent>
-            {TIME_WINDOW_OPTIONS.filter(o => {
+            {getTimeWindowOptions(t).filter(o => {
               if (isSimplified) {
                 // Single-value components only need current/recent values
                 return o.value === 'now' || o.value === 'last_5min' || o.value === 'last_15min' || o.value === 'last_30min' || o.value === 'last_1hour'
@@ -228,10 +245,10 @@ export function DataTransformConfig({
 
       {/* Aggregation Method */}
       <Field>
-        <Label>聚合方式</Label>
+        <Label>{t('dataTransform.aggregation')}</Label>
         <Select value={currentAggregate} onValueChange={handleAggregateChange} disabled={readonly}>
           <SelectTrigger>
-            <SelectValue placeholder="选择聚合方式" />
+            <SelectValue placeholder={t('dataTransform.selectAggregation')} />
           </SelectTrigger>
           <SelectContent>
             {aggregateOptions.map((option) => (
@@ -246,13 +263,13 @@ export function DataTransformConfig({
       {/* Chart View Mode - only for bar/line/area charts (not simplified) */}
       {!isSimplified && (chartType === 'bar' || chartType === 'line' || chartType === 'area') && (
         <Field>
-          <Label>图表视图</Label>
+          <Label>{t('dataTransform.chartView')}</Label>
           <Select value={currentChartViewMode} onValueChange={handleChartViewModeChange} disabled={readonly}>
             <SelectTrigger>
-              <SelectValue placeholder="选择图表视图" />
+              <SelectValue placeholder={t('dataTransform.selectChartView')} />
             </SelectTrigger>
             <SelectContent>
-              {CHART_VIEW_OPTIONS.filter(o => {
+              {getChartViewOptions(t).filter(o => {
                 // Filter based on chart type
                 if (chartType === 'line' || chartType === 'area') {
                   return o.value === 'timeseries' || o.value === 'snapshot'
@@ -272,12 +289,12 @@ export function DataTransformConfig({
       {!isSimplified && (currentAggregate === 'raw' || chartType === 'bar' || chartType === 'line' || chartType === 'area' || chartType === 'sparkline') && (
         <>
           <div className="pt-2 border-t">
-            <div className="text-xs font-medium text-muted-foreground mb-3">高级选项</div>
+            <div className="text-xs font-medium text-muted-foreground mb-3">{t('dataTransform.advancedOptions')}</div>
           </div>
 
           {/* Data Points Limit */}
           <Field>
-            <Label>数据点数量</Label>
+            <Label>{t('dataTransform.dataPointLimit')}</Label>
             <Select
               value={String(currentLimit)}
               onValueChange={handleLimitChange}
@@ -287,7 +304,7 @@ export function DataTransformConfig({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DATA_POINT_OPTIONS.map((option) => (
+                {getDataPointOptions(t).map((option) => (
                   <SelectItem key={option.value} value={String(option.value)}>
                     {option.label}
                   </SelectItem>
@@ -299,7 +316,7 @@ export function DataTransformConfig({
           {/* Sample Interval - only for raw aggregate */}
           {currentAggregate === 'raw' && (
             <Field>
-              <Label>采样间隔（秒）</Label>
+              <Label>{t('dataTransform.sampleIntervalLabel')}</Label>
               <Select
                 value={String(currentSampleInterval)}
                 onValueChange={handleSampleIntervalChange}
@@ -309,7 +326,7 @@ export function DataTransformConfig({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {SAMPLE_INTERVAL_OPTIONS.map((option) => (
+                  {getSampleIntervalOptions(t).map((option) => (
                     <SelectItem key={option.value} value={String(option.value)}>
                       {option.label}
                     </SelectItem>
@@ -322,7 +339,7 @@ export function DataTransformConfig({
           {/* Fill Missing Strategy - only for raw aggregate */}
           {currentAggregate === 'raw' && (
             <Field>
-              <Label>缺失值处理</Label>
+              <Label>{t('dataTransform.fillMissingLabel')}</Label>
               <Select
                 value={currentFillMissing}
                 onValueChange={handleFillMissingChange}
@@ -332,7 +349,7 @@ export function DataTransformConfig({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {FILL_MISSING_OPTIONS.map((option) => (
+                  {getFillMissingOptions(t).map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>

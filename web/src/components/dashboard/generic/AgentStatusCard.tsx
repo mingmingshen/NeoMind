@@ -22,6 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { cn, getIconForEntity } from '@/lib/utils'
+import { formatTimestamp } from '@/lib/utils/format'
 import { indicatorColors, dashboardCardBase } from '@/design-system'
 import type { DataSourceOrList } from '@/types/dashboard'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -50,19 +51,23 @@ export interface AgentStatusCardProps {
   className?: string
 }
 
-// Role configuration
-const ROLE_CONFIG: Record<string, { icon: typeof Eye; label: string; color: string }> = {
-  Monitor: { icon: Eye, label: 'agents:roles.monitor', color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  Executor: { icon: Zap, label: 'agents:roles.executor', color: 'text-orange-600 bg-orange-50 border-orange-200' },
-  Analyst: { icon: BarChart3, label: 'agents:roles.analyst', color: 'text-purple-600 bg-purple-50 border-purple-200' },
+// Role configuration factory (uses translations)
+function getRoleConfig(t: (key: string) => string) {
+  return {
+    Monitor: { icon: Eye, label: 'agentStatusCard.roles.monitor', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+    Executor: { icon: Zap, label: 'agentStatusCard.roles.executor', color: 'text-orange-600 bg-orange-50 border-orange-200' },
+    Analyst: { icon: BarChart3, label: 'agentStatusCard.roles.analyst', color: 'text-purple-600 bg-purple-50 border-purple-200' },
+  }
 }
 
-// Status configuration
-const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle2; label: string; color: string }> = {
-  Active: { icon: CheckCircle2, label: 'agents:status.active', color: 'text-green-600 bg-green-50 border-green-200' },
-  Paused: { icon: XCircle, label: 'agents:status.paused', color: 'text-gray-600 bg-gray-50 border-gray-200' },
-  Error: { icon: XCircle, label: 'agents:status.error', color: 'text-red-600 bg-red-50 border-red-200' },
-  Executing: { icon: Loader2, label: 'agents:status.executing', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+// Status configuration factory (uses translations)
+function getStatusConfig(t: (key: string) => string) {
+  return {
+    Active: { icon: CheckCircle2, label: 'agentStatusCard.status.active', color: 'text-green-600 bg-green-50 border-green-200' },
+    Paused: { icon: XCircle, label: 'agentStatusCard.status.paused', color: 'text-gray-600 bg-gray-50 border-gray-200' },
+    Error: { icon: XCircle, label: 'agentStatusCard.status.error', color: 'text-red-600 bg-red-50 border-red-200' },
+    Executing: { icon: Loader2, label: 'agentStatusCard.status.executing', color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  }
 }
 
 // ============================================================================
@@ -130,7 +135,9 @@ export function AgentStatusCard({
   onViewDetails,
   className,
 }: AgentStatusCardProps) {
-  const { t } = useTranslation(['common', 'agents'])
+  const { t } = useTranslation('dashboardComponents')
+  const ROLE_CONFIG = getRoleConfig(t)
+  const STATUS_CONFIG = getStatusConfig(t)
 
   // Fetch agent data from data source or use props
   const { data, loading, error } = useDataSource<any>(dataSource, {
@@ -158,29 +165,10 @@ export function AgentStatusCard({
   const displayStatus = currentExecution ? 'Executing' : agent?.status || 'Paused'
   const isExecuting = displayStatus === 'Executing'
 
-  const roleConfig = ROLE_CONFIG[agent?.role] || ROLE_CONFIG.Monitor
+  const roleConfig = ROLE_CONFIG[agent?.role as keyof typeof ROLE_CONFIG] || ROLE_CONFIG.Monitor
   const RoleIcon = roleConfig.icon
-  const statusConfig = STATUS_CONFIG[displayStatus] || STATUS_CONFIG.Paused
+  const statusConfig = STATUS_CONFIG[displayStatus as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.Paused
   const StatusIcon = statusConfig.icon
-
-  // Format date/time
-  const formatDateTime = (dateStr: string | null): string => {
-    if (!dateStr) return '-'
-    try {
-      const date = new Date(dateStr)
-      const now = new Date()
-      const diffMs = now.getTime() - date.getTime()
-      const diffMins = Math.floor(diffMs / 60000)
-
-      if (diffMins < 1) return t('agents:time.justNow', { defaultValue: '刚刚' })
-      if (diffMins < 60) return `${diffMins} ${t('agents:time.minutesAgo', { defaultValue: '分钟前' })}`
-      const diffHours = Math.floor(diffMins / 60)
-      if (diffHours < 24) return `${diffHours} ${t('agents:time.hoursAgo', { defaultValue: '小时前' })}`
-      return date.toLocaleDateString()
-    } catch {
-      return '-'
-    }
-  }
 
   // Error state
   if (error && dataSource) {
@@ -247,7 +235,7 @@ export function AgentStatusCard({
           {/* Title and badges */}
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-sm">{agent?.name || title || t('agents:agent', { defaultValue: '智能体' })}</h3>
+              <h3 className="font-semibold text-sm">{agent?.name || title || t('agentStatusCard.agent')}</h3>
             </div>
             <div className="flex items-center gap-1.5 mt-1">
               <Badge variant="outline" className={cn("text-[10px] gap-1 px-1.5 h-5", roleConfig.color)}>
@@ -266,7 +254,7 @@ export function AgentStatusCard({
         {isConnected && (
           <div className="flex items-center gap-1 text-xs text-green-600">
             <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-            <span>{t('agents:live', { defaultValue: '实时' })}</span>
+            <span>{t('agentStatusCard.live')}</span>
           </div>
         )}
       </div>
@@ -276,24 +264,24 @@ export function AgentStatusCard({
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-1.5">
             <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground">{t('agents:stats.executions', { defaultValue: '执行' })}:</span>
+            <span className="text-muted-foreground">{t('agentStatusCard.executions')}:</span>
             <span className="font-medium tabular-nums">{agent?.execution_count || 0}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-            <span className="text-muted-foreground">{t('agents:stats.success', { defaultValue: '成功' })}:</span>
+            <span className="text-muted-foreground">{t('agentStatusCard.success')}:</span>
             <span className="font-medium tabular-nums text-green-600">{agent?.success_count || 0}</span>
           </div>
           {agent?.error_count > 0 && (
             <div className="flex items-center gap-1.5">
               <XCircle className="h-3.5 w-3.5 text-red-500" />
-              <span className="text-muted-foreground">{t('agents:stats.errors', { defaultValue: '失败' })}:</span>
+              <span className="text-muted-foreground">{t('agentStatusCard.failure')}:</span>
               <span className="font-medium tabular-nums text-red-500">{agent?.error_count}</span>
             </div>
           )}
         </div>
         <div className="text-xs text-muted-foreground mt-1.5">
-          {t('agents:lastExecution', { defaultValue: '上次执行' })}: {formatDateTime(agent?.last_execution_at)}
+          {t('agentStatusCard.lastExecution')}: {agent?.last_execution_at ? formatTimestamp(agent.last_execution_at, false) : '-'}
         </div>
       </div>
 
@@ -316,13 +304,13 @@ export function AgentStatusCard({
         <div className="mx-4 mb-3 p-2 bg-blue-50 dark:bg-blue-950/30 rounded-md border border-blue-200 dark:border-blue-800">
           <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-400">
             <Loader2 className="h-3 w-3 animate-spin" />
-            <span className="font-medium">{t('agents:executing', { defaultValue: '执行中' })}</span>
+            <span className="font-medium">{t('agentStatusCard.executing')}</span>
             <span className="text-muted-foreground">·</span>
             <span className="text-muted-foreground">#{currentExecution.id?.slice(0, 8)}</span>
           </div>
           {currentExecution.steps && currentExecution.steps.length > 0 && (
             <div className="text-xs text-muted-foreground mt-1">
-              {t('agents:steps', { defaultValue: '步骤' })}: {currentExecution.steps.length}
+              {t('agentStatusCard.steps')}: {currentExecution.steps.length}
             </div>
           )}
         </div>
@@ -344,7 +332,7 @@ export function AgentStatusCard({
               onClick={onViewDetails}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              {t('agents:viewDetails', { defaultValue: '查看详情' })}
+              {t('agentStatusCard.viewDetails')}
             </button>
           )}
           {onExecute && (
@@ -359,7 +347,7 @@ export function AgentStatusCard({
               )}
             >
               <Play className="h-3 w-3" />
-              {t('agents:execute', { defaultValue: '执行' })}
+              {t('agentStatusCard.execute')}
             </button>
           )}
         </div>

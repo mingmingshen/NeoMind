@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
 import type { ChatSession } from "@/types"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 import {
   X,
   Plus,
@@ -37,23 +38,6 @@ interface SessionSidebarProps {
   isDesktop?: boolean
 }
 
-// Format time ago with i18n
-function useFormatTimeAgo() {
-  const { t } = useTranslation('common')
-  
-  return (timestamp: number | undefined): string => {
-    if (!timestamp) return ""
-    const now = Date.now()
-    const diff = now - timestamp
-
-    if (diff < 60 * 1000) return t('timeAgo.justNow')
-    if (diff < 60 * 60 * 1000) return t('timeAgo.minutesAgo', { count: Math.floor(diff / (60 * 1000)) })
-    if (diff < 24 * 60 * 60 * 1000) return t('timeAgo.hoursAgo', { count: Math.floor(diff / (60 * 60 * 1000)) })
-    if (diff < 7 * 24 * 60 * 60 * 1000) return t('timeAgo.daysAgo', { count: Math.floor(diff / (24 * 60 * 60 * 1000)) })
-    return new Date(timestamp).toLocaleDateString()
-  }
-}
-
 export function SessionSidebar({
   open,
   onClose,
@@ -62,7 +46,6 @@ export function SessionSidebar({
   isDesktop = false
 }: SessionSidebarProps) {
   const { t } = useTranslation('common')
-  const formatTimeAgo = useFormatTimeAgo()
   const navigate = useNavigate()
 
   const {
@@ -298,7 +281,7 @@ export function SessionSidebar({
                           </h4>
                           <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
                             <Clock className="h-2.5 w-2.5" />
-                            <span>{formatTimeAgo(session.updatedAt || session.createdAt)}</span>
+                            <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
                             {session.messageCount ? (
                               <>
                                 <span>·</span>

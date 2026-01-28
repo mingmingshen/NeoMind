@@ -433,6 +433,12 @@ function getMetricPath(
     const prefix = parts[0]
     const device = devices.find(d => d.id === deviceId)
 
+    // Common prefixes that should be stripped (MQTT/device standard prefixes)
+    const commonPrefixes = ['values', 'value', 'data', 'telemetry', 'metrics', 'state']
+    if (commonPrefixes.includes(prefix)) {
+      return parts.slice(1).join('.')
+    }
+
     // Check if the metric prefix matches the device_type
     // If so, strip the prefix to avoid: device_type.device_type.metric_name
     if (device?.device_type && prefix === device.device_type) {
@@ -1493,8 +1499,9 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, t, tBuilde
         <div className="flex flex-wrap items-center gap-2">
           <Select value={cond.device_id} onValueChange={(v) => {
             const newMetrics = getDeviceMetrics(v, devices, deviceTypes)
-            updateField('device_id', v)
-            updateField('metric', newMetrics[0]?.name || 'value')
+            // Update both device_id and metric in a single onChange call
+            // to avoid race conditions where one update overwrites the other
+            onChange({ ...condition, device_id: v, metric: newMetrics[0]?.name || 'value' })
           }}>
             <SelectTrigger className="w-36 h-9 text-sm"><SelectValue placeholder={tBuilder('selectDevice')} /></SelectTrigger>
             <SelectContent>
@@ -1540,8 +1547,9 @@ function ConditionEditor({ condition, onChange, devices, deviceTypes, t, tBuilde
           <Badge variant="outline" className="text-xs bg-blue-500/20 text-blue-500 border-blue-500/30">BETWEEN</Badge>
           <Select value={cond.device_id} onValueChange={(v) => {
             const newMetrics = getDeviceMetrics(v, devices, deviceTypes)
-            updateField('device_id', v)
-            updateField('metric', newMetrics[0]?.name || 'value')
+            // Update both device_id and metric in a single onChange call
+            // to avoid race conditions where one update overwrites the other
+            onChange({ ...condition, device_id: v, metric: newMetrics[0]?.name || 'value' })
           }}>
             <SelectTrigger className="w-36 h-9 text-sm"><SelectValue placeholder={tBuilder('selectDevice')} /></SelectTrigger>
             <SelectContent>

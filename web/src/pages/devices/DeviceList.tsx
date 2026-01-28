@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Eye, MoreVertical, Trash2, Cpu, Database, Waves } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 import type { Device } from "@/types"
 import { TransformsBadge } from "@/components/automation"
 import { useDeviceEvents } from "@/hooks/useEvents"
@@ -180,7 +181,7 @@ export function DeviceList({
                     </TableCell>
                     <TableCell align="center">
                       <span className="text-xs text-muted-foreground">
-                        {new Date(device.last_seen).toLocaleString()}
+                        {formatTimestamp(device.last_seen, false)}
                       </span>
                     </TableCell>
                     <TableCell>

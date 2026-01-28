@@ -23,9 +23,10 @@ import {
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyStateInline, Pagination } from "@/components/shared"
-import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Brain, Activity, Zap, CheckCircle2, XCircle, Loader2, History } from "lucide-react"
+import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Brain, Activity, Zap, CheckCircle2, XCircle, Loader2, History, Bell } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 import type { AiAgent, AgentRole } from "@/types"
 
 interface AgentsListProps {
@@ -44,6 +45,9 @@ const ROLE_CONFIG: Record<AgentRole, { label: string; icon: typeof Brain; color:
   Monitor: { label: 'agents:roles.monitor', icon: Activity, color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
   Executor: { label: 'agents:roles.executor', icon: Zap, color: 'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800' },
   Analyst: { label: 'agents:roles.analyst', icon: Brain, color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
+  Scheduler: { label: 'agents:roles.scheduler', icon: Clock, color: 'text-cyan-700 bg-cyan-50 border-cyan-200 dark:text-cyan-400 dark:bg-cyan-950/30 dark:border-cyan-800' },
+  Notifier: { label: 'agents:roles.notifier', icon: Bell, color: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-950/30 dark:border-amber-800' },
+  Controller: { label: 'agents:roles.controller', icon: Zap, color: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:text-emerald-400 dark:bg-emerald-950/30 dark:border-emerald-800' },
 }
 
 // Status configuration
@@ -74,24 +78,6 @@ export function AgentsList({
   const startIndex = (page - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedAgents = agents.slice(startIndex, endIndex)
-
-  function formatDateTime(dateStr: string | null): string {
-    if (!dateStr) return '-'
-    try {
-      const date = new Date(dateStr)
-      const now = new Date()
-      const diffMs = now.getTime() - date.getTime()
-      const diffMins = Math.floor(diffMs / 60000)
-
-      if (diffMins < 1) return t('agents:time.justNow')
-      if (diffMins < 60) return `${diffMins} ${t('agents:time.minutesAgo')}`
-      const diffHours = Math.floor(diffMins / 60)
-      if (diffHours < 24) return `${diffHours} ${t('agents:time.hoursAgo')}`
-      return date.toLocaleDateString()
-    } catch {
-      return '-'
-    }
-  }
 
   return (
     <>
@@ -199,7 +185,7 @@ export function AgentsList({
                     </TableCell>
 
                     <TableCell>
-                      <span className="text-xs text-muted-foreground">{formatDateTime(agent.last_execution_at)}</span>
+                      <span className="text-xs text-muted-foreground">{formatTimestamp(agent.last_execution_at || undefined)}</span>
                     </TableCell>
 
                     <TableCell className="text-center">

@@ -1,52 +1,68 @@
 /**
  * Format timestamp to human readable string
  * @param timestamp - Unix timestamp in seconds, ISO 8601 string, or undefined
- * @returns Formatted date string
+ * @param includeSeconds - Whether to include seconds (default: true)
+ * @returns Formatted date string in format "YYYY-MM-DD HH:mm:ss"
  */
-export function formatTimestamp(timestamp: string | number | undefined): string {
+export function formatTimestamp(timestamp: string | number | undefined, includeSeconds: boolean = true): string {
   if (!timestamp) return '-'
+
+  let date: Date
 
   // Handle ISO 8601 string from backend
   if (typeof timestamp === 'string') {
-    const date = new Date(timestamp)
-    const now = Date.now()
-    const diff = now - date.getTime()
-
-    // Less than 1 minute
-    if (diff < 60 * 1000) {
-      return '刚刚'
-    }
-
-    // Less than 1 hour
-    if (diff < 60 * 60 * 1000) {
-      const mins = Math.floor(diff / (60 * 1000))
-      return `${mins}分钟前`
-    }
-
-    // Less than 1 day
-    if (diff < 24 * 60 * 60 * 1000) {
-      const hours = Math.floor(diff / (60 * 60 * 1000))
-      return `${hours}小时前`
-    }
-
-    // Less than 7 days
-    if (diff < 7 * 24 * 60 * 60 * 1000) {
-      const days = Math.floor(diff / (24 * 60 * 60 * 1000))
-      return `${days}天前`
-    }
-
-    // Format as date
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    })
+    date = new Date(timestamp)
+  } else if (typeof timestamp === 'number') {
+    // Handle Unix timestamp (in seconds or milliseconds)
+    // If timestamp is less than 10000000000, it's in seconds
+    date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+  } else {
+    return '-'
   }
 
-  // Handle Unix timestamp (number, in seconds)
+  // Check if date is valid
+  if (isNaN(date.getTime())) return '-'
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+
+  if (includeSeconds) {
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  }
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+/**
+ * Format timestamp to relative time (for places where relative time is preferred)
+ * @param timestamp - Unix timestamp in seconds, ISO 8601 string, or undefined
+ * @returns Relative time string like "刚刚", "5分钟前", etc.
+ */
+export function formatRelativeTime(timestamp: string | number | undefined): string {
+  if (!timestamp) return '-'
+
+  let date: Date
+
+  if (typeof timestamp === 'string') {
+    date = new Date(timestamp)
+  } else if (typeof timestamp === 'number') {
+    date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+  } else {
+    return '-'
+  }
+
+  if (isNaN(date.getTime())) return '-'
+
   const now = Date.now()
-  const ts = timestamp * 1000 // Convert to milliseconds
-  const diff = now - ts
+  const diff = now - date.getTime()
+
+  // Future time
+  if (diff < 0) {
+    return formatTimestamp(typeof timestamp === 'string' ? timestamp : timestamp)
+  }
 
   // Less than 1 minute
   if (diff < 60 * 1000) {
@@ -71,13 +87,66 @@ export function formatTimestamp(timestamp: string | number | undefined): string 
     return `${days}天前`
   }
 
-  // Format as date
-  const date = new Date(ts)
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
+  // Older than 7 days - show absolute date
+  return formatTimestamp(timestamp, false)
+}
+
+/**
+ * Format date only (without time)
+ * @param timestamp - Unix timestamp in seconds, ISO 8601 string, or undefined
+ * @returns Formatted date string in format "YYYY-MM-DD"
+ */
+export function formatDate(timestamp: string | number | undefined): string {
+  if (!timestamp) return '-'
+
+  let date: Date
+
+  if (typeof timestamp === 'string') {
+    date = new Date(timestamp)
+  } else if (typeof timestamp === 'number') {
+    date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+  } else {
+    return '-'
+  }
+
+  if (isNaN(date.getTime())) return '-'
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * Format time only (without date)
+ * @param timestamp - Unix timestamp in seconds, ISO 8601 string, or undefined
+ * @param includeSeconds - Whether to include seconds (default: true)
+ * @returns Formatted time string in format "HH:mm:ss" or "HH:mm"
+ */
+export function formatTime(timestamp: string | number | undefined, includeSeconds: boolean = true): string {
+  if (!timestamp) return '-'
+
+  let date: Date
+
+  if (typeof timestamp === 'string') {
+    date = new Date(timestamp)
+  } else if (typeof timestamp === 'number') {
+    date = new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp)
+  } else {
+    return '-'
+  }
+
+  if (isNaN(date.getTime())) return '-'
+
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+
+  if (includeSeconds) {
+    return `${hours}:${minutes}:${seconds}`
+  }
+  return `${hours}:${minutes}`
 }
 
 /**

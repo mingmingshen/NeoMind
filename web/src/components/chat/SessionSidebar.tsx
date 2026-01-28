@@ -16,21 +16,13 @@ import {
 } from "@/components/ui/dialog"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 
 interface SessionSidebarProps {
   onNewChat?: () => void
   onClose?: () => void
   mode?: 'full' | 'icon'
   onNewChatFromIcon?: () => void
-}
-
-function formatTimeAgo(timestamp: number, t: (key: string, params?: any) => string): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000)
-  if (seconds < 60) return t('timeAgo.justNow')
-  if (seconds < 3600) return t('timeAgo.minutesAgo', { count: Math.floor(seconds / 60) })
-  if (seconds < 86400) return t('timeAgo.hoursAgo', { count: Math.floor(seconds / 3600) })
-  if (seconds < 604800) return t('timeAgo.daysAgo', { count: Math.floor(seconds / 86400) })
-  return new Date(timestamp).toLocaleDateString()
 }
 
 export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFromIcon }: SessionSidebarProps) {
@@ -267,7 +259,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
                           ? "text-primary-foreground/70"
                           : "text-muted-foreground"
                       )}>
-                        {formatTimeAgo(session.createdAt, t)}
+                        {formatTimestamp(session.createdAt / 1000, false)}
                       </div>
                     </div>
 

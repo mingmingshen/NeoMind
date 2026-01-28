@@ -44,6 +44,12 @@ pub struct AiAgentManager {
 pub struct CreateAgentRequest {
     /// Agent name
     pub name: String,
+    /// Agent role
+    #[serde(default)]
+    pub role: String,
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// User's natural language description
     pub user_prompt: String,
     /// Selected device IDs
@@ -128,10 +134,19 @@ impl AiAgentManager {
         // Build resources first (before moving anything from request)
         let resources = Self::build_resources(&request);
 
+        // Parse role from string
+        let agent_role = match request.role.as_str() {
+            "Monitor" => edge_ai_storage::AgentRole::Monitor,
+            "Executor" => edge_ai_storage::AgentRole::Executor,
+            "Analyst" => edge_ai_storage::AgentRole::Analyst,
+            _ => edge_ai_storage::AgentRole::Monitor, // Default fallback
+        };
+
         // Build agent from request
         let agent = AiAgent {
             id: uuid::Uuid::new_v4().to_string(),
             name: request.name.clone(),
+            description: request.description.clone(),
             user_prompt: request.user_prompt,
             llm_backend_id: request.llm_backend_id,
             parsed_intent: Some(intent.clone()),
@@ -145,7 +160,7 @@ impl AiAgentManager {
             memory: Default::default(),
             error_message: None,
             // New conversation fields
-            role: Default::default(),
+            role: agent_role,
             conversation_history: Default::default(),
             conversation_summary: Default::default(),
             context_window_size: Default::default(),

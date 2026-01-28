@@ -20,6 +20,8 @@ import {
   Settings as SettingsIcon,
   ChevronRight,
   MoreVertical,
+  Maximize,
+  Minimize,
   // Indicator icons
   Hash,
   Circle,
@@ -227,35 +229,10 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
 }
 
 // Helper function to determine if title should be in display section
-// All components show title in the style config, not in the right panel
-function isTitleInDisplayComponent(componentType?: string): boolean {
-  if (!componentType) return false
-  // Components that have their own title input in their config sections
-  const titleInConfigTypes: string[] = [
-    // Charts - title is in style section
-    'line-chart',
-    'area-chart',
-    'bar-chart',
-    'pie-chart',
-    // Indicators - title is in style section
-    'value-card',
-    'counter',
-    'metric-card',
-    'sparkline',
-    'progress-bar',
-    'led-indicator',
-    // Controls - title is in style section
-    'toggle-switch',
-    // Display components - title is in style section
-    'text-display',
-    'image-display',
-    'video-display',
-    'image-history',
-    'web-display',
-    'markdown-display',
-    'map-display',
-  ]
-  return titleInConfigTypes.includes(componentType)
+// All components show title in the display tab (unified standard)
+function isTitleInDisplayComponent(_componentType?: string): boolean {
+  // Unified: all components show title in Display tab
+  return true
 }
 
 // ============================================================================
@@ -278,77 +255,80 @@ interface ComponentCategory {
   items: ComponentItem[]
 }
 
-const COMPONENT_LIBRARY: ComponentCategory[] = [
-  // Indicators & Metrics
-  {
-    category: 'indicators',
-    categoryLabel: 'Indicators',
-    categoryIcon: Hash,
-    items: [
-      { id: 'value-card', name: 'Value Card', description: 'Display a single value', icon: Hash },
-      { id: 'led-indicator', name: 'LED Indicator', description: 'LED status light', icon: Circle },
-      { id: 'sparkline', name: 'Sparkline', description: 'Mini trend chart', icon: TrendingUp },
-      { id: 'progress-bar', name: 'Progress Bar', description: 'Linear progress bar', icon: Layers },
-    ],
-  },
-  // Charts
-  {
-    category: 'charts',
-    categoryLabel: 'Charts',
-    categoryIcon: LineChartIcon,
-    items: [
-      { id: 'line-chart', name: 'Line Chart', description: 'Time series data', icon: LineChartIcon },
-      { id: 'area-chart', name: 'Area Chart', description: 'Area under line', icon: LineChartIcon },
-      { id: 'bar-chart', name: 'Bar Chart', description: 'Categorical data', icon: BarChart3 },
-      { id: 'pie-chart', name: 'Pie Chart', description: 'Part to whole', icon: PieChartIcon },
-    ],
-  },
-  // Display & Content
-  {
-    category: 'display',
-    categoryLabel: 'Display & Content',
-    categoryIcon: ImageIcon,
-    items: [
-      { id: 'image-display', name: 'Image Display', description: 'Display images', icon: ImageIcon },
-      { id: 'image-history', name: 'Image History', description: 'Image timeline player', icon: Play },
-      { id: 'web-display', name: 'Web Display', description: 'Embed web content', icon: Globe },
-      { id: 'markdown-display', name: 'Markdown Display', description: 'Render markdown', icon: FileText },
-    ],
-  },
-  // Spatial & Media
-  {
-    category: 'spatial',
-    categoryLabel: 'Spatial & Media',
-    categoryIcon: MapPin,
-    items: [
-      { id: 'map-display', name: 'Map Display', description: 'Interactive map with markers', icon: MapIcon },
-      { id: 'video-display', name: 'Video Display', description: 'Video player and streams', icon: Camera },
-      { id: 'custom-layer', name: 'Custom Layer', description: 'Free-form container', icon: SquareIcon },
-    ],
-  },
-  // Controls
-  {
-    category: 'controls',
-    categoryLabel: 'Controls',
-    categoryIcon: SlidersHorizontal,
-    items: [
-      { id: 'toggle-switch', name: 'Toggle Switch', description: 'On/off control', icon: ToggleLeft },
-    ],
-  },
-  // Business Components
-  {
-    category: 'business',
-    categoryLabel: 'Business',
-    categoryIcon: Bot,
-    items: [
-      { id: 'agent-status-card', name: 'Agent Status', description: 'Agent status card', icon: Bot },
-      { id: 'decision-list', name: 'Decision List', description: 'Decisions overview', icon: Brain },
-      { id: 'device-control', name: 'Device Control', description: 'Device controls', icon: SlidersHorizontal },
-      { id: 'rule-status-grid', name: 'Rule Status Grid', description: 'Rules overview', icon: GitBranch },
-      { id: 'transform-list', name: 'Transform List', description: 'Data transforms', icon: Workflow },
-    ],
-  },
-]
+// Factory function to get component library with translations
+function getComponentLibrary(t: (key: string) => string): ComponentCategory[] {
+  return [
+    // Indicators & Metrics
+    {
+      category: 'indicators',
+      categoryLabel: t('componentLibrary.indicators'),
+      categoryIcon: Hash,
+      items: [
+        { id: 'value-card', name: t('componentLibrary.valueCard'), description: t('componentLibrary.valueCardDesc'), icon: Hash },
+        { id: 'led-indicator', name: t('componentLibrary.ledIndicator'), description: t('componentLibrary.ledIndicatorDesc'), icon: Circle },
+        { id: 'sparkline', name: t('componentLibrary.sparkline'), description: t('componentLibrary.sparklineDesc'), icon: TrendingUp },
+        { id: 'progress-bar', name: t('componentLibrary.progressBar'), description: t('componentLibrary.progressBarDesc'), icon: Layers },
+      ],
+    },
+    // Charts
+    {
+      category: 'charts',
+      categoryLabel: t('componentLibrary.charts'),
+      categoryIcon: LineChartIcon,
+      items: [
+        { id: 'line-chart', name: t('componentLibrary.lineChart'), description: t('componentLibrary.lineChartDesc'), icon: LineChartIcon },
+        { id: 'area-chart', name: t('componentLibrary.areaChart'), description: t('componentLibrary.areaChartDesc'), icon: LineChartIcon },
+        { id: 'bar-chart', name: t('componentLibrary.barChart'), description: t('componentLibrary.barChartDesc'), icon: BarChart3 },
+        { id: 'pie-chart', name: t('componentLibrary.pieChart'), description: t('componentLibrary.pieChartDesc'), icon: PieChartIcon },
+      ],
+    },
+    // Display & Content
+    {
+      category: 'display',
+      categoryLabel: t('componentLibrary.display'),
+      categoryIcon: ImageIcon,
+      items: [
+        { id: 'image-display', name: t('componentLibrary.imageDisplay'), description: t('componentLibrary.imageDisplayDesc'), icon: ImageIcon },
+        { id: 'image-history', name: t('componentLibrary.imageHistory'), description: t('componentLibrary.imageHistoryDesc'), icon: Play },
+        { id: 'web-display', name: t('componentLibrary.webDisplay'), description: t('componentLibrary.webDisplayDesc'), icon: Globe },
+        { id: 'markdown-display', name: t('componentLibrary.markdownDisplay'), description: t('componentLibrary.markdownDisplayDesc'), icon: FileText },
+      ],
+    },
+    // Spatial & Media
+    {
+      category: 'spatial',
+      categoryLabel: t('componentLibrary.spatial'),
+      categoryIcon: MapPin,
+      items: [
+        { id: 'map-display', name: t('componentLibrary.mapDisplay'), description: t('componentLibrary.mapDisplayDesc'), icon: MapIcon },
+        { id: 'video-display', name: t('componentLibrary.videoDisplay'), description: t('componentLibrary.videoDisplayDesc'), icon: Camera },
+        { id: 'custom-layer', name: t('componentLibrary.customLayer'), description: t('componentLibrary.customLayerDesc'), icon: SquareIcon },
+      ],
+    },
+    // Controls
+    {
+      category: 'controls',
+      categoryLabel: t('componentLibrary.controls'),
+      categoryIcon: SlidersHorizontal,
+      items: [
+        { id: 'toggle-switch', name: t('componentLibrary.toggleSwitch'), description: t('componentLibrary.toggleSwitchDesc'), icon: ToggleLeft },
+      ],
+    },
+    // Business Components
+    {
+      category: 'business',
+      categoryLabel: t('componentLibrary.business'),
+      categoryIcon: Bot,
+      items: [
+        { id: 'agent-status-card', name: t('componentLibrary.agentStatus'), description: t('componentLibrary.agentStatusDesc'), icon: Bot },
+        { id: 'decision-list', name: t('componentLibrary.decisionList'), description: t('componentLibrary.decisionListDesc'), icon: Brain },
+        { id: 'device-control', name: t('componentLibrary.deviceControl'), description: t('componentLibrary.deviceControlDesc'), icon: SlidersHorizontal },
+        { id: 'rule-status-grid', name: t('componentLibrary.ruleStatusGrid'), description: t('componentLibrary.ruleStatusGridDesc'), icon: GitBranch },
+        { id: 'transform-list', name: t('componentLibrary.transformList'), description: t('componentLibrary.transformListDesc'), icon: Workflow },
+      ],
+    },
+  ]
+}
 
 // ============================================================================
 // Render Component
@@ -986,6 +966,9 @@ export function VisualDashboard() {
   const [layerEditorOpen, setLayerEditorOpen] = useState(false)
   const [layerEditorBindings, setLayerEditorBindings] = useState<LayerBinding[]>([])
 
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
   // Persist sidebar state to localStorage
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const saved = localStorage.getItem('neotalk_dashboard_sidebar_open')
@@ -998,13 +981,19 @@ export function VisualDashboard() {
     localStorage.setItem('neotalk_dashboard_sidebar_open', String(open))
   }, [])
 
+  // Fullscreen toggle function - CSS-only fullscreen for dashboard content
+  const toggleFullscreen = useCallback(() => {
+    setIsFullscreen(prev => !prev)
+  }, [])
+
   // Dashboard list handlers
   const handleDashboardSwitch = useCallback((id: string) => {
     setCurrentDashboard(id)
+    // URL will be updated automatically by the Store → URL sync effect
   }, [setCurrentDashboard])
 
-  const handleDashboardCreate = useCallback((name: string) => {
-    createDashboard({
+  const handleDashboardCreate = useCallback(async (name: string) => {
+    const newId = await createDashboard({
       name,
       layout: {
         columns: 12,
@@ -1013,7 +1002,11 @@ export function VisualDashboard() {
       },
       components: [],
     })
-  }, [createDashboard])
+    // Navigate to the new dashboard
+    if (newId) {
+      navigate(`/visual-dashboard/${newId}`, { replace: true })
+    }
+  }, [createDashboard, navigate])
 
   const handleDashboardRename = useCallback((id: string, name: string) => {
     updateDashboard(id, { name })
@@ -1043,6 +1036,10 @@ export function VisualDashboard() {
 
   // Track if we've initialized to avoid duplicate calls
   const hasInitialized = useRef(false)
+
+  // Track URL sync direction to avoid circular updates
+  const isSyncingFromUrl = useRef(false)
+  const isSyncingFromStore = useRef(false)
 
   // Track previous components to detect actual changes (not just reference changes)
   const prevComponentsRef = useRef<DashboardComponent[]>([])
@@ -1152,13 +1149,79 @@ export function VisualDashboard() {
     }
   }, [dashboards.length, currentDashboardId, fetchDashboards])
 
+  // ==========================================================================
+  // URL - Store Sync for Dashboard Sharing
+  // ==========================================================================
+
+  // Sync URL → Store: When URL changes (dashboardId changes), load that dashboard
+  // Note: Deliberately excluded currentDashboardId from deps to avoid circular sync
+  useEffect(() => {
+    // Skip if dashboards aren't loaded yet or if we're syncing from store
+    if (dashboards.length === 0 || isSyncingFromStore.current) return
+
+    // If URL has a dashboardId
+    if (dashboardId) {
+      // Check if the dashboard exists
+      const exists = dashboards.some(d => d.id === dashboardId)
+
+      if (exists && dashboardId !== currentDashboardId) {
+        // URL has valid dashboardId and differs from current, switch to it
+        isSyncingFromUrl.current = true
+        console.log('[VisualDashboard] Loading dashboard from URL:', dashboardId)
+        setCurrentDashboard(dashboardId)
+        // Reset flag after state update completes
+        setTimeout(() => { isSyncingFromUrl.current = false }, 50)
+      } else if (!exists && currentDashboardId) {
+        // URL has invalid dashboardId, redirect to current dashboard
+        console.log('[VisualDashboard] Invalid dashboardId in URL, redirecting to current:', currentDashboardId)
+        navigate(`/visual-dashboard/${currentDashboardId}`, { replace: true })
+      } else if (!exists && dashboards.length > 0) {
+        // URL has invalid dashboardId and no current dashboard, redirect to first/default
+        const defaultDashboard = dashboards.find(d => d.isDefault) || dashboards[0]
+        console.log('[VisualDashboard] Invalid dashboardId in URL, redirecting to default:', defaultDashboard.id)
+        navigate(`/visual-dashboard/${defaultDashboard.id}`, { replace: true })
+      }
+    } else if (currentDashboardId) {
+      // No dashboardId in URL but we have one in store, update URL
+      // This handles initial load from localStorage
+      isSyncingFromStore.current = true
+      navigate(`/visual-dashboard/${currentDashboardId}`, { replace: true })
+      setTimeout(() => { isSyncingFromStore.current = false }, 50)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardId, dashboards]) // Intentionally exclude currentDashboardId
+
+  // Sync Store → URL: When store currentDashboardId changes, update URL
+  // This handles dashboard switching via sidebar
+  useEffect(() => {
+    // Skip if dashboards aren't loaded yet or if we're syncing from URL
+    if (dashboards.length === 0 || isSyncingFromUrl.current) return
+
+    // Only update URL if it's different from current URL
+    if (currentDashboardId && currentDashboardId !== dashboardId) {
+      console.log('[VisualDashboard] Updating URL with current dashboard:', currentDashboardId)
+      isSyncingFromStore.current = true
+      navigate(`/visual-dashboard/${currentDashboardId}`, { replace: true })
+      setTimeout(() => { isSyncingFromStore.current = false }, 50)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDashboardId]) // Only depend on currentDashboardId, not dashboardId
+
+  // Handle edge case: no dashboards exist yet
+  useEffect(() => {
+    if (dashboards.length === 0 && !dashboardsLoading && !dashboardId) {
+      // Stay at /visual-dashboard without an ID - let user create first dashboard
+      navigate('/visual-dashboard', { replace: true })
+    }
+  }, [dashboards.length, dashboardsLoading, dashboardId, navigate])
+
   // Note: Removed auto-create dashboard logic
   // Users should explicitly create dashboards via the UI
   // This prevents creating duplicate dashboards on refresh
 
   // Handle adding a component
   const handleAddComponent = (componentType: string) => {
-    const item = COMPONENT_LIBRARY
+    const item = getComponentLibrary(t)
       .flatMap(cat => cat.items)
       .find(i => i.id === componentType)
 
@@ -1811,17 +1874,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="value-card-title">{t('visualDashboard.showTitle')}</Label>
-                    <Input
-                      id="value-card-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <SelectField
                     label={t('visualDashboard.style')}
                     value={config.variant || 'default'}
@@ -1853,7 +1905,15 @@ export function VisualDashboard() {
                     label={t('visualDashboard.valueColor')}
                     presets="primary"
                   />
-
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
                       <Label>{t('visualDashboard.prefix')}</Label>
@@ -1923,7 +1983,6 @@ export function VisualDashboard() {
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -1943,17 +2002,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="sparkline-title">{t('visualDashboard.showTitle')}</Label>
-                    <Input
-                      id="sparkline-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <SelectField
                     label={t('visualDashboard.colorMode')}
                     value={config.colorMode || 'auto'}
@@ -2027,7 +2075,15 @@ export function VisualDashboard() {
                       <span className="text-sm">{t('visualDashboard.showDataPoints')}</span>
                     </label>
                   </div>
-
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -2072,7 +2128,6 @@ export function VisualDashboard() {
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2092,17 +2147,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="progress-bar-title">{t('visualDashboard.showTitle')}</Label>
-                    <Input
-                      id="progress-bar-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <SelectField
                     label={t('visualDashboard.style')}
                     value={config.variant || 'default'}
@@ -2131,7 +2175,15 @@ export function VisualDashboard() {
                       { value: 'lg', label: t('sizes.lg') },
                     ]}
                   />
-
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <Field>
                     <Label>{t('visualDashboard.label')}</Label>
                     <Input
@@ -2144,7 +2196,7 @@ export function VisualDashboard() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>警告阈值 (%)</Label>
+                      <Label>{t('visualDashboard.warningThreshold')}</Label>
                       <Input
                         type="number"
                         value={config.warningThreshold ?? 70}
@@ -2155,7 +2207,7 @@ export function VisualDashboard() {
                       />
                     </Field>
                     <Field>
-                      <Label>危险阈值 (%)</Label>
+                      <Label>{t('visualDashboard.dangerThreshold')}</Label>
                       <Input
                         type="number"
                         value={config.dangerThreshold ?? 90}
@@ -2167,11 +2219,11 @@ export function VisualDashboard() {
                     </Field>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    进度条颜色会根据阈值自动变化：正常 → 警告 → 危险
+                    {t('visualDashboard.thresholdHint')}
                   </p>
 
                   <Field>
-                    <Label>最大值</Label>
+                    <Label>{t('visualDashboard.maxValue')}</Label>
                     <Input
                       type="number"
                       value={config.max ?? 100}
@@ -2193,8 +2245,6 @@ export function VisualDashboard() {
                 </div>
               ),
             },
-          ],
-          displaySections: [
             // Data mapping configuration in display section
             {
               type: 'custom' as const,
@@ -2228,27 +2278,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="led-indicator-title">显示标题</Label>
-                    <Input
-                      id="led-indicator-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
-                  <Field>
-                    <Label>{t('visualDashboard.label')}</Label>
-                    <Input
-                      value={config.label || ''}
-                      onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder={t('visualDashboard.descriptionPlaceholder')}
-                      className="h-9"
-                    />
-                  </Field>
-
                   <SelectField
                     label={t('visualDashboard.size')}
                     value={config.size || 'md'}
@@ -2275,7 +2304,7 @@ export function VisualDashboard() {
                         onCheckedChange={(checked) => updateConfig('showGlow')(checked === true)}
                       />
                       <label htmlFor="showGlow" className="text-sm cursor-pointer">
-                        发光效果
+                        {t('visualDashboard.glowEffect')}
                       </label>
                     </div>
 
@@ -2286,7 +2315,7 @@ export function VisualDashboard() {
                         onCheckedChange={(checked) => updateConfig('showAnimation')(checked === true)}
                       />
                       <label htmlFor="showAnimation" className="text-sm cursor-pointer">
-                        动画效果
+                        {t('visualDashboard.animationEffect')}
                       </label>
                     </div>
 
@@ -2297,13 +2326,31 @@ export function VisualDashboard() {
                         onCheckedChange={(checked) => updateConfig('showCard')(checked === true)}
                       />
                       <label htmlFor="showCard" className="text-sm cursor-pointer">
-                        显示卡片
+                        {t('visualDashboard.showCard')}
                       </label>
                     </div>
                   </div>
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>{t('visualDashboard.label')}</Label>
+                    <Input
+                      value={config.label || ''}
+                      onChange={(e) => updateConfig('label')(e.target.value)}
+                      placeholder={t('visualDashboard.descriptionPlaceholder')}
+                      className="h-9"
+                    />
+                  </Field>
 
                   <Field>
-                    <Label>默认状态（无数据源时）</Label>
+                    <Label>{t('visualDashboard.defaultState')}</Label>
                     <Select
                       value={config.state || 'on'}
                       onValueChange={updateConfig('state')}
@@ -2312,17 +2359,17 @@ export function VisualDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="on">开启</SelectItem>
-                        <SelectItem value="off">关闭</SelectItem>
-                        <SelectItem value="error">错误</SelectItem>
-                        <SelectItem value="warning">警告</SelectItem>
-                        <SelectItem value="unknown">未知</SelectItem>
+                        <SelectItem value="on">{t('visualDashboard.on')}</SelectItem>
+                        <SelectItem value="off">{t('visualDashboard.off')}</SelectItem>
+                        <SelectItem value="error">{t('visualDashboard.error')}</SelectItem>
+                        <SelectItem value="warning">{t('visualDashboard.warning')}</SelectItem>
+                        <SelectItem value="unknown">{t('visualDashboard.unknown')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </Field>
 
                   <Field>
-                    <Label>默认状态</Label>
+                    <Label>{t('visualDashboard.fallbackState')}</Label>
                     <Select
                       value={config.defaultState || 'unknown'}
                       onValueChange={updateConfig('defaultState')}
@@ -2331,20 +2378,20 @@ export function VisualDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="on">开启</SelectItem>
-                        <SelectItem value="off">关闭</SelectItem>
-                        <SelectItem value="error">错误</SelectItem>
-                        <SelectItem value="warning">警告</SelectItem>
-                        <SelectItem value="unknown">未知</SelectItem>
+                        <SelectItem value="on">{t('visualDashboard.on')}</SelectItem>
+                        <SelectItem value="off">{t('visualDashboard.off')}</SelectItem>
+                        <SelectItem value="error">{t('visualDashboard.error')}</SelectItem>
+                        <SelectItem value="warning">{t('visualDashboard.warning')}</SelectItem>
+                        <SelectItem value="unknown">{t('visualDashboard.unknown')}</SelectItem>
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-muted-foreground mt-1">
-                      当数据值不匹配任何映射规则时，显示此状态
+                      {t('visualDashboard.fallbackStateHint')}
                     </p>
                   </Field>
 
                   <div className="pt-2 border-t">
-                    <div className="text-sm font-medium mb-3">字符串值映射</div>
+                    <div className="text-sm font-medium mb-3">{t('visualDashboard.stringMapping')}</div>
                     <ValueMapEditor
                       valueMap={(config.valueMap || []).map((m: any) => ({
                         id: m.id || Date.now().toString() + Math.random(),
@@ -2363,7 +2410,6 @@ export function VisualDashboard() {
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2384,21 +2430,10 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="line-chart-title">显示标题</Label>
-                    <Input
-                      id="line-chart-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <ColorPicker
                     value={config.color || '#3b82f6'}
                     onChange={(color) => updateConfig('color')(color)}
-                    label="线条颜色"
+                    label={t('visualDashboard.lineColor')}
                     presets="primary"
                   />
 
@@ -2421,7 +2456,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('smooth')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">平滑曲线</span>
+                      <span className="text-sm">{t('visualDashboard.smoothCurve')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2434,7 +2469,15 @@ export function VisualDashboard() {
                       <span className="text-sm">{t('visualDashboard.fillArea')}</span>
                     </label>
                   </div>
-
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -2443,7 +2486,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showGrid')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示网格</span>
+                      <span className="text-sm">{t('visualDashboard.showGrid')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2453,7 +2496,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示图例</span>
+                      <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2463,14 +2506,13 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示提示</span>
+                      <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2492,21 +2534,10 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="area-chart-title">显示标题</Label>
-                    <Input
-                      id="area-chart-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <ColorPicker
                     value={config.color || '#3b82f6'}
                     onChange={(color) => updateConfig('color')(color)}
-                    label="区域颜色"
+                    label={t('visualDashboard.areaColor')}
                     presets="primary"
                   />
 
@@ -2529,9 +2560,19 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('smooth')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">平滑曲线</span>
+                      <span className="text-sm">{t('visualDashboard.smoothCurve')}</span>
                     </label>
-
+                  </div>
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
@@ -2539,7 +2580,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showGrid')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示网格</span>
+                      <span className="text-sm">{t('visualDashboard.showGrid')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2549,7 +2590,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示图例</span>
+                      <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2559,14 +2600,13 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示提示</span>
+                      <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2585,7 +2625,7 @@ export function VisualDashboard() {
                   dataMapping={config.dataMapping as TimeSeriesMappingConfig}
                   onChange={updateDataMapping}
                   mappingType="time-series"
-                  label="数据映射配置"
+                  label={t('visualDashboard.dataMappingConfig')}
                   readonly={false}
                 />
               ),
@@ -2600,21 +2640,10 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="bar-chart-title">显示标题</Label>
-                    <Input
-                      id="bar-chart-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <ColorPicker
                     value={config.color || '#8b5cf6'}
                     onChange={(color) => updateConfig('color')(color)}
-                    label="柱体颜色"
+                    label={t('visualDashboard.barColor')}
                     presets="primary"
                   />
 
@@ -2630,15 +2659,23 @@ export function VisualDashboard() {
                   />
 
                   <SelectField
-                    label="布局"
+                    label={t('visualDashboard.layout')}
                     value={config.layout || 'vertical'}
                     onChange={updateConfig('layout')}
                     options={[
                       { value: 'vertical', label: t('visualDashboard.vertical') },
-                      { value: 'horizontal', label: '水平' },
+                      { value: 'default', label: t('visualDashboard.default') },
                     ]}
                   />
-
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -2647,7 +2684,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('stacked')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">堆叠</span>
+                      <span className="text-sm">{t('visualDashboard.stacked')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2657,7 +2694,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showGrid')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示网格</span>
+                      <span className="text-sm">{t('visualDashboard.showGrid')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2667,7 +2704,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示图例</span>
+                      <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2677,14 +2714,13 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示提示</span>
+                      <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2706,17 +2742,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="pie-chart-title">显示标题</Label>
-                    <Input
-                      id="pie-chart-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <SelectField
                     label={t('visualDashboard.size')}
                     value={config.size || 'md'}
@@ -2729,18 +2754,18 @@ export function VisualDashboard() {
                   />
 
                   <SelectField
-                    label="类型"
+                    label={t('visualDashboard.type')}
                     value={config.variant || 'donut'}
                     onChange={updateConfig('variant')}
                     options={[
-                      { value: 'pie', label: '饼图' },
-                      { value: 'donut', label: '环形图' },
+                      { value: 'pie', label: t('visualDashboard.pie') },
+                      { value: 'donut', label: t('visualDashboard.donut') },
                     ]}
                   />
 
                   {config.variant === 'donut' && (
                     <Field>
-                      <Label>内半径</Label>
+                      <Label>{t('visualDashboard.innerRadius')}</Label>
                       <input
                         type="text"
                         value={config.innerRadius || '60%'}
@@ -2752,7 +2777,7 @@ export function VisualDashboard() {
                   )}
 
                   <Field>
-                    <Label>外半径</Label>
+                    <Label>{t('visualDashboard.outerRadius')}</Label>
                     <input
                       type="text"
                       value={config.outerRadius || '80%'}
@@ -2761,7 +2786,15 @@ export function VisualDashboard() {
                       className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                     />
                   </Field>
-
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -2770,7 +2803,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLegend')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示图例</span>
+                      <span className="text-sm">{t('visualDashboard.showLegend')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2780,7 +2813,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showTooltip')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示提示</span>
+                      <span className="text-sm">{t('visualDashboard.showTooltip')}</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -2790,14 +2823,13 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showLabels')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示标签</span>
+                      <span className="text-sm">{t('visualDashboard.showLabel')}</span>
                     </label>
                   </div>
                 </div>
               ),
             },
           ],
-          displaySections: [],
           dataSourceSections: [
             {
               type: 'data-source' as const,
@@ -2819,29 +2851,18 @@ export function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <Field>
-                    <Label htmlFor="toggle-switch-title">显示标题</Label>
-                    <Input
-                      id="toggle-switch-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
-                  <Field>
                     <Label>{t('visualDashboard.label')}</Label>
                     <input
                       type="text"
                       value={config.label || ''}
                       onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder="如 主灯"
+                      placeholder={t('visualDashboard.devicePlaceholder')}
                       className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
                     />
                   </Field>
 
                   <Field>
-                    <Label>初始状态</Label>
+                    <Label>{t('visualDashboard.initialState')}</Label>
                     <Select
                       value={config.initialState ? 'on' : 'off'}
                       onValueChange={(val) => updateConfig('initialState')(val === 'on')}
@@ -2850,11 +2871,11 @@ export function VisualDashboard() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="off">关闭</SelectItem>
-                        <SelectItem value="on">开启</SelectItem>
+                        <SelectItem value="off">{t('visualDashboard.off')}</SelectItem>
+                        <SelectItem value="on">{t('visualDashboard.on')}</SelectItem>
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">显示状态，在收到命令响应前使用</p>
+                    <p className="text-xs text-muted-foreground">{t('visualDashboard.toggleStateHint')}</p>
                   </Field>
 
                   <SelectField
@@ -2886,8 +2907,8 @@ export function VisualDashboard() {
                 <div className="space-y-3">
                   <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                     <p className="text-sm text-amber-700 dark:text-amber-300">
-                      <strong>仅支持命令模式</strong><br />
-                      此组件只能绑定到设备的命令接口，点击时发送开关命令。
+                      <strong>{t('visualDashboard.commandModeOnly')}</strong><br />
+                      {t('visualDashboard.commandModeDesc')}
                     </p>
                   </div>
                 </div>
@@ -2915,38 +2936,27 @@ export function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <Field>
-                    <Label htmlFor="image-display-title">显示标题</Label>
-                    <Input
-                      id="image-display-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
-                  <Field>
-                    <Label>图片源</Label>
+                    <Label>{t('visualDashboard.imageSource')}</Label>
                     <Input
                       value={config.src || ''}
                       onChange={(e) => updateConfig('src')(e.target.value)}
-                      placeholder="https://example.com/image.jpg 或 data:image/png;base64,..."
+                      placeholder={t('visualDashboard.urlPlaceholder')}
                       className="h-9"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      支持 URL 或 Base64 (data:image/png;base64,...)
+                      {t('visualDashboard.urlHint')}
                     </p>
                   </Field>
                   <SelectField
-                    label="适配模式"
+                    label={t('visualDashboard.fitMode')}
                     value={config.fit || 'contain'}
                     onChange={updateConfig('fit')}
                     options={[
-                      { value: 'contain', label: '包含' },
-                      { value: 'cover', label: '覆盖' },
-                      { value: 'fill', label: '填充' },
-                      { value: 'none', label: '无' },
-                      { value: 'scale-down', label: '缩小' },
+                      { value: 'contain', label: t('visualDashboard.fitContain') },
+                      { value: 'cover', label: t('visualDashboard.fitCover') },
+                      { value: 'fill', label: t('visualDashboard.fitFill') },
+                      { value: 'none', label: t('visualDashboard.fitNone') },
+                      { value: 'scale-down', label: t('visualDashboard.fitScaleDown') },
                     ]}
                   />
                   <div className="flex items-center gap-4">
@@ -2957,7 +2967,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('rounded')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">圆角</span>
+                      <span className="text-xs">{t('visualDashboard.rounded')}</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -2966,7 +2976,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('zoomable')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">可缩放</span>
+                      <span className="text-xs">{t('visualDashboard.zoomable')}</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -2975,7 +2985,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showShadow')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">阴影</span>
+                      <span className="text-xs">{t('visualDashboard.shadow')}</span>
                     </label>
                   </div>
                 </div>
@@ -3001,32 +3011,21 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <Field>
-                    <Label htmlFor="image-history-title">显示标题</Label>
-                    <Input
-                      id="image-history-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <SelectField
-                    label="适配模式"
+                    label={t('visualDashboard.fitMode')}
                     value={config.fit || 'contain'}
                     onChange={updateConfig('fit')}
                     options={[
-                      { value: 'contain', label: '包含' },
-                      { value: 'cover', label: '覆盖' },
-                      { value: 'fill', label: '填充' },
-                      { value: 'none', label: '无' },
-                      { value: 'scale-down', label: '缩小' },
+                      { value: 'contain', label: t('visualDashboard.fitContain') },
+                      { value: 'cover', label: t('visualDashboard.fitCover') },
+                      { value: 'fill', label: t('visualDashboard.fitFill') },
+                      { value: 'none', label: t('visualDashboard.fitNone') },
+                      { value: 'scale-down', label: t('visualDashboard.fitScaleDown') },
                     ]}
                   />
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>最大图片数</Label>
+                      <Label>{t('visualDashboard.maxImages')}</Label>
                       <Input
                         type="number"
                         value={config.limit ?? 50}
@@ -3037,7 +3036,7 @@ export function VisualDashboard() {
                       />
                     </Field>
                     <Field>
-                      <Label>时间范围（小时）</Label>
+                      <Label>{t('visualDashboard.timeRangeHours')}</Label>
                       <Input
                         type="number"
                         value={config.timeRange ?? 1}
@@ -3057,7 +3056,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('rounded')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-xs">圆角</span>
+                      <span className="text-xs">{t('visualDashboard.rounded')}</span>
                     </label>
                   </div>
                 </div>
@@ -3083,17 +3082,6 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-4">
-                  <Field>
-                    <Label htmlFor="web-display-title">显示标题</Label>
-                    <Input
-                      id="web-display-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Website URL</label>
                     <Input
@@ -3111,7 +3099,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('sandbox')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">沙盒隔离</span>
+                      <span className="text-sm">{t('visualDashboard.sandboxIsolation')}</span>
                     </label>
                     <label className="flex items-center gap-2">
                       <input
@@ -3120,7 +3108,7 @@ export function VisualDashboard() {
                         onChange={(e) => updateConfig('showHeader')(e.target.checked)}
                         className="rounded"
                       />
-                      <span className="text-sm">显示头部</span>
+                      <span className="text-sm">{t('visualDashboard.showHeader')}</span>
                     </label>
                   </div>
                 </div>
@@ -3147,22 +3135,11 @@ export function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <Field>
-                    <Label htmlFor="markdown-display-title">显示标题</Label>
-                    <Input
-                      id="markdown-display-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
-                  <Field>
-                    <Label>Markdown 内容</Label>
+                    <Label>{t('visualDashboard.markdownContent')}</Label>
                     <textarea
                       value={config.content || ''}
                       onChange={(e) => updateConfig('content')(e.target.value)}
-                      placeholder="# 标题\n\n**粗体** 和 *斜体* 文本"
+                      placeholder={t('visualDashboard.markdownPlaceholder')}
                       rows={6}
                       className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
                     />
@@ -3172,7 +3149,7 @@ export function VisualDashboard() {
                     value={config.variant || 'default'}
                     onChange={updateConfig('variant')}
                     options={[
-                      { value: 'default', label: '默认' },
+                      { value: 'default', label: t('visualDashboard.default') },
                       { value: 'compact', label: t('visualDashboard.compact') },
                       { value: 'minimal', label: t('visualDashboard.minimal') },
                     ]}
@@ -3201,115 +3178,104 @@ export function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <Field>
-                    <Label htmlFor="video-display-title">显示标题</Label>
-                    <Input
-                      id="video-display-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
-                  <Field>
-                    <Label htmlFor="video-display-src">视频源</Label>
+                    <Label htmlFor="video-display-src">{t('visualDashboard.videoSource')}</Label>
                     <Input
                       id="video-display-src"
                       value={config.src || ''}
                       onChange={(e) => updateConfig('src')(e.target.value)}
-                      placeholder="https://example.com/video.mp4 或 rtsp://..."
+                      placeholder={t('visualDashboard.videoUrlPlaceholder')}
                       className="h-9"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      支持 MP4、WebM、HLS (.m3u8)、RTSP、RTMP 等格式
+                      {t('visualDashboard.videoFormatHint')}
                     </p>
                   </Field>
 
                   <SelectField
-                    label="视频类型"
+                    label={t('visualDashboard.videoType')}
                     value={config.type || 'file'}
                     onChange={updateConfig('type')}
                     options={[
-                      { value: 'file', label: '视频文件/URL (MP4, WebM)' },
-                      { value: 'stream', label: '视频流' },
+                      { value: 'file', label: t('visualDashboard.videoFile') },
+                      { value: 'stream', label: t('visualDashboard.videoStream') },
                       { value: 'rtsp', label: 'RTSP' },
                       { value: 'rtmp', label: 'RTMP' },
                       { value: 'hls', label: 'HLS' },
                       { value: 'webrtc', label: 'WebRTC' },
-                      { value: 'device-camera', label: '设备摄像头' },
+                      { value: 'device-camera', label: t('visualDashboard.deviceCamera') },
                     ]}
                   />
 
                   <SelectField
-                    label="适配方式"
+                    label={t('visualDashboard.fitMethod')}
                     value={config.fit || 'contain'}
                     onChange={updateConfig('fit')}
                     options={[
-                      { value: 'contain', label: '包含 (完整显示)' },
-                      { value: 'cover', label: '覆盖 (填充显示)' },
-                      { value: 'fill', label: '拉伸 (填充)' },
+                      { value: 'contain', label: t('visualDashboard.fitContainFull') },
+                      { value: 'cover', label: t('visualDashboard.fitCoverFill') },
+                      { value: 'fill', label: t('visualDashboard.fitStretch') },
                     ]}
                   />
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>自动播放</Label>
+                      <Label>{t('visualDashboard.autoPlay')}</Label>
                       <select
                         value={String(config.autoplay ?? false)}
                         onChange={(e) => updateConfig('autoplay')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="false">关闭</option>
-                        <option value="true">开启</option>
+                        <option value="false">{t('visualDashboard.off')}</option>
+                        <option value="true">{t('visualDashboard.on')}</option>
                       </select>
                     </Field>
                     <Field>
-                      <Label>静音</Label>
+                      <Label>{t('visualDashboard.muted')}</Label>
                       <select
                         value={String(config.muted ?? true)}
                         onChange={(e) => updateConfig('muted')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">静音</option>
-                        <option value="false">开启声音</option>
+                        <option value="true">{t('visualDashboard.muted')}</option>
+                        <option value="false">{t('visualDashboard.unmuted')}</option>
                       </select>
                     </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>显示控制条</Label>
+                      <Label>{t('visualDashboard.showControls')}</Label>
                       <select
                         value={String(config.controls ?? true)}
                         onChange={(e) => updateConfig('controls')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏</option>
+                        <option value="true">{t('visualDashboard.showCard')}</option>
+                        <option value="false">{t('visualDashboard.hide')}</option>
                       </select>
                     </Field>
                     <Field>
-                      <Label>循环播放</Label>
+                      <Label>{t('visualDashboard.loop')}</Label>
                       <select
                         value={String(config.loop ?? false)}
                         onChange={(e) => updateConfig('loop')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="false">关闭</option>
-                        <option value="true">开启</option>
+                        <option value="false">{t('visualDashboard.off')}</option>
+                        <option value="true">{t('visualDashboard.on')}</option>
                       </select>
                     </Field>
                   </div>
 
                   <Field>
-                    <Label>全屏按钮</Label>
+                    <Label>{t('visualDashboard.fullscreenButton')}</Label>
                     <select
                       value={String(config.showFullscreen ?? true)}
                       onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
                       className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                     >
-                      <option value="true">显示</option>
-                      <option value="false">隐藏</option>
+                      <option value="true">{t('visualDashboard.showCard')}</option>
+                      <option value="false">{t('visualDashboard.hide')}</option>
                     </select>
                   </Field>
                 </div>
@@ -3395,10 +3361,10 @@ export function VisualDashboard() {
                         type: bindingType,
                         icon: bindingType,
                         name: (ds.type === 'metric' || ds.type === 'telemetry')
-                          ? (ds.metricId || ds.property || `指标${index + 1}`)
+                          ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
                           : ds.type === 'command'
                             ? `${ds.deviceId || ''} → ${ds.command || ''}`
-                            : (ds.deviceId || `设备${index + 1}`),
+                            : (ds.deviceId || t('visualDashboard.deviceIndex', { index: index + 1 })),
                         dataSource: ds,
                         // Preserve position if existing
                         position: existingBinding?.position || baseBinding.position,
@@ -3425,7 +3391,7 @@ export function VisualDashboard() {
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>纬度</Label>
+                      <Label>{t('visualDashboard.latitude')}</Label>
                       <Input
                         type="number"
                         step="0.0001"
@@ -3436,7 +3402,7 @@ export function VisualDashboard() {
                       />
                     </Field>
                     <Field>
-                      <Label>经度</Label>
+                      <Label>{t('visualDashboard.longitude')}</Label>
                       <Input
                         type="number"
                         step="0.0001"
@@ -3450,7 +3416,7 @@ export function VisualDashboard() {
 
                   <div className="grid grid-cols-3 gap-3">
                     <Field>
-                      <Label>缩放级别</Label>
+                      <Label>{t('visualDashboard.zoomLevel')}</Label>
                       <Input
                         type="number"
                         min={config.minZoom ?? 2}
@@ -3461,7 +3427,7 @@ export function VisualDashboard() {
                       />
                     </Field>
                     <Field>
-                      <Label>最小缩放</Label>
+                      <Label>{t('visualDashboard.maxZoom')}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -3472,7 +3438,7 @@ export function VisualDashboard() {
                       />
                     </Field>
                     <Field>
-                      <Label>最大缩放</Label>
+                      <Label>{t('visualDashboard.maxZoom')}</Label>
                       <Input
                         type="number"
                         min={10}
@@ -3485,19 +3451,19 @@ export function VisualDashboard() {
                   </div>
 
                   <SelectField
-                    label="地图图层"
+                    label={t('visualDashboard.mapLayer')}
                     value={config.tileLayer || 'osm'}
                     onChange={updateConfig('tileLayer')}
                     options={[
                       { value: 'osm', label: 'OpenStreetMap' },
-                      { value: 'satellite', label: '卫星图' },
-                      { value: 'dark', label: '暗色模式' },
-                      { value: 'terrain', label: '地形图' },
+                      { value: 'satellite', label: t('visualDashboard.satellite') },
+                      { value: 'dark', label: t('visualDashboard.darkMode') },
+                      { value: 'terrain', label: t('visualDashboard.terrain') },
                     ]}
                   />
 
                   <Field>
-                    <Label>标记点颜色</Label>
+                    <Label>{t('visualDashboard.markerColor')}</Label>
                     <Input
                       type="color"
                       value={config.markerColor || '#3b82f6'}
@@ -3508,50 +3474,50 @@ export function VisualDashboard() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>显示控制栏</Label>
+                      <Label>{t('visualDashboard.showControlBar')}</Label>
                       <select
                         value={String(config.showControls ?? true)}
                         onChange={(e) => updateConfig('showControls')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏</option>
+                        <option value="true">{t('visualDashboard.showCard')}</option>
+                        <option value="false">{t('visualDashboard.hide')}</option>
                       </select>
                     </Field>
                     <Field>
-                      <Label>显示图层</Label>
+                      <Label>{t('visualDashboard.showLayerControl')}</Label>
                       <select
                         value={String(config.showLayers ?? true)}
                         onChange={(e) => updateConfig('showLayers')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏</option>
+                        <option value="true">{t('visualDashboard.showCard')}</option>
+                        <option value="false">{t('visualDashboard.hide')}</option>
                       </select>
                     </Field>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>可交互</Label>
+                      <Label>{t('visualDashboard.interactive')}</Label>
                       <select
                         value={String(config.interactive ?? true)}
                         onChange={(e) => updateConfig('interactive')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">是</option>
-                        <option value="false">否</option>
+                        <option value="true">{t('visualDashboard.yes')}</option>
+                        <option value="false">{t('visualDashboard.no')}</option>
                       </select>
                     </Field>
                     <Field>
-                      <Label>全屏按钮</Label>
+                      <Label>{t('visualDashboard.fullscreenButton')}</Label>
                       <select
                         value={String(config.showFullscreen ?? true)}
                         onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏</option>
+                        <option value="true">{t('visualDashboard.showCard')}</option>
+                        <option value="false">{t('visualDashboard.hide')}</option>
                       </select>
                     </Field>
                   </div>
@@ -3564,22 +3530,11 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-4">
-                  <Field>
-                    <Label htmlFor="map-display-title">显示标题</Label>
-                    <Input
-                      id="map-display-title"
-                      value={config.title as string || ''}
-                      onChange={(e) => updateConfig('title')(e.target.value)}
-                      placeholder={t('visualDashboard.enterTitle')}
-                      className="h-10"
-                    />
-                  </Field>
-
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-sm font-medium">标记绑定</h3>
+                      <h3 className="text-sm font-medium">{t('visualDashboard.markerBinding')}</h3>
                       <p className="text-xs text-muted-foreground mt-1">
-                        管理地图上的设备、指标、指令标记
+                        {t('visualDashboard.manageMapMarkers')}
                       </p>
                     </div>
                     <Button
@@ -3625,7 +3580,7 @@ export function VisualDashboard() {
                       }}
                     >
                       <MapIcon className="h-4 w-4 mr-1" />
-                      打开地图编辑器
+                      {t('visualDashboard.openMapEditor')}
                     </Button>
                   </div>
 
@@ -3691,40 +3646,40 @@ export function VisualDashboard() {
 
                       const TYPE_CONFIG = {
                         device: {
-                          label: '设备',
+                          label: t('mapDisplay.device'),
                           color: 'bg-green-500',
                           textColor: 'text-green-600',
                           bgColor: 'bg-green-50 dark:bg-green-950/30',
                           borderColor: 'border-green-200 dark:border-green-800',
                           icon: MapPin,
-                          description: '显示设备位置和状态'
+                          description: t('mapDisplay.deviceDesc')
                         },
                         metric: {
-                          label: '指标',
+                          label: t('mapDisplay.metric'),
                           color: 'bg-purple-500',
                           textColor: 'text-purple-600',
                           bgColor: 'bg-purple-50 dark:bg-purple-950/30',
                           borderColor: 'border-purple-200 dark:border-purple-800',
                           icon: Activity,
-                          description: '显示指标数值和趋势'
+                          description: t('mapDisplay.metricDesc')
                         },
                         command: {
-                          label: '指令',
+                          label: t('mapDisplay.command'),
                           color: 'bg-blue-500',
                           textColor: 'text-blue-600',
                           bgColor: 'bg-blue-50 dark:bg-blue-950/30',
                           borderColor: 'border-blue-200 dark:border-blue-800',
                           icon: Zap,
-                          description: '快速执行设备指令'
+                          description: t('mapDisplay.commandDesc')
                         },
                         marker: {
-                          label: '位置标记',
+                          label: t('mapDisplay.marker'),
                           color: 'bg-orange-500',
                           textColor: 'text-orange-600',
                           bgColor: 'bg-orange-50 dark:bg-orange-950/30',
                           borderColor: 'border-orange-200 dark:border-orange-800',
                           icon: Monitor,
-                          description: '自定义位置标记'
+                          description: t('mapDisplay.markerDesc')
                         },
                       } as const
 
@@ -3732,8 +3687,8 @@ export function VisualDashboard() {
                         return (
                           <div className="p-6 text-center text-muted-foreground">
                             <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">暂无标记绑定</p>
-                            <p className="text-xs mt-1">请先在上方添加数据源，然后点击"打开地图编辑器"设置位置</p>
+                            <p className="text-sm">{t('visualDashboard.noMarkers')}</p>
+                            <p className="text-xs mt-1">{t('visualDashboard.addMarkerHint')}</p>
                           </div>
                         )
                       }
@@ -3764,7 +3719,7 @@ export function VisualDashboard() {
                               {typeBindings.map((binding) => {
                                 const positionText = binding.position && binding.position !== 'auto'
                                   ? `(${binding.position.lat.toFixed(4)}, ${binding.position.lng.toFixed(4)})`
-                                  : '自动定位'
+                                  : t('visualDashboard.autoLocation')
 
                                 // Get device/metric info from dataSource
                                 const deviceId = (binding.dataSource as any)?.deviceId
@@ -3805,9 +3760,9 @@ export function VisualDashboard() {
                                       </div>
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {type === 'device' && <span className="text-blue-500">查看详情</span>}
-                                      {type === 'metric' && <span className="text-green-500">查看数值</span>}
-                                      {type === 'command' && <span className="text-orange-500">执行</span>}
+                                      {type === 'device' && <span className="text-blue-500">{t('visualDashboard.viewDetails')}</span>}
+                                      {type === 'metric' && <span className="text-green-500">{t('visualDashboard.viewValue')}</span>}
+                                      {type === 'command' && <span className="text-orange-500">{t('visualDashboard.execute')}</span>}
                                     </div>
                                   </div>
                                 )
@@ -3823,19 +3778,19 @@ export function VisualDashboard() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-                      <span>设备</span>
+                      <span>{t('mapDisplay.device')}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                      <span>指标</span>
+                      <span>{t('mapDisplay.metric')}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-                      <span>指令</span>
+                      <span>{t('mapDisplay.command')}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-                      <span>位置标记</span>
+                      <span>{t('mapDisplay.marker')}</span>
                     </div>
                   </div>
                 </div>
@@ -3898,10 +3853,10 @@ export function VisualDashboard() {
                       type: bindingType,
                       icon: bindingType,
                       name: (ds.type === 'metric' || ds.type === 'telemetry')
-                        ? (ds.metricId || ds.property || `指标${index + 1}`)
+                        ? (ds.metricId || ds.property || t('visualDashboard.metricIndex', { index: index + 1 }))
                         : ds.type === 'command'
                           ? `${ds.deviceId || ''} → ${ds.command || ''}`
-                          : (ds.deviceId || `设备${index + 1}`),
+                          : (ds.deviceId || t('visualDashboard.deviceIndex', { index: index + 1 })),
                       dataSource: ds,
                       position: existingBinding?.position || baseBinding.position,
                     } as LayerBinding
@@ -3932,20 +3887,20 @@ export function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <SelectField
-                    label="背景类型"
+                    label={t('visualDashboard.backgroundType')}
                     value={config.backgroundType || 'grid'}
                     onChange={updateConfig('backgroundType')}
                     options={[
-                      { value: 'grid', label: '网格' },
-                      { value: 'color', label: '纯色' },
-                      { value: 'image', label: '图片' },
-                      { value: 'transparent', label: '透明' },
+                      { value: 'grid', label: t('visualDashboard.backgroundTypeGrid') },
+                      { value: 'color', label: t('visualDashboard.backgroundTypeColor') },
+                      { value: 'image', label: t('visualDashboard.backgroundTypeImage') },
+                      { value: 'transparent', label: t('visualDashboard.backgroundTypeTransparent') },
                     ]}
                   />
 
                   {config.backgroundType === 'color' && (
                     <Field>
-                      <Label>背景颜色</Label>
+                      <Label>{t('visualDashboard.backgroundColor')}</Label>
                       <Input
                         type="color"
                         value={config.backgroundColor || '#f0f0f0'}
@@ -3958,7 +3913,7 @@ export function VisualDashboard() {
                   {config.backgroundType === 'image' && (
                     <>
                       <Field>
-                        <Label>背景图片 URL</Label>
+                        <Label>{t('visualDashboard.backgroundImageUrl')}</Label>
                         <Input
                           value={config.backgroundImage || ''}
                           onChange={(e) => updateConfig('backgroundImage')(e.target.value)}
@@ -3967,7 +3922,7 @@ export function VisualDashboard() {
                         />
                       </Field>
                       <Field>
-                        <Label>或上传图片</Label>
+                        <Label>{t('visualDashboard.orUploadImage')}</Label>
                         <div className="flex items-center gap-2">
                           <Input
                             type="file"
@@ -3991,14 +3946,14 @@ export function VisualDashboard() {
                               size="sm"
                               onClick={() => updateConfig('backgroundImage')('')}
                             >
-                              清除
+                              {t('visualDashboard.clear')}
                             </Button>
                           )}
                         </div>
                       </Field>
                       {config.backgroundImage && (
                         <div className="mt-2">
-                          <Label className="text-xs text-muted-foreground">预览</Label>
+                          <Label className="text-xs text-muted-foreground">{t('visualDashboard.preview')}</Label>
                           <div
                             className="w-full h-24 bg-muted rounded-md bg-cover bg-center border"
                             style={{ backgroundImage: `url(${config.backgroundImage})` }}
@@ -4010,7 +3965,7 @@ export function VisualDashboard() {
 
                   {config.backgroundType === 'grid' && (
                     <Field>
-                      <Label>网格大小</Label>
+                      <Label>{t('visualDashboard.gridSize')}</Label>
                       <Input
                         type="number"
                         min={10}
@@ -4024,25 +3979,25 @@ export function VisualDashboard() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field>
-                      <Label>显示控制栏</Label>
+                      <Label>{t('visualDashboard.showControlBar')}</Label>
                       <select
                         value={String(config.showControls ?? true)}
                         onChange={(e) => updateConfig('showControls')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏</option>
+                        <option value="true">{t('visualDashboard.showCard')}</option>
+                        <option value="false">{t('visualDashboard.hide')}</option>
                       </select>
                     </Field>
                     <Field>
-                      <Label>显示全屏按钮</Label>
+                      <Label>{t('visualDashboard.showFullscreenButton')}</Label>
                       <select
                         value={String(config.showFullscreen ?? true)}
                         onChange={(e) => updateConfig('showFullscreen')(e.target.value === 'true')}
                         className="w-full h-9 px-2 rounded-md border border-input bg-background text-sm"
                       >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏</option>
+                        <option value="true">{t('visualDashboard.showCard')}</option>
+                        <option value="false">{t('visualDashboard.hide')}</option>
                       </select>
                     </Field>
                   </div>
@@ -4057,82 +4012,26 @@ export function VisualDashboard() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-sm font-medium">图层项绑定</h3>
+                      <h3 className="text-sm font-medium">{t('visualDashboard.layerItemBinding')}</h3>
                       <p className="text-xs text-muted-foreground mt-1">
-                        管理图层上的设备、指标、指令等项
+                        {t('visualDashboard.manageLayerItems')}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const latestDashboard = useStore.getState().currentDashboard
-                          const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
-                          let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
-
-                          // Create new text binding
-                          const newBinding: LayerBinding = {
-                            id: `text-${Date.now()}`,
-                            type: 'text',
-                            icon: 'text',
-                            name: '新文本',
-                            position: { x: 50, y: 50 },
-                            dataSource: { type: 'static', text: '文本内容' },
-                          }
-
-                          updateConfig('bindings')([...latestBindings, newBinding])
-                          setLayerEditorBindings([...latestBindings, newBinding])
-                          setLayerEditorOpen(true)
-                        }}
-                      >
-                        <Type className="h-4 w-4 mr-1" />
-                        添加文本
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const latestDashboard = useStore.getState().currentDashboard
-                          const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
-                          let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
-
-                          // Create new icon binding
-                          const newBinding: LayerBinding = {
-                            id: `icon-${Date.now()}`,
-                            type: 'icon',
-                            icon: 'icon',
-                            name: '新图标',
-                            position: { x: 50, y: 50 },
-                            dataSource: { type: 'static', icon: '⭐' },
-                          }
-
-                          updateConfig('bindings')([...latestBindings, newBinding])
-                          setLayerEditorBindings([...latestBindings, newBinding])
-                          setLayerEditorOpen(true)
-                        }}
-                      >
-                        <Sparkles className="h-4 w-4 mr-1" />
-                        添加图标
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="default"
-                        size="sm"
-                        onClick={() => {
-                          const latestDashboard = useStore.getState().currentDashboard
-                          const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
-                          let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
-                          setLayerEditorBindings(latestBindings)
-                          setLayerEditorOpen(true)
-                        }}
-                      >
-                        <Layers className="h-4 w-4 mr-1" />
-                        打开图层编辑器
-                      </Button>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={() => {
+                        const latestDashboard = useStore.getState().currentDashboard
+                        const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
+                        let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+                        setLayerEditorBindings(latestBindings)
+                        setLayerEditorOpen(true)
+                      }}
+                    >
+                      <Layers className="h-4 w-4 mr-1" />
+                      {t('visualDashboard.openLayerEditor')}
+                    </Button>
                   </div>
 
                   {/* Bindings List - Grouped by Type */}
@@ -4153,49 +4052,49 @@ export function VisualDashboard() {
 
                       const LAYER_TYPE_CONFIG = {
                         device: {
-                          label: '设备',
+                          label: t('layerDisplay.device'),
                           color: 'bg-green-500',
                           textColor: 'text-green-600',
                           bgColor: 'bg-green-50 dark:bg-green-950/30',
                           borderColor: 'border-green-200 dark:border-green-800',
                           icon: MapPin,
-                          description: '显示设备状态'
+                          description: t('layerDisplay.deviceDesc')
                         },
                         metric: {
-                          label: '指标',
+                          label: t('layerDisplay.metric'),
                           color: 'bg-purple-500',
                           textColor: 'text-purple-600',
                           bgColor: 'bg-purple-50 dark:bg-purple-950/30',
                           borderColor: 'border-purple-200 dark:border-purple-800',
                           icon: Activity,
-                          description: '显示指标数值'
+                          description: t('layerDisplay.metricDesc')
                         },
                         command: {
-                          label: '指令',
+                          label: t('layerDisplay.command'),
                           color: 'bg-blue-500',
                           textColor: 'text-blue-600',
                           bgColor: 'bg-blue-50 dark:bg-blue-950/30',
                           borderColor: 'border-blue-200 dark:border-blue-800',
                           icon: Zap,
-                          description: '快速执行指令'
+                          description: t('layerDisplay.commandDesc')
                         },
                         text: {
-                          label: '文本',
+                          label: t('layerDisplay.text'),
                           color: 'bg-gray-500',
                           textColor: 'text-gray-600',
                           bgColor: 'bg-gray-50 dark:bg-gray-950/30',
                           borderColor: 'border-gray-200 dark:border-gray-800',
                           icon: Type,
-                          description: '显示静态文本'
+                          description: t('layerDisplay.textDesc')
                         },
                         icon: {
-                          label: '图标',
+                          label: t('layerDisplay.icon'),
                           color: 'bg-orange-500',
                           textColor: 'text-orange-600',
                           bgColor: 'bg-orange-50 dark:bg-orange-950/30',
                           borderColor: 'border-orange-200 dark:border-orange-800',
                           icon: Sparkles,
-                          description: '显示图标'
+                          description: t('layerDisplay.iconDesc')
                         },
                       } as const
 
@@ -4203,8 +4102,8 @@ export function VisualDashboard() {
                         return (
                           <div className="p-6 text-center text-muted-foreground">
                             <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                            <p className="text-sm">暂无图层项绑定</p>
-                            <p className="text-xs mt-1">请先在上方添加数据源，然后点击"打开图层编辑器"设置位置</p>
+                            <p className="text-sm">{t('visualDashboard.noLayerItems')}</p>
+                            <p className="text-xs mt-1">{t('visualDashboard.addLayerItemHint')}</p>
                           </div>
                         )
                       }
@@ -4233,7 +4132,7 @@ export function VisualDashboard() {
                               {typeBindings.map((binding) => {
                                 const positionText = binding.position && binding.position !== 'auto'
                                   ? `(${binding.position.x.toFixed(0)}%, ${binding.position.y.toFixed(0)}%)`
-                                  : '中心'
+                                  : t('visualDashboard.center')
 
                                 const ds = binding.dataSource as any
                                 const deviceId = ds?.deviceId
@@ -4285,8 +4184,8 @@ export function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-sm">此组件使用系统数据。</p>
-                  <p className="text-xs mt-1">请在设置中配置数据源。</p>
+                  <p className="text-sm">{t('visualDashboard.systemDataSource')}</p>
+                  <p className="text-xs mt-1">{t('visualDashboard.configureDataSourceHint')}</p>
                 </div>
               ),
             },
@@ -4332,117 +4231,149 @@ export function VisualDashboard() {
 
   return (
     <div className="flex h-full overflow-hidden bg-background">
-      {/* Sidebar - Dashboard List */}
-      <DashboardListSidebar
-        dashboards={dashboards}
-        currentDashboardId={currentDashboardId}
-        onSwitch={handleDashboardSwitch}
-        onCreate={handleDashboardCreate}
-        onRename={handleDashboardRename}
-        onDelete={handleDashboardDelete}
-        open={sidebarOpen}
-        onOpenChange={handleSidebarOpenChange}
-      />
+      {/* Sidebar - Dashboard List - hidden in fullscreen */}
+      {!isFullscreen && (
+        <DashboardListSidebar
+          dashboards={dashboards}
+          currentDashboardId={currentDashboardId}
+          onSwitch={handleDashboardSwitch}
+          onCreate={handleDashboardCreate}
+          onRename={handleDashboardRename}
+          onDelete={handleDashboardDelete}
+          open={sidebarOpen}
+          onOpenChange={handleSidebarOpenChange}
+        />
+      )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header - fixed at top */}
-        <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-background z-10">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => handleSidebarOpenChange(!sidebarOpen)}
-            >
-              <PanelsTopLeft className="h-5 w-5" />
-            </Button>
-            <h1 className="text-lg font-semibold">
-              {currentDashboard.name}
-            </h1>
-          </div>
+      <div className={cn(
+        "flex-1 flex flex-col overflow-hidden",
+        isFullscreen && "fixed inset-0 z-[100] bg-background"
+      )}>
+        {/* Header - fixed at top - hidden in fullscreen */}
+        {!isFullscreen && (
+          <header className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border bg-background z-10">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleSidebarOpenChange(!sidebarOpen)}
+              >
+                <PanelsTopLeft className="h-5 w-5" />
+              </Button>
+              <h1 className="text-lg font-semibold">
+                {currentDashboard.name}
+              </h1>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant={editMode ? "default" : "outline"}
-              size="sm"
-              onClick={() => setEditMode(!editMode)}
-              className={editMode ? "shadow-sm" : ""}
-            >
-              {editMode ? (
-                <>
-                  <Check className="h-4 w-4 mr-1" />
-                  <span className="hidden sm:inline">Done</span>
-                  <span className="sm:hidden">Done</span>
-                </>
-              ) : (
-                <>
-                  <Settings2 className="h-4 w-4 mr-1" />
-                  <span className="hidden sm:inline">Edit Layout</span>
-                  <span className="sm:hidden">Edit</span>
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={editMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => setEditMode(!editMode)}
+                className={editMode ? "shadow-sm" : ""}
+              >
+                {editMode ? (
+                  <>
+                    <Check className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">Done</span>
+                    <span className="sm:hidden">Done</span>
+                  </>
+                ) : (
+                  <>
+                    <Settings2 className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">Edit Layout</span>
+                    <span className="sm:hidden">Edit</span>
+                  </>
+                )}
+              </Button>
 
-            <Sheet open={componentLibraryOpen} onOpenChange={(open) => {
-              if (editMode) {
-                setComponentLibraryOpen(open)
-              }
-            }}>
-              <SheetTrigger asChild>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="shadow-sm"
-                  disabled={!editMode}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  <span className="hidden sm:inline">Add</span>
-                  <span className="sm:hidden">Add</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto">
-                <SheetTitle>Component Library</SheetTitle>
-                <div className="mt-4 space-y-6 pb-6">
-                  {COMPONENT_LIBRARY.map((category) => (
-                    <div key={category.category}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <category.categoryIcon className="h-4 w-4 text-muted-foreground" />
-                        <h3 className="text-sm font-medium">{category.categoryLabel}</h3>
+              <Sheet open={componentLibraryOpen} onOpenChange={(open) => {
+                if (editMode) {
+                  setComponentLibraryOpen(open)
+                }
+              }}>
+                <SheetTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="shadow-sm"
+                    disabled={!editMode}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">{t('visualDashboard.add')}</span>
+                    <span className="sm:hidden">{t('visualDashboard.add')}</span>
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-80 sm:w-96 overflow-y-auto">
+                  <SheetTitle>{t('visualDashboard.componentLibrary')}</SheetTitle>
+                  <div className="mt-4 space-y-6 pb-6">
+                    {getComponentLibrary(t).map((category) => (
+                      <div key={category.category}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <category.categoryIcon className="h-4 w-4 text-muted-foreground" />
+                          <h3 className="text-sm font-medium">{category.categoryLabel}</h3>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {category.items.map((item) => {
+                            const Icon = item.icon
+                            return (
+                              <Button
+                                key={item.id}
+                                variant="outline"
+                                size="sm"
+                                className="h-auto w-full flex-col items-start p-3 text-left overflow-hidden"
+                                onClick={() => handleAddComponent(item.id)}
+                              >
+                                <Icon className="h-4 w-4 mb-2 text-muted-foreground shrink-0" />
+                                <span className="text-xs font-medium w-full text-left">{item.name}</span>
+                                <p className="text-xs text-muted-foreground mt-1 w-full text-left line-clamp-2 leading-snug break-words">
+                                  {item.description}
+                                </p>
+                              </Button>
+                            )
+                          })}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {category.items.map((item) => {
-                          const Icon = item.icon
-                          return (
-                            <Button
-                              key={item.id}
-                              variant="outline"
-                              size="sm"
-                              className="h-auto flex-col items-start p-3 text-left"
-                              onClick={() => handleAddComponent(item.id)}
-                            >
-                              <Icon className="h-4 w-4 mb-2 text-muted-foreground" />
-                              <span className="text-xs font-medium">{item.name}</span>
-                              <span className="text-xs text-muted-foreground mt-1">{item.description}</span>
-                            </Button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
-          </div>
-        </header>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+
+              {/* Fullscreen toggle button */}
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={toggleFullscreen}
+                title={t('visualDashboard.fullscreen')}
+              >
+                <Maximize className="h-4 w-4" />
+              </Button>
+            </div>
+          </header>
+        )}
 
         {/* Dashboard Grid */}
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto p-4 relative">
+          {/* Fullscreen exit button - floating */}
+          {isFullscreen && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleFullscreen}
+              className="absolute top-4 right-4 z-50 shadow-lg bg-background/90 backdrop-blur"
+              title={t('visualDashboard.exitFullscreen')}
+            >
+              <Minimize className="h-4 w-4" />
+            </Button>
+          )}
+
           {currentDashboard.components.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
               <LayoutDashboard className="h-16 w-16 mb-4 opacity-50" />
-              <p className="text-lg font-medium">Empty Dashboard</p>
+              <p className="text-lg font-medium">{t('visualDashboard.emptyDashboard')}</p>
               <p className="text-sm mt-2">
-                {editMode ? 'Add components to get started' : 'Enter edit mode to add components'}
+                {editMode ? t('visualDashboard.addComponentsHint') : t('visualDashboard.enterEditModeHint')}
               </p>
               {editMode && (
                 <Button
@@ -4452,7 +4383,7 @@ export function VisualDashboard() {
                   onClick={() => setComponentLibraryOpen(true)}
                 >
                   <Plus className="h-4 w-4 mr-1" />
-                  Add Component
+                  {t('visualDashboard.addComponent')}
                 </Button>
               )}
             </div>

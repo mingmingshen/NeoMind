@@ -7,6 +7,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Search, Server, Check, Zap, Info, ChevronRight, X, ChevronDown } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -26,23 +27,27 @@ export interface DataSourceSelectorContentProps {
 type CategoryType = 'device-metric' | 'device-command' | 'device-info'
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
 
-// Device info property definitions
-const DEVICE_INFO_PROPERTIES = [
-  { id: 'name', name: '设备名称', description: '设备的显示名称' },
-  { id: 'status', name: '状态', description: '当前状态文本' },
-  { id: 'online', name: '在线状态', description: '是否在线' },
-  { id: 'last_seen', name: '最后上线', description: '最后通信时间' },
-  { id: 'device_type', name: '设备类型', description: '设备类型标识' },
-  { id: 'plugin_name', name: '适配器', description: '连接的插件名称' },
-  { id: 'adapter_id', name: '适配器ID', description: '适配器唯一标识' },
-]
+// Device info property definitions factory (uses translations)
+function getDeviceInfoProperties(t: (key: string) => string) {
+  return [
+    { id: 'name', name: t('dataSource.deviceName'), description: t('dataSource.deviceNameDesc') },
+    { id: 'status', name: t('dataSource.status'), description: t('dataSource.statusDesc') },
+    { id: 'online', name: t('dataSource.onlineStatus'), description: t('dataSource.onlineStatusDesc') },
+    { id: 'last_seen', name: t('dataSource.lastSeen'), description: t('dataSource.lastSeenDesc') },
+    { id: 'device_type', name: t('dataSource.deviceType'), description: t('dataSource.deviceTypeDesc') },
+    { id: 'plugin_name', name: t('dataSource.adapter'), description: t('dataSource.adapterDesc') },
+    { id: 'adapter_id', name: t('dataSource.adapterId'), description: t('dataSource.adapterIdDesc') },
+  ]
+}
 
-// Category configuration
-const CATEGORIES = [
-  { id: 'device-metric' as const, name: '指标', icon: Server, description: '设备的实时数据点' },
-  { id: 'device-command' as const, name: '指令', icon: Zap, description: '控制设备的操作' },
-  { id: 'device-info' as const, name: '基本信息', icon: Info, description: '设备的属性和状态' },
-]
+// Category configuration factory (uses translations)
+function getCategories(t: (key: string) => string) {
+  return [
+    { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
+    { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
+    { id: 'device-info' as const, name: t('dataSource.basicInfo'), icon: Info, description: t('dataSource.basicInfoDesc') },
+  ]
+}
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
@@ -186,7 +191,7 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
 /**
  * Get a readable label for a selected item
  */
-function getSelectedItemLabel(item: SelectedItem, devices: any[]): string {
+function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: string) => string): string {
   const [type, deviceId, ...rest] = item.split(':')
 
   switch (type as CategoryType) {
@@ -201,7 +206,7 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[]): string {
     case 'device-info':
       const device3 = devices.find(d => d.id === deviceId)
       const deviceName3 = device3?.name || deviceId
-      const prop = DEVICE_INFO_PROPERTIES.find(p => p.id === rest.join(':'))
+      const prop = getDeviceInfoProperties(t).find(p => p.id === rest.join(':'))
       return `${deviceName3} · ${prop?.name || rest.join(':')}`
     default:
       return item
@@ -215,6 +220,7 @@ export function DataSourceSelectorContent({
   multiple = false,
   maxSources = 10,
 }: DataSourceSelectorContentProps) {
+  const { t } = useTranslation('dashboardComponents')
   const { devices, deviceTypes } = useStore()
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -270,8 +276,8 @@ export function DataSourceSelectorContent({
 
   // Available categories based on allowedTypes
   const availableCategories = useMemo(
-    () => CATEGORIES.filter(c => normalizeAllowedTypes(allowedTypes).includes(c.id)),
-    [allowedTypes]
+    () => getCategories(t).filter(c => normalizeAllowedTypes(allowedTypes).includes(c.id)),
+    [allowedTypes, t]
   )
 
   // Set initial category to first available
@@ -292,15 +298,15 @@ export function DataSourceSelectorContent({
       } else {
         // Fallback metrics for devices without type definition
         const fallbackMetrics: MetricDefinition[] = [
-          { name: 'temperature', display_name: '温度', data_type: 'float', unit: '°C' },
-          { name: 'humidity', display_name: '湿度', data_type: 'float', unit: '%' },
-          { name: 'value', display_name: '数值', data_type: 'float', unit: '' },
+          { name: 'temperature', display_name: t('chart.temperature'), data_type: 'float', unit: '°C' },
+          { name: 'humidity', display_name: t('chart.humidity'), data_type: 'float', unit: '%' },
+          { name: 'value', display_name: t('chart.value'), data_type: 'float', unit: '' },
         ]
         map.set(device.id, fallbackMetrics)
       }
     }
     return map
-  }, [devices, deviceTypes])
+  }, [devices, deviceTypes, t])
 
   // Build device commands map
   const deviceCommandsMap = useMemo(() => {
@@ -313,14 +319,14 @@ export function DataSourceSelectorContent({
       } else {
         // Fallback commands
         const fallbackCommands: CommandDefinition[] = [
-          { name: 'toggle', display_name: '切换', parameters: [] },
-          { name: 'setValue', display_name: '设置值', parameters: [{ name: 'value', data_type: 'number' }] },
+          { name: 'toggle', display_name: t('dataSource.commandToggle'), parameters: [] },
+          { name: 'setValue', display_name: t('dataSource.commandSetValue'), parameters: [{ name: 'value', data_type: 'number' }] },
         ]
         map.set(device.id, fallbackCommands)
       }
     }
     return map
-  }, [devices, deviceTypes])
+  }, [devices, deviceTypes, t])
 
   // Handle item selection
   const handleSelectItem = (itemKey: SelectedItem) => {
@@ -374,7 +380,7 @@ export function DataSourceSelectorContent({
   }
 
   // Get current category config
-  const categoryConfig = CATEGORIES.find(c => c.id === selectedCategory)
+  const categoryConfig = getCategories(t).find(c => c.id === selectedCategory)
   const CategoryIcon = categoryConfig?.icon || Server
 
   // Filter devices by search query
@@ -410,7 +416,7 @@ export function DataSourceSelectorContent({
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索设备..."
+            placeholder={t('dataSource.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="h-8 pl-9 text-xs"
@@ -420,10 +426,10 @@ export function DataSourceSelectorContent({
           <button
             onClick={handleClearSelection}
             className="h-8 px-2 text-xs flex items-center gap-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors shrink-0"
-            title="清除所有选择"
+            title={t('dataSource.clearAllSelections')}
           >
             <X className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">清除全部</span>
+            <span className="hidden sm:inline">{t('dataSource.clearAll')}</span>
           </button>
         )}
       </div>
@@ -437,7 +443,7 @@ export function DataSourceSelectorContent({
           >
             <span className="flex items-center gap-1.5">
               <Check className="h-3.5 w-3.5 text-primary" />
-              <span className="font-medium">已选 {selectedItems.size} 项</span>
+              <span className="font-medium">{t('dataSource.selectedItems', { count: selectedItems.size })}</span>
             </span>
             <ChevronDown className={cn(
               'h-3.5 w-3.5 transition-transform',
@@ -468,7 +474,7 @@ export function DataSourceSelectorContent({
                     <button
                       onClick={() => handleRemoveItem(item)}
                       className="ml-0.5 opacity-40 group-hover:opacity-100 hover:text-destructive transition-all"
-                      title="移除"
+                      title={t('dataSource.removeItem')}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -515,7 +521,7 @@ export function DataSourceSelectorContent({
               <div className="p-1 space-y-0.5">
                 {filteredDevices.length === 0 ? (
                   <div className="text-center py-4 text-muted-foreground">
-                    <p className="text-xs">没有设备</p>
+                    <p className="text-xs">{t('dataSource.noDevices')}</p>
                   </div>
                 ) : (
                   filteredDevices.map(device => {
@@ -557,7 +563,7 @@ export function DataSourceSelectorContent({
             <div className="flex-1 overflow-y-auto">
               {!selectedDeviceId ? (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <p className="text-xs">选择一个设备</p>
+                  <p className="text-xs">{t('dataSource.selectDevice')}</p>
                 </div>
               ) : (
                 <div className="p-2">
@@ -609,7 +615,7 @@ export function DataSourceSelectorContent({
 
                   {selectedCategory === 'device-info' && (
                     <div className="space-y-0.5">
-                      {DEVICE_INFO_PROPERTIES.map(prop => {
+                      {getDeviceInfoProperties(t).map(prop => {
                         const itemKey = `device-info:${selectedDeviceId}:${prop.id}` as SelectedItem
                         const isSelected = selectedItems.has(itemKey)
 

@@ -524,23 +524,128 @@
 
 /* ============================================================================
  * Chat message prose text color override
- * Fix prose class overriding parent text color
+ * User messages: white text in light theme, dark text in dark theme
+ * AI messages: use theme variables
  * ============================================================================ */
 
-/* User message bubble - override prose text color */
-.message-bubble-user .prose {
-  color: hsl(var(--msg-user-text)) !important;
+/* Light theme - User messages: white text on blue background */
+.message-bubble-user .prose,
+.message-bubble-user .prose *,
+.message-bubble-user .prose p,
+.message-bubble-user .prose li,
+.message-bubble-user .prose span,
+.message-bubble-user .prose strong,
+.message-bubble-user .prose em,
+.message-bubble-user .prose b,
+.message-bubble-user .prose i,
+.message-bubble-user .prose h1,
+.message-bubble-user .prose h2,
+.message-bubble-user .prose h3,
+.message-bubble-user .prose h4,
+.message-bubble-user .prose h5,
+.message-bubble-user .prose h6,
+.message-bubble-user .prose td,
+.message-bubble-user .prose th,
+.message-bubble-user .prose blockquote,
+.message-bubble-user .prose code,
+.message-bubble-user .prose pre {
+  color: #fff !important;
 }
-.message-bubble-user .prose :where(p, li, span, strong),
-.message-bubble-user .prose :where(h1, h2, h3, h4, h5, h6) {
+
+/* Dark theme - User messages: dark text on blue background */
+.dark .message-bubble-user .prose,
+.dark .message-bubble-user .prose *,
+.dark .message-bubble-user .prose p,
+.dark .message-bubble-user .prose li,
+.dark .message-bubble-user .prose span,
+.dark .message-bubble-user .prose strong,
+.dark .message-bubble-user .prose em,
+.dark .message-bubble-user .prose b,
+.dark .message-bubble-user .prose i,
+.dark .message-bubble-user .prose h1,
+.dark .message-bubble-user .prose h2,
+.dark .message-bubble-user .prose h3,
+.dark .message-bubble-user .prose h4,
+.dark .message-bubble-user .prose h5,
+.dark .message-bubble-user .prose h6,
+.dark .message-bubble-user .prose td,
+.dark .message-bubble-user .prose th,
+.dark .message-bubble-user .prose blockquote,
+.dark .message-bubble-user .prose code,
+.dark .message-bubble-user .prose pre,
+.dark .message-bubble-user .dark\:prose-invert,
+.dark .message-bubble-user .dark\:prose-invert * {
+  color: #1a1a1a !important;
+}
+
+/* Target using data-variant attribute - light theme */
+.prose[data-variant="user"],
+.prose[data-variant="user"] * {
+  color: #fff !important;
+}
+
+/* Target using data-variant attribute - dark theme */
+.dark .prose[data-variant="user"],
+.dark .prose[data-variant="user"] * {
+  color: #1a1a1a !important;
+}
+
+/* AI messages - use theme variables */
+.message-bubble-assistant .prose,
+.message-bubble-assistant .prose * {
+  color: hsl(var(--msg-ai-text)) !important;
+}
+
+.dark .message-bubble-assistant .prose,
+.dark .message-bubble-assistant .prose * {
+  color: hsl(var(--msg-ai-text)) !important;
+}
+
+.prose[data-variant="assistant"],
+.prose[data-variant="assistant"] * {
+  color: hsl(var(--msg-ai-text)) !important;
+}
+
+.dark .prose[data-variant="assistant"],
+.dark .prose[data-variant="assistant"] * {
+  color: hsl(var(--msg-ai-text)) !important;
+}
+
+/* Keep links readable with primary color */
+.message-bubble-user .prose a,
+.message-bubble-user .prose * a,
+.message-bubble-assistant .prose a,
+.message-bubble-assistant .prose * a,
+.dark .message-bubble-user .dark\:prose-invert a,
+.dark .message-bubble-user .dark\:prose-invert * a,
+.dark .message-bubble-assistant .dark\:prose-invert a,
+.dark .message-bubble-assistant .dark\:prose-invert * a,
+.prose[data-variant="user"] a,
+.prose[data-variant="assistant"] a {
+  color: hsl(var(--primary)) !important;
+}
+
+/* Code blocks background - keep readable */
+.message-bubble-user .prose pre,
+.message-bubble-assistant .prose pre,
+.message-bubble-user .prose code:not(pre code),
+.message-bubble-assistant .prose code:not(pre code),
+.dark .message-bubble-user .prose pre,
+.dark .message-bubble-assistant .prose pre,
+.dark .message-bubble-user .prose code:not(pre code),
+.dark .message-bubble-assistant .prose code:not(pre code) {
+  background-color: hsl(var(--muted)) !important;
   color: inherit !important;
 }
 
-/* AI message bubble text color */
-.message-bubble-assistant .prose {
-  color: hsl(var(--msg-ai-text)) !important;
-}
-.message-bubble-assistant .prose :where(p, li, span, strong),
-.message-bubble-assistant .prose :where(h1, h2, h3, h4, h5, h6) {
+/* Thinking block inside message bubbles */
+.message-bubble-user .thinking-content,
+.message-bubble-user .thinking-content *,
+.message-bubble-assistant .thinking-content,
+.message-bubble-assistant .thinking-content *,
+.dark .message-bubble-user .thinking-content,
+.dark .message-bubble-user .thinking-content *,
+.dark .message-bubble-assistant .thinking-content,
+.dark .message-bubble-assistant .thinking-content * {
   color: inherit !important;
 }

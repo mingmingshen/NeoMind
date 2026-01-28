@@ -6,6 +6,7 @@
  */
 
 import { Power, Lightbulb, Fan, Lock } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { useDataSource } from '@/hooks/useDataSource'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -51,6 +52,7 @@ export function ToggleSwitch({
   disabled = false,
   className,
 }: ToggleSwitchProps) {
+  const { t } = useTranslation('dashboardComponents')
   const { data, loading, sendCommand, sending } = useDataSource<boolean>(dataSource, {
     fallback: initialState,
   })
@@ -116,12 +118,12 @@ export function ToggleSwitch({
           </span>
         ) : (
           <span className={cn(indicatorFontWeight.title, 'text-foreground', config.titleText)}>
-            {checked ? '已开启' : '已关闭'}
+            {checked ? t('toggleSwitch.enabled') : t('toggleSwitch.disabled')}
           </span>
         )}
         {title && (
           <span className={cn(indicatorFontWeight.label, 'text-muted-foreground', config.labelText)}>
-            {checked ? '已开启' : '已关闭'}
+            {checked ? t('toggleSwitch.enabled') : t('toggleSwitch.disabled')}
           </span>
         )}
       </div>
@@ -133,7 +135,7 @@ export function ToggleSwitch({
 
       {/* Warning: no command configured */}
       {!hasCommand && (
-        <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-orange-500" title="未配置命令数据源" />
+        <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-orange-500" title={t('toggleSwitch.noCommandSource')} />
       )}
     </button>
   )

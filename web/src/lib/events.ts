@@ -12,8 +12,16 @@ export type EventType =
   | 'RuleEvaluated'
   | 'RuleTriggered'
   | 'RuleExecuted'
+  | 'WorkflowTriggered'
+  | 'WorkflowStepCompleted'
+  | 'WorkflowCompleted'
   | 'AlertCreated'
   | 'AlertAcknowledged'
+  | 'AgentExecutionStarted'
+  | 'AgentThinking'
+  | 'AgentDecision'
+  | 'AgentExecutionCompleted'
+  | 'AgentMemoryUpdated'
   | 'PeriodicReviewTriggered'
   | 'LlmDecisionProposed'
   | 'LlmDecisionExecuted'
@@ -22,15 +30,6 @@ export type EventType =
   | 'ToolExecutionStart'
   | 'ToolExecutionSuccess'
   | 'ToolExecutionFailure'
-  | 'AgentCreated'
-  | 'AgentUpdated'
-  | 'AgentDeleted'
-  | 'AgentExecutionStarted'
-  | 'AgentExecutionCompleted'
-  | 'AgentExecutionFailed'
-  | 'AgentThinking'
-  | 'AgentDecision'
-  | 'AgentMemoryUpdated'
   | 'Custom'
 
 export interface CustomEvent extends NeoTalkEvent {
@@ -105,12 +104,7 @@ export interface AgentExecutionCompletedEvent extends NeoTalkEvent {
     execution_id: string
     duration_ms: number
     success: boolean
-    result?: {
-      decisions: Array<{
-        description: string
-        action: string
-      }>
-    }
+    error?: string | null
   }
 }
 
@@ -120,12 +114,9 @@ export interface AgentThinkingEvent extends NeoTalkEvent {
     agent_id: string
     execution_id: string
     step_number: number
-    step_type: 'data_collection' | 'analysis' | 'decision' | 'action'
+    step_type: string
     description: string
-    details?: {
-      source?: string
-      data?: unknown
-    }
+    details?: unknown
   }
 }
 
@@ -145,9 +136,7 @@ export interface AgentMemoryUpdatedEvent extends NeoTalkEvent {
   type: 'AgentMemoryUpdated'
   data: {
     agent_id: string
-    variable?: string
-    value?: unknown
-    learned_pattern?: string
+    memory_type: string
   }
 }
 

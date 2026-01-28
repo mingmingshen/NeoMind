@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table'
 import { ActionBar, EmptyState } from '@/components/shared'
 import { confirm } from '@/hooks/use-confirm'
+import { formatTimestamp } from '@/lib/utils/format'
 import { TransformBuilder as TransformBuilderSplit } from './TransformBuilderSplit'
 import { TransformTestDialog } from './TransformTestDialog'
 import type { TransformAutomation } from '@/types'
@@ -377,11 +378,11 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
                               <span className="text-muted-foreground">{t('automation:created', { defaultValue: 'Created' })}: </span>
-                              {new Date(transform.created_at * 1000).toLocaleString()}
+                              {formatTimestamp(transform.created_at)}
                             </div>
                             <div>
                               <span className="text-muted-foreground">{t('automation:updated', { defaultValue: 'Updated' })}: </span>
-                              {new Date(transform.updated_at * 1000).toLocaleString()}
+                              {formatTimestamp(transform.updated_at)}
                             </div>
                             <div>
                               <span className="text-muted-foreground">{t('automation:executions', { defaultValue: 'Executions' })}: </span>
@@ -390,7 +391,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                             <div>
                               <span className="text-muted-foreground">{t('automation:lastExecuted', { defaultValue: 'Last Executed' })}: </span>
                               {transform.last_executed
-                                ? new Date(transform.last_executed * 1000).toLocaleString()
+                                ? formatTimestamp(transform.last_executed)
                                 : t('common:never', { defaultValue: 'Never' })}
                             </div>
                           </div>

@@ -125,6 +125,57 @@ pub enum NeoTalkEvent {
         timestamp: i64,
     },
 
+    // ========== Agent Events (User-defined AI Agents) ==========
+    /// Agent execution started
+    AgentExecutionStarted {
+        agent_id: String,
+        agent_name: String,
+        execution_id: String,
+        trigger_type: String,
+        timestamp: i64,
+    },
+
+    /// Agent thinking/reasoning step
+    AgentThinking {
+        agent_id: String,
+        execution_id: String,
+        step_number: u32,
+        step_type: String,
+        description: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<serde_json::Value>,
+        timestamp: i64,
+    },
+
+    /// Agent made a decision
+    AgentDecision {
+        agent_id: String,
+        execution_id: String,
+        description: String,
+        rationale: String,
+        action: String,
+        confidence: f32,
+        timestamp: i64,
+    },
+
+    /// Agent execution completed
+    AgentExecutionCompleted {
+        agent_id: String,
+        execution_id: String,
+        success: bool,
+        duration_ms: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        timestamp: i64,
+    },
+
+    /// Agent memory updated
+    AgentMemoryUpdated {
+        agent_id: String,
+        memory_type: String,
+        timestamp: i64,
+    },
+
     // ========== LLM Events (Autonomous Agent) ==========
     /// Periodic review was triggered
     ///
@@ -238,6 +289,11 @@ impl NeoTalkEvent {
             Self::WorkflowCompleted { .. } => "WorkflowCompleted",
             Self::AlertCreated { .. } => "AlertCreated",
             Self::AlertAcknowledged { .. } => "AlertAcknowledged",
+            Self::AgentExecutionStarted { .. } => "AgentExecutionStarted",
+            Self::AgentThinking { .. } => "AgentThinking",
+            Self::AgentDecision { .. } => "AgentDecision",
+            Self::AgentExecutionCompleted { .. } => "AgentExecutionCompleted",
+            Self::AgentMemoryUpdated { .. } => "AgentMemoryUpdated",
             Self::PeriodicReviewTriggered { .. } => "PeriodicReviewTriggered",
             Self::LlmDecisionProposed { .. } => "LlmDecisionProposed",
             Self::LlmDecisionExecuted { .. } => "LlmDecisionExecuted",
@@ -265,6 +321,11 @@ impl NeoTalkEvent {
             | Self::WorkflowCompleted { timestamp, .. }
             | Self::AlertCreated { timestamp, .. }
             | Self::AlertAcknowledged { timestamp, .. }
+            | Self::AgentExecutionStarted { timestamp, .. }
+            | Self::AgentThinking { timestamp, .. }
+            | Self::AgentDecision { timestamp, .. }
+            | Self::AgentExecutionCompleted { timestamp, .. }
+            | Self::AgentMemoryUpdated { timestamp, .. }
             | Self::PeriodicReviewTriggered { timestamp, .. }
             | Self::LlmDecisionProposed { timestamp, .. }
             | Self::LlmDecisionExecuted { timestamp, .. }
@@ -309,11 +370,29 @@ impl NeoTalkEvent {
         )
     }
 
+    /// Check if this is an agent event.
+    pub fn is_agent_event(&self) -> bool {
+        matches!(
+            self,
+            Self::AgentExecutionStarted { .. }
+                | Self::AgentThinking { .. }
+                | Self::AgentDecision { .. }
+                | Self::AgentExecutionCompleted { .. }
+                | Self::AgentMemoryUpdated { .. }
+        )
+    }
+
     /// Check if this is an LLM event.
+    /// Includes both LLM decision events and AI agent events.
     pub fn is_llm_event(&self) -> bool {
         matches!(
             self,
-            Self::PeriodicReviewTriggered { .. }
+            Self::AgentExecutionStarted { .. }
+                | Self::AgentThinking { .. }
+                | Self::AgentDecision { .. }
+                | Self::AgentExecutionCompleted { .. }
+                | Self::AgentMemoryUpdated { .. }
+                | Self::PeriodicReviewTriggered { .. }
                 | Self::LlmDecisionProposed { .. }
                 | Self::LlmDecisionExecuted { .. }
                 | Self::UserMessage { .. }

@@ -31,6 +31,8 @@ struct RuleDetailDto {
     created_at: String,
     condition: Value,  // Changed to Value to handle different condition types
     actions: Vec<Value>,  // Changed to Value for frontend-compatible format
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<Value>,  // Frontend UI state for proper restoration on edit
 }
 
 /// Simple rule info for list responses.
@@ -45,18 +47,6 @@ struct RuleDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     last_triggered: Option<String>,
     dsl: String,
-}
-
-/// Request body for updating a rule.
-#[derive(Debug, serde::Deserialize)]
-pub struct UpdateRuleRequest {
-    pub name: Option<String>,
-    #[serde(default)]
-    pub enabled: Option<bool>,
-    #[serde(default)]
-    pub dsl: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
 }
 
 /// Request body for enabling/disabling a rule.
@@ -227,6 +217,7 @@ impl From<&CompiledRule> for RuleDetailDto {
             created_at: rule.created_at.to_rfc3339(),
             condition: condition_json,
             actions: actions_json,
+            source: rule.source.clone(),
         }
     }
 }
@@ -293,39 +284,43 @@ pub async fn get_rule_handler(
 pub async fn update_rule_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
-    Json(req): Json<UpdateRuleRequest>,
+    Json(req): Json<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
+    // Extract fields from request
+    let dsl = req.get("dsl").and_then(|v| v.as_str());
+    let name = req.get("name").and_then(|v| v.as_str());
+    let description = req.get("description").and_then(|v| v.as_str());
+    let enabled = req.get("enabled").and_then(|v| v.as_bool());
+    let source = req.get("source").cloned();
+
     // If DSL is provided, re-parse and replace the entire rule
-    if let Some(dsl) = req.dsl {
+    if let Some(dsl) = dsl {
         // Use the inner engine to parse DSL and get a CompiledRule
         let parsed = edge_ai_rules::dsl::RuleDslParser::parse(&dsl)
             .map_err(|e| ErrorResponse::internal(format!("Failed to parse DSL: {}", e)))?;
 
         // Create a compiled rule from the parsed DSL, then override with original ID
-        let mut rule = CompiledRule::from_parsed_with_dsl(parsed, dsl);
+        let mut rule = CompiledRule::from_parsed_with_dsl(parsed, dsl.to_string());
         rule.id = rule_id.clone();
 
         // Override name if provided
-        if let Some(name) = req.name {
-            rule.name = name;
+        if let Some(name) = name {
+            rule.name = name.to_string();
         }
 
         // Override description if provided
-        if let Some(description) = req.description {
-            rule.description = Some(description);
+        if let Some(description) = description {
+            rule.description = Some(description.to_string());
         }
 
-        // Handle enable/disable
-        let enabled = if let Some(enabled) = req.enabled {
-            enabled
-        } else {
-            matches!(rule.status, RuleStatus::Active)
-        };
+        // Set source from frontend if provided
+        rule.source = source;
 
-        rule.status = if enabled {
+        // Handle enable/disable
+        rule.status = if enabled.unwrap_or(matches!(rule.status, RuleStatus::Active)) {
             RuleStatus::Active
         } else {
             RuleStatus::Paused
@@ -351,7 +346,7 @@ pub async fn update_rule_handler(
         }));
     }
 
-    // Get the current rule for simple updates
+    // Get the current rule for simple updates (no DSL provided)
     let mut rule = state
         .rule_engine
         .get_rule(&rule_id)
@@ -359,22 +354,21 @@ pub async fn update_rule_handler(
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
     // Update fields
-    if let Some(name) = req.name {
-        rule.name = name;
+    if let Some(name) = name {
+        rule.name = name.to_string();
     }
 
-    if let Some(description) = req.description {
-        rule.description = Some(description);
+    if let Some(description) = description {
+        rule.description = Some(description.to_string());
+    }
+
+    // Update source if provided
+    if let Some(source) = source {
+        rule.source = Some(source);
     }
 
     // Handle enable/disable
-    let enabled = if let Some(enabled) = req.enabled {
-        enabled
-    } else {
-        matches!(rule.status, RuleStatus::Active)
-    };
-
-    rule.status = if enabled {
+    rule.status = if enabled.unwrap_or(matches!(rule.status, RuleStatus::Active)) {
         RuleStatus::Active
     } else {
         RuleStatus::Paused
@@ -499,8 +493,15 @@ pub async fn test_rule_handler(
         .await
         .ok_or_else(|| ErrorResponse::not_found("Rule"))?;
 
+    // Debug: Log the source field to understand the data structure
+    tracing::debug!(
+        rule_id = %id,
+        rule_source = ?rule.source,
+        "Rule source field for testing"
+    );
+
     // Extract condition fields using pattern matching
-    let (device_id, metric, operator, threshold) = match &rule.condition {
+    let (dsl_device_id, metric, operator, threshold) = match &rule.condition {
         RuleCondition::Simple { device_id, metric, operator, threshold } => {
             (device_id.clone(), metric.clone(), operator.clone(), *threshold)
         }
@@ -513,35 +514,116 @@ pub async fn test_rule_handler(
         }
     };
 
-    // Get current value for the condition
+    tracing::debug!(
+        dsl_device_id = %dsl_device_id,
+        metric = %metric,
+        "Extracted DSL device_id and metric"
+    );
+
+    // Use device_id from source.uiCondition if available (contains actual device ID)
+    // The parsed DSL contains device names which won't work for lookups
+    let resolved_device_id = if let Some(source) = &rule.source {
+        source
+            .get("uiCondition")
+            .and_then(|ui| ui.get("device_id"))
+            .and_then(|id| id.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    } else {
+        None
+    };
+
+    // Fallback: try to resolve device name to device ID using the device registry
+    let device_id = if let Some(ref resolved) = resolved_device_id {
+        resolved.clone()
+    } else {
+        // Try to find device by name in the device registry
+        match state.device_service.get_device_by_name(&dsl_device_id).await {
+            Some(device) => {
+                tracing::debug!(
+                    dsl_device_name = %dsl_device_id,
+                    resolved_device_id = %device.device_id,
+                    "Resolved device name to device ID"
+                );
+                device.device_id
+            }
+            None => {
+                // Try exact match as device ID (for backwards compatibility)
+                tracing::debug!(
+                    dsl_device_id = %dsl_device_id,
+                    "Could not resolve device name, using as-is"
+                );
+                dsl_device_id.clone()
+            }
+        }
+    };
+
+    tracing::debug!(
+        resolved_device_id = ?resolved_device_id,
+        final_device_id = %device_id,
+        "Resolved device_id for testing"
+    );
+
+    // Get current value for the rule engine
     let current_value = state.rule_engine.get_value(&device_id, &metric);
 
-    let condition_met = if let Some(val) = current_value {
+    // Try to get historical data from time series storage as fallback
+    // The metric in the rule might be "battery" but the storage key could be "values.battery"
+    // Try multiple common prefixes if the direct lookup fails
+    let metric_variants = vec![
+        metric.clone(),
+        format!("values.{}", metric),
+        format!("value.{}", metric),
+        format!("data.{}", metric),
+        format!("telemetry.{}", metric),
+    ];
+
+    let mut telemetry_value = None;
+    let mut value_source = "none";
+
+    for metric_variant in &metric_variants {
+        tracing::debug!("Trying to query time series for {}/{}", device_id, metric_variant);
+        let result = state.time_series_storage
+            .latest(&device_id, metric_variant)
+            .await;
+
+        match result {
+            Ok(Some(point)) => {
+                telemetry_value = point.value.as_f64();
+                value_source = "historical";
+                tracing::debug!("Found data for {}/{} with value {:?}", device_id, metric_variant, point.value);
+                break;
+            }
+            Ok(None) => {
+                // No data for this variant, try next
+                continue;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to query time series for {}/{}: {}", device_id, metric_variant, e);
+                continue;
+            }
+        }
+    }
+
+    // Use current value if available, otherwise use historical value
+    let used_value = current_value.or(telemetry_value);
+
+    let condition_met = if let Some(val) = used_value {
         operator.evaluate(val, threshold)
     } else {
-        // Try to get device telemetry as fallback
-        let telemetry_value = state.time_series_storage
-            .latest(&device_id, &metric)
-            .await
-            .ok()
-            .flatten()
-            .and_then(|point| point.value.as_f64());
-
-        if let Some(val) = telemetry_value {
-            operator.evaluate(val, threshold)
-        } else {
-            return Err(ErrorResponse::internal(format!(
-                "Device '{}' has no current value for metric '{}'. Please ensure the device is online and transmitting data.",
-                device_id, metric,
-            )));
-        }
+        return Err(ErrorResponse::internal(format!(
+            "Device '{}' has no data for metric '{}'. Tried variants: {}. Current value unavailable and no historical data found. \
+            Please ensure the device has transmitted data at least once.",
+            device_id, metric, metric_variants.join(", "),
+        )));
     };
 
     ok(json!({
         "rule_id": id,
         "rule_name": rule.name,
         "condition_met": condition_met,
-        "current_value": current_value,
+        "value_used": used_value,
+        "value_source": if current_value.is_some() { "current" } else { value_source },
         "threshold": threshold,
         "operator": format!("{:?}", operator),
     }))
@@ -559,22 +641,30 @@ pub async fn create_rule_handler(
         .and_then(|v| v.as_str())
         .ok_or_else(|| ErrorResponse::bad_request("Missing 'dsl' field"))?;
 
-    // Add rule from DSL
-    let rule_id = state
+    // Extract source from frontend for UI state preservation
+    let source = req.get("source").cloned();
+
+    // Parse the DSL and create rule with source
+    let parsed = edge_ai_rules::dsl::RuleDslParser::parse(&dsl)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to parse DSL: {}", e)))?;
+
+    // Create a compiled rule from the parsed DSL with source
+    let mut rule = CompiledRule::from_parsed_with_dsl(parsed, dsl.to_string());
+    rule.source = source;
+
+    // Add the rule to the engine
+    state
         .rule_engine
-        .add_rule_from_dsl(dsl)
+        .add_rule(rule.clone())
         .await
         .map_err(|e| ErrorResponse::internal(format!("Failed to create rule: {}", e)))?;
+    let rule_id = rule.id.clone();
 
     // Persist rule to store if available
     if let Some(ref store) = state.rule_store {
-        if let Some(rule) = state.rule_engine.get_rule(&rule_id).await {
-            if let Err(e) = store.save(&rule) {
-                tracing::warn!("Failed to save rule to store: {}", e);
-                // Don't fail the request if persistence fails
-            } else {
-                tracing::debug!("Saved rule {} to persistent store", rule_id);
-            }
+        match store.save(&rule) {
+            Ok(()) => tracing::debug!("Saved rule {} to persistent store", rule_id),
+            Err(e) => tracing::warn!("Failed to save rule to store: {}", e),
         }
     }
 

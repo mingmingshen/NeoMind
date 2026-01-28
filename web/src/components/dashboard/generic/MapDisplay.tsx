@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -108,9 +109,10 @@ interface MapMarkerDotProps {
   marker: MapMarker
   onClick: () => void
   isSelected?: boolean
+  t: (key: string) => string
 }
 
-function MapMarkerDot({ marker, onClick, isSelected = false }: MapMarkerDotProps) {
+function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotProps) {
   // Marker type config for colors and icons
   const getMarkerConfig = () => {
     const type = marker.markerType || 'device'
@@ -184,7 +186,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false }: MapMarkerDotProps
               <span>{marker.status || 'unknown'}</span>
             </div>
             {marker.deviceName && marker.deviceName !== marker.label && (
-              <div className="text-xs text-muted-foreground">设备: {marker.deviceName}</div>
+              <div className="text-xs text-muted-foreground">{t('mapDisplay.device')}: {marker.deviceName}</div>
             )}
           </>
         )
@@ -193,12 +195,12 @@ function MapMarkerDot({ marker, onClick, isSelected = false }: MapMarkerDotProps
         return (
           <>
             {baseInfo}
-            <div className="text-green-500 font-semibold">值: {marker.metricValue || '--'}</div>
+            <div className="text-green-500 font-semibold">{t('mapDisplay.value')}: {marker.metricValue || '--'}</div>
             {marker.deviceName && (
-              <div className="text-xs text-muted-foreground">设备: {marker.deviceName}</div>
+              <div className="text-xs text-muted-foreground">{t('mapDisplay.device')}: {marker.deviceName}</div>
             )}
             {marker.metricName && (
-              <div className="text-xs text-muted-foreground">指标: {marker.metricName}</div>
+              <div className="text-xs text-muted-foreground">{t('mapDisplay.metric')}: {marker.metricName}</div>
             )}
           </>
         )
@@ -208,10 +210,10 @@ function MapMarkerDot({ marker, onClick, isSelected = false }: MapMarkerDotProps
           <>
             {baseInfo}
             {marker.commandName && (
-              <div className="text-orange-500 text-sm">指令: {marker.commandName}</div>
+              <div className="text-orange-500 text-sm">{t('mapDisplay.command')}: {marker.commandName}</div>
             )}
             {marker.deviceName && (
-              <div className="text-xs text-muted-foreground mb-2">设备: {marker.deviceName}</div>
+              <div className="text-xs text-muted-foreground mb-2">{t('mapDisplay.device')}: {marker.deviceName}</div>
             )}
             <Button
               size="sm"
@@ -228,7 +230,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false }: MapMarkerDotProps
                 }
               }}
             >
-              执行指令
+              {t('mapDisplay.executeCommand')}
             </Button>
           </>
         )
@@ -306,6 +308,7 @@ interface SimpleSvgMapProps {
   tileLayer: string
   onMapClick?: (lat: number, lng: number) => void
   selectedMarkerId?: string | null
+  t: (key: string) => string
 }
 
 function SimpleSvgMap({
@@ -322,6 +325,7 @@ function SimpleSvgMap({
   tileLayer,
   onMapClick,
   selectedMarkerId,
+  t,
 }: SimpleSvgMapProps) {
   // Debug: log markers received by SimpleSvgMap
   console.log('SimpleSvgMap received markers:', markers, 'count:', markers?.length)
@@ -604,6 +608,7 @@ function SimpleSvgMap({
               marker={marker}
               onClick={() => onMarkerClick(marker)}
               isSelected={isSelected}
+              t={t}
             />
           </div>
         )
@@ -688,14 +693,37 @@ export function MapDisplay({
   deviceBinding,
   onMapClick,
 }: MapDisplayProps) {
+  const { t } = useTranslation('dashboardComponents')
+
+  // Get devices from store for real-time metric updates
+  const devices = useStore(state => state.devices)
+
+  // Helper function to get device metric value
+  const getDeviceMetricValue = useCallback((deviceId: string, metricId: string): string | number | undefined => {
+    const device = devices.find(d => d.id === deviceId)
+    if (!device?.current_values) return undefined
+    const value = device.current_values[metricId]
+    if (value !== undefined && value !== null) {
+      return typeof value === 'number' ? value : String(value)
+    }
+    return undefined
+  }, [devices])
+
+  // Helper function to get device status
+  const getDeviceStatus = useCallback((deviceId: string): 'online' | 'offline' | 'error' | 'warning' | undefined => {
+    const device = devices.find(d => d.id === deviceId)
+    if (!device) return undefined
+    return device.online ? 'online' : 'offline'
+  }, [devices])
+
   // Convert bindings to markers - this preserves the type info from bindings
   const convertBindingsToMarkers = useCallback((bindings: MapBinding[] | undefined): MapMarker[] => {
     if (!bindings || bindings.length === 0) return []
 
     // Get devices from store for name lookup
-    const devices = useStore.getState().devices
+    const storeDevices = useStore.getState().devices
     const getDeviceName = (deviceId: string) => {
-      const device = devices.find(d => d.id === deviceId)
+      const device = storeDevices.find(d => d.id === deviceId)
       return device?.name || deviceId
     }
 
@@ -722,17 +750,19 @@ export function MapDisplay({
 
       // Set type-specific fields
       if (binding.type === 'metric') {
-        marker.metricValue = '--' // Will be updated with actual value
+        const metricId = ds?.metricId || ds?.property || ''
+        const metricValue = getDeviceMetricValue(deviceId || '', metricId)
+        marker.metricValue = metricValue !== undefined ? String(metricValue) : '--'
         marker.markerType = 'metric'
         marker.deviceName = getDeviceName(deviceId || '')
-        marker.metricName = ds?.metricId || ds?.property || ''
+        marker.metricName = metricId
       } else if (binding.type === 'command') {
         marker.command = ds?.command
         marker.markerType = 'command'
         marker.deviceName = getDeviceName(deviceId || '')
         marker.commandName = ds?.command || ''
       } else if (binding.type === 'device') {
-        marker.status = 'online' // Default status
+        marker.status = getDeviceStatus(deviceId || '') || 'online'
         marker.markerType = 'device'
         marker.deviceName = getDeviceName(deviceId || '')
       } else if (binding.type === 'marker') {
@@ -743,7 +773,7 @@ export function MapDisplay({
 
       return marker
     })
-  }, [center])
+  }, [center, getDeviceMetricValue, getDeviceStatus])
 
   // Transform function to convert device data to MapMarker format
   const transformDeviceDataToMarkers = useCallback((rawData: unknown): MapMarker[] => {
@@ -1007,6 +1037,7 @@ export function MapDisplay({
             tileLayer={tileLayer}
             onMapClick={onMapClick}
             selectedMarkerId={selectedMarker?.id}
+            t={t}
           />
         </div>
       </div>
@@ -1051,6 +1082,7 @@ export function MapDisplay({
               tileLayer={tileLayer}
               onMapClick={onMapClick}
               selectedMarkerId={selectedMarker?.id}
+              t={t}
             />
 
           </div>
@@ -1099,6 +1131,7 @@ export function MapDisplay({
           tileLayer={tileLayer}
           onMapClick={onMapClick}
           selectedMarkerId={selectedMarker?.id}
+          t={t}
         />
       </div>
     </div>,

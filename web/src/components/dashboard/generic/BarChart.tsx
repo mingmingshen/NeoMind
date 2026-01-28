@@ -12,6 +12,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import {
   BarChart as RechartsBarChart,
@@ -196,7 +197,7 @@ function transformTelemetryToBarData(
       if (point.timestamp) {
         const date = new Date(point.timestamp > 10000000000 ? point.timestamp : point.timestamp * 1000)
         if (!isNaN(date.getTime())) {
-          name = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+          name = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
         }
       }
       return {
@@ -282,6 +283,7 @@ export function BarChart({
   dataMapping,
   className,
 }: BarChartProps) {
+  const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
   // Get effective aggregate from dataSource or props
@@ -318,17 +320,17 @@ export function BarChart({
 
   // Get device names for series labels
   const getDeviceName = (deviceId?: string): string => {
-    if (!deviceId) return 'Value'
+    if (!deviceId) return t('chart.value')
     return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 
   const getPropertyDisplayName = (property?: string): string => {
-    if (!property) return 'Value'
+    if (!property) return t('chart.value')
     const propertyNames: Record<string, string> = {
-      temperature: '温度',
-      humidity: '湿度',
-      temp: '温度',
-      value: '数值',
+      temperature: t('chart.temperature'),
+      humidity: t('chart.humidity'),
+      temp: t('chart.temperature'),
+      value: t('chart.value'),
     }
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }
@@ -417,7 +419,7 @@ export function BarChart({
               const ts = (item as { timestamp: number }).timestamp
               const date = new Date(ts > 10000000000 ? ts : ts * 1000)
               point.name = !isNaN(date.getTime())
-                ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                ? date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 : `${idx + 1}`
             } else {
               point.name = `${idx + 1}`
@@ -426,7 +428,7 @@ export function BarChart({
             point.seriesNames = sources.map((ds, si) => {
               return ds.deviceId
                 ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-                : `Series ${si + 1}`
+                : t('chart.series', { count: si + 1 })
             })
           }
 
@@ -472,12 +474,12 @@ export function BarChart({
 
     // Return default sample data for preview only (no dataSource)
     return [
-      { name: 'Jan', value: 12 },
-      { name: 'Feb', value: 18 },
-      { name: 'Mar', value: 15 },
-      { name: 'Apr', value: 22 },
-      { name: 'May', value: 19 },
-      { name: 'Jun', value: 25 },
+      { name: t('chart.jan'), value: 12 },
+      { name: t('chart.feb'), value: 18 },
+      { name: t('chart.mar'), value: 15 },
+      { name: t('chart.apr'), value: 22 },
+      { name: t('chart.may'), value: 19 },
+      { name: t('chart.jun'), value: 25 },
     ]
   }, [data, propData, dataSource, loading, dataMapping, effectiveAggregate])
 
@@ -489,7 +491,7 @@ export function BarChart({
         dataKey: `series${i}`,
         name: ds.deviceId
           ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-          : `Series ${i + 1}`,
+          : t('chart.series', { count: i + 1 }),
         color: fallbackColors[i % fallbackColors.length],
       }))
     }

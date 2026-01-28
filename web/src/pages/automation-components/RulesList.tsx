@@ -27,6 +27,7 @@ import { Zap, Edit, Play, Trash2, MoreVertical, Bell, FileText, FlaskConical, Al
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
 import { cn } from "@/lib/utils"
+import { formatTimestamp } from "@/lib/utils/format"
 
 interface RulesListProps {
   rules: Rule[]
@@ -165,24 +166,6 @@ export function RulesList({
   const endIndex = startIndex + ITEMS_PER_PAGE
   const paginatedRules = rules.slice(startIndex, endIndex)
 
-  function formatDateTime(dateStr: string | number | null | undefined): string {
-    if (!dateStr) return '-'
-    try {
-      const date = new Date(dateStr)
-      const now = new Date()
-      const diffMs = now.getTime() - date.getTime()
-      const diffMins = Math.floor(diffMs / 60000)
-
-      if (diffMins < 1) return t('automation:time.justNow')
-      if (diffMins < 60) return `${diffMins} ${t('automation:time.minutesAgo')}`
-      const diffHours = Math.floor(diffMins / 60)
-      if (diffHours < 24) return `${diffHours} ${t('automation:time.hoursAgo')}`
-      return date.toLocaleDateString()
-    } catch {
-      return '-'
-    }
-  }
-
   return (
     <>
       <Card className="overflow-hidden">
@@ -308,7 +291,7 @@ export function RulesList({
 
                     <TableCell>
                       <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">{formatDateTime(rule.last_triggered)}</span>
+                        <span className="text-muted-foreground">{formatTimestamp(rule.last_triggered)}</span>
                         <span className="text-muted-foreground">({rule.trigger_count || 0})</span>
                       </div>
                     </TableCell>

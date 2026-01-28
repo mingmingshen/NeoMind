@@ -68,7 +68,9 @@ impl EventPersistenceService {
     /// Spawns a background task that subscribes to all events
     /// and persists them to the event log store.
     pub fn start(&self) -> Arc<AtomicBool> {
-        if self.running.load(Ordering::Relaxed) {
+        // Use atomic compare_exchange to ensure only one task is started
+        if self.running.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_err() {
+            tracing::warn!("Event persistence service already running");
             return self.running.clone();
         }
 
@@ -79,8 +81,6 @@ impl EventPersistenceService {
         let running_copy = running.clone();  // Clone before async move
         let event_log = self.event_log.clone();
         let config = self.config.clone();
-
-        running.store(true, Ordering::Relaxed);
 
         tokio::spawn(async move {
             let mut batch = Vec::with_capacity(config.batch_size.max(1));
@@ -298,6 +298,33 @@ fn convert_to_event_log(event: NeoTalkEvent, metadata: EventMetadata) -> Option<
             Some(serde_json::to_value(event).ok()?),
         ),
 
+        // Agent events
+        NeoTalkEvent::AgentExecutionStarted { agent_id, agent_name, execution_id, .. } => (
+            EventSeverity::Info,
+            format!("Agent '{}' ({}) started execution: {}", agent_name, agent_id, execution_id),
+            Some(serde_json::to_value(event).ok()?),
+        ),
+        NeoTalkEvent::AgentThinking { agent_id, execution_id, step_number, description, .. } => (
+            EventSeverity::Info,
+            format!("Agent {} thinking step {}: {} (execution: {})", agent_id, step_number, description, execution_id),
+            Some(serde_json::to_value(event).ok()?),
+        ),
+        NeoTalkEvent::AgentDecision { agent_id, execution_id, description, .. } => (
+            EventSeverity::Info,
+            format!("Agent {} decision: {} (execution: {})", agent_id, description, execution_id),
+            Some(serde_json::to_value(event).ok()?),
+        ),
+        NeoTalkEvent::AgentExecutionCompleted { agent_id, execution_id, success, duration_ms, .. } => (
+            if *success { EventSeverity::Info } else { EventSeverity::Error },
+            format!("Agent {} completed execution {}: {} in {}ms", agent_id, execution_id, if *success { "success" } else { "failed" }, duration_ms),
+            Some(serde_json::to_value(event).ok()?),
+        ),
+        NeoTalkEvent::AgentMemoryUpdated { agent_id, memory_type, .. } => (
+            EventSeverity::Info,
+            format!("Agent {} memory updated: {}", agent_id, memory_type),
+            Some(serde_json::to_value(event).ok()?),
+        ),
+
         // Custom events
         NeoTalkEvent::Custom { event_type, .. } => (
             EventSeverity::Info,
@@ -337,6 +364,7 @@ mod tests {
 pub struct RuleEngineEventService {
     event_bus: Arc<EventBus>,
     rule_engine: Arc<edge_ai_rules::RuleEngine>,
+    device_registry: Option<Arc<edge_ai_devices::registry::DeviceRegistry>>,
     running: Arc<AtomicBool>,
 }
 
@@ -349,8 +377,15 @@ impl RuleEngineEventService {
         Self {
             event_bus,
             rule_engine,
+            device_registry: None,
             running: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Set the device registry for resolving device names to IDs.
+    pub fn with_device_registry(mut self, registry: Arc<edge_ai_devices::registry::DeviceRegistry>) -> Self {
+        self.device_registry = Some(registry);
+        self
     }
 
     /// Start the event service.
@@ -358,19 +393,21 @@ impl RuleEngineEventService {
     /// Spawns a background task that subscribes to device metric events
     /// and evaluates relevant rules.
     pub fn start(&self) -> Arc<AtomicBool> {
-        if self.running.load(Ordering::Relaxed) {
+        // Use atomic compare_and_swap to ensure only one task is started
+        if self.running.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_err() {
+            tracing::warn!("Rule engine event service already running");
             return self.running.clone();
         }
 
         tracing::info!("Starting rule engine event service");
+        tracing::info!("Current event bus subscriber count: {}", self.event_bus.subscriber_count());
 
         let mut rx = self.event_bus.filter().device_events();
         let running = self.running.clone();
         let running_copy = running.clone();  // Clone before async move
         let rule_engine = self.rule_engine.clone();
         let event_bus = self.event_bus.clone();
-
-        running.store(true, Ordering::Relaxed);
+        let device_registry = self.device_registry.clone();
 
         tokio::spawn(async move {
             use edge_ai_core::{MetricValue, NeoTalkEvent};
@@ -399,6 +436,7 @@ impl RuleEngineEventService {
                                 Self::evaluate_and_publish_rules(
                                     &rule_engine,
                                     &event_bus,
+                                    &device_registry,
                                     &device_id,
                                     &metric,
                                     num_value,
@@ -435,6 +473,7 @@ impl RuleEngineEventService {
     async fn evaluate_and_publish_rules(
         rule_engine: &edge_ai_rules::RuleEngine,
         event_bus: &EventBus,
+        device_registry: &Option<Arc<edge_ai_devices::registry::DeviceRegistry>>,
         device_id: &str,
         metric: &str,
         value: f64,
@@ -442,19 +481,97 @@ impl RuleEngineEventService {
     ) {
         use edge_ai_core::event::{EventMetadata, NeoTalkEvent};
 
+        tracing::debug!(
+            target: "rule_engine_evaluation",
+            device_id = %device_id,
+            metric = %metric,
+            value = %value,
+            "Evaluating rules for device metric"
+        );
+
         let rules = rule_engine.list_rules().await;
         let source = format!("rule_engine:{}", device_id);
+
+        if rules.is_empty() {
+            tracing::warn!(category = "rule_engine", "No rules found to evaluate");
+        }
 
         for rule in rules {
             let rule_id = rule.id.to_string();
             let rule_name = rule.name.clone();
 
+            tracing::debug!(
+                category = "rule_engine",
+                rule_id = %rule_id,
+                rule_name = %rule_name,
+                "Checking rule"
+            );
+
+            // Resolve device_id from source.uiCondition if available
+            // The DSL contains device names, but events use actual device IDs
+            let resolved_device_id = Self::resolve_rule_device_id(&rule, device_registry, device_id).await;
+
+            // Helper function to check if metrics match (handles prefix stripping)
+            let metrics_match = |rule_metric: &str, event_metric: &str| -> bool {
+                if rule_metric == event_metric {
+                    return true;
+                }
+                // Check if rule_metric is event_metric with prefix stripped
+                let common_prefixes = ["values.", "value.", "data.", "telemetry.", "metrics.", "state."];
+                for prefix in &common_prefixes {
+                    if event_metric.starts_with(prefix) {
+                        let stripped = &event_metric[prefix.len()..];
+                        if rule_metric == stripped {
+                            return true;
+                        }
+                    }
+                }
+                // Check if event_metric is rule_metric with prefix stripped
+                for prefix in &common_prefixes {
+                    if rule_metric.starts_with(prefix) {
+                        let stripped = &rule_metric[prefix.len()..];
+                        if stripped == event_metric {
+                            return true;
+                        }
+                    }
+                }
+                false
+            };
+
             // Check if rule condition matches this metric
             let condition_met = match &rule.condition {
                 RuleCondition::Simple { device_id: d_id, metric: m_name, operator, threshold } => {
-                    d_id == device_id && m_name == metric && operator.evaluate(value, *threshold)
+                    let device_match = resolved_device_id.as_deref().unwrap_or(d_id) == device_id;
+                    let metric_match = metrics_match(m_name, metric);
+                    let value_match = operator.evaluate(value, *threshold);
+
+                    tracing::debug!(
+                        category = "rule_engine",
+                        rule_id = %rule_id,
+                        rule_device_id = %d_id,
+                        resolved_device_id = ?resolved_device_id,
+                        event_device_id = %device_id,
+                        device_match = device_match,
+                        rule_metric = %m_name,
+                        event_metric = %metric,
+                        metric_match = metric_match,
+                        value = %value,
+                        threshold = threshold,
+                        value_match = value_match,
+                        condition_met = (device_match && metric_match && value_match),
+                        "Condition check result"
+                    );
+
+                    device_match && metric_match && value_match
                 }
-                _ => false,  // For complex conditions, skip for now
+                _ => {
+                    tracing::debug!(
+                        category = "rule_engine",
+                        rule_id = %rule_id,
+                        "Complex condition, skipping for now"
+                    );
+                    false
+                }
             };
 
             // Publish RuleEvaluated event
@@ -500,8 +617,16 @@ impl RuleEngineEventService {
                     )
                     .await;
 
-                // Execute rule actions (simplified - just log for now)
-                // TODO: Implement actual action execution
+                // Execute rule actions through the rule engine
+                let result = rule_engine.execute_rule(&rule.id).await;
+                tracing::info!(
+                    category = "rule_engine",
+                    rule_id = %rule_id,
+                    success = result.success,
+                    actions_executed = ?result.actions_executed,
+                    error = ?result.error,
+                    "Rule execution completed"
+                );
             }
         }
     }
@@ -560,6 +685,57 @@ impl RuleEngineEventService {
 
         let re = Regex::new(r"[-+]?\d*\.?\d+").ok()?;
         re.find(condition_str)?.as_str().parse().ok()
+    }
+
+    /// Resolve device_id from rule's source.uiCondition.
+    /// Returns Some(device_id) if found, None otherwise.
+    async fn resolve_rule_device_id(
+        rule: &edge_ai_rules::CompiledRule,
+        device_registry: &Option<Arc<edge_ai_devices::registry::DeviceRegistry>>,
+        event_device_id: &str,
+    ) -> Option<String> {
+        // First try to get device_id from source.uiCondition
+        if let Some(source) = &rule.source {
+            if let Some(ui_cond) = source.get("uiCondition") {
+                if let Some(device_id) = ui_cond.get("device_id").and_then(|v| v.as_str()) {
+                    if !device_id.is_empty() {
+                        return Some(device_id.to_string());
+                    }
+                }
+            }
+        }
+
+        // Get the DSL device_id (which is actually a device name from the DSL)
+        let dsl_device_name = if let RuleCondition::Simple { device_id, .. } = &rule.condition {
+            device_id.clone()
+        } else if let RuleCondition::Range { device_id, .. } = &rule.condition {
+            device_id.clone()
+        } else {
+            // For complex conditions, we can't resolve
+            return None;
+        };
+
+        // If the DSL device_id already matches the event device_id, return it
+        // This handles cases where DSL was created with actual device IDs
+        if dsl_device_name == event_device_id {
+            return Some(dsl_device_name);
+        }
+
+        // Try to resolve device name to device ID using the device registry
+        if let Some(registry) = device_registry {
+            if let Some(device) = registry.get_device(&dsl_device_name).await {
+                return Some(device.device_id);
+            }
+            // Try to find by name (fallback)
+            let devices = registry.list_devices().await;
+            for device in devices {
+                if device.name == dsl_device_name {
+                    return Some(device.device_id);
+                }
+            }
+        }
+
+        None
     }
 }
 
@@ -657,11 +833,14 @@ impl TransformEventService {
     /// 2. After a short delay, processes all transforms with the collected data
     /// 3. Publishes new virtual metric events
     pub fn start(&self) -> Arc<AtomicBool> {
-        if self.running.load(Ordering::Relaxed) {
+        // Use atomic compare_exchange to ensure only one task is started
+        if self.running.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_err() {
+            tracing::warn!("Transform event service already running");
             return self.running.clone();
         }
 
         tracing::info!("Starting transform event service");
+        tracing::info!("Current event bus subscriber count: {}", self.event_bus.subscriber_count());
 
         let mut rx = self.event_bus.filter().device_events();
         let running = self.running.clone();
@@ -671,8 +850,6 @@ impl TransformEventService {
         let time_series_storage = self.time_series_storage.clone();
         let event_bus = self.event_bus.clone();
         let device_registry = self.device_registry.clone();
-
-        running.store(true, Ordering::Relaxed);
 
         let batch_delay = self.config.batch_delay_ms;
 

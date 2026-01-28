@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,32 +50,35 @@ interface MapEditorDialogProps {
   onSave: (bindings: MapBinding[]) => void
 }
 
-const TYPE_CONFIG = {
-  device: {
-    label: '设备',
-    icon: MapPin,
-    color: 'text-green-500',
-    bgColor: 'bg-green-500',
-  },
-  metric: {
-    label: '指标',
-    icon: Activity,
-    color: 'text-purple-500',
-    bgColor: 'bg-purple-500',
-  },
-  command: {
-    label: '指令',
-    icon: Zap,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-500',
-  },
-  marker: {
-    label: '位置标记',
-    icon: Monitor,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500',
-  },
-} as const
+// Type config factory
+function getTypeConfig(t: (key: string) => string) {
+  return {
+    device: {
+      label: t('mapDisplay.device'),
+      icon: MapPin,
+      color: 'text-green-500',
+      bgColor: 'bg-green-500',
+    },
+    metric: {
+      label: t('mapDisplay.metric'),
+      icon: Activity,
+      color: 'text-purple-500',
+      bgColor: 'bg-purple-500',
+    },
+    command: {
+      label: t('mapDisplay.command'),
+      icon: Zap,
+      color: 'text-blue-500',
+      bgColor: 'bg-blue-500',
+    },
+    marker: {
+      label: t('mapDisplay.marker'),
+      icon: Monitor,
+      color: 'text-orange-500',
+      bgColor: 'bg-orange-500',
+    },
+  } as const
+}
 
 export function MapEditorDialog({
   open,
@@ -85,6 +89,9 @@ export function MapEditorDialog({
   tileLayer,
   onSave,
 }: MapEditorDialogProps) {
+  const { t } = useTranslation('dashboardComponents')
+  const typeConfig = getTypeConfig(t)
+
   const [bindings, setBindings] = useState<MapBinding[]>(initialBindings)
   const [selectedBinding, setSelectedBinding] = useState<string | null>(null)
   const [addingMode, setAddingMode] = useState(false)
@@ -120,7 +127,7 @@ export function MapEditorDialog({
     }
 
     const markers = bindings.map((binding): MapMarker => {
-      const typeConfig = TYPE_CONFIG[binding.icon || binding.type]
+      const itemConfig = typeConfig[binding.icon || binding.type]
       const ds = binding.dataSource as any
       const lat = binding.position === 'auto' || !binding.position
         ? center.lat
@@ -207,7 +214,7 @@ export function MapEditorDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl h-[80vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 py-4 border-b">
-          <DialogTitle className="text-lg">编辑地图标记</DialogTitle>
+          <DialogTitle className="text-lg">{t('mapDisplay.editorTitle')}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 flex overflow-hidden">
@@ -215,7 +222,7 @@ export function MapEditorDialog({
           <div className="w-80 border-r bg-muted/20 flex flex-col">
             <div className="p-3 border-b bg-muted/30">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                已绑定项目 ({bindings.length})
+                {t('mapDisplay.boundItems')} ({bindings.length})
               </div>
             </div>
 
@@ -223,12 +230,12 @@ export function MapEditorDialog({
               {bindings.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <MapIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">暂无标记</p>
-                  <p className="text-xs mt-1">请在配置面板中添加数据源</p>
+                  <p className="text-sm">{t('mapDisplay.noMarkers')}</p>
+                  <p className="text-xs mt-1">{t('mapDisplay.addDataSourceHint')}</p>
                 </div>
               ) : (
                 bindings.map((binding) => {
-                  const config = TYPE_CONFIG[binding.icon || binding.type]
+                  const config = typeConfig[binding.icon || binding.type]
                   const Icon = config.icon
                   const isSelected = selectedBinding === binding.id
                   const isAdding = addingMode && isSelected
@@ -263,7 +270,7 @@ export function MapEditorDialog({
                           {binding.position && binding.position !== 'auto' && (
                             <span> • ({binding.position.lat.toFixed(2)}, {binding.position.lng.toFixed(2)})</span>
                           )}
-                          {binding.position === 'auto' && <span> • 自动定位</span>}
+                          {binding.position === 'auto' && <span> • {t('mapDisplay.autoPosition')}</span>}
                         </div>
                       </div>
 
@@ -276,7 +283,7 @@ export function MapEditorDialog({
                             e.stopPropagation()
                             handleRemoveBinding(binding.id)
                           }}
-                          title="删除"
+                          title={t('common.delete')}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -309,11 +316,11 @@ export function MapEditorDialog({
 
         <DialogFooter className="px-6 py-4 border-t bg-muted/20">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSave}>
             <Check className="h-4 w-4 mr-1" />
-            保存更改
+            {t('common.saveChanges')}
           </Button>
         </DialogFooter>
       </DialogContent>

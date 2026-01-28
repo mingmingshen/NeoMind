@@ -55,29 +55,31 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
   }
 
   return (
-    <div className={cn(
-      // Base prose classes
-      "prose prose-sm dark:prose-invert max-w-none",
-      // Override prose text color to inherit from parent
-      variant === 'user' && "prose-p:text-inherit prose-li:text-inherit prose-span:text-inherit prose-strong:text-inherit",
-      "prose-p:leading-relaxed prose-p:my-1",
-      "prose-headings:font-semibold prose-headings:my-2",
-      "prose-h1:text-base prose-h2:text-sm prose-h3:text-xs",
-      "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
-      "prose-strong:font-semibold",
-      "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono",
-      "prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:my-2",
-      "prose-pre:prose-code:bg-transparent prose-pre:prose-code:p-0",
-      "prose-blockquote:border-l-2 prose-blockquote:border-muted-foreground prose-blockquote:pl-3 prose-blockquote:italic",
-      "prose-ul:my-1 prose-ul:pl-4 prose-ul:list-disc",
-      "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",
-      "prose-li:my-0.5",
-      "prose-table:my-2 prose-table:text-xs",
-      "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted/50",
-      "prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-border",
-      "prose-hr:my-2 prose-hr:border-border",
-      className
-    )}>
+    <div
+      className={cn(
+        // Base prose classes - removed dark:prose-invert to avoid color conflicts
+        "prose prose-sm max-w-none",
+        "prose-p:leading-relaxed prose-p:my-1",
+        "prose-headings:font-semibold prose-headings:my-2",
+        "prose-h1:text-base prose-h2:text-sm prose-h3:text-xs",
+        "prose-a:text-primary prose-a:no-underline hover:prose-a:underline",
+        "prose-strong:font-semibold",
+        "prose-code:rounded prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-xs prose-code:font-mono",
+        "prose-pre:bg-muted prose-pre:p-3 prose-pre:rounded-lg prose-pre:my-2",
+        "prose-pre:prose-code:bg-transparent prose-pre:prose-code:p-0",
+        "prose-blockquote:border-l-2 prose-blockquote:border-muted-foreground prose-blockquote:pl-3 prose-blockquote:italic",
+        "prose-ul:my-1 prose-ul:pl-4 prose-ul:list-disc",
+        "prose-ol:my-1 prose-ol:pl-4 prose-ol:list-decimal",
+        "prose-li:my-0.5",
+        "prose-table:my-2 prose-table:text-xs",
+        "prose-th:px-2 prose-th:py-1 prose-th:border prose-th:border-border prose-th:bg-muted/50",
+        "prose-td:px-2 prose-td:py-1 prose-td:border prose-td:border-border",
+        "prose-hr:my-2 prose-hr:border-border",
+        className
+      )}
+      style={{ color: 'inherit' }}
+      data-variant={variant}
+    >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

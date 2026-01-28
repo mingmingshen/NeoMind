@@ -219,6 +219,8 @@ pub struct CreateAgentRequest {
     pub name: String,
     #[serde(default = "default_agent_role")]
     pub role: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub user_prompt: String,
     pub device_ids: Vec<String>,
     #[serde(default)]
@@ -240,6 +242,9 @@ pub struct MetricSelectionRequest {
     pub device_id: String,
     pub metric_name: String,
     pub display_name: String,
+    /// Data collection configuration for this metric
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
 }
 
 /// Command selection in create request.
@@ -514,14 +519,24 @@ pub async fn create_agent(
     }
 
     for metric in &request.metrics {
+        // Build config, merging data_collection settings if provided
+        let mut config_json = json!({
+            "device_id": metric.device_id,
+            "metric_name": metric.metric_name,
+        });
+
+        // Merge data_collection config if provided
+        if let Some(ref metric_config) = metric.config {
+            if let Some(data_collection) = metric_config.get("data_collection") {
+                config_json["data_collection"] = data_collection.clone();
+            }
+        }
+
         resources.push(AgentResource {
             resource_type: ResourceType::Metric,
             resource_id: format!("{}:{}", metric.device_id, metric.metric_name),
             name: metric.display_name.clone(),
-            config: json!({
-                "device_id": metric.device_id,
-                "metric_name": metric.metric_name,
-            }),
+            config: config_json,
         });
     }
 
@@ -549,6 +564,7 @@ pub async fn create_agent(
     let agent = AiAgent {
         id: uuid::Uuid::new_v4().to_string(),
         name: request.name.clone(),
+        description: request.description.clone(),
         user_prompt: request.user_prompt,
         llm_backend_id: request.llm_backend_id,
         parsed_intent: None,

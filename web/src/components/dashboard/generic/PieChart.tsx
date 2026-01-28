@@ -11,6 +11,7 @@
  */
 
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   PieChart as RechartsPieChart,
   Pie,
@@ -114,14 +115,15 @@ function toTelemetrySource(
 function transformTelemetryToPieData(
   data: unknown,
   dataMapping?: CategoricalMappingConfig,
-  aggregate?: TelemetryAggregate
+  aggregate?: TelemetryAggregate,
+  t?: (key: string, params?: Record<string, unknown>) => string
 ): PieData[] {
   if (!data || !Array.isArray(data)) return []
 
   // Handle simple number array
   if (data.length > 0 && typeof data[0] === 'number') {
     return (data as number[]).map((value, index) => ({
-      name: `Item ${index + 1}`,
+      name: t ? t('chart.item', { count: index + 1 }) : `Item ${index + 1}`,
       value,
     }))
   }
@@ -168,11 +170,11 @@ function transformTelemetryToPieData(
 
     // For numeric telemetry data without count aggregation, create time-based labels
     return telemetryPoints.map((point, index) => {
-      let name = `Item ${index + 1}`
+      let name = t ? t('chart.item', { count: index + 1 }) : `Item ${index + 1}`
       if (point.timestamp) {
         const date = new Date(point.timestamp > 10000000000 ? point.timestamp : point.timestamp * 1000)
         if (!isNaN(date.getTime())) {
-          name = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+          name = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
         }
       }
       return {
@@ -281,6 +283,7 @@ export function PieChart({
   size = 'md',
   className,
 }: PieChartProps) {
+  const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
   // Get effective aggregate from dataSource or props
@@ -302,9 +305,9 @@ export function PieChart({
     telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
     {
       fallback: propData ?? [
-        { name: 'Category A', value: 30 },
-        { name: 'Category B', value: 45 },
-        { name: 'Category C', value: 25 },
+        { name: t('chart.categoryA'), value: 30 },
+        { name: t('chart.categoryB'), value: 45 },
+        { name: t('chart.categoryC'), value: 25 },
       ],
       preserveMultiple: true,
     }
@@ -312,17 +315,17 @@ export function PieChart({
 
   // Get device names for labels
   const getDeviceName = (deviceId?: string): string => {
-    if (!deviceId) return 'Value'
+    if (!deviceId) return t('chart.value')
     return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
   }
 
   const getPropertyDisplayName = (property?: string): string => {
-    if (!property) return 'Value'
+    if (!property) return t('chart.value')
     const propertyNames: Record<string, string> = {
-      temperature: '温度',
-      humidity: '湿度',
-      temp: '温度',
-      value: '数值',
+      temperature: t('chart.temperature'),
+      humidity: t('chart.humidity'),
+      temp: t('chart.temperature'),
+      value: t('chart.value'),
     }
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
   }
@@ -345,7 +348,7 @@ export function PieChart({
           return {
             name: ds.deviceId
               ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-              : `Series ${i + 1}`,
+              : t('chart.series', { count: i + 1 }),
             value: 0,
             color: fallbackColors[i % fallbackColors.length],
           }
@@ -370,7 +373,7 @@ export function PieChart({
           return {
             name: ds.deviceId
               ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-              : `Series ${i + 1}`,
+              : t('chart.series', { count: i + 1 }),
             value: mostCommon ? mostCommon[1] : 0,
             color: fallbackColors[i % fallbackColors.length],
           }
@@ -387,7 +390,7 @@ export function PieChart({
           return {
             name: ds.deviceId
               ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-              : `Series ${i + 1}`,
+              : t('chart.series', { count: i + 1 }),
             value: aggregatedValue ?? 0,
             color: fallbackColors[i % fallbackColors.length],
           }
@@ -396,7 +399,7 @@ export function PieChart({
         return {
           name: ds.deviceId
             ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-            : `Series ${i + 1}`,
+            : t('chart.series', { count: i + 1 }),
           value: 0,
           color: fallbackColors[i % fallbackColors.length],
         }
@@ -413,7 +416,7 @@ export function PieChart({
 
       // Transform telemetry points (handles both numeric and categorical data)
       // Pass aggregate setting to influence transformation behavior
-      const transformed = transformTelemetryToPieData(data, dataMapping, effectiveAggregate)
+      const transformed = transformTelemetryToPieData(data, dataMapping, effectiveAggregate, t)
       if (transformed.length > 0) {
         return transformed
       }
@@ -446,11 +449,11 @@ export function PieChart({
 
     // Return default sample data for preview only (no dataSource)
     return [
-      { name: 'Category A', value: 30 },
-      { name: 'Category B', value: 45 },
-      { name: 'Category C', value: 25 },
+      { name: t('chart.categoryA'), value: 30 },
+      { name: t('chart.categoryB'), value: 45 },
+      { name: t('chart.categoryC'), value: 25 },
     ]
-  }, [data, propData, dataSource, dataMapping, effectiveAggregate, loading])
+  }, [data, propData, dataSource, dataMapping, effectiveAggregate, loading, t])
 
   if (loading) {
     return (

@@ -160,7 +160,9 @@ impl LoadTestContext {
             time_series_storage: None,
             device_service: None,
             event_bus: Some(event_bus.clone()),
+            alert_manager: None,
             llm_runtime: llm_runtime.clone(),
+            llm_backend_store: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;

@@ -16,12 +16,9 @@ import { api } from '@/lib/api'
 
 export interface AgentThinkingStep {
   step_number: number
-  step_type: 'data_collection' | 'analysis' | 'decision' | 'action'
+  step_type: string
   description: string
-  details?: {
-    source?: string
-    data?: unknown
-  }
+  details?: unknown
   timestamp: number
   status: 'pending' | 'in_progress' | 'completed'
 }

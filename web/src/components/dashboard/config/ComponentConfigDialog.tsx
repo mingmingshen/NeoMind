@@ -7,6 +7,7 @@
  */
 
 import { useMemo, useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Settings,
   CheckCircle2,
@@ -56,8 +57,9 @@ export function ComponentConfigDialog({
   componentType,
   previewDataSource,
   previewConfig = {},
-  showTitleInDisplay = false,
+  showTitleInDisplay = true,
 }: ComponentConfigDialogProps) {
+  const { t } = useTranslation('dashboardComponents')
   // Extract config schema sections first (before using them in useMemo)
   const dataSourceSections = configSchema?.dataSourceSections ?? []
   const styleSections = configSchema?.styleSections ?? []
@@ -67,7 +69,8 @@ export function ComponentConfigDialog({
 
   const hasDataSource = dataSourceSections.length > 0 || allSections.some(s => s.type === 'data-source')
   const hasStyleConfig = styleSections.length > 0
-  const hasDisplayConfig = displaySections.length > 0 || allSections.some(s => s.type !== 'data-source')
+  // Display config exists when there are display sections OR when title is shown in display tab
+  const hasDisplayConfig = showTitleInDisplay || displaySections.length > 0 || allSections.some(s => s.type !== 'data-source')
   const hasAnyConfig = hasDataSource || hasStyleConfig || hasDisplayConfig || allSections.length > 0
 
   // Mobile: Inner tab state for data source / transform switching
@@ -198,17 +201,17 @@ export function ComponentConfigDialog({
     type: 'custom' as const,
     render: () => (
       <Field>
-        <Label htmlFor="component-title-display">显示标题</Label>
+        <Label htmlFor="component-title-display">{t('componentConfig.displayTitle')}</Label>
         <Input
           id="component-title-display"
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          placeholder="输入组件标题..."
+          placeholder={t('componentConfig.titlePlaceholder')}
           className="h-10"
         />
       </Field>
     ),
-  }] : [], [showTitleInDisplay, title, onTitleChange])
+  }] : [], [showTitleInDisplay, title, onTitleChange, t])
 
   // Enhanced display sections with title
   const enhancedDisplaySections = useMemo(() => {
@@ -239,7 +242,7 @@ export function ComponentConfigDialog({
               </div>
               <div>
                 <DialogTitle className="text-base font-semibold p-0 h-auto">
-                  编辑组件
+                  {t('componentConfig.editComponent')}
                 </DialogTitle>
                 <p className="text-xs text-muted-foreground mt-0.5 font-medium">
                   {componentType.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
@@ -253,32 +256,17 @@ export function ComponentConfigDialog({
         {/* Large screens (>= 1024px): Two-column layout */}
         {/* Small screens (< 1024px): Tab-based layout */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-          {/* Title Input (at top on small screens, unless in display sections) */}
-          {!showTitleInDisplay && (
-            <div className="lg:hidden px-4 py-3 border-b bg-muted/30">
-              <Field>
-                <Label htmlFor="component-title-mobile">显示标题</Label>
-                <Input
-                  id="component-title-mobile"
-                  value={title}
-                  onChange={(e) => onTitleChange(e.target.value)}
-                  placeholder="输入组件标题..."
-                />
-              </Field>
-            </div>
-          )}
-
           {/* Small screen: Tab-based layout */}
           <div className="flex-1 flex flex-col lg:hidden overflow-hidden">
             <Tabs defaultValue="preview" className="flex-1 flex flex-col">
               <TabsList className="grid w-full grid-cols-2 h-11 bg-muted/50 p-1.5 rounded-xl mx-4 mt-4">
                 <TabsTrigger value="preview" className="gap-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Eye className="h-4 w-4" />
-                  <span className="font-medium">预览</span>
+                  <span className="font-medium">{t('componentConfig.preview')}</span>
                 </TabsTrigger>
                 <TabsTrigger value="config" className="gap-2 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Settings className="h-4 w-4" />
-                  <span className="font-medium">配置</span>
+                  <span className="font-medium">{t('componentConfig.config')}</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -314,7 +302,7 @@ export function ComponentConfigDialog({
                                   : 'border-transparent text-muted-foreground hover:text-foreground'
                               }`}
                             >
-                              数据源
+                              {t('componentConfig.dataSource')}
                             </button>
                             <button
                               onClick={() => setMobileDataSourceTab('transform')}
@@ -324,7 +312,7 @@ export function ComponentConfigDialog({
                                   : 'border-transparent text-muted-foreground hover:text-foreground'
                               }`}
                             >
-                              转换
+                              {t('componentConfig.transform')}
                             </button>
                           </div>
                           {hasConfiguredDataSource && (
@@ -360,7 +348,7 @@ export function ComponentConfigDialog({
                       <>
                         <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
                           <Settings className="h-4 w-4 text-primary" />
-                          <span className="text-sm font-semibold">数据源配置</span>
+                          <span className="text-sm font-semibold">{t('componentConfig.dataSourceConfig')}</span>
                           {hasConfiguredDataSource && (
                             <CheckCircle2 className="h-4 w-4 text-green-500 ml-auto" />
                           )}
@@ -385,12 +373,12 @@ export function ComponentConfigDialog({
                     <TabsList className="w-full justify-start bg-muted/50 p-1 rounded-xl h-11 shrink-0">
                       {hasStyleConfig && (
                         <TabsTrigger value="style" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                          样式
+                          {t('componentConfig.style')}
                         </TabsTrigger>
                       )}
                       {hasDisplayConfig && (
                         <TabsTrigger value="display" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
-                          显示
+                          {t('componentConfig.display')}
                         </TabsTrigger>
                       )}
                     </TabsList>
@@ -414,7 +402,7 @@ export function ComponentConfigDialog({
                   <div className="rounded-xl border bg-card overflow-hidden m-4 mt-2">
                     <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/30">
                       <Settings className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm font-semibold">配置选项</span>
+                      <span className="text-sm font-semibold">{t('componentConfig.configOptions')}</span>
                     </div>
                     <div className="p-4">
                       <ConfigRenderer sections={allSections} />
@@ -447,12 +435,12 @@ export function ComponentConfigDialog({
                   <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-3 h-10 shrink-0">
                     {hasStyleConfig && (
                       <TabsTrigger value="style" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
-                        样式
+                        {t('componentConfig.style')}
                       </TabsTrigger>
                     )}
                     {hasDisplayConfig && (
                       <TabsTrigger value="display" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
-                        显示
+                        {t('componentConfig.display')}
                       </TabsTrigger>
                     )}
                   </TabsList>
@@ -479,23 +467,8 @@ export function ComponentConfigDialog({
               )}
             </div>
 
-            {/* Right: Title + Data Source + Transform Config (50%) */}
+            {/* Right: Data Source + Transform Config (50%) */}
             <div className="w-1/2 flex flex-col overflow-hidden bg-background">
-              {/* Title Input (only if not in display sections) */}
-              {!showTitleInDisplay && (
-                <div className="px-4 py-3 border-b bg-muted/20">
-                  <Field>
-                    <Label htmlFor="component-title">显示标题</Label>
-                    <Input
-                      id="component-title"
-                      value={title}
-                      onChange={(e) => onTitleChange(e.target.value)}
-                      placeholder="输入组件标题..."
-                    />
-                  </Field>
-                </div>
-              )}
-
               {/* Data Source + Transform Section */}
               <div className="flex-1 min-h-0 flex flex-col">
                 {hasDataSource ? (
@@ -511,7 +484,7 @@ export function ComponentConfigDialog({
                               : 'border-transparent text-muted-foreground hover:text-foreground'
                           }`}
                         >
-                          数据源
+                          {t('componentConfig.dataSource')}
                         </button>
                         {shouldShowDataTransform && (
                           <button
@@ -522,7 +495,7 @@ export function ComponentConfigDialog({
                                 : 'border-transparent text-muted-foreground hover:text-foreground'
                             }`}
                           >
-                            转换
+                            {t('componentConfig.transform')}
                           </button>
                         )}
                       </div>
@@ -564,7 +537,7 @@ export function ComponentConfigDialog({
                     <div className="w-12 h-12 rounded-xl bg-muted/30 flex items-center justify-center mb-3">
                       <Settings className="h-6 w-6 opacity-40" />
                     </div>
-                    <p className="text-sm">此组件无需配置数据源</p>
+                    <p className="text-sm">{t('componentConfig.noDataSourceNeeded')}</p>
                   </div>
                 )}
               </div>
@@ -579,13 +552,13 @@ export function ComponentConfigDialog({
             onClick={onClose}
             className="h-10 px-5 rounded-lg"
           >
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             onClick={onSave}
             className="h-10 px-5 rounded-lg"
           >
-            保存更改
+            {t('common.saveChanges')}
           </Button>
         </div>
       </DialogContent>

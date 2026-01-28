@@ -55,10 +55,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: "dashboard", path: "/chat", labelKey: "nav.dashboard", icon: MessageSquare },
+  { id: "agents", path: "/agents", labelKey: "nav.agents", icon: Bot },
   { id: "visual-dashboard", path: "/visual-dashboard", labelKey: "nav.visual-dashboard", icon: LayoutDashboard },
   { id: "devices", path: "/devices", labelKey: "nav.devices", icon: Cpu },
   { id: "automation", path: "/automation", labelKey: "nav.automation", icon: Workflow },
-  { id: "agents", path: "/agents", labelKey: "nav.agents", icon: Bot },
   { id: "events", path: "/events", labelKey: "nav.events", icon: Bell },
   { id: "plugins", path: "/plugins", labelKey: "nav.plugins", icon: Puzzle },
   { id: "settings", path: "/settings", labelKey: "nav.settings", icon: Settings },

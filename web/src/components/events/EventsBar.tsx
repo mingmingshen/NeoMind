@@ -7,6 +7,7 @@ import { useState, useMemo } from "react"
 import { useEvents } from "@/hooks/useEvents"
 import type { NeoTalkEvent } from "@/lib/events"
 import { cn } from "@/lib/utils"
+import { formatTime } from "@/lib/utils/format"
 import {
   Activity,
   ChevronDown,
@@ -55,16 +56,6 @@ function getEventSummary(event: NeoTalkEvent): string {
     default:
       return event.type
   }
-}
-
-// Format timestamp
-function formatTime(timestamp: number): string {
-  const date = new Date(timestamp)
-  return date.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  })
 }
 
 export function EventsBar({ className }: EventsBarProps) {

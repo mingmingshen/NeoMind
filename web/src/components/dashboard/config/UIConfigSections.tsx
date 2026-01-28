@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -562,9 +563,11 @@ export function DataMappingConfig({
   dataMapping,
   onChange,
   mappingType,
-  label = '数据格式',
+  label,
   readonly = false,
 }: DataMappingConfigProps) {
+  const { t } = useTranslation('dashboardComponents')
+
   const updateField = (field: string, value: any) => {
     const updated = { ...dataMapping, [field]: value }
     onChange?.(updated)
@@ -579,11 +582,11 @@ export function DataMappingConfig({
 
   return (
     <div className="space-y-3">
-      <h4 className="text-sm font-medium">{label}</h4>
+      <h4 className="text-sm font-medium">{label || t('formatConfig.title')}</h4>
 
       {/* Format Type */}
       <div className="space-y-2">
-        <Label className="text-xs">格式类型</Label>
+        <Label className="text-xs">{t('formatConfig.type')}</Label>
         <Select
           value={config?.format || 'auto'}
           onValueChange={(v) => updateField('format', v)}
@@ -593,12 +596,12 @@ export function DataMappingConfig({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="auto">自动</SelectItem>
-            <SelectItem value="number">数字</SelectItem>
-            <SelectItem value="currency">货币</SelectItem>
-            <SelectItem value="percent">百分比</SelectItem>
-            <SelectItem value="bytes">字节</SelectItem>
-            <SelectItem value="duration">时长</SelectItem>
+            <SelectItem value="auto">{t('formatConfig.auto')}</SelectItem>
+            <SelectItem value="number">{t('formatConfig.number')}</SelectItem>
+            <SelectItem value="currency">{t('formatConfig.currency')}</SelectItem>
+            <SelectItem value="percent">{t('formatConfig.percent')}</SelectItem>
+            <SelectItem value="bytes">{t('formatConfig.bytes')}</SelectItem>
+            <SelectItem value="duration">{t('formatConfig.duration')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -606,16 +609,16 @@ export function DataMappingConfig({
       {/* Unit */}
       <div className="grid grid-cols-2 gap-2">
         <div className="space-y-2">
-          <Label className="text-xs">单位</Label>
+          <Label className="text-xs">{t('formatConfig.unit')}</Label>
           <Input
-            placeholder="如: °C, %"
+            placeholder={t('formatConfig.unitPlaceholder')}
             value={config?.unit || ''}
             onChange={(e) => updateField('unit', e.target.value || undefined)}
             disabled={readonly}
           />
         </div>
         <div className="space-y-2">
-          <Label className="text-xs">单位位置</Label>
+          <Label className="text-xs">{t('formatConfig.unitPosition')}</Label>
           <Select
             value={config?.unitPosition || 'suffix'}
             onValueChange={(v) => updateField('unitPosition', v)}
@@ -625,8 +628,8 @@ export function DataMappingConfig({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="prefix">前缀</SelectItem>
-              <SelectItem value="suffix">后缀</SelectItem>
+              <SelectItem value="prefix">{t('formatConfig.prefix')}</SelectItem>
+              <SelectItem value="suffix">{t('formatConfig.suffix')}</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -50,10 +50,9 @@ export function ThinkingBlock({
 
       {isExpanded && (
         <div className="px-3 pb-3">
-          <div className="prose prose-sm max-w-none text-sm">
+          <div className="prose prose-sm max-w-none text-sm" style={{ color: 'inherit' }}>
             <div className={cn(
-              "thinking-content whitespace-pre-wrap break-words text-sm leading-relaxed",
-              "text-gray-700 dark:text-gray-300"
+              "thinking-content whitespace-pre-wrap break-words text-sm leading-relaxed"
             )}>
               {thinking}
               {isStreaming && <span className="animate-pulse">▌</span>}
