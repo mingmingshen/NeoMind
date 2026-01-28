@@ -31,6 +31,9 @@ import {
   Zap,
   Type,
   Sparkles,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from 'lucide-react'
 import type { DataSource } from '@/types/dashboard'
 import { useStore } from '@/store'
@@ -197,24 +200,46 @@ function LayerItemComponent({
   }, [item.position])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!isEditing || item.locked || !item.draggable) return
+    // Allow dragging unless explicitly locked
+    if (item.locked) return
     e.stopPropagation()
     setIsDragging(true)
-    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y })
+    // Store the starting mouse position and current item position
+    setDragStart({ x: e.clientX, y: e.clientY })
     onSelect()
-  }, [isEditing, item.locked, item.draggable, position, onSelect])
+  }, [item.locked, onSelect])
 
   useEffect(() => {
     if (!isDragging) return
 
     const handleMouseMove = (e: MouseEvent) => {
-      // Convert pixel delta to percentage
-      if (itemRef.current?.parentElement) {
-        const parent = itemRef.current.parentElement
-        const newX = ((e.clientX - dragStart.x) / parent.offsetWidth) * 100
-        const newY = ((e.clientY - dragStart.y) / parent.offsetHeight) * 100
-        const clampedX = Math.max(0, Math.min(95, newX))
-        const clampedY = Math.max(0, Math.min(95, newY))
+      // Calculate delta from mouse movement
+      const deltaX = e.clientX - dragStart.x
+      const deltaY = e.clientY - dragStart.y
+
+      // Get the transform container to account for zoom
+      const canvas = itemRef.current?.closest('[style*="transform"]') as HTMLElement
+      const container = itemRef.current?.parentElement
+
+      if (container) {
+        const containerWidth = container.offsetWidth
+        const containerHeight = container.offsetHeight
+
+        // Get current zoom factor
+        const currentZoom = canvas ? parseFloat(canvas.style.transform?.match(/scale\(([^)]+)\)/)?.[1] || '1') : 1
+
+        // Convert pixel delta to percentage, accounting for zoom
+        const percentDeltaX = (deltaX / containerWidth / currentZoom) * 100
+        const percentDeltaY = (deltaY / containerHeight / currentZoom) * 100
+
+        // Calculate new position
+        const newX = position.x + percentDeltaX
+        const newY = position.y + percentDeltaY
+
+        // Clamp to bounds (keep at least 5% inside)
+        const clampedX = Math.max(5, Math.min(95, newX))
+        const clampedY = Math.max(5, Math.min(95, newY))
+
         setPosition({ x: clampedX, y: clampedY })
       }
     }
@@ -222,6 +247,8 @@ function LayerItemComponent({
     const handleMouseUp = () => {
       setIsDragging(false)
       onDrag(item, position)
+      // Update dragStart to current position for next drag
+      setDragStart({ x: 0, y: 0 })
     }
 
     document.addEventListener('mousemove', handleMouseMove)
@@ -231,7 +258,7 @@ function LayerItemComponent({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, dragStart, item, position, onDrag])
+  }, [isDragging, dragStart, position, item, onDrag])
 
   const getFontSizeClass = () => {
     switch (item.fontSize) {
@@ -278,8 +305,9 @@ function LayerItemComponent({
       ref={itemRef}
       className={cn(
         'absolute transform -translate-x-1/2 -translate-y-1/2',
-        isEditing && !item.locked && 'cursor-move',
-        isDragging && 'cursor-grabbing',
+        // Always show grab cursor for draggable items (unless locked)
+        !item.locked && 'cursor-grab hover:cursor-grab',
+        isDragging && '!cursor-grabbing',
         isSelected && 'ring-2 ring-primary ring-offset-2'
       )}
       style={{
@@ -633,6 +661,13 @@ export function CustomLayer({
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
+  // Canvas zoom and pan state
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const canvasRef = useRef<HTMLDivElement>(null)
+
   // Only use internalItems state when NOT using bindings (for dataSource/propItems mode)
   // When using bindings, always use the computed items directly to avoid sync issues
   // Memoize this to prevent unnecessary re-renders
@@ -831,6 +866,55 @@ export function CustomLayer({
     setSelectedItem(newItem.id)
   }, [useInternalItems])
 
+  // Zoom handlers
+  const handleZoomIn = useCallback(() => {
+    setZoom(prev => Math.min(prev + 0.25, 3))
+  }, [])
+
+  const handleZoomOut = useCallback(() => {
+    setZoom(prev => Math.max(prev - 0.25, 0.25))
+  }, [])
+
+  const handleResetZoom = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  // Pan handlers
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    // Middle mouse button or space+click for panning
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(true)
+      setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
+    }
+  }, [pan])
+
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newPan = {
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      }
+      setPan(newPan)
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragging, dragStart])
+
   // Loading state
   if (loading) {
     return (
@@ -841,16 +925,48 @@ export function CustomLayer({
   }
 
   const content = (
-    <div className={cn(dashboardCardBase, 'relative overflow-hidden', className)}>
+    <div className={cn(dashboardCardBase, 'flex flex-col overflow-hidden', className)}>
       {/* Header with controls */}
       {showControls && (
-        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20">
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/20 shrink-0">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Custom Layer</span>
             <span className="text-xs text-muted-foreground">({renderItems.length} items)</span>
           </div>
           <div className="flex items-center gap-1">
+            {/* Zoom controls */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleZoomOut}
+              title="缩小"
+            >
+              <ZoomOut className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-xs text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleZoomIn}
+              title="放大"
+            >
+              <ZoomIn className="h-3.5 w-3.5" />
+            </Button>
+            {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={handleResetZoom}
+                title="重置"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <div className="w-px h-4 bg-border mx-1" />
             {editable && (
               <Button
                 variant="ghost"
@@ -885,62 +1001,55 @@ export function CustomLayer({
         </div>
       )}
 
-      {/* Layer canvas */}
+      {/* Layer canvas - fill remaining space */}
       <div
+        ref={canvasRef}
         className={cn(
-          'relative overflow-hidden',
-          isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[300px]'
+          'relative flex-1 min-h-0 overflow-hidden cursor-crosshair',
+          isFullscreen ? 'fixed inset-0 z-50' : ''
         )}
         style={getBackgroundStyle(backgroundType, backgroundColor, backgroundImage, gridSize, maintainAspectRatio, aspectRatio)}
-        onClick={(e) => {
-          // Clear selection
-          setSelectedItem(null)
-
-          // Handle layer click for positioning
-          if (onLayerClick && e.currentTarget) {
-            const rect = e.currentTarget.getBoundingClientRect()
-            const x = ((e.clientX - rect.left) / rect.width) * 100
-            const y = ((e.clientY - rect.top) / rect.height) * 100
-            onLayerClick(x, y)
-          }
-        }}
+        onMouseDown={handleCanvasMouseDown}
       >
-        {/* Render items */}
-        {renderItems.map((item) => (
-          <LayerItemComponent
-            key={item.id}
-            item={item}
-            isEditing={isEditing}
-            isSelected={selectedItem === item.id}
-            onSelect={() => setSelectedItem(item.id)}
-            onDrag={handleItemDrag}
-            onToggleVisibility={handleToggleVisibility}
-            onToggleLock={handleToggleLock}
-            onExecuteCommand={handleExecuteCommand}
-          />
-        ))}
-
-        {/* Empty state */}
-        {renderItems.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground/60">
-            <Square className="h-12 w-12" />
-            <div className="text-center">
-              <p className="text-sm">Empty Layer</p>
-              <p className="text-xs mt-1">Add items to this layer</p>
-            </div>
-            {isEditing && (
-              <Button variant="outline" size="sm" onClick={handleAddItem}>
-                <Plus className="h-3.5 w-3.5 mr-1.5" />
-                Add Item
-              </Button>
-            )}
+        {/* Transform container for zoom and pan */}
+        <div
+          className="absolute inset-0"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: '0 0',
+            transition: isDragging ? 'none' : 'transform 150ms ease-out',
+          }}
+        >
+          {/* Items container */}
+          <div className="relative w-full h-full">
+            {/* Render items */}
+            {renderItems.map((item) => (
+              <LayerItemComponent
+                key={item.id}
+                item={item}
+                isEditing={isEditing}
+                isSelected={selectedItem === item.id}
+                onSelect={() => setSelectedItem(item.id)}
+                onDrag={handleItemDrag}
+                onToggleVisibility={handleToggleVisibility}
+                onToggleLock={handleToggleLock}
+                onExecuteCommand={handleExecuteCommand}
+              />
+            ))}
           </div>
-        )}
+        </div>
 
         {/* Edit mode indicator */}
         {isEditing && (
-          <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-accent-foreground rounded text-xs font-medium">
-            Edit Mode
+          <div className="absolute top-2 left-2 px-2 py-1 bg-accent text-accent-foreground rounded text-xs font-medium z-50">
+            编辑模式 (Alt+拖动移动画布)
+          </div>
+        )}
+
+        {/* Zoom indicator */}
+        {(zoom !== 1 || pan.x !== 0 || pan.y !== 0) && (
+          <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/50 text-white rounded text-xs z-50">
+            {Math.round(zoom * 100)}% | {Math.round(pan.x)}, {Math.round(pan.y)}
           </div>
         )}
       </div>
