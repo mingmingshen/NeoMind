@@ -377,6 +377,11 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
                                 max: None,
                                 unit: String::new(),
                                 allowed_values: vec![],
+                                required: false,
+                                visible_when: None,
+                                group: None,
+                                help_text: String::new(),
+                                validation: vec![],
                             });
                         }
                         // Keep params in template as nested object
@@ -401,6 +406,11 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
                         max: None,
                         unit: String::new(),
                         allowed_values: vec![],
+                        required: false,
+                        visible_when: None,
+                        group: None,
+                        help_text: String::new(),
+                        validation: vec![],
                     });
                 }
             }
@@ -415,6 +425,8 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
                 parameters,
                 samples: vec![],
                 llm_hints: String::new(),
+                fixed_values: std::collections::HashMap::new(),
+                parameter_groups: vec![],
             });
         }
         serde_json::Value::Array(arr) => {
@@ -438,9 +450,16 @@ fn commands_from_json_value(value: serde_json::Value) -> Vec<CommandDefinition> 
                     max: None,
                     unit: String::new(),
                     allowed_values: vec![],
+                    required: false,
+                    visible_when: None,
+                    group: None,
+                    help_text: String::new(),
+                    validation: vec![],
                 }],
                 samples: vec![],
                 llm_hints: String::new(),
+                fixed_values: std::collections::HashMap::new(),
+                parameter_groups: vec![],
             });
         }
     }

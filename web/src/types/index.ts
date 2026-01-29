@@ -110,10 +110,15 @@ export interface CommandDefinition {
   display_name: string
   payload_template?: string  // Template string, supports ${param} variables
   parameters?: ParameterDefinition[]
+  // Fixed values - parameters that are always sent with the same value
+  // These are not visible to users and are automatically included
+  fixed_values?: Record<string, unknown>
   // Sample command payloads (for Simple mode / LLM reference)
   samples?: Record<string, unknown>[]
   // LLM hints for command usage
   llm_hints?: string
+  // Parameter groups for organizing related parameters
+  parameter_groups?: ParameterGroup[]
   // Legacy fields for backward compatibility
   topic?: string
   response_topic?: string
@@ -123,12 +128,50 @@ export interface CommandDefinition {
 export interface ParameterDefinition {
   name: string
   display_name?: string
-  data_type: string
+  data_type: ParameterDataType
   default_value?: MetricValue
   min?: number
   max?: number
   unit?: string
   allowed_values?: MetricValue[]
+  // Whether this parameter is required
+  required?: boolean
+  // Conditional visibility - show this parameter only when condition is met
+  // Example: "mode == 'advanced'" or "brightness > 50"
+  visible_when?: string
+  // Parameter group for organizing related parameters
+  group?: string
+  // Help text for this parameter
+  help_text?: string
+  // Validation rules
+  validation?: ValidationRule[]
+}
+
+// Parameter data type matching backend MetricDataType
+export type ParameterDataType =
+  | 'integer'
+  | 'float'
+  | 'string'
+  | 'boolean'
+  | 'binary'
+  | 'array'
+  | { enum: string[] }
+
+// Validation rule for parameter values
+export type ValidationRule =
+  | { type: 'pattern'; regex: string; error_message: string }
+  | { type: 'range'; min: number; max: number; error_message: string }
+  | { type: 'length'; min: number; max: number; error_message: string }
+  | { type: 'custom'; validator: string; params: Record<string, unknown> }
+
+// Parameter group for organizing parameters in the UI
+export interface ParameterGroup {
+  id: string
+  display_name: string
+  description?: string
+  collapsed?: boolean
+  parameters: string[]
+  order?: number
 }
 
 export type MetricValue =
@@ -1534,7 +1577,7 @@ export type AgentStatus = 'Active' | 'Paused' | 'Error' | 'Executing'
 /**
  * Schedule type for agent execution
  */
-export type AgentScheduleType = 'interval' | 'cron' | 'event' | 'once'
+export type AgentScheduleType = 'interval' | 'cron' | 'event'
 
 /**
  * Resource type for agent resources
@@ -1547,7 +1590,6 @@ export type AgentResourceType = 'Device' | 'Metric' | 'Command'
 export interface AiAgent {
   id: string
   name: string
-  role: AgentRole
   status: AgentStatus
   description?: string
   user_prompt?: string
@@ -1573,8 +1615,8 @@ export interface AiAgentDetail extends AiAgent {
   updated_at: string
   error_message?: string
   // Conversation history fields
-  role: AgentRole
   conversation_history: ConversationTurn[]
+  user_messages: UserMessage[]
   conversation_summary: string | null
   context_window_size: number
 }
@@ -1583,7 +1625,7 @@ export interface AiAgentDetail extends AiAgent {
  * Agent schedule configuration
  */
 export interface AgentSchedule {
-  schedule_type: 'interval' | 'cron' | 'event' | 'once'
+  schedule_type: 'interval' | 'cron' | 'event'
   interval_seconds?: number
   cron_expression?: string
   timezone?: string
@@ -1705,11 +1747,6 @@ export interface AgentExecution {
 export type ExecutionStatus = 'Running' | 'Completed' | 'Failed' | 'Cancelled'
 
 /**
- * Agent role defining its core responsibility
- */
-export type AgentRole = 'Monitor' | 'Executor' | 'Analyst'
-
-/**
  * Input for a single conversation turn (execution)
  */
 export interface TurnInput {
@@ -1741,6 +1778,16 @@ export interface ConversationTurn {
 }
 
 /**
+ * User message sent to an agent between executions
+ */
+export interface UserMessage {
+  id: string
+  timestamp: number
+  content: string
+  message_type?: string
+}
+
+/**
  * Agent resource for devices, metrics, and commands
  */
 export interface AgentResource {
@@ -1755,7 +1802,6 @@ export interface AgentResource {
  */
 export interface CreateAgentRequest {
   name: string
-  role: AgentRole
   description?: string
   user_prompt: string
   device_ids: string[]
@@ -1912,6 +1958,10 @@ export interface ActionExecuted {
   description: string
   target: string
   success: boolean
+  /** Parameters used for the action (e.g., command payload) */
+  parameters?: Record<string, unknown>
+  /** Result message or error details */
+  result?: string
 }
 
 /**

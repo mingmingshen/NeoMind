@@ -774,5 +774,122 @@
     "alarm": "Alarm",
     "lock": "Lock",
     "unknown": "Unknown Device"
+  },
+  "metricEditor": {
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "e.g.: Temperature",
+    "metricId": "Metric ID",
+    "metricIdPlaceholder": "temperature",
+    "dataType": "Data Type",
+    "unit": "Unit",
+    "unitPlaceholder": "°C, %, ...",
+    "minMax": "Min / Max",
+    "minPlaceholder": "Min",
+    "maxPlaceholder": "Max",
+    "to": "to",
+    "types": {
+      "string": "String",
+      "integer": "Integer",
+      "float": "Float",
+      "boolean": "Boolean",
+      "binary": "Binary",
+      "array": "Array"
+    },
+    "quickStart": "Quick start from device telemetry:",
+    "quickStartDesc": "Paste JSON data reported by the device, the system will automatically parse and generate metric definitions",
+    "generateFromJson": "Generate from JSON",
+    "importJson": "Import JSON",
+    "addMetric": "Add Metric",
+    "metricCount": "Metric Definitions ({{count}})",
+    "simpleModeDesc": "Telemetry data will be stored as-is without automatic parsing",
+    "simpleModeNote": "Suitable for hex/binary protocol devices, can decode and extract metrics via Transforms",
+    "jsonDialogTitle": "Generate Metric Definitions from JSON",
+    "jsonDialogDesc": "Paste JSON data reported by the device, the system will automatically parse fields and generate metric definitions (supports nested objects)",
+    "jsonPlaceholder": "Paste JSON data reported by the device, e.g.:\n{\n  \"sensor\": {\n    \"temperature\": 25.5,\n    \"humidity\": 60\n  },\n  \"status\": \"online\",\n  \"battery\": 85\n}",
+    "exampleJson": "Example JSON:",
+    "cancel": "Cancel",
+    "parseAndGenerate": "Parse and Generate Metrics",
+    "importSuccess": "Import Successful",
+    "importSuccessDesc": "Parsed {{count}} metrics from JSON",
+    "jsonError": "Invalid JSON format, please check and try again"
+  },
+  "commandEditor": {
+    "templates": {
+      "toggle": {
+        "name": "Toggle Control",
+        "displayName": "Toggle Control",
+        "stateParam": "State"
+      },
+      "setValue": {
+        "name": "Set Value",
+        "displayName": "Set Value",
+        "valueParam": "Value"
+      },
+      "setMode": {
+        "name": "Set Mode",
+        "displayName": "Set Mode",
+        "modeParam": "Mode"
+      },
+      "trigger": {
+        "name": "No-Param Command",
+        "displayName": "Trigger Command"
+      }
+    },
+    "paramCount": "{{count}} params",
+    "fixedValueCount": "{{count}} fixed values",
+    "quickStart": "Quick start from templates:",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "e.g.: Toggle Control",
+    "commandId": "Command ID",
+    "commandIdPlaceholder": "toggle",
+    "payloadFormat": "Command Payload Format",
+    "visual": "Visual",
+    "json": "JSON",
+    "previewHint": "💡 Hint: Parameters appear as yellow placeholders, fixed values are included automatically",
+    "preview": "Preview:",
+    "userParams": "User Input Parameters",
+    "userParamsDesc": "(Values users need to fill when executing commands)",
+    "addParam": "Add Parameter",
+    "noParams": "No parameters - Click button above to add user-configurable parameters",
+    "tableName": "Param Name",
+    "tableDisplayName": "Display Name",
+    "tableType": "Type",
+    "tableRequired": "Required",
+    "tableOptions": "Options/Range",
+    "paramNamePlaceholder": "param_name",
+    "displayNamePlaceholder": "Display Name",
+    "types": {
+      "string": "String",
+      "integer": "Integer",
+      "float": "Float",
+      "boolean": "Boolean",
+      "binary": "Binary",
+      "array": "Array"
+    },
+    "minValuePlaceholder": "Min value",
+    "maxValuePlaceholder": "Max value",
+    "yesNo": "Yes/No",
+    "allowedValuesPlaceholder": "option1,option2",
+    "advancedOptions": "▶ Advanced Options (Fixed values, etc.)",
+    "hideAdvanced": "▼ Advanced Options (Fixed values, etc.)",
+    "fixedValuesDesc": "Fixed values are automatically included in every command sent, users cannot modify them. Suitable for protocol version, device type, etc.",
+    "fixedValues": "Fixed Values ({{count}})",
+    "add": "Add",
+    "keyPlaceholder": "Key name",
+    "valuePlaceholder": "Fixed value",
+    "noFixedValues": "No fixed values",
+    "newParam": "Parameter {{count}}"
+  },
+  "commandsStep": {
+    "title": "Commands (Downlink)",
+    "noCommands": "No commands defined",
+    "addCommand": "Add Command",
+    "commandsCount": "Command Definitions ({{count}})",
+    "commandsDesc": "Define commands that can be executed on the device",
+    "importJson": "Import JSON",
+    "importFailed": "Import Failed",
+    "importSuccess": "Import Successful",
+    "importSuccessDesc": "Added {{count}} command(s)",
+    "invalidJson": "Invalid JSON format"
   }
 }

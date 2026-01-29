@@ -320,7 +320,7 @@ export function DataSourceSelectorContent({
         // Fallback commands
         const fallbackCommands: CommandDefinition[] = [
           { name: 'toggle', display_name: t('dataSource.commandToggle'), parameters: [] },
-          { name: 'setValue', display_name: t('dataSource.commandSetValue'), parameters: [{ name: 'value', data_type: 'number' }] },
+          { name: 'setValue', display_name: t('dataSource.commandSetValue'), parameters: [{ name: 'value', data_type: 'float' }] },
         ]
         map.set(device.id, fallbackCommands)
       }

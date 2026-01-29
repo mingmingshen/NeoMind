@@ -316,7 +316,18 @@
   "toggleSwitch": {
     "enabled": "Enabled",
     "disabled": "Disabled",
-    "noCommandSource": "No command data source configured"
+    "noCommandSource": "No command data source configured",
+    "confirmCommand": "Confirm Command",
+    "confirmDescription": "Send command to the device? The state will update when the device responds.",
+    "currentState": "Current state",
+    "parameters": "Parameters",
+    "selectValue": "Select a value",
+    "yes": "Yes",
+    "no": "No",
+    "cancel": "Cancel",
+    "confirm": "Send Command",
+    "sending": "Sending...",
+    "loadingParameters": "Loading command parameters..."
   },
   "agentStatusCard": {
     "agent": "Agent",
@@ -334,6 +345,29 @@
     "justNow": "Just now",
     "minutesAgo": "{{count}} minutes ago",
     "hoursAgo": "{{count}} hours ago"
+  },
+  "agentMonitorWidget": {
+    "title": "Agent Monitor",
+    "selectAgent": "Select an agent",
+    "monitoredAgent": "Monitored Agent",
+    "noAgentSelected": "No agent selected",
+    "noAgents": "No AI agents available",
+    "noAgentsDesc": "Create your first AI agent to get started",
+    "loading": "Loading agents...",
+    "refresh": "Refresh",
+    "executions": "Execs",
+    "successRate": "Success Rate",
+    "failed": "Failed",
+    "avgDuration": "Avg Duration",
+    "history": "Recent History",
+    "status": "Status",
+    "lastExecution": "Last Execution",
+    "pause": "Pause",
+    "resume": "Resume",
+    "execute": "Execute Now",
+    "configureAgent": "Please select an agent to monitor in the component settings",
+    "noAgentConfigured": "No agent configured",
+    "agentNotFound": "Agent not found"
   },
   "ledIndicator": {
     "on": "On",
@@ -769,6 +803,8 @@
     "customLayerDesc": "Free-form layer for custom component placement",
     "agentStatus": "Agent Status Card",
     "agentStatusDesc": "Display agent execution status and history",
+    "agentMonitor": "Agent Monitor Widget",
+    "agentMonitorDesc": "Comprehensive agent monitoring with selector, real-time status, and execution history",
     "decisionList": "Decision List",
     "decisionListDesc": "Show AI agent decision history",
     "deviceControl": "Device Control",

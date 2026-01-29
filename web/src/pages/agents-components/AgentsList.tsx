@@ -23,11 +23,11 @@ import {
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyStateInline, Pagination } from "@/components/shared"
-import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Brain, Activity, Zap, CheckCircle2, XCircle, Loader2, History, Bell } from "lucide-react"
+import { Bot, Edit, Play, Trash2, MoreVertical, Clock, Activity, Zap, CheckCircle2, XCircle, Loader2, History, Bell, Brain } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
-import type { AiAgent, AgentRole } from "@/types"
+import type { AiAgent } from "@/types"
 
 interface AgentsListProps {
   agents: AiAgent[]
@@ -38,13 +38,6 @@ interface AgentsListProps {
   onExecute: (agent: AiAgent) => void
   onViewMemory?: (agentId: string, agentName: string) => void
   onViewExecutions?: (agent: AiAgent) => void
-}
-
-// Role configuration
-const ROLE_CONFIG: Record<AgentRole, { label: string; icon: typeof Brain; color: string }> = {
-  Monitor: { label: 'agents:roles.monitor', icon: Activity, color: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-800' },
-  Executor: { label: 'agents:roles.executor', icon: Zap, color: 'text-orange-700 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800' },
-  Analyst: { label: 'agents:roles.analyst', icon: Brain, color: 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-800' },
 }
 
 // Status configuration
@@ -91,12 +84,6 @@ export function AgentsList({
               </TableHead>
               <TableHead>
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Brain className="h-4 w-4" />
-                  {t('agents:role')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <Activity className="h-4 w-4" />
                   {t('agents:stats')}
                 </div>
@@ -117,13 +104,11 @@ export function AgentsList({
           </TableHeader>
           <TableBody>
             {loading ? (
-              <EmptyStateInline title={t('common:loading')} colSpan={7} />
+              <EmptyStateInline title={t('common:loading')} colSpan={6} />
             ) : agents.length === 0 ? (
-              <EmptyStateInline title={t('agents:noAgents')} colSpan={7} />
+              <EmptyStateInline title={t('agents:noAgents')} colSpan={6} />
             ) : (
               paginatedAgents.map((agent, index) => {
-                const roleConfig = ROLE_CONFIG[agent.role] || ROLE_CONFIG.Analyst
-                const RoleIcon = roleConfig.icon
                 const statusConfig = STATUS_CONFIG[agent.status] || STATUS_CONFIG.Paused
                 const StatusIcon = statusConfig.icon
 
@@ -153,13 +138,6 @@ export function AgentsList({
                           <div className="font-medium text-sm">{agent.name}</div>
                         </div>
                       </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <Badge variant="outline" className={cn("text-xs gap-1.5", roleConfig.color)}>
-                        <RoleIcon className="h-3 w-3" />
-                        {t(roleConfig.label)}
-                      </Badge>
                     </TableCell>
 
                     <TableCell>

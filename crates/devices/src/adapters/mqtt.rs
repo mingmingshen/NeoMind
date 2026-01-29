@@ -821,7 +821,8 @@ impl MqttAdapter {
         }
     }
 
-    /// Emit a metric event to both channels and EventBus.
+    /// Emit a metric event to both channels and telemetry storage.
+    /// EventBus publishing is handled by the event forwarding task to avoid duplicates.
     async fn emit_metric_event(
         &self,
         device_id: String,
@@ -838,7 +839,7 @@ impl MqttAdapter {
                 .insert(metric_name.clone(), (value.clone(), timestamp));
         }
 
-        // Emit to device event channel
+        // Emit to device event channel - event forwarding task will publish to EventBus
         let _ = self.event_tx.send(DeviceEvent::Metric {
             device_id: device_id.clone(),
             metric: metric_name.clone(),
@@ -865,53 +866,8 @@ impl MqttAdapter {
             }
         }
 
-        // Publish to EventBus if available
-        if let Some(bus) = &self.event_bus {
-            use serde_json::json;
-            let core_value = match &value {
-                MetricValue::Integer(i) => edge_ai_core::MetricValue::Integer(*i),
-                MetricValue::Float(f) => edge_ai_core::MetricValue::Float(*f),
-                MetricValue::String(s) => edge_ai_core::MetricValue::String(s.clone()),
-                MetricValue::Boolean(b) => edge_ai_core::MetricValue::Boolean(*b),
-                MetricValue::Array(arr) => {
-                    // Convert array to JSON
-                    let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                        MetricValue::Integer(i) => json!(*i),
-                        MetricValue::Float(f) => json!(*f),
-                        MetricValue::String(s) => json!(s),
-                        MetricValue::Boolean(b) => json!(*b),
-                        MetricValue::Array(a) => {
-                            json!(a.iter().map(|inner| match inner {
-                                MetricValue::Integer(i) => json!(*i),
-                                MetricValue::Float(f) => json!(*f),
-                                MetricValue::String(s) => json!(s),
-                                MetricValue::Boolean(b) => json!(*b),
-                                _ => json!(null),
-                            }).collect::<Vec<_>>())
-                        }
-                        _ => json!(null),
-                    }).collect();
-                    edge_ai_core::MetricValue::Json(json!(json_arr))
-                }
-                MetricValue::Binary(_) => edge_ai_core::MetricValue::Json(json!(null)),
-                MetricValue::Null => edge_ai_core::MetricValue::Json(json!(null)),
-            };
-
-            debug!(
-                "Publishing DeviceMetric to EventBus: device_id={}, metric={}, ts={}",
-                device_id, metric_name, timestamp.timestamp()
-            );
-            bus.publish(NeoTalkEvent::DeviceMetric {
-                device_id,
-                metric: metric_name,
-                value: core_value,
-                timestamp: timestamp.timestamp(),
-                quality: None,
-            })
-            .await;
-        } else {
-            warn!("EventBus not available in MQTT adapter, cannot publish DeviceMetric event");
-        }
+        // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task
+        // in create_mqtt_adapter handles all EventBus publishing to avoid duplicates
     }
 
     /// Send a command via MQTT.
@@ -1379,7 +1335,7 @@ impl MqttAdapter {
                                         }
                                     }
 
-                                    // Emit to device event channel
+                                    // Emit to device event channel - event forwarding task will publish to EventBus
                                     let _ = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric.name.clone(),
@@ -1387,19 +1343,8 @@ impl MqttAdapter {
                                         timestamp: now.timestamp(),
                                     });
 
-                                    // Publish to EventBus
-                                    if let Some(bus) = event_bus {
-                                        
-                                        let core_value = convert_to_core_metric(metric.value.clone());
-                                        bus.publish(NeoTalkEvent::DeviceMetric {
-                                            device_id: device_id.clone(),
-                                            metric: metric.name.clone(),
-                                            value: core_value,
-                                            timestamp: now.timestamp(),
-                                            quality: None,
-                                        })
-                                        .await;
-                                    }
+                                    // Note: Do NOT publish to EventBus here - the event forwarding task
+                                    // in create_mqtt_adapter handles all EventBus publishing to avoid duplicates
                                 }
 
                                 // Publish DeviceOnline event for new devices
@@ -1450,7 +1395,7 @@ impl MqttAdapter {
                                 let _ = storage.write(&device_id, &metric_name, data_point).await;
                             }
 
-                            // Emit event
+                            // Emit event to device event channel - event forwarding task will publish to EventBus
                             let _ = event_tx.send(DeviceEvent::Metric {
                                 device_id: device_id.clone(),
                                 metric: metric_name.clone(),
@@ -1458,23 +1403,12 @@ impl MqttAdapter {
                                 timestamp: now.timestamp(),
                             });
 
-                            // Publish to EventBus
-                            if let Some(bus) = event_bus {
-                                let core_value = convert_to_core_metric(value.clone());
-                                debug!(
-                                    "Publishing DeviceMetric to EventBus: device_id={}, metric={}",
-                                    device_id, metric_name
-                                );
-                                bus.publish(NeoTalkEvent::DeviceMetric {
-                                    device_id: device_id.clone(),
-                                    metric: metric_name.clone(),
-                                    value: core_value,
-                                    timestamp: now.timestamp(),
-                                    quality: None,
-                                })
-                                .await;
+                            // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task
+                            // in create_mqtt_adapter handles all EventBus publishing to avoid duplicates
 
-                                // Publish device online event - extract device_type from topic if available
+                            // Publish device online event - extract device_type from topic if available
+                            // This is NOT duplicated by the forwarding task
+                            if let Some(bus) = event_bus {
                                 let device_type = extract_device_type_from_topic(&topic);
                                 info!(
                                     "Publishing DeviceOnline to EventBus: device_id={}, device_type={:?}",
@@ -1487,7 +1421,7 @@ impl MqttAdapter {
                                 })
                                 .await;
                             } else {
-                                warn!("EventBus is None in handle_mqtt_notification - cannot publish events");
+                                warn!("EventBus is None in handle_mqtt_notification - cannot publish DeviceOnline");
                             }
                         }
                     } // Close: if let Some(device_id)
@@ -1556,25 +1490,14 @@ impl MqttAdapter {
                                         }
                                     }
 
-                                    // Emit to device event channel
+                                    // Emit to device event channel - event forwarding task will publish to EventBus
                                     let _ = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric.name.clone(),
                                         value: metric.value.clone(),
                                         timestamp: now.timestamp(),
                                     });
-
-                                    // Publish to EventBus
-                                    if let Some(bus) = event_bus {
-                                        let core_value = convert_to_core_metric(metric.value.clone());
-                                        bus.publish(NeoTalkEvent::DeviceMetric {
-                                            device_id: device_id.clone(),
-                                            metric: metric.name.clone(),
-                                            value: core_value,
-                                            timestamp: now.timestamp(),
-                                            quality: None,
-                                        }).await;
-                                    }
+                                    // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task handles it
                                 }
                             } else {
                                 // No device type - try simple value extraction
@@ -1600,25 +1523,14 @@ impl MqttAdapter {
                                         let _ = storage.write(device_id, metric_name, data_point).await;
                                     }
 
-                                    // Emit event
+                                    // Emit to device event channel - event forwarding task will publish to EventBus
                                     let _ = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric_name.to_string(),
                                         value: value.clone(),
                                         timestamp: now.timestamp(),
                                     });
-
-                                    // Publish to EventBus
-                                    if let Some(bus) = event_bus {
-                                        let core_value = convert_to_core_metric(value.clone());
-                                        bus.publish(NeoTalkEvent::DeviceMetric {
-                                            device_id: device_id.clone(),
-                                            metric: metric_name.to_string(),
-                                            value: core_value,
-                                            timestamp: now.timestamp(),
-                                            quality: None,
-                                        }).await;
-                                    }
+                                    // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task handles it
                                 }
                             }
                         }
@@ -1772,30 +1684,6 @@ fn extract_device_type_from_topic(topic: &str) -> Option<String> {
         Some(parts[1].to_string())
     } else {
         None
-    }
-}
-
-/// Helper function to convert MetricValue to core MetricValue.
-fn convert_to_core_metric(value: MetricValue) -> edge_ai_core::MetricValue {
-    use serde_json::json;
-    match value {
-        MetricValue::Integer(i) => edge_ai_core::MetricValue::Integer(i),
-        MetricValue::Float(f) => edge_ai_core::MetricValue::Float(f),
-        MetricValue::String(s) => edge_ai_core::MetricValue::String(s),
-        MetricValue::Boolean(b) => edge_ai_core::MetricValue::Boolean(b),
-        MetricValue::Array(arr) => {
-            // Convert array to JSON for core metric value
-            let json_arr: Vec<serde_json::Value> = arr.iter().map(|v| match v {
-                MetricValue::Integer(i) => json!(*i),
-                MetricValue::Float(f) => json!(*f),
-                MetricValue::String(s) => json!(s),
-                MetricValue::Boolean(b) => json!(*b),
-                _ => json!(null),
-            }).collect();
-            edge_ai_core::MetricValue::Json(json!(json_arr))
-        }
-        MetricValue::Binary(_) => edge_ai_core::MetricValue::Json(json!(null)),
-        MetricValue::Null => edge_ai_core::MetricValue::Json(json!(null)),
     }
 }
 

@@ -31,6 +31,7 @@ import { DataTransformConfig } from './DataTransformConfig'
 import type { ComponentConfigSchema } from './ComponentConfigBuilder'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
+import { cn } from '@/lib/utils'
 
 export interface ComponentConfigDialogProps {
   open: boolean
@@ -79,13 +80,18 @@ export function ComponentConfigDialog({
   // Desktop: Right column tab state for data source / transform switching
   const [rightDataSourceTab, setRightDataSourceTab] = useState<'datasource' | 'transform'>('datasource')
 
-  // Reset tabs to datasource when dialog opens
+  // Config tab state - default to 'display' if no style config, otherwise 'style'
+  const [configTabValue, setConfigTabValue] = useState<'style' | 'display'>('display')
+
+  // Reset tabs when dialog opens
   useEffect(() => {
     if (open) {
       setMobileDataSourceTab('datasource')
       setRightDataSourceTab('datasource')
+      // Set default config tab based on available sections
+      setConfigTabValue(hasStyleConfig ? 'style' : 'display')
     }
-  }, [open])
+  }, [open, hasStyleConfig])
 
   // Extract data source section props
   const dataSourceSection = [...dataSourceSections, ...allSections].find(s => s.type === 'data-source')
@@ -271,7 +277,7 @@ export function ComponentConfigDialog({
               </TabsList>
 
               {/* Preview Tab */}
-              <TabsContent value="preview" className="flex-1 overflow-y-auto px-4 pb-4 mt-2">
+              <TabsContent value="preview" className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 mt-2">
                 <div className="rounded-xl border bg-muted/20 p-4">
                   <ComponentPreview
                     key={previewKey}
@@ -285,10 +291,10 @@ export function ComponentConfigDialog({
               </TabsContent>
 
               {/* Config Tab */}
-              <TabsContent value="config" className="flex-1 overflow-y-auto flex flex-col">
+              <TabsContent value="config" className="flex-1 min-h-0 overflow-y-auto flex flex-col">
                 {/* Data Source + Transform Section (Mobile) */}
                 {hasDataSource && (
-                  <div className="rounded-xl border bg-card overflow-hidden mx-4 mt-2">
+                  <div className="rounded-xl border bg-card overflow-hidden mx-4 mt-2 shrink-0">
                     {/* Tab List - Manual implementation for mobile to avoid nested Tabs */}
                     {shouldShowDataTransform ? (
                       <>
@@ -369,7 +375,7 @@ export function ComponentConfigDialog({
 
                 {/* Config Tabs - Style, Display */}
                 {(hasStyleConfig || hasDisplayConfig) && (
-                  <Tabs defaultValue="style" className="flex-1 flex flex-col min-h-0 mx-4 mt-3">
+                  <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0 mx-4 mt-3 overflow-hidden">
                     <TabsList className="w-full justify-start bg-muted/50 p-1 rounded-xl h-11 shrink-0">
                       {hasStyleConfig && (
                         <TabsTrigger value="style" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg">
@@ -384,13 +390,13 @@ export function ComponentConfigDialog({
                     </TabsList>
 
                     {hasStyleConfig && (
-                      <TabsContent value="style" className="min-h-0 overflow-y-auto mt-3">
+                      <TabsContent value="style" className="flex-1 min-h-0 overflow-y-auto mt-3 data-[state=active]:flex data-[state=active]:flex-col">
                         <ConfigRenderer sections={filteredStyleSections} />
                       </TabsContent>
                     )}
 
                     {hasDisplayConfig && (
-                      <TabsContent value="display" className="min-h-0 overflow-y-auto mt-3">
+                      <TabsContent value="display" className="flex-1 min-h-0 overflow-y-auto mt-3 data-[state=active]:flex data-[state=active]:flex-col">
                         <ConfigRenderer sections={finalDisplaySections} />
                       </TabsContent>
                     )}
@@ -415,8 +421,11 @@ export function ComponentConfigDialog({
 
           {/* Large screens: Two-column layout */}
           <div className="hidden lg:flex flex-1 overflow-hidden">
-            {/* Left: Preview + Style/Display Config (50%) */}
-            <div className="w-1/2 border-r flex flex-col bg-background overflow-hidden">
+            {/* Left: Preview + Style/Display Config (50% or 100%) */}
+            <div className={cn(
+              hasDataSource ? "w-1/2 border-r" : "w-full",
+              "flex flex-col bg-background overflow-hidden"
+            )}>
               {/* Preview */}
               <div className="shrink-0 border-b overflow-hidden">
                 <ComponentPreview
@@ -431,7 +440,7 @@ export function ComponentConfigDialog({
 
               {/* Config Tabs - Style, Display */}
               {(hasStyleConfig || hasDisplayConfig) && (
-                <Tabs defaultValue="style" className="flex-1 flex flex-col min-h-0">
+                <Tabs value={configTabValue} onValueChange={(v) => setConfigTabValue(v as 'style' | 'display')} className="flex-1 flex flex-col min-h-0">
                   <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-3 h-10 shrink-0">
                     {hasStyleConfig && (
                       <TabsTrigger value="style" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">
@@ -467,8 +476,9 @@ export function ComponentConfigDialog({
               )}
             </div>
 
-            {/* Right: Data Source + Transform Config (50%) */}
-            <div className="w-1/2 flex flex-col overflow-hidden bg-background">
+            {/* Right: Data Source + Transform Config (50%) - Only show when hasDataSource */}
+            {hasDataSource && (
+              <div className="w-1/2 flex flex-col overflow-hidden bg-background">
               {/* Data Source + Transform Section */}
               <div className="flex-1 min-h-0 flex flex-col">
                 {hasDataSource ? (
@@ -542,6 +552,7 @@ export function ComponentConfigDialog({
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>
 

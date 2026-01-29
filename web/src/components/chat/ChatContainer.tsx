@@ -123,7 +123,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               id: streamingMessageIdRef.current || crypto.randomUUID(),
               role: "assistant",
               content: streamingContentRef.current,
-              timestamp: Date.now(),
+              timestamp: Math.floor(Date.now() / 1000), // Use seconds (matches backend)
               thinking: streamingThinkingRef.current || undefined,
               tool_calls: streamingToolCallsRef.current.length > 0 ? streamingToolCallsRef.current : undefined,
             }
@@ -192,7 +192,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
       id: crypto.randomUUID(),
       role: "user",
       content: trimmedInput,
-      timestamp: Date.now(),
+      timestamp: Math.floor(Date.now() / 1000), // Use seconds (matches backend)
     }
     addMessage(userMessage)
 

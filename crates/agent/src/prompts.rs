@@ -527,7 +527,7 @@ fn get_role_prompt_en(role: &str) -> &'static str {
 }
 
 // Conversation context reminder (emphasizes long-running nature)
-const CONVERSATION_CONTEXT_ZH: &str = r#"
+pub const CONVERSATION_CONTEXT_ZH: &str = r#"
 ## 对话上下文提醒
 
 你是一个**长期运行的智能体**，会在未来多次执行。请记住：

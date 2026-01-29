@@ -357,6 +357,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/:id/memory", get(agents::get_agent_memory))
         .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
         .route("/api/agents/:id/stats", get(agents::get_agent_stats))
+        // User messages API
+        .route("/api/agents/:id/messages", get(agents::get_user_messages))
+        .route("/api/agents/:id/messages", post(agents::add_user_message))
+        .route("/api/agents/:id/messages", delete(agents::clear_user_messages))
+        .route("/api/agents/:id/messages/:message_id", delete(agents::delete_user_message))
         // Memory API
         .route("/api/memory/stats", get(memory::get_memory_stats_handler))
         .route("/api/memory/query", get(memory::query_memory_handler))

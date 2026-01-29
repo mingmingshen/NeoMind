@@ -112,7 +112,8 @@ pub use agents::{
     LearnedPattern, NotificationSent, ParsedIntent, ReasoningStep, ResourceType, ScheduleType,
     TrendPoint, IntentType,
     // Conversation types
-    ConversationTurn, TurnInput, TurnOutput, AgentRole,
+    ConversationTurn, TurnInput, TurnOutput,
+    UserMessage,
 };
 
 pub use decisions::{

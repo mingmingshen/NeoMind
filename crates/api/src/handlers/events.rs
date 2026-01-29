@@ -11,9 +11,78 @@ use axum::{
 };
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::handlers::ServerState;
 use edge_ai_core::eventbus::{EventBus, EventBusReceiver};
+use edge_ai_core::NeoTalkEvent;
+
+/// Extract event data without the nested `type` field for frontend compatibility.
+///
+/// The Rust enum uses `#[serde(tag = "type")]` which serializes as:
+///   `{ "type": "AgentExecutionStarted", "agent_id": "...", ... }`
+///
+/// But the frontend expects `data` to contain just the fields without `type`:
+///   `{ "agent_id": "...", "agent_name": "...", ... }`
+fn extract_event_data(event: &NeoTalkEvent) -> Value {
+    match event {
+        NeoTalkEvent::AgentExecutionStarted { agent_id, agent_name, execution_id, trigger_type, .. } => {
+            serde_json::json!({
+                "agent_id": agent_id,
+                "agent_name": agent_name,
+                "execution_id": execution_id,
+                "trigger_type": trigger_type,
+            })
+        }
+        NeoTalkEvent::AgentExecutionCompleted { agent_id, execution_id, success, duration_ms, error, .. } => {
+            serde_json::json!({
+                "agent_id": agent_id,
+                "execution_id": execution_id,
+                "success": success,
+                "duration_ms": duration_ms,
+                "error": error,
+            })
+        }
+        NeoTalkEvent::AgentThinking { agent_id, execution_id, step_number, step_type, description, details, .. } => {
+            serde_json::json!({
+                "agent_id": agent_id,
+                "execution_id": execution_id,
+                "step_number": step_number,
+                "step_type": step_type,
+                "description": description,
+                "details": details,
+            })
+        }
+        NeoTalkEvent::AgentDecision { agent_id, execution_id, description, rationale, action, confidence, .. } => {
+            serde_json::json!({
+                "agent_id": agent_id,
+                "execution_id": execution_id,
+                "description": description,
+                "rationale": rationale,
+                "action": action,
+                "confidence": confidence,
+            })
+        }
+        NeoTalkEvent::AgentMemoryUpdated { agent_id, memory_type, .. } => {
+            serde_json::json!({
+                "agent_id": agent_id,
+                "memory_type": memory_type,
+            })
+        }
+        NeoTalkEvent::AgentProgress { agent_id, execution_id, stage, stage_label, progress, details, .. } => {
+            serde_json::json!({
+                "agent_id": agent_id,
+                "execution_id": execution_id,
+                "stage": stage,
+                "stage_label": stage_label,
+                "progress": progress,
+                "details": details,
+            })
+        }
+        // For other event types, serialize the full event (they may have the type field, but frontend handles them)
+        _ => serde_json::to_value(event).unwrap_or(Value::Null),
+    }
+}
 
 /// Event stream query parameters.
 #[derive(Debug, Deserialize)]
@@ -167,12 +236,13 @@ pub async fn event_stream_handler(
                     _counter += 1;
 
                     // Build SSE event with all data
+                    // Use extract_event_data to remove nested type field for frontend compatibility
                     let data_with_id = serde_json::json!({
                         "id": metadata.event_id,
                         "type": event.type_name(),
                         "timestamp": event.timestamp(),
                         "source": metadata.source,
-                        "data": event,
+                        "data": extract_event_data(&event),
                     });
 
                     let sse_event = Event::default()
@@ -320,7 +390,7 @@ pub async fn event_websocket_handler(
                 "type": event.type_name(),
                 "timestamp": event.timestamp(),
                 "source": metadata.source,
-                "data": event,
+                "data": extract_event_data(&event),
             });
 
             let msg = match serde_json::to_string(&payload) {

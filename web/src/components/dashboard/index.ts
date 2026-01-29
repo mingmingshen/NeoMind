@@ -22,6 +22,10 @@ export { LEDIndicator, type LEDState } from './generic/LEDIndicator'
 export { Sparkline } from './generic/Sparkline'
 export { ProgressBar } from './generic/ProgressBar'
 
+// Agent-related components
+export { AgentStatusCard } from './generic/AgentStatusCard'
+export { AgentMonitorWidget } from './generic/AgentMonitorWidget'
+
 // Generic components - Charts
 export { LineChart, AreaChart } from './generic/LineChart'
 export { BarChart } from './generic/BarChart'

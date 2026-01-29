@@ -73,6 +73,9 @@ export function DashboardGrid({
   // Track if we're in the middle of a drag/resize operation
   const isDraggingRef = useRef(false)
 
+  // Track if the current layout change is from user interaction (drag/resize) vs responsive resize
+  const isUserInteractionRef = useRef(false)
+
   // Track the last layout we sent to parent to avoid echo effect
   const lastSentLayoutRef = useRef<string>('')
 
@@ -114,25 +117,45 @@ export function DashboardGrid({
     }
   }, [])
 
-  // Update container width on resize
+  // Debounce timeout ref
+  const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Update container width on resize (with debounce to prevent rapid re-renders)
   useEffect(() => {
     updateWidth()
 
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(updateWidth)
+      // Clear existing timeout
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current)
+      }
+      // Debounce the width update
+      resizeTimeoutRef.current = setTimeout(() => {
+        requestAnimationFrame(updateWidth)
+      }, 100) // 100ms debounce
     })
     if (containerRef.current) {
       resizeObserver.observe(containerRef.current)
     }
 
     const handleWindowResize = () => {
-      requestAnimationFrame(updateWidth)
+      // Clear existing timeout
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current)
+      }
+      // Debounce the width update
+      resizeTimeoutRef.current = setTimeout(() => {
+        requestAnimationFrame(updateWidth)
+      }, 100) // 100ms debounce
     }
     window.addEventListener('resize', handleWindowResize)
 
     return () => {
       resizeObserver.disconnect()
       window.removeEventListener('resize', handleWindowResize)
+      if (resizeTimeoutRef.current) {
+        clearTimeout(resizeTimeoutRef.current)
+      }
     }
   }, [updateWidth])
 
@@ -170,7 +193,7 @@ export function DashboardGrid({
   const layout = baseLayout
 
   // Handle layout changes during drag/resize
-  // Update drag ref immediately to keep layouts in sync, notify parent on stop
+  // Update drag ref immediately to keep layouts in sync, notify parent on user interaction
   const handleLayoutChange = useCallback((currentLayout: any, allLayouts?: any) => {
     // Update drag ref IMMEDIATELY - this happens before any re-render
     const newPositions: Record<string, { x: number; y: number; w: number; h: number }> = {}
@@ -179,39 +202,56 @@ export function DashboardGrid({
     })
     dragLayoutRef.current = newPositions
 
-    // Force re-render to update layouts prop with new drag positions
-    setDragKey(k => k + 1)
+    // Only force re-render and notify parent if this is a user-initiated change (drag/resize)
+    // Ignore automatic layout changes from responsive width changes
+    if (isUserInteractionRef.current) {
+      // Force re-render to update layouts prop with new drag positions
+      setDragKey(k => k + 1)
 
-    // Only notify parent during edit mode (user drag/resize)
-    // Ignore automatic layout changes from responsive resizing
-    if (onLayoutChange && editMode) {
-      onLayoutChange(currentLayout as readonly any[])
+      // Only notify parent during edit mode (user drag/resize)
+      if (onLayoutChange && editMode) {
+        onLayoutChange(currentLayout as readonly any[])
+      }
     }
+    // Note: We still update dragLayoutRef even for responsive changes so components don't jump
+    // But we don't trigger re-renders or parent updates for responsive changes
   }, [onLayoutChange, editMode])
 
   // Track drag start
   const handleDragStart = useCallback(() => {
     isDraggingRef.current = true
+    isUserInteractionRef.current = true
   }, [])
 
-  // Track drag end - let effect sync positions from components prop
+  // Track drag end - notify parent with final layout
   const handleDragStop = useCallback((layout: any) => {
+    // Notify parent with final layout position
+    if (onLayoutChange && editMode) {
+      onLayoutChange(layout as readonly any[])
+    }
     // Clear drag state - effect will sync from components prop on next render
     isDraggingRef.current = false
+    isUserInteractionRef.current = false
     dragLayoutRef.current = {}
-  }, [])
+  }, [onLayoutChange, editMode])
 
   // Track resize start
   const handleResizeStart = useCallback(() => {
     isDraggingRef.current = true
+    isUserInteractionRef.current = true
   }, [])
 
-  // Track resize end - let effect sync positions from components prop
+  // Track resize end - notify parent with final layout
   const handleResizeStop = useCallback((layout: any) => {
+    // Notify parent with final layout position
+    if (onLayoutChange && editMode) {
+      onLayoutChange(layout as readonly any[])
+    }
     // Clear drag state - effect will sync from components prop on next render
     isDraggingRef.current = false
+    isUserInteractionRef.current = false
     dragLayoutRef.current = {}
-  }, [])
+  }, [onLayoutChange, editMode])
 
   return (
     <div ref={containerRef} className={cn('w-full', className)}>

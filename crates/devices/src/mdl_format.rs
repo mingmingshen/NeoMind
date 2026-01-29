@@ -190,6 +190,12 @@ pub struct CommandDefinition {
     #[serde(default)]
     pub parameters: Vec<ParameterDefinition>,
 
+    /// Fixed values - parameters that are always sent with the same value
+    /// These values are not visible to the user and are automatically included
+    /// Example: {"protocol_version": 2, "device_type": "sensor_v1"}
+    #[serde(default)]
+    pub fixed_values: HashMap<String, serde_json::Value>,
+
     /// Sample command payloads for LLM reference (simple mode)
     #[serde(default)]
     pub samples: Vec<serde_json::Value>,
@@ -197,6 +203,10 @@ pub struct CommandDefinition {
     /// LLM hints - natural language description for LLM
     #[serde(default)]
     pub llm_hints: String,
+
+    /// Parameter groups - organizes parameters into collapsible sections
+    #[serde(default)]
+    pub parameter_groups: Vec<ParameterGroup>,
 }
 
 /// Parameter definition for commands
@@ -232,6 +242,66 @@ pub struct ParameterDefinition {
     /// Allowed values (for enum types)
     #[serde(default)]
     pub allowed_values: Vec<MetricValue>,
+
+    /// Whether this parameter is required
+    #[serde(default)]
+    pub required: bool,
+
+    /// Conditional visibility - show this parameter only when condition is met
+    /// Example: "mode == 'advanced'" or "brightness > 50"
+    #[serde(default)]
+    pub visible_when: Option<String>,
+
+    /// Parameter group for organizing related parameters
+    #[serde(default)]
+    pub group: Option<String>,
+
+    /// Help text for this parameter
+    #[serde(default)]
+    pub help_text: String,
+
+    /// Validation rules
+    #[serde(default)]
+    pub validation: Vec<ValidationRule>,
+}
+
+/// Validation rule for parameter values
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ValidationRule {
+    /// Pattern validation for strings (regex)
+    Pattern { regex: String, error_message: String },
+    /// Range validation for numbers
+    Range { min: f64, max: f64, error_message: String },
+    /// Length validation for strings/arrays
+    Length { min: usize, max: usize, error_message: String },
+    /// Custom validation (by name)
+    Custom { validator: String, params: serde_json::Value },
+}
+
+/// Parameter group for organizing parameters in the UI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParameterGroup {
+    /// Group identifier
+    pub id: String,
+
+    /// Display name
+    pub display_name: String,
+
+    /// Group description
+    #[serde(default)]
+    pub description: String,
+
+    /// Whether this group is collapsed by default
+    #[serde(default)]
+    pub collapsed: bool,
+
+    /// Parameter names in this group
+    pub parameters: Vec<String>,
+
+    /// Order for this group (lower = higher in the list)
+    #[serde(default)]
+    pub order: i32,
 }
 
 /// Extract a value from JSON using dot notation path (e.g., "values.temperature")
@@ -507,6 +577,20 @@ impl MdlRegistry {
                     "metric name cannot be empty".into(),
                 ));
             }
+            // Validate min/max for numeric types
+            if matches!(
+                metric.data_type,
+                MetricDataType::Integer | MetricDataType::Float
+            ) {
+                if let (Some(min), Some(max)) = (metric.min, metric.max) {
+                    if min > max {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "metric '{}': min ({}) cannot be greater than max ({})",
+                            metric.name, min, max
+                        )));
+                    }
+                }
+            }
         }
 
         // Validate command definitions
@@ -521,9 +605,90 @@ impl MdlRegistry {
                     "command payload_template cannot be empty".into(),
                 ));
             }
+
+            // Validate parameters
+            for param in &command.parameters {
+                if param.name.is_empty() {
+                    return Err(DeviceError::InvalidParameter(format!(
+                        "command '{}': parameter name cannot be empty",
+                        command.name
+                    )));
+                }
+
+                // Validate data_type-specific constraints
+                match &param.data_type {
+                    MetricDataType::Integer | MetricDataType::Float => {
+                        if let (Some(min), Some(max)) = (param.min, param.max) {
+                            if min > max {
+                                return Err(DeviceError::InvalidParameter(format!(
+                                    "command '{}', parameter '{}': min ({}) cannot be greater than max ({})",
+                                    command.name, param.name, min, max
+                                )));
+                            }
+                        }
+                    }
+                    MetricDataType::Enum { options } => {
+                        if !param.allowed_values.is_empty() && !options.is_empty() {
+                            // Check that allowed_values match the enum options
+                            for allowed in &param.allowed_values {
+                                let allowed_str = match allowed {
+                                    MetricValue::String(s) => s.as_str(),
+                                    _ => continue,
+                                };
+                                if !options.iter().any(|v| v == allowed_str) {
+                                    return Err(DeviceError::InvalidParameter(format!(
+                                        "command '{}', parameter '{}': allowed_value '{}' is not in enum options",
+                                        command.name, param.name, allowed_str
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                // Validate default value type matches data_type
+                if let Some(default_value) = &param.default_value {
+                    if !self.validate_metric_value_type(default_value, &param.data_type) {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "command '{}', parameter '{}': default value type does not match data_type",
+                            command.name, param.name
+                        )));
+                    }
+                }
+            }
+
+            // Validate parameter groups reference valid parameters
+            for group in &command.parameter_groups {
+                for param_name in &group.parameters {
+                    if !command.parameters.iter().any(|p| &p.name == param_name) {
+                        return Err(DeviceError::InvalidParameter(format!(
+                            "command '{}': parameter group '{}' references unknown parameter '{}'",
+                            command.name, group.id, param_name
+                        )));
+                    }
+                }
+            }
         }
 
         Ok(())
+    }
+
+    /// Validate that a MetricValue matches the expected MetricDataType
+    fn validate_metric_value_type(&self, value: &MetricValue, expected_type: &MetricDataType) -> bool {
+        match (value, expected_type) {
+            (MetricValue::Integer(_), MetricDataType::Integer) => true,
+            (MetricValue::Float(_), MetricDataType::Float) => true,
+            (MetricValue::String(_), MetricDataType::String) => true,
+            (MetricValue::Boolean(_), MetricDataType::Boolean) => true,
+            (MetricValue::Binary(_), MetricDataType::Binary) => true,
+            (MetricValue::Array(_), MetricDataType::Array { .. }) => true,
+            (MetricValue::String(_), MetricDataType::Enum { .. }) => true,
+            // Allow numeric coercion
+            (MetricValue::Integer(_), MetricDataType::Float) => true,
+            (MetricValue::Float(_), MetricDataType::Integer) => true,
+            _ => false,
+        }
     }
 
     /// Get the uplink topic for a device
@@ -623,7 +788,29 @@ impl MdlRegistry {
     ) -> Result<Vec<u8>, DeviceError> {
         let mut payload = command.payload_template.clone();
 
-        // Replace ${param} with actual values
+        // First, replace fixed values (these are always included)
+        for (key, value) in &command.fixed_values {
+            let placeholder = format!("${{{{{}}}}}", key);
+            let value_str = match value {
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        i.to_string()
+                    } else {
+                        n.as_f64().unwrap_or(0.0).to_string()
+                    }
+                }
+                serde_json::Value::String(s) => format!("\"{}\"", s),
+                serde_json::Value::Bool(b) => b.to_string(),
+                serde_json::Value::Null => "null".to_string(),
+                serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                    // For complex types, serialize without extra escaping
+                    value.to_string()
+                }
+            };
+            payload = payload.replace(&placeholder, &value_str);
+        }
+
+        // Then, replace user-provided parameters
         for (key, value) in params {
             let placeholder = format!("${{{{{}}}}}", key);
             let value_str = match value {
@@ -631,10 +818,11 @@ impl MdlRegistry {
                 MetricValue::Float(v) => v.to_string(),
                 MetricValue::String(v) => format!("\"{}\"", v),
                 MetricValue::Boolean(v) => v.to_string(),
-                MetricValue::Array(_) => {
-                    return Err(DeviceError::InvalidParameter(
-                        "Array values not supported in command payload".into(),
-                    ));
+                MetricValue::Array(arr) => {
+                    // Serialize array as JSON
+                    serde_json::to_string(arr).map_err(|_| {
+                        DeviceError::InvalidParameter("Failed to serialize array value".into())
+                    })?
                 }
                 MetricValue::Binary(_) => {
                     return Err(DeviceError::InvalidParameter(
@@ -646,7 +834,7 @@ impl MdlRegistry {
             payload = payload.replace(&placeholder, &value_str);
         }
 
-        // Validate that all placeholders were replaced
+        // Validate that all placeholders were replaced (except those in fixed_values which were already handled)
         if payload.contains("${") {
             return Err(DeviceError::InvalidParameter(
                 "Not all required parameters were provided".into(),

@@ -557,7 +557,7 @@ function LayerItemComponent({
                 <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">{t('customLayer.currentValue')}:</span>
                   <span className={cn('text-lg font-bold tabular-nums', typeConfig.color)}>
-                    {item.value !== undefined ? item.value : '--'}
+                    {item.value !== undefined ? item.value : '-'}
                   </span>
                 </div>
               </>
@@ -779,7 +779,7 @@ export function CustomLayer({
         item.deviceName = getDeviceName(deviceId || '')
         item.metricName = ds?.metricId || ds?.property
         const metricValue = getDeviceMetricValue(deviceId || '', item.metricId || '')
-        item.value = metricValue !== undefined ? metricValue : '--'
+        item.value = metricValue !== undefined ? metricValue : '-'
       } else if (binding.type === 'command') {
         item.command = ds?.command
         item.deviceId = deviceId

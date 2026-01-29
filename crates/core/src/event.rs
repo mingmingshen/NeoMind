@@ -158,6 +158,19 @@ pub enum NeoTalkEvent {
         timestamp: i64,
     },
 
+    /// Agent execution progress update (real-time stage tracking)
+    AgentProgress {
+        agent_id: String,
+        execution_id: String,
+        stage: String, // "collecting", "analyzing", "executing", "completed"
+        stage_label: String, // Human-readable stage name
+        #[serde(skip_serializing_if = "Option::is_none")]
+        progress: Option<f32>, // 0.0 to 1.0 if available
+        #[serde(skip_serializing_if = "Option::is_none")]
+        details: Option<String>, // Additional details about current operation
+        timestamp: i64,
+    },
+
     /// Agent execution completed
     AgentExecutionCompleted {
         agent_id: String,
@@ -292,6 +305,7 @@ impl NeoTalkEvent {
             Self::AgentExecutionStarted { .. } => "AgentExecutionStarted",
             Self::AgentThinking { .. } => "AgentThinking",
             Self::AgentDecision { .. } => "AgentDecision",
+            Self::AgentProgress { .. } => "AgentProgress",
             Self::AgentExecutionCompleted { .. } => "AgentExecutionCompleted",
             Self::AgentMemoryUpdated { .. } => "AgentMemoryUpdated",
             Self::PeriodicReviewTriggered { .. } => "PeriodicReviewTriggered",
@@ -324,6 +338,7 @@ impl NeoTalkEvent {
             | Self::AgentExecutionStarted { timestamp, .. }
             | Self::AgentThinking { timestamp, .. }
             | Self::AgentDecision { timestamp, .. }
+            | Self::AgentProgress { timestamp, .. }
             | Self::AgentExecutionCompleted { timestamp, .. }
             | Self::AgentMemoryUpdated { timestamp, .. }
             | Self::PeriodicReviewTriggered { timestamp, .. }
@@ -377,6 +392,7 @@ impl NeoTalkEvent {
             Self::AgentExecutionStarted { .. }
                 | Self::AgentThinking { .. }
                 | Self::AgentDecision { .. }
+                | Self::AgentProgress { .. }
                 | Self::AgentExecutionCompleted { .. }
                 | Self::AgentMemoryUpdated { .. }
         )
@@ -390,6 +406,7 @@ impl NeoTalkEvent {
             Self::AgentExecutionStarted { .. }
                 | Self::AgentThinking { .. }
                 | Self::AgentDecision { .. }
+                | Self::AgentProgress { .. }
                 | Self::AgentExecutionCompleted { .. }
                 | Self::AgentMemoryUpdated { .. }
                 | Self::PeriodicReviewTriggered { .. }

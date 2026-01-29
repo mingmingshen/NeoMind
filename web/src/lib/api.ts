@@ -72,6 +72,7 @@ import type {
   AgentExecutionsResponse,
   ParsedIntent,
   AgentAvailableResources,
+  UserMessage,
   // Dashboard Types
   DashboardResponse,
   CreateDashboardRequest,
@@ -1593,6 +1594,41 @@ export const api = {
    */
   getAgentStats: (id: string) =>
     fetchAPI<AgentStats>(`/agents/${id}/stats`),
+
+  /**
+   * Get user messages for an agent
+   * GET /api/agents/:id/messages
+   */
+  getAgentUserMessages: (id: string) =>
+    fetchAPI<UserMessage[]>(`/agents/${id}/messages`),
+
+  /**
+   * Add a user message to an agent
+   * POST /api/agents/:id/messages
+   */
+  addAgentUserMessage: (id: string, content: string, messageType?: string) =>
+    fetchAPI<UserMessage>(`/agents/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content, message_type: messageType }),
+    }),
+
+  /**
+   * Delete a specific user message
+   * DELETE /api/agents/:id/messages/:message_id
+   */
+  deleteAgentUserMessage: (id: string, messageId: string) =>
+    fetchAPI<{ ok: boolean }>(`/agents/${id}/messages/${messageId}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Clear all user messages for an agent
+   * DELETE /api/agents/:id/messages
+   */
+  clearAgentUserMessages: (id: string) =>
+    fetchAPI<{ ok: boolean; count: number }>(`/agents/${id}/messages`, {
+      method: 'DELETE',
+    }),
 
   /**
    * Get agent available resources (devices, metrics, commands)

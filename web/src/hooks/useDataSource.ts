@@ -449,7 +449,7 @@ export function useDataSource<T = unknown>(
   const hasCommandSource = dataSources.some((ds) => ds.type === 'command')
   const commandSource = dataSources.find((ds) => ds.type === 'command')
 
-  // Send command function
+  // Send command function - fire and forget, does not update local state
   const sendCommand = useCallback(async (value?: unknown): Promise<boolean> => {
     if (!commandSource || !enabled) return false
 
@@ -480,8 +480,8 @@ export function useDataSource<T = unknown>(
       const { api } = await import('@/lib/api')
       await api.sendCommand(deviceId!, command, params)
 
-      setData(value as T)
-      setLastUpdate(Date.now())
+      // Don't update local state - let device telemetry update the state
+      // setLastUpdate(Date.now())
       return true
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Command failed'

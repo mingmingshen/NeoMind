@@ -77,6 +77,16 @@ const componentMap: Record<GenericComponentType, React.ComponentType<any>> = {
 } as const
 
 // ============================================================================
+// Business Components Map
+// ============================================================================
+
+const AgentMonitorWidget = lazy(() => import('../generic/AgentMonitorWidget').then(m => ({ default: m.AgentMonitorWidget })))
+
+const businessComponentMap: Record<string, React.ComponentType<any>> = {
+  'agent-monitor-widget': AgentMonitorWidget,
+} as const
+
+// ============================================================================
 // Loading Skeleton
 // ============================================================================
 
@@ -153,7 +163,8 @@ export default function ComponentRenderer({
     return <UnknownComponent type={component.type} className={className} />
   }
 
-  const Component = componentMap[component.type as GenericComponentType]
+  // Try to get component from generic or business component map
+  const Component = componentMap[component.type as GenericComponentType] || businessComponentMap[component.type]
 
   if (!Component) {
     return <UnknownComponent type={component.type} className={className} />

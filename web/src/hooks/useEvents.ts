@@ -116,11 +116,16 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
   const onEventRef = useRef(onEvent)
   const onConnectedRef = useRef(onConnected)
   const onErrorRef = useRef(onError)
+  const eventTypesRef = useRef(eventTypes)
 
   // Update refs when callbacks change
   useEffect(() => {
     onEventRef.current = onEvent
   }, [onEvent])
+
+  useEffect(() => {
+    eventTypesRef.current = eventTypes
+  }, [eventTypes])
 
   useEffect(() => {
     onConnectedRef.current = onConnected
@@ -167,9 +172,11 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
       }
 
       // Create or get existing connection
+      // Use a single shared connection per category instead of per eventTypes combination
+      // This prevents creating multiple WebSocket connections
       const connection = getEventsConnection(
-        `events-${category}-${eventTypes?.join('-') || 'all'}`,
-        { category, eventTypes, useSSE }
+        `events-${category}`,
+        { category, useSSE }  // Don't pass eventTypes to backend, filter on client side
       )
       connectionRef.current = connection
 
@@ -191,6 +198,11 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
       // Subscribe to events
       unsubscribeEvent = connection.onEvent((event: NeoTalkEvent) => {
         if (isMounted) {
+          // Filter by eventTypes on client side
+          const currentEventTypes = eventTypesRef.current
+          if (currentEventTypes && !currentEventTypes.includes(event.type as any)) {
+            return
+          }
           setEvents(prev => {
             const newEvents = [...prev, event]
             // Keep only the most recent events
@@ -210,7 +222,7 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
       unsubscribeError?.()
       unsubscribeEvent?.()
     }
-  }, [category, eventTypes, useSSE, enabled, maxEvents])
+  }, [category, useSSE, enabled, maxEvents])
 
   return {
     isConnected,

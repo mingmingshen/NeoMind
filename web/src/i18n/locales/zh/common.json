@@ -121,5 +121,8 @@
     "hoursAgo": "{{count}} 小时前",
     "daysAgo": "{{count}} 天前",
     "date": "日期"
-  }
+  },
+  "info": "信息",
+  "createdAt": "创建时间",
+  "updatedAt": "更新时间"
 }

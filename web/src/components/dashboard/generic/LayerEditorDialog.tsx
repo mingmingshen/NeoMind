@@ -165,7 +165,7 @@ export function LayerEditorDialog({
         item.deviceName = getDeviceName(deviceId || '')
         item.metricName = ds?.metricId || ds?.property
         const metricValue = getDeviceMetricValue(deviceId || '', item.metricId || '')
-        item.value = metricValue !== undefined ? metricValue : '--'
+        item.value = metricValue !== undefined ? metricValue : '-'
       } else if (binding.type === 'command') {
         item.command = ds?.command
         item.deviceId = deviceId

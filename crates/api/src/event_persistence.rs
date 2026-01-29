@@ -324,6 +324,12 @@ fn convert_to_event_log(event: NeoTalkEvent, metadata: EventMetadata) -> Option<
             format!("Agent {} memory updated: {}", agent_id, memory_type),
             Some(serde_json::to_value(event).ok()?),
         ),
+        NeoTalkEvent::AgentProgress { agent_id, stage_label, details, .. } => (
+            EventSeverity::Info,
+            format!("Agent {} progress: {}{}", agent_id, stage_label,
+                details.as_ref().map(|d| format!(" - {}", d)).unwrap_or_default()),
+            Some(serde_json::to_value(event).ok()?),
+        ),
 
         // Custom events
         NeoTalkEvent::Custom { event_type, .. } => (
@@ -364,6 +370,7 @@ mod tests {
 pub struct RuleEngineEventService {
     event_bus: Arc<EventBus>,
     rule_engine: Arc<edge_ai_rules::RuleEngine>,
+    rule_store: Option<Arc<edge_ai_rules::store::RuleStore>>,
     device_registry: Option<Arc<edge_ai_devices::registry::DeviceRegistry>>,
     running: Arc<AtomicBool>,
 }
@@ -377,9 +384,16 @@ impl RuleEngineEventService {
         Self {
             event_bus,
             rule_engine,
+            rule_store: None,
             device_registry: None,
             running: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Set the rule store for persisting rule state after execution.
+    pub fn with_rule_store(mut self, store: Arc<edge_ai_rules::store::RuleStore>) -> Self {
+        self.rule_store = Some(store);
+        self
     }
 
     /// Set the device registry for resolving device names to IDs.
@@ -393,24 +407,43 @@ impl RuleEngineEventService {
     /// Spawns a background task that subscribes to device metric events
     /// and evaluates relevant rules.
     pub fn start(&self) -> Arc<AtomicBool> {
+        // Log service instance address for debugging
+        tracing::info!(
+            "RuleEngineEventService::start() called, instance addr: {:p}, running flag addr: {:p}",
+            self,
+            self.running
+        );
+
         // Use atomic compare_and_swap to ensure only one task is started
         if self.running.compare_exchange(false, true, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_err() {
-            tracing::warn!("Rule engine event service already running");
+            tracing::warn!(
+                "Rule engine event service already running (instance addr: {:p})",
+                self
+            );
             return self.running.clone();
         }
 
-        tracing::info!("Starting rule engine event service");
+        tracing::warn!(
+            "Starting NEW rule engine event service (instance addr: {:p})",
+            self
+        );
         tracing::info!("Current event bus subscriber count: {}", self.event_bus.subscriber_count());
 
         let mut rx = self.event_bus.filter().device_events();
         let running = self.running.clone();
         let running_copy = running.clone();  // Clone before async move
         let rule_engine = self.rule_engine.clone();
+        let rule_store = self.rule_store.clone();
         let event_bus = self.event_bus.clone();
         let device_registry = self.device_registry.clone();
 
+        // Capture service address for logging in the spawned task
+        let service_addr = self as *const _ as usize;
+
         tokio::spawn(async move {
             use edge_ai_core::{MetricValue, NeoTalkEvent};
+
+            tracing::info!("RuleEngineEventService event loop started (service addr: 0x{:x})", service_addr);
 
             while running.load(Ordering::Relaxed) {
                 match rx.recv().await {
@@ -435,6 +468,7 @@ impl RuleEngineEventService {
                                 // Publish RuleEvaluated event for all matching rules
                                 Self::evaluate_and_publish_rules(
                                     &rule_engine,
+                                    &rule_store,
                                     &event_bus,
                                     &device_registry,
                                     &device_id,
@@ -472,6 +506,7 @@ impl RuleEngineEventService {
     /// Evaluate rules relevant to a device metric and publish events.
     async fn evaluate_and_publish_rules(
         rule_engine: &edge_ai_rules::RuleEngine,
+        rule_store: &Option<Arc<edge_ai_rules::store::RuleStore>>,
         event_bus: &EventBus,
         device_registry: &Option<Arc<edge_ai_devices::registry::DeviceRegistry>>,
         device_id: &str,
@@ -481,11 +516,12 @@ impl RuleEngineEventService {
     ) {
         use edge_ai_core::event::{EventMetadata, NeoTalkEvent};
 
-        tracing::debug!(
+        tracing::info!(
             target: "rule_engine_evaluation",
             device_id = %device_id,
             metric = %metric,
             value = %value,
+            timestamp = timestamp,
             "Evaluating rules for device metric"
         );
 
@@ -627,6 +663,27 @@ impl RuleEngineEventService {
                     error = ?result.error,
                     "Rule execution completed"
                 );
+
+                // Persist updated rule state (including last_triggered) to store
+                if let Some(store) = rule_store {
+                    if let Some(updated_rule) = rule_engine.get_rule(&rule.id).await {
+                        if let Err(e) = store.save(&updated_rule) {
+                            tracing::warn!(
+                                category = "rule_engine",
+                                rule_id = %rule_id,
+                                error = %e,
+                                "Failed to persist rule state after execution"
+                            );
+                        } else {
+                            tracing::debug!(
+                                category = "rule_engine",
+                                rule_id = %rule_id,
+                                last_triggered = ?updated_rule.state.last_triggered,
+                                "Persisted rule state after execution"
+                            );
+                        }
+                    }
+                }
             }
         }
     }

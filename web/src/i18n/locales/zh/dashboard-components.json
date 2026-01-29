@@ -278,7 +278,18 @@
   "toggleSwitch": {
     "enabled": "已开启",
     "disabled": "已关闭",
-    "noCommandSource": "未配置命令数据源"
+    "noCommandSource": "未配置命令数据源",
+    "confirmCommand": "确认命令",
+    "confirmDescription": "向设备发送命令？设备响应后状态才会更新。",
+    "currentState": "当前状态",
+    "parameters": "参数",
+    "selectValue": "选择值",
+    "yes": "是",
+    "no": "否",
+    "cancel": "取消",
+    "confirm": "发送命令",
+    "sending": "发送中...",
+    "loadingParameters": "加载命令参数中..."
   },
   "agentStatusCard": {
     "agent": "智能体",
@@ -296,6 +307,29 @@
     "justNow": "刚刚",
     "minutesAgo": "{{count}}分钟前",
     "hoursAgo": "{{count}}小时前"
+  },
+  "agentMonitorWidget": {
+    "title": "智能体监控",
+    "selectAgent": "选择智能体",
+    "monitoredAgent": "监控的智能体",
+    "noAgentSelected": "未选择智能体",
+    "noAgents": "暂无 AI 智能体",
+    "noAgentsDesc": "请先创建您的第一个 AI 智能体",
+    "loading": "加载中...",
+    "refresh": "刷新",
+    "executions": "执行",
+    "successRate": "成功率",
+    "failed": "失败",
+    "avgDuration": "平均耗时",
+    "history": "最近记录",
+    "status": "状态",
+    "lastExecution": "最后执行",
+    "pause": "暂停",
+    "resume": "启动",
+    "execute": "立即执行",
+    "configureAgent": "请在组件设置中选择要监控的智能体",
+    "noAgentConfigured": "未配置智能体",
+    "agentNotFound": "智能体不存在"
   },
   "ledIndicator": {
     "on": "开启",
@@ -714,6 +748,8 @@
     "toggleSwitchDesc": "用于发送开/关命令的开关",
     "agentStatus": "智能体状态",
     "agentStatusDesc": "显示智能体执行状态和历史记录",
+    "agentMonitor": "智能体监控组件",
+    "agentMonitorDesc": "综合智能体监控，支持选择、实时状态和执行历史",
     "decisionList": "决策列表",
     "decisionListDesc": "显示和管理 LLM 决策",
     "deviceControl": "设备控制",

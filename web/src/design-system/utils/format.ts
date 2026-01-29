@@ -118,7 +118,7 @@ export function formatRelativeTime(timestamp: number | Date): string {
  */
 export function toDisplayValue(
   data: unknown,
-  fallback: string | number = '--'
+  fallback: string | number = '-'
 ): string | number {
   if (data === null || data === undefined) {
     return fallback
@@ -168,7 +168,7 @@ export function formatValue(
   value: unknown,
   options: DisplayProps & { fallback?: string | number } = {}
 ): string {
-  const { fallback = '--', ...displayOptions } = options
+  const { fallback = '-', ...displayOptions } = options
 
   const displayValue = toDisplayValue(value, fallback)
 

@@ -13,7 +13,14 @@ import { cn } from "@/lib/utils"
 import {
   Dialog,
   DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -27,14 +34,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Eye,
-  Fan,
   BarChart3,
   Thermometer,
   Droplets,
   Lightbulb,
+  Fan,
   Search,
-  ChevronDown,
   Loader2,
   Clock,
   Zap,
@@ -42,16 +47,15 @@ import {
   Target,
   Bell,
   Activity,
-  Settings,
   X,
   Plus,
+  Sparkles,
 } from "lucide-react"
 import type {
   AiAgentDetail,
   CreateAgentRequest,
   Device,
   DeviceType,
-  AgentRole,
 } from "@/types"
 
 interface AgentEditorFullScreenProps {
@@ -102,15 +106,40 @@ const RESOURCE_ICONS: Record<string, React.ReactNode> = {
   default: <Target className="h-4 w-4" />,
 }
 
-const INTERVALS = [1, 5, 10, 15, 30, 60]
+const INTERVALS = [5, 10, 15, 30, 60]
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = [0, 15, 30, 45]
 
-// Helper to get role config
-const getRoleConfig = (t: (key: string) => string) => [
-  { value: 'Monitor' as const, label: t('creator.basicInfo.roles.monitor.label'), description: t('creator.basicInfo.roles.monitor.description'), icon: Eye },
-  { value: 'Executor' as const, label: t('creator.basicInfo.roles.executor.label'), description: t('creator.basicInfo.roles.executor.description'), icon: Fan },
-  { value: 'Analyst' as const, label: t('creator.basicInfo.roles.analyst.label'), description: t('creator.basicInfo.roles.analyst.description'), icon: BarChart3 },
+// Prompt templates
+const getPromptTemplates = (t: (key: string) => string, tCommon: (key: string) => string) => [
+  {
+    id: 'empty',
+    label: tCommon('optional'),
+    description: t('creator.promptTemplates.empty.description'),
+    icon: <Sparkles className="h-4 w-4" />,
+    template: '',
+  },
+  {
+    id: 'monitor',
+    label: t('creator.promptTemplates.monitor.label'),
+    description: t('creator.promptTemplates.monitor.description'),
+    icon: <Activity className="h-4 w-4" />,
+    template: t('creator.promptTemplates.monitor.template'),
+  },
+  {
+    id: 'control',
+    label: t('creator.promptTemplates.control.label'),
+    description: t('creator.promptTemplates.control.description'),
+    icon: <Zap className="h-4 w-4" />,
+    template: t('creator.promptTemplates.control.template'),
+  },
+  {
+    id: 'analysis',
+    label: t('creator.promptTemplates.analysis.label'),
+    description: t('creator.promptTemplates.analysis.description'),
+    icon: <BarChart3 className="h-4 w-4" />,
+    template: t('creator.promptTemplates.analysis.template'),
+  },
 ]
 
 // Helper to get schedule types config
@@ -119,7 +148,6 @@ const getScheduleTypes = (t: (key: string) => string) => [
   { value: 'daily' as const, label: t('creator.schedule.strategies.daily'), description: t('creator.schedule.daily.preview'), icon: <Zap className="h-4 w-4" /> },
   { value: 'weekly' as const, label: t('creator.schedule.strategies.weekly'), description: t('creator.schedule.weekly.preview'), icon: <Bell className="h-4 w-4" /> },
   { value: 'event' as const, label: t('creator.schedule.strategies.event'), description: t('creator.schedule.event.triggerEvent'), icon: <Target className="h-4 w-4" /> },
-  { value: 'once' as const, label: t('creator.schedule.strategies.once'), description: t('creator.schedule.onceDescription'), icon: <Check className="h-4 w-4" /> },
 ]
 
 export function AgentEditorFullScreen({
@@ -137,14 +165,14 @@ export function AgentEditorFullScreen({
   const isEditing = !!agent
 
   // Get dynamic config based on i18n
-  const ROLES = getRoleConfig(tAgent)
+  const PROMPT_TEMPLATES = getPromptTemplates(tAgent, tCommon)
   const SCHEDULE_TYPES = getScheduleTypes(tAgent)
 
   // Form state
   const [name, setName] = useState("")
-  const [role, setRole] = useState<AgentRole>('Monitor')
   const [description, setDescription] = useState("")
   const [userPrompt, setUserPrompt] = useState("")
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('empty')
   const [llmBackendId, setLlmBackendId] = useState<string | null>(null)
 
   // Schedule state
@@ -166,10 +194,10 @@ export function AgentEditorFullScreen({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('') // Currently selected device for right panel
   const [metricsCache, setMetricsCache] = useState<Record<string, MetricInfo[]>>({})
   const [searchQuery, setSearchQuery] = useState("")
-  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
 
-  // Advanced config state (per-metric data collection settings)
+  // Advanced config state (per-metric data collection settings) - uses defaults
   const [metricConfigs, setMetricConfigs] = useState<Record<string, DataCollectionConfig>>({})
+  const [openMetricConfig, setOpenMetricConfig] = useState<string | null>(null)
 
   // UI state
   const [saving, setSaving] = useState(false)
@@ -187,10 +215,10 @@ export function AgentEditorFullScreen({
     if (open) {
       if (agent) {
         setName(agent.name || '')
-        setRole(agent.role || 'Monitor')
         setDescription(agent.description || '')
         setUserPrompt(agent.user_prompt || '')
         setLlmBackendId(agent.llm_backend_id || null)
+        setSelectedTemplateId('empty') // Keep template empty when editing
 
         // Parse schedule
         if (agent.schedule) {
@@ -232,9 +260,13 @@ export function AgentEditorFullScreen({
                     if (!isNaN(num)) days.push(num)
                   }
                   if (days.length > 0) setSelectedWeekdays(days)
+                } else {
+                  // dayOfWeek is '*', this is a daily schedule
+                  setScheduleType('daily')
                 }
               }
             } else {
+              setScheduleType('daily')
               setScheduleHour(9)
               setScheduleMinute(0)
             }
@@ -242,78 +274,43 @@ export function AgentEditorFullScreen({
             setScheduleType('event')
             // Parse event_filter to get event type and device
             const eventFilterStr = agent.schedule.event_filter
+            console.log('[AgentEditor] Loading event schedule, event_filter:', eventFilterStr)
             if (eventFilterStr) {
               try {
                 const eventFilter = JSON.parse(eventFilterStr)
-                if (eventFilter.event_type === 'device.online' || eventFilter.event_type === 'device.offline' || eventFilter.event_type === 'device.metric') {
-                  setEventType(eventFilter.event_type)
-                  setEventDeviceId(eventFilter.device_id || 'all')
+                console.log('[AgentEditor] Parsed eventFilter:', eventFilter)
+                // Map event_type to valid values
+                const validEventTypes = ['device.online', 'device.offline', 'device.metric', 'manual']
+                const eventTypeValue = eventFilter.event_type || 'manual'
+                if (validEventTypes.includes(eventTypeValue)) {
+                  setEventType(eventTypeValue)
                 } else {
+                  console.warn('[AgentEditor] Invalid event_type:', eventTypeValue, ', using manual')
                   setEventType('manual')
                 }
-              } catch {
+                setEventDeviceId(eventFilter.device_id || 'all')
+              } catch (e) {
+                console.error('[AgentEditor] Failed to parse event_filter:', e)
                 setEventType('manual')
+                setEventDeviceId('all')
               }
+            } else {
+              // No event_filter, set defaults
+              console.log('[AgentEditor] No event_filter found, using defaults')
+              setEventType('manual')
+              setEventDeviceId('all')
             }
           } else {
             setScheduleType(agent.schedule.schedule_type as any)
           }
         }
-
-        // Parse resources
-        if (agent.resources?.length > 0) {
-          const resourcesByDevice: Record<string, SelectedResource> = {}
-          const configs: Record<string, DataCollectionConfig> = {}
-          for (const resource of agent.resources) {
-            const parts = resource.resource_id.split(':')
-            if (parts.length < 2) continue
-            const deviceId = parts[0]
-            const resourceName = parts.slice(1).join(':')
-            const device = devices.find(d => d.device_id === deviceId)
-            if (!device) continue
-
-            if (!resourcesByDevice[deviceId]) {
-              resourcesByDevice[deviceId] = {
-                deviceId,
-                deviceName: device.name,
-                deviceType: device.device_type,
-                metrics: [],
-                commands: []
-              }
-            }
-
-            if (resource.resource_type === 'Metric') {
-              resourcesByDevice[deviceId].metrics.push({
-                name: resourceName,
-                displayName: resource.name
-              })
-              // Parse data collection config
-              const configKey = `${deviceId}:${resourceName}`
-              const dataCollection = resource.config?.data_collection
-              if (dataCollection) {
-                configs[configKey] = { ...DEFAULT_DATA_COLLECTION, ...dataCollection }
-              } else {
-                configs[configKey] = { ...DEFAULT_DATA_COLLECTION }
-              }
-            } else if (resource.resource_type === 'Command') {
-              resourcesByDevice[deviceId].commands.push({
-                name: resourceName,
-                displayName: resource.name
-              })
-            }
-          }
-          setSelectedResources(Object.values(resourcesByDevice))
-          setMetricConfigs(configs)
-          // Auto-select first device that has resources
-          setSelectedDeviceId(Object.keys(resourcesByDevice)[0] || '')
-        }
       } else {
         // Reset for new agent
         setName("")
-        setRole('Monitor')
         setDescription("")
         setUserPrompt("")
         setLlmBackendId(null)
+        setSelectedTemplateId('empty')
         setScheduleType('interval')
         setIntervalValue(5)
         setScheduleHour(9)
@@ -322,6 +319,7 @@ export function AgentEditorFullScreen({
         setEventType('device.online')
         setEventDeviceId('all')
         setSelectedResources([])
+        setMetricConfigs({})
         // Auto-select first device for new agent
         setSelectedDeviceId(devices.length > 0 ? devices[0].device_id : '')
       }
@@ -329,7 +327,68 @@ export function AgentEditorFullScreen({
       setLoadingMetrics({})
       setSearchQuery("")
     }
-  }, [agent, open, devices])
+  }, [agent, open])
+
+  // Load agent resources separately - this runs when devices are loaded
+  useEffect(() => {
+    if (open && agent?.resources && agent.resources.length > 0 && devices.length > 0) {
+      console.log('[AgentEditor] Loading resources with devices:', { resourceCount: agent.resources.length, deviceCount: devices.length })
+      const resourcesByDevice: Record<string, SelectedResource> = {}
+      const configs: Record<string, DataCollectionConfig> = {}
+      for (const resource of agent.resources) {
+        const parts = resource.resource_id.split(':')
+        if (parts.length < 2) continue
+        const deviceId = parts[0]
+        const resourceName = parts.slice(1).join(':')
+        const device = devices.find(d => d.device_id === deviceId)
+        if (!device) {
+          console.warn('[AgentEditor] Device not found:', deviceId)
+          continue
+        }
+
+        if (!resourcesByDevice[deviceId]) {
+          resourcesByDevice[deviceId] = {
+            deviceId,
+            deviceName: device.name,
+            deviceType: device.device_type,
+            metrics: [],
+            commands: []
+          }
+        }
+
+        // Normalize resource_type to lowercase for comparison
+        const resourceType = resource.resource_type?.toLowerCase()
+        console.log('[AgentEditor] Processing resource:', { resourceType, deviceId, resourceName })
+
+        if (resourceType === 'metric') {
+          resourcesByDevice[deviceId].metrics.push({
+            name: resourceName,
+            displayName: resource.name
+          })
+          // Parse data collection config
+          const configKey = `${deviceId}:${resourceName}`
+          const dataCollection = resource.config?.data_collection
+          if (dataCollection) {
+            configs[configKey] = { ...DEFAULT_DATA_COLLECTION, ...dataCollection }
+          } else {
+            configs[configKey] = { ...DEFAULT_DATA_COLLECTION }
+          }
+        } else if (resourceType === 'command') {
+          resourcesByDevice[deviceId].commands.push({
+            name: resourceName,
+            displayName: resource.name
+          })
+        }
+      }
+      console.log('[AgentEditor] Loaded resources:', Object.values(resourcesByDevice))
+      setSelectedResources(Object.values(resourcesByDevice))
+      setMetricConfigs(configs)
+      // Auto-select first device that has resources
+      if (Object.keys(resourcesByDevice).length > 0) {
+        setSelectedDeviceId(Object.keys(resourcesByDevice)[0])
+      }
+    }
+  }, [open, agent?.resources, devices])
 
   // Fetch device metrics
   const fetchDeviceMetrics = useCallback(async (deviceId: string): Promise<MetricInfo[]> => {
@@ -367,6 +426,13 @@ export function AgentEditorFullScreen({
     }
   }, [devices, deviceTypes, metricsCache])
 
+  // Fetch device metrics when device list dialog opens and there's a selected device
+  useEffect(() => {
+    if (showDeviceList && selectedDeviceId && !metricsCache[selectedDeviceId] && !loadingMetrics[selectedDeviceId]) {
+      fetchDeviceMetrics(selectedDeviceId)
+    }
+  }, [showDeviceList, selectedDeviceId, metricsCache, loadingMetrics, fetchDeviceMetrics])
+
   // Select device for right panel
   const selectDevice = async (deviceId: string) => {
     if (selectedDeviceId === deviceId) {
@@ -381,6 +447,7 @@ export function AgentEditorFullScreen({
   const toggleMetric = (deviceId: string, metricName: string, displayName: string) => {
     const configKey = `${deviceId}:${metricName}`
     const existing = selectedResources.findIndex(r => r.deviceId === deviceId)
+    const recommended = getRecommendedConfig()
     if (existing < 0) {
       const device = devices.find(d => d.device_id === deviceId)!
       setSelectedResources(prev => [...prev, {
@@ -390,10 +457,10 @@ export function AgentEditorFullScreen({
         metrics: [{ name: metricName, displayName }],
         commands: []
       }])
-      // Initialize config
+      // Initialize config with recommended settings
       setMetricConfigs(prev => ({
         ...prev,
-        [configKey]: { ...DEFAULT_DATA_COLLECTION }
+        [configKey]: { ...recommended }
       }))
       return
     }
@@ -414,10 +481,10 @@ export function AgentEditorFullScreen({
         }
       } else {
         resource.metrics = [...resource.metrics, { name: metricName, displayName }]
-        // Initialize config
+        // Initialize config with recommended settings
         setMetricConfigs(prev => ({
           ...prev,
-          [configKey]: { ...DEFAULT_DATA_COLLECTION }
+          [configKey]: { ...recommended }
         }))
       }
       return newResources
@@ -430,6 +497,78 @@ export function AgentEditorFullScreen({
       ...prev,
       [configKey]: { ...prev[configKey], ...updates }
     }))
+  }
+
+  // Get recommended data collection config based on schedule type
+  const getRecommendedConfig = (): DataCollectionConfig => {
+    switch (scheduleType) {
+      case 'interval':
+        // Interval: need trend data over short time
+        return {
+          time_range_minutes: Math.max(intervalValue * 2, 30), // At least 2x interval
+          include_history: true,
+          max_points: 100,
+          include_trend: intervalValue >= 30, // Only include trend for longer intervals
+          include_baseline: false,
+        }
+      case 'daily':
+        // Daily: need full day data for daily report
+        return {
+          time_range_minutes: 1440, // 24 hours
+          include_history: true,
+          max_points: 1000,
+          include_trend: true,
+          include_baseline: true,
+        }
+      case 'weekly':
+        // Weekly: need full week data for weekly report
+        return {
+          time_range_minutes: 10080, // 7 days
+          include_history: true,
+          max_points: 2000,
+          include_trend: true,
+          include_baseline: true,
+        }
+      case 'event':
+        // Event: need current data + some history for comparison
+        return {
+          time_range_minutes: 30, // Recent data
+          include_history: false,
+          max_points: 100,
+          include_trend: false,
+          include_baseline: true, // Compare with baseline
+        }
+      default:
+        return { ...DEFAULT_DATA_COLLECTION }
+    }
+  }
+
+  // Update all metric configs when schedule type changes
+  useEffect(() => {
+    const recommended = getRecommendedConfig()
+    setMetricConfigs(prev => {
+      const newConfigs: Record<string, DataCollectionConfig> = {}
+      // Update all existing configs with recommended values
+      Object.keys(prev).forEach(key => {
+        newConfigs[key] = { ...recommended }
+      })
+      return newConfigs
+    })
+  }, [scheduleType, intervalValue])
+
+  // Calculate config from time range
+  const getConfigFromTimeRange = (minutes: number): DataCollectionConfig => {
+    if (minutes >= 10080) { // 7+ days
+      return { time_range_minutes: minutes, include_history: true, max_points: 2000, include_trend: true, include_baseline: true }
+    } else if (minutes >= 720) { // 12+ hours
+      return { time_range_minutes: minutes, include_history: true, max_points: 1000, include_trend: true, include_baseline: true }
+    } else if (minutes >= 180) { // 3+ hours
+      return { time_range_minutes: minutes, include_history: true, max_points: 500, include_trend: true, include_baseline: false }
+    } else if (minutes >= 60) { // 1+ hour
+      return { time_range_minutes: minutes, include_history: true, max_points: 200, include_trend: false, include_baseline: false }
+    } else { // < 1 hour
+      return { time_range_minutes: minutes, include_history: false, max_points: 100, include_trend: false, include_baseline: true }
+    }
   }
 
   // Toggle command selection
@@ -494,10 +633,11 @@ export function AgentEditorFullScreen({
     const metrics = getDeviceMetrics(deviceId)
     const commands = getDeviceCommands(deviceId)
     const existing = selectedResources.findIndex(r => r.deviceId === deviceId)
-    // Initialize configs for all metrics
+    // Initialize configs for all metrics with recommended settings
+    const recommended = getRecommendedConfig()
     const newConfigs: Record<string, DataCollectionConfig> = {}
     metrics.forEach(m => {
-      newConfigs[`${deviceId}:${m.name}`] = { ...DEFAULT_DATA_COLLECTION }
+      newConfigs[`${deviceId}:${m.name}`] = { ...recommended }
     })
     setMetricConfigs(prev => ({ ...prev, ...newConfigs }))
 
@@ -536,6 +676,16 @@ export function AgentEditorFullScreen({
       toast({ title: tAgent('creator.validation.requirementRequired'), variant: 'destructive' })
       return
     }
+    // Validate at least one resource is selected
+    if (selectedResources.length === 0) {
+      toast({ title: tAgent('creator.validation.resourceRequired'), variant: 'destructive' })
+      return
+    }
+    // Validate event type is selected for event-based schedule
+    if (scheduleType === 'event' && !eventType) {
+      toast({ title: tAgent('creator.validation.eventTypeRequired'), variant: 'destructive' })
+      return
+    }
 
     setSaving(true)
     try {
@@ -568,15 +718,12 @@ export function AgentEditorFullScreen({
             event_type: 'manual',
           })
         }
-      } else if (scheduleType === 'once') {
-        finalScheduleType = 'once'
       }
 
       if (isEditing && agent) {
         const updateData: Partial<AiAgentDetail> = {
           name: name.trim(),
           description: description.trim(),
-          role,
           user_prompt: userPrompt.trim(),
           llm_backend_id: llmBackendId ?? undefined,
           schedule: {
@@ -585,12 +732,29 @@ export function AgentEditorFullScreen({
             cron_expression: cronExpression,
             event_filter: eventFilter,
           },
+          resources: selectedResources.flatMap(r => [
+            ...r.metrics.map(m => {
+              const configKey = `${r.deviceId}:${m.name}`
+              const config = metricConfigs[configKey]
+              return {
+                resource_id: `${r.deviceId}:${m.name}`,
+                resource_type: 'Metric' as const,
+                name: m.displayName || m.name,
+                config: config ? { data_collection: config, device_id: r.deviceId, metric_name: m.name, display_name: m.displayName } : { device_id: r.deviceId, metric_name: m.name, display_name: m.displayName }
+              }
+            }),
+            ...r.commands.map(c => ({
+              resource_id: `${r.deviceId}:${c.name}`,
+              resource_type: 'Command' as const,
+              name: c.displayName || c.name,
+              config: { device_id: r.deviceId, command_name: c.name, display_name: c.displayName, parameters: {} }
+            }))
+          ]),
         }
         await onSave(updateData)
       } else {
         const data: CreateAgentRequest = {
           name: name.trim(),
-          role,
           description: description.trim(),
           user_prompt: userPrompt.trim(),
           device_ids: selectedResources.map(r => r.deviceId),
@@ -654,48 +818,6 @@ export function AgentEditorFullScreen({
 
             {/* Basic Info + Prompt */}
             <div className="space-y-4">
-              {/* Role Selection */}
-              <div>
-                <Label className="text-sm mb-3 block">{tAgent('creator.basicInfo.role')}</Label>
-                <div className="grid grid-cols-3 gap-4">
-                  {ROLES.map((r) => {
-                    const Icon = r.icon
-                    const isSelected = role === r.value
-                    return (
-                      <button
-                        key={r.value}
-                        type="button"
-                        onClick={() => setRole(r.value)}
-                        className={cn(
-                          "relative p-4 rounded-xl border-2 text-left transition-all hover:shadow-sm",
-                          isSelected ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30 bg-card"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={cn(
-                            "flex items-center justify-center w-10 h-10 rounded-lg",
-                            isSelected ? "bg-primary text-primary-foreground" : "bg-muted"
-                          )}>
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-sm font-semibold">{r.label}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-1">{r.description}</div>
-                          </div>
-                        </div>
-                        {isSelected && (
-                          <div className="absolute top-3 right-3">
-                            <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                              <Check className="h-3 w-3 text-primary-foreground" />
-                            </div>
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
               {/* Name */}
               <div className="space-y-2">
                 <Label className="text-sm">
@@ -719,30 +841,61 @@ export function AgentEditorFullScreen({
                 />
               </div>
 
-              {/* User Prompt */}
+              {/* User Prompt with Templates */}
               <div className="space-y-2">
+                <Label className="text-sm">
+                  {tAgent('creator.basicInfo.requirement')}
+                  <span className="text-destructive ml-1">*</span>
+                </Label>
+
+                {/* Template Selector */}
                 <div className="flex items-center justify-between">
-                  <Label className="text-sm">
-                    {tAgent('creator.basicInfo.requirement')}
-                    <span className="text-destructive ml-1">*</span>
-                  </Label>
-                  <Select value={llmBackendId ?? activeBackendId ?? ''} onValueChange={setLlmBackendId}>
-                    <SelectTrigger className="w-40 h-8 text-xs">
-                      <SelectValue placeholder={tAgent('creator.basicInfo.defaultBackend')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">{tAgent('creator.basicInfo.defaultBackend')}</SelectItem>
-                      {llmBackends.map((backend) => (
-                        <SelectItem key={backend.id} value={backend.id}>{backend.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex gap-1">
+                    {PROMPT_TEMPLATES.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTemplateId(template.id)
+                          if (template.id !== 'empty') {
+                            setUserPrompt(template.template)
+                          } else {
+                            setUserPrompt('')
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors",
+                          selectedTemplateId === template.id
+                            ? "bg-primary text-primary-foreground"
+                            : "hover:bg-muted border"
+                        )}
+                        title={template.description}
+                      >
+                        {template.icon}
+                        <span className="hidden sm:inline">{template.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div>
+                    <Select value={llmBackendId ?? activeBackendId ?? ''} onValueChange={setLlmBackendId}>
+                      <SelectTrigger className="w-40 h-8 text-xs">
+                        <SelectValue placeholder={tAgent('creator.basicInfo.defaultBackend')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="default">{tAgent('creator.basicInfo.defaultBackend')}</SelectItem>
+                        {llmBackends.map((backend) => (
+                          <SelectItem key={backend.id} value={backend.id}>{backend.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
+
                 <Textarea
                   value={userPrompt}
                   onChange={(e) => setUserPrompt(e.target.value)}
                   placeholder={tAgent('creator.basicInfo.requirementPlaceholder')}
-                  className="min-h-[120px] resize-y"
+                  className="min-h-[140px] resize-y"
                 />
               </div>
             </div>
@@ -750,210 +903,228 @@ export function AgentEditorFullScreen({
             {/* Execution Strategy */}
             <div className="space-y-4">
               <Label className="text-sm font-medium">{tAgent('creator.schedule.selectStrategy')}</Label>
-              <div className="flex items-center gap-2 flex-wrap">
-                {SCHEDULE_TYPES.map((type) => (
-                  <button
-                    key={type.value}
-                    type="button"
-                    onClick={() => setScheduleType(type.value as any)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-sm transition-all",
-                      scheduleType === type.value
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    {type.icon}
-                    {type.label}
-                  </button>
-                ))}
+
+              {/* Strategy Type Cards - smaller */}
+              <div className="grid grid-cols-4 gap-2">
+                {/* Interval */}
+                <button
+                  type="button"
+                  onClick={() => setScheduleType('interval')}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 py-2.5 rounded-lg border transition-all",
+                    scheduleType === 'interval' ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/50"
+                  )}
+                >
+                  <Clock className={cn("h-4 w-4", scheduleType === 'interval' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium", scheduleType === 'interval' ? "text-primary" : "")}>{tAgent('creator.schedule.strategies.interval')}</span>
+                </button>
+
+                {/* Daily */}
+                <button
+                  type="button"
+                  onClick={() => setScheduleType('daily')}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 py-2.5 rounded-lg border transition-all",
+                    scheduleType === 'daily' ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/50"
+                  )}
+                >
+                  <Zap className={cn("h-4 w-4", scheduleType === 'daily' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium", scheduleType === 'daily' ? "text-primary" : "")}>{tAgent('creator.schedule.strategies.daily')}</span>
+                </button>
+
+                {/* Weekly */}
+                <button
+                  type="button"
+                  onClick={() => setScheduleType('weekly')}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 py-2.5 rounded-lg border transition-all",
+                    scheduleType === 'weekly' ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/50"
+                  )}
+                >
+                  <Bell className={cn("h-4 w-4", scheduleType === 'weekly' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium", scheduleType === 'weekly' ? "text-primary" : "")}>{tAgent('creator.schedule.strategies.weekly')}</span>
+                </button>
+
+                {/* Event */}
+                <button
+                  type="button"
+                  onClick={() => setScheduleType('event')}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 py-2.5 rounded-lg border transition-all",
+                    scheduleType === 'event' ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/50"
+                  )}
+                >
+                  <Target className={cn("h-4 w-4", scheduleType === 'event' ? "text-primary" : "text-muted-foreground")} />
+                  <span className={cn("text-xs font-medium", scheduleType === 'event' ? "text-primary" : "")}>{tAgent('creator.schedule.strategies.event')}</span>
+                </button>
               </div>
 
-              {/* Schedule Config */}
-              <div className="flex items-center gap-3 text-sm h-9">
+              {/* Strategy Configuration Area */}
+              <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
                 {scheduleType === 'interval' && (
-                  <>
-                    <span className="text-muted-foreground">{tAgent('creator.schedule.interval.every')}</span>
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.interval.every')}</span>
+                    <div className="flex items-center gap-2">
                       {INTERVALS.map((mins) => (
                         <button
                           key={mins}
                           type="button"
                           onClick={() => setIntervalValue(mins)}
                           className={cn(
-                            "px-3 py-1 rounded text-sm transition-colors min-w-[2.5rem]",
-                            intervalValue === mins
-                              ? "bg-primary text-primary-foreground font-medium"
-                              : "hover:bg-muted"
+                            "w-12 h-9 rounded-lg flex items-center justify-center text-sm font-medium transition-colors",
+                            intervalValue === mins ? "bg-primary text-primary-foreground" : "hover:bg-muted border"
                           )}
                         >
                           {mins}
                         </button>
                       ))}
                     </div>
-                    <span className="text-muted-foreground">{tAgent('creator.schedule.interval.minutes')}</span>
-                  </>
+                    <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.interval.minutes')}</span>
+                  </div>
                 )}
 
                 {scheduleType === 'daily' && (
-                  <>
-                    <span className="text-muted-foreground">{tAgent('creator.schedule.daily.at')}</span>
-                    <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
-                      <SelectTrigger className="w-16 h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map((h) => (
-                          <SelectItem key={h} value={h.toString()}>
-                            {h.toString().padStart(2, '0')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-muted-foreground">:</span>
-                    <Select value={scheduleMinute.toString()} onValueChange={(v) => setScheduleMinute(parseInt(v))}>
-                      <SelectTrigger className="w-16 h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MINUTES.map((m) => (
-                          <SelectItem key={m} value={m.toString()}>
-                            {m.toString().padStart(2, '0')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.daily.at')}</span>
+                    <div className="flex items-center gap-2">
+                      <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
+                        <SelectTrigger className="w-20 h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HOURS.map((h) => <SelectItem key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.daily.execute')}</span>
+                    </div>
+                  </div>
                 )}
 
                 {scheduleType === 'weekly' && (
-                  <>
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: 7 }, (_, index) => (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => {
-                            if (selectedWeekdays.includes(index)) {
-                              setSelectedWeekdays(selectedWeekdays.filter(d => d !== index))
-                            } else {
-                              setSelectedWeekdays([...selectedWeekdays, index])
-                            }
-                          }}
-                          className={cn(
-                            "w-8 h-8 rounded text-sm font-medium transition-colors",
-                            selectedWeekdays.includes(index)
-                              ? "bg-primary text-primary-foreground"
-                              : "hover:bg-muted"
-                          )}
-                        >
-                          {tAgent(`creator.weekdays.${index}`)}
-                      </button>
-                      ))}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.weekly.on')}</span>
+                      <div className="flex items-center gap-2">
+                        {Array.from({ length: 7 }, (_, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => {
+                              if (selectedWeekdays.includes(i)) {
+                                setSelectedWeekdays(selectedWeekdays.filter(d => d !== i))
+                              } else {
+                                setSelectedWeekdays([...selectedWeekdays, i])
+                              }
+                            }}
+                            className={cn(
+                              "w-10 h-10 rounded-lg text-sm font-medium transition-colors",
+                              selectedWeekdays.includes(i) ? "bg-primary text-primary-foreground" : "hover:bg-muted border"
+                            )}
+                          >
+                            {tAgent(`creator.weekdays.${i}`)}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
-                      <SelectTrigger className="w-16 h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {HOURS.map((h) => (
-                          <SelectItem key={h} value={h.toString()}>
-                            {h.toString().padStart(2, '0')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <span className="text-muted-foreground">:</span>
-                    <Select value={scheduleMinute.toString()} onValueChange={(v) => setScheduleMinute(parseInt(v))}>
-                      <SelectTrigger className="w-16 h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MINUTES.map((m) => (
-                          <SelectItem key={m} value={m.toString()}>
-                            {m.toString().padStart(2, '0')}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </>
-                )}
-
-                {scheduleType === 'once' && (
-                  <span className="text-muted-foreground">{tAgent('creator.schedule.onceDescription')}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.weekly.at')}</span>
+                      <Select value={scheduleHour.toString()} onValueChange={(v) => setScheduleHour(parseInt(v))}>
+                        <SelectTrigger className="w-24 h-10">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HOURS.map((h) => <SelectItem key={h} value={h.toString()}>{h.toString().padStart(2, '0')}:00</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 )}
 
                 {scheduleType === 'event' && (
-                  <>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setEventType('device.online')}
-                        className={cn(
-                          "px-3 py-1 rounded text-sm transition-colors",
-                          eventType === 'device.online'
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        )}
-                      >
-                        <Zap className="h-3.5 w-3.5 inline mr-1" />
-                        {tAgent('creator.schedule.event.events.device.online')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEventType('device.offline')}
-                        className={cn(
-                          "px-3 py-1 rounded text-sm transition-colors",
-                          eventType === 'device.offline'
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        )}
-                      >
-                        <Target className="h-3.5 w-3.5 inline mr-1" />
-                        {tAgent('creator.schedule.event.events.device.offline')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEventType('device.metric')}
-                        className={cn(
-                          "px-3 py-1 rounded text-sm transition-colors",
-                          eventType === 'device.metric'
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        )}
-                      >
-                        <Activity className="h-3.5 w-3.5 inline mr-1" />
-                        {tAgent('creator.schedule.event.events.device.metric')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEventType('manual')}
-                        className={cn(
-                          "px-3 py-1 rounded text-sm transition-colors",
-                          eventType === 'manual'
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted"
-                        )}
-                      >
-                        <Clock className="h-3.5 w-3.5 inline mr-1" />
-                        {tAgent('creator.schedule.event.events.manual')}
-                      </button>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.event.triggerEvent')}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setEventType('device.online')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                            eventType === 'device.online' ? "bg-primary text-primary-foreground" : "hover:bg-muted border"
+                          )}
+                        >
+                          <Zap className="h-3.5 w-3.5" />
+                          {tAgent('creator.schedule.event.events.device.online')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEventType('device.offline')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                            eventType === 'device.offline' ? "bg-primary text-primary-foreground" : "hover:bg-muted border"
+                          )}
+                        >
+                          <Target className="h-3.5 w-3.5" />
+                          {tAgent('creator.schedule.event.events.device.offline')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEventType('device.metric')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                            eventType === 'device.metric' ? "bg-primary text-primary-foreground" : "hover:bg-muted border"
+                          )}
+                        >
+                          <Activity className="h-3.5 w-3.5" />
+                          {tAgent('creator.schedule.event.events.device.metric')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEventType('manual')}
+                          className={cn(
+                            "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                            eventType === 'manual' ? "bg-primary text-primary-foreground" : "hover:bg-muted border"
+                          )}
+                        >
+                          <Clock className="h-3.5 w-3.5" />
+                          {tAgent('creator.schedule.event.events.manual')}
+                        </button>
+                      </div>
                     </div>
                     {(eventType === 'device.online' || eventType === 'device.offline' || eventType === 'device.metric') && (
-                      <Select value={eventDeviceId} onValueChange={setEventDeviceId}>
-                        <SelectTrigger className="w-32 h-9">
-                          <SelectValue placeholder={tAgent('creator.schedule.event.allDevices')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">{tAgent('creator.schedule.event.allDevices')}</SelectItem>
-                          {devices.map((d) => (
-                            <SelectItem key={d.device_id} value={d.device_id}>{d.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground">{tAgent('creator.schedule.event.relatedDevice')}</span>
+                        <Select value={eventDeviceId} onValueChange={setEventDeviceId}>
+                          <SelectTrigger className="w-40 h-10">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">{tAgent('creator.schedule.event.allDevices')}</SelectItem>
+                            {devices.map((d) => (
+                              <SelectItem key={d.device_id} value={d.device_id}>{d.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     )}
-                  </>
+                    {eventType === 'manual' && (
+                      <div className="text-sm text-muted-foreground">
+                        {tAgent('creator.schedule.event.manualHint')}
+                      </div>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              {/* Data Strategy Hint */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/30 rounded-md px-3 py-2">
+                <BarChart3 className="h-3.5 w-3.5" />
+                <span>
+                  {scheduleType === 'interval' && tAgent('creator.dataStrategy.hint.interval', { minutes: Math.max(intervalValue * 2, 30) })}
+                  {scheduleType === 'daily' && tAgent('creator.dataStrategy.hint.daily')}
+                  {scheduleType === 'weekly' && tAgent('creator.dataStrategy.hint.weekly')}
+                  {scheduleType === 'event' && tAgent('creator.dataStrategy.hint.event')}
+                </span>
               </div>
             </div>
 
@@ -961,21 +1132,16 @@ export function AgentEditorFullScreen({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">{tAgent('creator.resources.title')}</Label>
-                <div className="flex items-center gap-2">
-                  {selectedCount > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {selectedCount} {tCommon('selected')}
-                    </Badge>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowDeviceList(!showDeviceList)}
-                    className="text-xs px-3 py-1.5 rounded-md border hover:bg-muted transition-colors flex items-center gap-1"
-                  >
-                    <Plus className="h-3 w-3" />
-                    {selectedResources.length > 0 ? tCommon('add') : tAgent('creator.resources.selectDevice')}
-                  </button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDeviceList(true)}
+                  className="h-8"
+                >
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  {tCommon('add')}
+                </Button>
               </div>
 
               {/* Selected Resources Display */}
@@ -1016,19 +1182,73 @@ export function AgentEditorFullScreen({
 
                         {/* Selected Metrics and Commands */}
                         <div className="p-3 flex flex-wrap gap-2">
-                          {resource.metrics.map((m) => (
-                            <div key={m.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 text-xs">
-                              <BarChart3 className="h-3 w-3" />
-                              <span>{m.displayName}</span>
-                              <button
-                                type="button"
-                                onClick={() => toggleMetric(resource.deviceId, m.name, m.displayName)}
-                                className="p-0.5 rounded-sm hover:bg-blue-200 transition-colors"
+                          {resource.metrics.map((m) => {
+                            const configKey = `${resource.deviceId}:${m.name}`
+                            const config = metricConfigs[configKey] || getRecommendedConfig()
+                            return (
+                              <Popover
+                                key={m.name}
+                                open={openMetricConfig === configKey}
+                                onOpenChange={(open) => setOpenMetricConfig(open ? configKey : null)}
                               >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
+                                <PopoverTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 text-xs hover:bg-blue-100 transition-colors cursor-help"
+                                  >
+                                    <BarChart3 className="h-3 w-3" />
+                                    <span>{m.displayName}</span>
+                                    <span className="opacity-60">({tAgent(`creator.metricConfig.timeRanges.${config.time_range_minutes}`)})</span>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        toggleMetric(resource.deviceId, m.name, m.displayName)
+                                      }}
+                                      className="p-0.5 rounded-sm hover:bg-blue-200 transition-colors"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-48 p-3" align="start">
+                                  <div className="space-y-2">
+                                    <div className="text-xs font-medium">{m.displayName}</div>
+                                    <div>
+                                      <label className="text-xs text-muted-foreground">{tAgent('creator.metricConfig.timeRange')}</label>
+                                      <Select
+                                        value={config.time_range_minutes.toString()}
+                                        onValueChange={(v) => {
+                                          const minutes = parseInt(v)
+                                          updateMetricConfig(configKey, getConfigFromTimeRange(minutes))
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-8 text-xs mt-1">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="30">{tAgent('creator.metricConfig.timeRanges.30')}</SelectItem>
+                                          <SelectItem value="60">{tAgent('creator.metricConfig.timeRanges.60')}</SelectItem>
+                                          <SelectItem value="180">{tAgent('creator.metricConfig.timeRanges.180')}</SelectItem>
+                                          <SelectItem value="360">{tAgent('creator.metricConfig.timeRanges.360')}</SelectItem>
+                                          <SelectItem value="720">{tAgent('creator.metricConfig.timeRanges.720')}</SelectItem>
+                                          <SelectItem value="1440">{tAgent('creator.metricConfig.timeRanges.1440')}</SelectItem>
+                                          <SelectItem value="10080">{tAgent('creator.metricConfig.timeRanges.10080')}</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground text-center pt-1 border-t">
+                                      {config.time_range_minutes >= 10080 ? tAgent('creator.metricConfig.descriptions.fullWeek') :
+                                       config.time_range_minutes >= 720 ? tAgent('creator.metricConfig.descriptions.fullDay') :
+                                       config.time_range_minutes >= 180 ? tAgent('creator.metricConfig.descriptions.trend') :
+                                       config.time_range_minutes >= 60 ? tAgent('creator.metricConfig.descriptions.history') :
+                                       tAgent('creator.metricConfig.descriptions.baseline')}
+                                    </div>
+                                  </div>
+                                </PopoverContent>
+                              </Popover>
+                            )
+                          })}
                           {resource.commands.map((c) => (
                             <div key={c.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-orange-50 border border-orange-200 text-orange-700 text-xs">
                               <Zap className="h-3 w-3" />
@@ -1048,288 +1268,6 @@ export function AgentEditorFullScreen({
                   })}
                 </div>
               )}
-
-              {/* Collapsible Device Selection Panel */}
-              {showDeviceList && (
-                <div className="border rounded-lg p-4 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={tAgent('creator.resources.searchPlaceholder')}
-                      className="flex-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowDeviceList(false)}
-                      className="p-2 rounded-lg hover:bg-muted"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
-                    {filteredDevices.length === 0 ? (
-                      <div className="col-span-full text-center py-8 text-muted-foreground text-sm">
-                        {tAgent('creator.noDevices')}
-                      </div>
-                    ) : (
-                      filteredDevices.map((device) => {
-                        const Icon = getDeviceIcon(device.device_type)
-                        const hasSelection = selectedResources.find(r => r.deviceId === device.device_id)
-                        const selectionCount = (hasSelection?.metrics.length || 0) + (hasSelection?.commands.length || 0)
-
-                        return (
-                          <button
-                            key={device.device_id}
-                            type="button"
-                            onClick={() => void selectDevice(device.device_id)}
-                            className={cn(
-                              "p-3 rounded-lg border-2 text-left transition-all",
-                              hasSelection ? "border-primary bg-primary/5" : "border-border hover:border-muted-foreground/30"
-                            )}
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className={cn(
-                                "p-1.5 rounded-md",
-                                hasSelection ? "bg-primary text-primary-foreground" : "bg-muted"
-                              )}>
-                                {Icon}
-                              </div>
-                              <span className="font-medium text-sm truncate flex-1">{device.name}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                              <span>{device.device_type}</span>
-                              {selectionCount > 0 && (
-                                <Badge variant="secondary" className="text-xs h-5">
-                                  {selectionCount}
-                                </Badge>
-                              )}
-                            </div>
-                          </button>
-                        )
-                      })
-                    )}
-                  </div>
-
-                  {/* Device Detail Panel (when a device is selected) */}
-                  {selectedDeviceId && (() => {
-                    const device = devices.find(d => d.device_id === selectedDeviceId)
-                    if (!device) return null
-                    const metrics = getDeviceMetrics(selectedDeviceId)
-                    const commands = getDeviceCommands(selectedDeviceId)
-                    const isLoading = loadingMetrics[selectedDeviceId]
-
-                    if (isLoading) {
-                      return (
-                        <div className="flex items-center justify-center py-8">
-                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                        </div>
-                      )
-                    }
-
-                    if (metrics.length === 0 && commands.length === 0) {
-                      return (
-                        <div className="text-center py-8 text-muted-foreground text-sm">
-                          {tAgent('creator.resources.noMetrics')}
-                        </div>
-                      )
-                    }
-
-                    return (
-                      <div className="border-t pt-4 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm flex items-center gap-2">
-                            {getDeviceIcon(device.device_type)}
-                            {device.name}
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => selectAllForDevice(selectedDeviceId)}
-                              className="text-xs px-3 py-1.5 rounded-md hover:bg-muted transition-colors text-primary"
-                            >
-                              {tCommon('selectAll')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => clearDevice(selectedDeviceId)}
-                              className="text-xs px-3 py-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground"
-                            >
-                              {tCommon('clear')}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          {/* Metrics */}
-                          {metrics.length > 0 && (
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                                <BarChart3 className="h-3 w-3" />
-                                {tAgent('creator.resources.metrics')}
-                              </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                {metrics.map((metric) => {
-                                  const isSelected = isMetricSelected(selectedDeviceId, metric.name)
-                                  return (
-                                    <button
-                                      key={metric.name}
-                                      type="button"
-                                      onClick={() => toggleMetric(selectedDeviceId, metric.name, metric.display_name)}
-                                      className={cn(
-                                        "p-2 rounded-lg text-left transition-all text-sm",
-                                        isSelected
-                                          ? "bg-blue-600 text-white"
-                                          : "hover:bg-blue-50 border border-blue-200"
-                                      )}
-                                    >
-                                      <div className="flex items-center gap-1.5">
-                                        {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-blue-300" />}
-                                        <span className="flex-1 truncate">{metric.display_name}</span>
-                                      </div>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Commands */}
-                          {commands.length > 0 && (
-                            <div>
-                              <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                                <Zap className="h-3 w-3" />
-                                {tAgent('creator.resources.commands')}
-                              </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                {commands.map((command) => {
-                                  const isSelected = isCommandSelected(selectedDeviceId, command.name)
-                                  return (
-                                    <button
-                                      key={command.name}
-                                      type="button"
-                                      onClick={() => toggleCommand(selectedDeviceId, command.name, command.display_name)}
-                                      className={cn(
-                                        "p-2 rounded-lg text-left transition-all text-sm",
-                                        isSelected
-                                          ? "bg-orange-600 text-white"
-                                          : "hover:bg-orange-50 border border-orange-200"
-                                      )}
-                                    >
-                                      <div className="flex items-center gap-1.5">
-                                        {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-orange-300" />}
-                                        <span className="flex-1 truncate">{command.display_name}</span>
-                                      </div>
-                                    </button>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Advanced Config (Collapsible) */}
-            <div className="space-y-4">
-              <button
-                type="button"
-                onClick={() => setShowAdvancedConfig(!showAdvancedConfig)}
-                className="w-full flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <span className="text-sm font-medium flex items-center gap-2">
-                  <Settings className="h-4 w-4 text-muted-foreground" />
-                  {tAgent('creator.advanced.title')}
-                </span>
-                <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", showAdvancedConfig && "rotate-180")} />
-              </button>
-
-              {showAdvancedConfig && (
-                <div className="border rounded-lg p-4">
-                  {selectedResources.filter(r => r.metrics.length > 0).length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      {tAgent('creator.advanced.selectMetricsFirst')}
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {selectedResources.flatMap(r =>
-                        r.metrics.map(m => ({
-                          deviceName: r.deviceName,
-                          displayName: m.displayName,
-                          configKey: `${r.deviceId}:${m.name}`
-                        }))
-                      ).map((metric) => {
-                        const config = metricConfigs[metric.configKey] || DEFAULT_DATA_COLLECTION
-                        return (
-                          <div key={metric.configKey} className="border rounded p-3 space-y-2">
-                            <div className="text-sm font-medium truncate" title={`${metric.deviceName}/${metric.displayName}`}>
-                              {metric.displayName}
-                            </div>
-                            <div>
-                              <label className="text-xs text-muted-foreground">{tAgent('creator.dataCollection.timeRange')}</label>
-                              <Select
-                                value={config.time_range_minutes.toString()}
-                                onValueChange={(v) => updateMetricConfig(metric.configKey, { time_range_minutes: parseInt(v) })}
-                              >
-                                <SelectTrigger className="h-8 text-xs mt-1">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="5">5 {tAgent('creator.schedule.minutes')}</SelectItem>
-                                  <SelectItem value="15">15 {tAgent('creator.schedule.minutes')}</SelectItem>
-                                  <SelectItem value="30">30 {tAgent('creator.schedule.minutes')}</SelectItem>
-                                  <SelectItem value="60">1 {tCommon('hour')}</SelectItem>
-                                  <SelectItem value="180">3 {tCommon('hours')}</SelectItem>
-                                  <SelectItem value="360">6 {tCommon('hours')}</SelectItem>
-                                  <SelectItem value="720">12 {tCommon('hours')}</SelectItem>
-                                  <SelectItem value="1440">24 {tCommon('hours')}</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="space-y-1">
-                              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  id={`history-${metric.configKey}`}
-                                  checked={config.include_history}
-                                  onChange={(e) => updateMetricConfig(metric.configKey, { include_history: e.target.checked })}
-                                  className="h-3 w-3 rounded"
-                                />
-                                {tAgent('creator.dataCollection.includeHistory')}
-                              </label>
-                              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  id={`trend-${metric.configKey}`}
-                                  checked={config.include_trend}
-                                  onChange={(e) => updateMetricConfig(metric.configKey, { include_trend: e.target.checked })}
-                                  className="h-3 w-3 rounded"
-                                />
-                                {tAgent('creator.dataCollection.includeTrend')}
-                              </label>
-                              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  id={`baseline-${metric.configKey}`}
-                                  checked={config.include_baseline}
-                                  onChange={(e) => updateMetricConfig(metric.configKey, { include_baseline: e.target.checked })}
-                                  className="h-3 w-3 rounded"
-                                />
-                                {tAgent('creator.dataCollection.includeBaseline')}
-                              </label>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
           </div>
@@ -1339,7 +1277,7 @@ export function AgentEditorFullScreen({
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t">
           {selectedCount > 0 && (
             <Badge variant="secondary">
-              {selectedCount} {tCommon('selected')}
+              {tCommon('selected', { count: selectedCount })}
             </Badge>
           )}
           <Button onClick={handleSave} disabled={saving || !name.trim() || !userPrompt.trim()}>
@@ -1354,6 +1292,215 @@ export function AgentEditorFullScreen({
           </Button>
         </div>
       </DialogContent>
+
+      {/* Device Selection Dialog */}
+      <Dialog open={showDeviceList} onOpenChange={setShowDeviceList}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>{tAgent('creator.resources.title')}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 -mt-2">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={tAgent('creator.resources.searchPlaceholder')}
+                className="pl-9"
+              />
+            </div>
+
+            {/* Device Grid */}
+            <div className="grid grid-cols-3 gap-3">
+              {filteredDevices.length === 0 ? (
+                <div className="col-span-full text-center py-8 text-muted-foreground text-sm">
+                  {tAgent('creator.resources.noResourcesFound')}
+                </div>
+              ) : (
+                filteredDevices.map((device) => {
+                  const Icon = getDeviceIcon(device.device_type)
+                  const hasSelection = selectedResources.find(r => r.deviceId === device.device_id)
+                  const selectionCount = (hasSelection?.metrics.length || 0) + (hasSelection?.commands.length || 0)
+                  const isSelected = selectedDeviceId === device.device_id
+
+                  return (
+                    <button
+                      key={device.device_id}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedDeviceId('')
+                        } else {
+                          selectDevice(device.device_id)
+                        }
+                      }}
+                      className={cn(
+                        "p-3 rounded-lg border-2 text-left transition-all",
+                        isSelected ? "border-primary bg-primary/5" : hasSelection ? "border-primary/50 bg-primary/5" : "border-border hover:border-muted-foreground/30"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className={cn(
+                          "p-1.5 rounded-md",
+                          isSelected || hasSelection ? "bg-primary text-primary-foreground" : "bg-muted"
+                        )}>
+                          {Icon}
+                        </div>
+                        <span className="font-medium text-sm truncate flex-1">{device.name}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="truncate">{device.device_type}</span>
+                        {selectionCount > 0 && (
+                          <Badge variant="secondary" className="text-xs h-5 ml-1 shrink-0">
+                            {selectionCount}
+                          </Badge>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+
+            {/* Device Detail Panel (when a device is selected) */}
+            {selectedDeviceId && (() => {
+              const device = devices.find(d => d.device_id === selectedDeviceId)
+              if (!device) return null
+              const metrics = getDeviceMetrics(selectedDeviceId)
+              const commands = getDeviceCommands(selectedDeviceId)
+              const isLoading = loadingMetrics[selectedDeviceId]
+
+              if (isLoading) {
+                return (
+                  <div className="flex items-center justify-center py-8 border-t">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  </div>
+                )
+              }
+
+              if (metrics.length === 0 && commands.length === 0) {
+                return (
+                  <div className="text-center py-8 text-muted-foreground text-sm border-t">
+                    {tAgent('creator.resources.noMetrics')}
+                  </div>
+                )
+              }
+
+              return (
+                <div className="border-t pt-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-sm flex items-center gap-2">
+                      {getDeviceIcon(device.device_type)}
+                      {device.name}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectAllForDevice(selectedDeviceId)}
+                        className="text-xs px-3 py-1.5 rounded-md hover:bg-muted transition-colors text-primary"
+                      >
+                        {tCommon('selectAll')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => clearDevice(selectedDeviceId)}
+                        className="text-xs px-3 py-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground"
+                      >
+                        {tCommon('clear')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* Metrics */}
+                    {metrics.length > 0 && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                          <BarChart3 className="h-3 w-3" />
+                          {tAgent('creator.resources.metrics')}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {metrics.map((metric) => {
+                            const isSelected = isMetricSelected(selectedDeviceId, metric.name)
+                            return (
+                              <button
+                                key={metric.name}
+                                type="button"
+                                onClick={() => toggleMetric(selectedDeviceId, metric.name, metric.display_name)}
+                                className={cn(
+                                  "p-2 rounded-lg text-left transition-all text-sm",
+                                  isSelected
+                                    ? "bg-blue-600 text-white"
+                                    : "hover:bg-blue-50 border border-blue-200"
+                                )}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-blue-300" />}
+                                  <span className="flex-1 truncate">{metric.display_name}</span>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2 text-center">
+                          {tAgent('creator.metricConfig.configureHint')}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Commands */}
+                    {commands.length > 0 && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                          <Zap className="h-3 w-3" />
+                          {tAgent('creator.resources.commands')}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {commands.map((command) => {
+                            const isSelected = isCommandSelected(selectedDeviceId, command.name)
+                            return (
+                              <button
+                                key={command.name}
+                                type="button"
+                                onClick={() => toggleCommand(selectedDeviceId, command.name, command.display_name)}
+                                className={cn(
+                                  "p-2 rounded-lg text-left transition-all text-sm",
+                                  isSelected
+                                    ? "bg-orange-600 text-white"
+                                    : "hover:bg-orange-50 border border-orange-200"
+                                )}
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-orange-300" />}
+                                  <span className="flex-1 truncate">{command.display_name}</span>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+
+          {/* Dialog Footer */}
+          <div className="flex items-center justify-end gap-3 pt-4 border-t">
+            <div className="flex-1 text-sm text-muted-foreground">
+              {selectedCount > 0 && (
+                <Badge variant="secondary">{tCommon('selected', { count: selectedCount })}</Badge>
+              )}
+            </div>
+            <Button variant="outline" onClick={() => setShowDeviceList(false)}>
+              {tCommon('close')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

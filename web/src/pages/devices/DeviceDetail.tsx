@@ -55,7 +55,10 @@ function renderMetricValue(
     return (
       <div
         className="cursor-pointer hover:opacity-80 transition-opacity"
-        onClick={() => onImageClick?.(value)}
+        onClick={(e) => {
+          e.stopPropagation() // Prevent opening history dialog
+          onImageClick?.(value)
+        }}
       >
         <img src={value} alt="metric" className="h-16 w-16 object-cover rounded-lg" />
       </div>
@@ -557,11 +560,17 @@ export function DeviceDetail({
             <div className="space-y-5 py-4">
               {selectedCommandDef.parameters?.map((param) => {
                 const value = dialogParams[param.name]
+                // Format data type for display
+                const formatDataType = (dt: string | { enum: string[] }): string => {
+                  if (typeof dt === 'string') return dt
+                  if ('enum' in dt) return `enum: ${dt.enum.join(', ')}`
+                  return String(dt)
+                }
                 return (
                   <div key={param.name} className="space-y-2">
                     <Label className="text-sm font-medium">
                       {param.display_name || param.name}
-                      <Badge variant="outline" className="ml-2 text-xs">{param.data_type}</Badge>
+                      <Badge variant="outline" className="ml-2 text-xs">{formatDataType(param.data_type)}</Badge>
                     </Label>
                     {param.data_type === 'boolean' ? (
                       <div className="flex gap-2">

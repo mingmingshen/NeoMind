@@ -143,6 +143,7 @@ import {
   LEDIndicator,
   Sparkline,
   ProgressBar,
+  AgentStatusCard,
   // Charts
   LineChart,
   AreaChart,
@@ -161,6 +162,8 @@ import {
   CustomLayer,
   LayerEditorDialog,
   MapEditorDialog,
+  // Business Components
+  AgentMonitorWidget,
   type MapBinding,
   type MapBindingType,
   type MapMarker,
@@ -169,8 +172,9 @@ import {
 } from '@/components/dashboard'
 import { DashboardListSidebar } from '@/components/dashboard/DashboardListSidebar'
 import type { DashboardComponent, DataSourceOrList, DataSource, GenericComponent } from '@/types/dashboard'
-import type { Device } from '@/types'
+import type { Device, AiAgent } from '@/types'
 import { COMPONENT_SIZE_CONSTRAINTS } from '@/types/dashboard'
+import { api } from '@/lib/api'
 import { confirm } from '@/hooks/use-confirm'
 
 // ============================================================================
@@ -320,11 +324,7 @@ function getComponentLibrary(t: (key: string) => string): ComponentCategory[] {
       categoryLabel: t('componentLibrary.business'),
       categoryIcon: Bot,
       items: [
-        { id: 'agent-status-card', name: t('componentLibrary.agentStatus'), description: t('componentLibrary.agentStatusDesc'), icon: Bot },
-        { id: 'decision-list', name: t('componentLibrary.decisionList'), description: t('componentLibrary.decisionListDesc'), icon: Brain },
-        { id: 'device-control', name: t('componentLibrary.deviceControl'), description: t('componentLibrary.deviceControlDesc'), icon: SlidersHorizontal },
-        { id: 'rule-status-grid', name: t('componentLibrary.ruleStatusGrid'), description: t('componentLibrary.ruleStatusGridDesc'), icon: GitBranch },
-        { id: 'transform-list', name: t('componentLibrary.transformList'), description: t('componentLibrary.transformListDesc'), icon: Workflow },
+        { id: 'agent-monitor-widget', name: t('componentLibrary.agentMonitor'), description: t('componentLibrary.agentMonitorDesc'), icon: Bot },
       ],
     },
   ]
@@ -375,7 +375,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
   const noStandardSize = [
     'led-indicator', 'toggle-switch',
     'heading', 'alert-banner',
-    'agent-status-card', 'device-control', 'rule-status-grid', 'transform-list',
+    'agent-status-card', 'agent-monitor-widget',
   ]
 
   // Components that don't support showCard
@@ -383,7 +383,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'value-card', 'led-indicator', 'sparkline', 'progress-bar',
     'toggle-switch',
     'heading', 'alert-banner',
-    'agent-status-card', 'device-control', 'rule-status-grid', 'transform-list',
+    'agent-status-card', 'agent-monitor-widget',
     'tabs',
   ]
 
@@ -393,7 +393,7 @@ const getSpreadableProps = (componentType: string, commonProps: ReturnType<typeo
     'toggle-switch',
     'heading', 'alert-banner',
     'tabs',
-    'agent-status-card', 'device-control', 'rule-status-grid', 'transform-list',
+    'agent-status-card', 'agent-monitor-widget',
   ]
 
   const result: Record<string, unknown> = {}
@@ -772,7 +772,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           deviceId: ds?.deviceId,
           status: binding.type === 'device' ? getDeviceStatus(ds.deviceId) : undefined,
           // Metric-specific fields
-          metricValue: binding.type === 'metric' ? (metricValue || '--') : undefined,
+          metricValue: binding.type === 'metric' ? (metricValue || '-') : undefined,
           // Command-specific fields
           command: binding.type === 'command' ? ds?.command : undefined,
           // Names for display
@@ -822,19 +822,18 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
         />
       )
 
-    // Business Components (not implemented)
-    case 'agent-status-card':
-    case 'decision-list':
-    case 'device-control':
-    case 'rule-status-grid':
-    case 'transform-list':
+    // Business Components - handled by ComponentRenderer
+    case 'agent-monitor-widget': {
+      const widgetAgentId = (component as any).dataSource?.agentId
+      console.log('[VisualDashboard] Rendering AgentMonitorWidget with agentId:', widgetAgentId, 'component.dataSource:', (component as any).dataSource)
       return (
-        <div className="p-4 text-center text-muted-foreground h-full flex flex-col items-center justify-center">
-          <p className="text-sm font-medium">{component.type}</p>
-          <p className="text-xs mt-1">This component is not yet implemented</p>
-        </div>
+        <AgentMonitorWidget
+          agentId={widgetAgentId}
+          editMode={editMode}
+          className="w-full h-full"
+        />
       )
-
+    }
     default:
       return (
         <div className="p-4 text-center text-muted-foreground h-full flex flex-col items-center justify-center">
@@ -966,6 +965,10 @@ export function VisualDashboard() {
   const [layerEditorOpen, setLayerEditorOpen] = useState(false)
   const [layerEditorBindings, setLayerEditorBindings] = useState<LayerBinding[]>([])
 
+  // Agents for agent-monitor-widget config
+  const [agents, setAgents] = useState<AiAgent[]>([])
+  const [agentsLoading, setAgentsLoading] = useState(false)
+
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -1054,8 +1057,11 @@ export function VisualDashboard() {
     const components = currentDashboard?.components ?? []
     const prevComponents = prevComponentsRef.current ?? []
 
+    console.log('[componentsStableKey] Calculating, configVersion:', configVersion, 'components.length:', components.length)
+
     // Quick check: if length changed, definitely different
     if (components.length !== prevComponents.length) {
+      console.log('[componentsStableKey] Length changed, returning new key')
       prevComponentsRef.current = components
       return `changed-${components.length}-${Date.now()}-${configVersion}`
     }
@@ -1066,11 +1072,20 @@ export function VisualDashboard() {
       const prev = prevComponents[i]
 
       if (!prev) {
+        console.log('[componentsStableKey] New component, returning new key:', curr.id)
         prevComponentsRef.current = components
         return `new-${curr.id}-${curr.type}-${Date.now()}-${configVersion}`
       }
 
       // Check each property separately (including title and dataSource)
+      const currDataSource = (curr as any).dataSource
+      const prevDataSource = (prev as any).dataSource
+      const dataSourceChanged = JSON.stringify(currDataSource) !== JSON.stringify(prevDataSource)
+
+      if (dataSourceChanged) {
+        console.log('[componentsStableKey] dataSource changed for component:', curr.id, 'prev:', prevDataSource, 'curr:', currDataSource)
+      }
+
       if (curr.id !== prev.id ||
           curr.type !== prev.type ||
           curr.title !== prev.title ||
@@ -1079,13 +1094,15 @@ export function VisualDashboard() {
           curr.position.w !== prev.position.w ||
           curr.position.h !== prev.position.h ||
           JSON.stringify(curr.config) !== JSON.stringify(prev.config) ||
-          JSON.stringify((curr as any).dataSource) !== JSON.stringify((prev as any).dataSource)) {
+          dataSourceChanged) {
+        console.log('[componentsStableKey] Component changed, returning new key:', curr.id)
         prevComponentsRef.current = components
         return `changed-${curr.id}-${Date.now()}-${configVersion}`
       }
     }
 
     // No actual changes detected - return stable key with version
+    console.log('[componentsStableKey] No changes detected, returning stable key')
     return `stable-${components.length}-${configVersion}`
   }, [currentDashboard?.components, configVersion])
 
@@ -1214,6 +1231,37 @@ export function VisualDashboard() {
       navigate('/visual-dashboard', { replace: true })
     }
   }, [dashboards.length, dashboardsLoading, dashboardId, navigate])
+
+  // Load agents when config opens for agent-monitor-widget
+  useEffect(() => {
+    const loadAgents = async () => {
+      if (configOpen && selectedComponent?.type === 'agent-monitor-widget') {
+        console.log('[AgentMonitorWidget] Loading agents...')
+        setAgentsLoading(true)
+        try {
+          const data = await api.listAgents()
+          console.log('[AgentMonitorWidget] Agents loaded:', data.agents?.length || 0)
+          setAgents(data.agents || [])
+        } catch (error) {
+          console.error('[AgentMonitorWidget] Failed to load agents:', error)
+          setAgents([])
+        } finally {
+          setAgentsLoading(false)
+        }
+      }
+    }
+    loadAgents()
+  }, [configOpen, selectedComponent?.type, selectedComponent?.id])
+
+  // For agent-monitor-widget: update componentConfig with agents when loaded
+  // This ensures the render function has access to the agents list
+  useEffect(() => {
+    if (configOpen && selectedComponent?.type === 'agent-monitor-widget' && !agentsLoading) {
+      console.log('[AgentMonitorWidget] Agents loaded (or empty), updating config. Agents:', agents.length)
+      // Store agents in componentConfig so the render function can access them
+      setComponentConfig(prev => ({ ...prev, _agentsList: agents }))
+    }
+  }, [agents, agentsLoading, configOpen, selectedComponent?.type])
 
   // Note: Removed auto-create dashboard logic
   // Users should explicitly create dashboards via the UI
@@ -1356,12 +1404,8 @@ export function VisualDashboard() {
           editable: false,
         }
         break
-      // Business Components (not implemented)
-      case 'agent-status-card':
-      case 'decision-list':
-      case 'device-control':
-      case 'rule-status-grid':
-      case 'transform-list':
+      // Business Components
+      case 'agent-monitor-widget':
         defaultConfig = {}
         break
       default:
@@ -1523,6 +1567,7 @@ export function VisualDashboard() {
   // devices.length is included to ensure re-render when devices are initially loaded
   // IMPORTANT: Use currentDashboard from props (reactive) to ensure updates are reflected
   const gridComponents = useMemo(() => {
+    console.log('[VisualDashboard] gridComponents useMemo called, currentDashboard:', currentDashboard?.id, 'components:', currentDashboard?.components.length)
     return currentDashboard?.components.map((component) => {
       // Get dataSource from component (it should be a separate property, not in config)
       const componentDataSource = (component as any).dataSource
@@ -1544,7 +1589,7 @@ export function VisualDashboard() {
         ),
       }
     }) ?? []
-  }, [componentsStableKey, editMode, configVersion, devices.length])
+  }, [componentsStableKey, editMode, configVersion, devices.length, currentDashboard])
 
   // Track initial config load to avoid unnecessary updates
   const initialConfigRef = useRef<any>(null)
@@ -1591,7 +1636,7 @@ export function VisualDashboard() {
       initialConfigRef.current = null
       lastSyncedConfigRef.current = ''
     }
-  }, [componentConfig, configOpen, selectedComponent?.id, updateComponent, setConfigSchema])
+  }, [componentConfig, configOpen, selectedComponent?.id, selectedComponent?.type, updateComponent, setConfigSchema])
 
   // Handle canceling component config - revert to original
   const handleCancelConfig = useCallback(() => {
@@ -4172,22 +4217,55 @@ export function VisualDashboard() {
         }
 
       // ========== Business Components ==========
-      case 'agent-status-card':
-      case 'decision-list':
-      case 'device-control':
-      case 'rule-status-grid':
-      case 'transform-list':
-        // Business components have minimal config for now
+      case 'agent-monitor-widget':
+        // Agent selection in display config (keeps layout balanced with hasDataSource=true)
         return {
-          styleSections: [
+          displaySections: [
             {
               type: 'custom' as const,
-              render: () => (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p className="text-sm">{t('visualDashboard.systemDataSource')}</p>
-                  <p className="text-xs mt-1">{t('visualDashboard.configureDataSourceHint')}</p>
-                </div>
-              ),
+              render: () => {
+                // Read from componentConfig which is kept up-to-date by updateDataSource
+                const currentAgentId = (config.dataSource as any)?.agentId || ''
+                // Read agents from config - populated by the agents loading effect
+                const agentsList = (config as any)._agentsList || agents
+                console.log('[AgentMonitorWidget] Render - agentsList.length:', agentsList.length, 'loading:', agentsLoading)
+                return (
+                  <div className="space-y-3">
+                    <Field>
+                      <Label>{t('dashboardComponents:agentMonitorWidget.selectAgent')}</Label>
+                      <Select
+                        value={currentAgentId}
+                        onValueChange={(value) => {
+                          console.log('[AgentMonitorWidget] Agent selected:', value)
+                          updateDataSource({ type: 'agent', agentId: value })
+                        }}
+                        disabled={agentsLoading}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder={agentsLoading ? t('common:loading') : t('dashboardComponents:agentMonitorWidget.selectAgent')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {agentsList.map((agent: any) => (
+                            <SelectItem key={agent.id} value={agent.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{agent.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                  ({agent.execution_count || 0} {t('agents:card.executions')})
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                          {agentsList.length === 0 && !agentsLoading && (
+                            <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                              {t('agents:noAgents')}
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                )
+              },
             },
           ],
         }

@@ -200,13 +200,10 @@ export type GenericComponentType =
 
 /**
  * Business Component Types
- * NeoTalk-specific business components (not yet implemented)
+ * NeoTalk-specific business components
  */
 export type BusinessComponentType =
-  | 'decision-list'
-  | 'device-control'
-  | 'rule-status-grid'
-  | 'transform-list'
+  | 'agent-monitor-widget'
 
 /**
  * All Implemented Component Types
@@ -349,11 +346,8 @@ export const COMPONENT_SIZE_CONSTRAINTS: Partial<Record<ImplementedComponentType
   'video-display': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
   'custom-layer': { minW: 2, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 12 },
 
-  // Business Components (deleted but kept for backward compatibility)
-  'decision-list': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 10 },
-  'device-control': { minW: 2, minH: 2, defaultW: 4, defaultH: 3, maxW: 6, maxH: 5 },
-  'rule-status-grid': { minW: 3, minH: 2, defaultW: 6, defaultH: 4, maxW: 12, maxH: 8 },
-  'transform-list': { minW: 2, minH: 2, defaultW: 4, defaultH: 4, maxW: 6, maxH: 10 },
+  // Business Components
+  'agent-monitor-widget': { minW: 3, minH: 3, defaultW: 4, defaultH: 4, maxW: 8, maxH: 6 },
 }
 
 // ============================================================================

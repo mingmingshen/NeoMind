@@ -40,7 +40,6 @@ pub mod engine;
 pub mod error;
 
 pub mod history;
-pub mod integration;
 pub mod store;
 pub mod validator;
 
@@ -61,9 +60,6 @@ pub use error::{NeoTalkError, RuleError};
 
 pub use history::{
     HistoryError, HistoryFilter, RuleHistoryEntry, RuleHistoryStats, RuleHistoryStorage,
-};
-pub use integration::{
-    CachedValueProvider, EventDrivenRuleEngine, EventEngineError, EventEngineResult,
 };
 pub use store::{
     ImportResult, RuleHistoryStats as StoreRuleHistoryStats, RuleStore, RuleStoreConfig,

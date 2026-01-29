@@ -195,7 +195,7 @@ function MapMarkerDot({ marker, onClick, isSelected = false, t }: MapMarkerDotPr
         return (
           <>
             {baseInfo}
-            <div className="text-green-500 font-semibold">{t('mapDisplay.value')}: {marker.metricValue || '--'}</div>
+            <div className="text-green-500 font-semibold">{t('mapDisplay.value')}: {marker.metricValue || '-'}</div>
             {marker.deviceName && (
               <div className="text-xs text-muted-foreground">{t('mapDisplay.device')}: {marker.deviceName}</div>
             )}
@@ -752,7 +752,7 @@ export function MapDisplay({
       if (binding.type === 'metric') {
         const metricId = ds?.metricId || ds?.property || ''
         const metricValue = getDeviceMetricValue(deviceId || '', metricId)
-        marker.metricValue = metricValue !== undefined ? String(metricValue) : '--'
+        marker.metricValue = metricValue !== undefined ? String(metricValue) : '-'
         marker.markerType = 'metric'
         marker.deviceName = getDeviceName(deviceId || '')
         marker.metricName = metricId

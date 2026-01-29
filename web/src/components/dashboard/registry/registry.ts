@@ -493,56 +493,27 @@ export const componentRegistry: ComponentRegistry = {
     variants: ['default', 'compact'],
   },
 
-  'decision-list': {
-    type: 'decision-list',
-    name: 'Decision List',
-    description: 'List of AI decisions',
-    category: 'indicators',
-    icon: Hash,
-    sizeConstraints: getSizeConstraints('decision-list'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: false,
-    acceptsProp: () => false,
-  },
+  // ============================================================================
+  // Business Components
+  // ============================================================================
 
-  'device-control': {
-    type: 'device-control',
-    name: 'Device Control',
-    description: 'Device control panel',
-    category: 'controls',
-    icon: ToggleLeft,
-    sizeConstraints: getSizeConstraints('device-control'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
+  'agent-monitor-widget': {
+    type: 'agent-monitor-widget',
+    name: 'Agent Monitor Widget',
+    description: 'Comprehensive AI agent monitoring widget with agent selector, real-time status, statistics, and execution history',
+    category: 'business',
+    icon: Bot,
+    sizeConstraints: getSizeConstraints('agent-monitor-widget'),
+    hasDataSource: true,  // For balanced two-panel layout
+    hasDisplayConfig: true,  // Agent selector in Display tab
     hasActions: true,
-    acceptsProp: () => false,
-  },
-
-  'rule-status-grid': {
-    type: 'rule-status-grid',
-    name: 'Rule Status Grid',
-    description: 'Rule execution status grid',
-    category: 'indicators',
-    icon: Hash,
-    sizeConstraints: getSizeConstraints('rule-status-grid'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: false,
-    acceptsProp: () => false,
-  },
-
-  'transform-list': {
-    type: 'transform-list',
-    name: 'Transform List',
-    description: 'Data transformation list',
-    category: 'indicators',
-    icon: Hash,
-    sizeConstraints: getSizeConstraints('transform-list'),
-    hasDataSource: true,
-    hasDisplayConfig: false,
-    hasActions: false,
-    acceptsProp: () => false,
+    acceptsProp: (prop) => [
+      'agentId', 'className', 'editMode'
+    ].includes(prop),
+    defaultProps: {
+      agentId: undefined,
+    },
+    variants: ['default'],
   },
 } as const
 
@@ -622,6 +593,7 @@ export function groupComponentsByCategory(options: RegistryFilterOptions = {}): 
     'controls',
     'display',
     'spatial',
+    'business',
   ]
 
   return categoryOrder
@@ -639,6 +611,7 @@ export function getCategoryInfo(category: ComponentCategory): { name: string; ic
     controls: { name: 'Controls', icon: ToggleLeft },
     display: { name: 'Display & Content', icon: Image },
     spatial: { name: 'Spatial & Media', icon: MapPin },
+    business: { name: 'Business Components', icon: Bot },
   }
 
   return categoryInfos[category]

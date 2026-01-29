@@ -20,6 +20,7 @@ export type EventType =
   | 'AgentExecutionStarted'
   | 'AgentThinking'
   | 'AgentDecision'
+  | 'AgentProgress'
   | 'AgentExecutionCompleted'
   | 'AgentMemoryUpdated'
   | 'PeriodicReviewTriggered'
@@ -129,6 +130,18 @@ export interface AgentDecisionEvent extends NeoTalkEvent {
     rationale: string
     action: string
     confidence: number
+  }
+}
+
+export interface AgentProgressEvent extends NeoTalkEvent {
+  type: 'AgentProgress'
+  data: {
+    agent_id: string
+    execution_id: string
+    stage: string // 'collecting', 'analyzing', 'executing', 'completed'
+    stage_label: string // Human-readable stage name
+    progress?: number // 0.0 to 1.0 if available
+    details?: string // Additional details about current operation
   }
 }
 

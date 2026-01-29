@@ -8,8 +8,9 @@ use serde_json::{Value, json};
 
 use edge_ai_storage::{
     AiAgent, AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentExecutionRecord,
-    AgentFilter, AgentRole, DecisionProcess, ExecutionStatus, ExecutionResult, IntentType,
-    ParsedIntent, ScheduleType,
+    AgentFilter, DecisionProcess, ExecutionStatus, ExecutionResult, IntentType,
+    ParsedIntent, ScheduleType, ResourceType,
+    UserMessage,
 };
 
 use super::{
@@ -17,6 +18,30 @@ use super::{
     common::{HandlerResult, ok},
 };
 use crate::models::ErrorResponse;
+
+// ============================================================================
+// Helper functions for enum serialization
+// ============================================================================
+
+/// Convert ScheduleType to lowercase string (matching serde snake_case)
+fn schedule_type_to_string(schedule_type: &ScheduleType) -> &'static str {
+    match schedule_type {
+        ScheduleType::Interval => "interval",
+        ScheduleType::Cron => "cron",
+        ScheduleType::Event => "event",
+        ScheduleType::Once => "once",
+    }
+}
+
+/// Convert ResourceType to lowercase string (matching serde snake_case)
+fn resource_type_to_string(resource_type: &ResourceType) -> &'static str {
+    match resource_type {
+        ResourceType::Device => "device",
+        ResourceType::Metric => "metric",
+        ResourceType::Command => "command",
+        ResourceType::DataStream => "data_stream",
+    }
+}
 
 // ============================================================================
 // DTOs for API requests/responses
@@ -27,7 +52,8 @@ use crate::models::ErrorResponse;
 struct AgentDto {
     id: String,
     name: String,
-    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
     status: String,
     created_at: String,
     last_execution_at: Option<String>,
@@ -42,7 +68,8 @@ struct AgentDto {
 struct AgentDetailDto {
     id: String,
     name: String,
-    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
     user_prompt: String,
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -56,6 +83,8 @@ struct AgentDetailDto {
     updated_at: String,
     last_execution_at: Option<String>,
     error_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    llm_backend_id: Option<String>,
 }
 
 /// Agent resource for API responses.
@@ -73,6 +102,8 @@ struct AgentScheduleDto {
     interval_seconds: Option<u64>,
     cron_expression: Option<String>,
     timezone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_filter: Option<String>,
 }
 
 /// Parsed intent for API responses.
@@ -186,6 +217,10 @@ struct ActionExecutedDto {
     target: String,
     description: String,
     success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parameters: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<String>,
 }
 
 /// Notification sent for API responses.
@@ -194,6 +229,8 @@ struct NotificationSentDto {
     channel: String,
     recipient: String,
     message: String,
+    sent_at: i64,
+    success: bool,
 }
 
 /// Detailed agent execution record with full decision process.
@@ -217,8 +254,6 @@ struct AgentExecutionDetailDto {
 #[derive(Debug, serde::Deserialize)]
 pub struct CreateAgentRequest {
     pub name: String,
-    #[serde(default = "default_agent_role")]
-    pub role: String,
     #[serde(default)]
     pub description: Option<String>,
     pub user_prompt: String,
@@ -230,10 +265,6 @@ pub struct CreateAgentRequest {
     pub schedule: AgentScheduleRequest,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_backend_id: Option<String>,
-}
-
-fn default_agent_role() -> String {
-    "Monitor".to_string()
 }
 
 /// Metric selection in create request.
@@ -276,9 +307,35 @@ pub struct UpdateAgentRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user_prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llm_backend_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<AgentScheduleRequest>,
+    // New format: resources array
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<AgentResourceRequest>>,
+    // Old format: kept for backward compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<Vec<MetricSelectionRequest>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commands: Option<Vec<CommandSelectionRequest>>,
+}
+
+/// Resource in update request (new format).
+#[derive(Debug, serde::Deserialize)]
+pub struct AgentResourceRequest {
+    pub resource_id: String,
+    pub resource_type: String,  // "Device", "Metric", "Command", etc.
+    pub name: String,
+    #[serde(default)]
+    pub config: Option<serde_json::Value>,
 }
 
 /// Request body for triggering an agent execution.
@@ -299,7 +356,7 @@ impl From<AiAgent> for AgentDto {
         Self {
             id: agent.id,
             name: agent.name,
-            role: format!("{:?}", agent.role),
+            description: agent.description,
             status: format!("{:?}", agent.status),
             created_at: format_datetime(agent.created_at),
             last_execution_at: agent.last_execution_at.map(format_datetime),
@@ -316,7 +373,7 @@ impl From<&AiAgent> for AgentDetailDto {
         Self {
             id: agent.id.clone(),
             name: agent.name.clone(),
-            role: format!("{:?}", agent.role),
+            description: agent.description.clone(),
             user_prompt: agent.user_prompt.clone(),
             status: format!("{:?}", agent.status),
             parsed_intent: agent.parsed_intent.as_ref().map(|i| ParsedIntentDto {
@@ -338,15 +395,16 @@ impl From<&AiAgent> for AgentDetailDto {
                 updated_at: format_datetime(agent.memory.updated_at),
             }),
             resources: agent.resources.iter().map(|r| AgentResourceDto {
-                resource_type: format!("{:?}", r.resource_type),
+                resource_type: resource_type_to_string(&r.resource_type).to_string(),
                 resource_id: r.resource_id.clone(),
                 name: r.name.clone(),
             }).collect(),
             schedule: AgentScheduleDto {
-                schedule_type: format!("{:?}", agent.schedule.schedule_type),
+                schedule_type: schedule_type_to_string(&agent.schedule.schedule_type).to_string(),
                 interval_seconds: agent.schedule.interval_seconds,
                 cron_expression: agent.schedule.cron_expression.clone(),
                 timezone: agent.schedule.timezone.clone(),
+                event_filter: agent.schedule.event_filter.clone(),
             },
             stats: AgentStatsDto {
                 total_executions: agent.stats.total_executions as u32,
@@ -358,6 +416,7 @@ impl From<&AiAgent> for AgentDetailDto {
             updated_at: format_datetime(agent.updated_at),
             last_execution_at: agent.last_execution_at.map(format_datetime),
             error_message: agent.error_message.clone(),
+            llm_backend_id: agent.llm_backend_id.clone(),
         }
     }
 }
@@ -425,6 +484,12 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                         target: a.target,
                         description: a.description,
                         success: a.success,
+                        parameters: if a.parameters.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+                            Some(a.parameters)
+                        } else {
+                            None
+                        },
+                        result: a.result,
                     })
                     .collect(),
                 report: r.report.map(|rep| rep.content),
@@ -433,6 +498,8 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
                         channel: n.channel,
                         recipient: n.recipient,
                         message: n.message,
+                        sent_at: n.sent_at,
+                        success: n.success,
                     })
                     .collect(),
                 summary: r.summary,
@@ -444,7 +511,7 @@ impl From<AgentExecutionRecord> for AgentExecutionDetailDto {
 
 fn format_datetime(ts: i64) -> String {
     chrono::DateTime::from_timestamp(ts, 0)
-        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .map(|dt| dt.to_rfc3339())
         .unwrap_or_else(|| "Invalid date".to_string())
 }
 
@@ -554,13 +621,6 @@ pub async fn create_agent(
     }
 
     // Create the agent
-    let agent_role = match request.role.as_str() {
-        "Monitor" => AgentRole::Monitor,
-        "Executor" => AgentRole::Executor,
-        "Analyst" => AgentRole::Analyst,
-        _ => AgentRole::Monitor, // Default fallback
-    };
-
     let agent = AiAgent {
         id: uuid::Uuid::new_v4().to_string(),
         name: request.name.clone(),
@@ -577,9 +637,8 @@ pub async fn create_agent(
         stats: AgentStats::default(),
         memory: AgentMemory::default(),
         error_message: None,
-        // New conversation fields
-        role: agent_role,
         conversation_history: Default::default(),
+        user_messages: Default::default(),
         conversation_summary: Default::default(),
         context_window_size: Default::default(),
     };
@@ -611,12 +670,18 @@ pub async fn update_agent(
         .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
 
-    // Update fields
+    // Update basic fields
     if let Some(name) = request.name {
         agent.name = name;
     }
+    if let Some(description) = request.description {
+        agent.description = Some(description);
+    }
     if let Some(prompt) = request.user_prompt {
         agent.user_prompt = prompt;
+    }
+    if let Some(backend_id) = request.llm_backend_id {
+        agent.llm_backend_id = Some(backend_id);
     }
     if let Some(status_str) = request.status {
         agent.status = match status_str.as_str() {
@@ -626,6 +691,116 @@ pub async fn update_agent(
             _ => return Err(ErrorResponse::bad_request(&format!("Invalid status: {}", status_str))),
         };
     }
+
+    // Check if we need to update resources
+    let has_schedule_update = request.schedule.is_some();
+    let has_resources_update = request.resources.is_some();
+    let has_old_format = request.device_ids.is_some() || request.metrics.is_some() || request.commands.is_some();
+
+    // Update schedule if provided
+    if let Some(schedule) = request.schedule {
+        let schedule_type = match schedule.schedule_type.as_str() {
+            "interval" => edge_ai_storage::ScheduleType::Interval,
+            "cron" => edge_ai_storage::ScheduleType::Cron,
+            "event" => edge_ai_storage::ScheduleType::Event,
+            "once" => edge_ai_storage::ScheduleType::Once,
+            _ => return Err(ErrorResponse::bad_request(&format!("Invalid schedule_type: {}", schedule.schedule_type))),
+        };
+
+        agent.schedule = edge_ai_storage::AgentSchedule {
+            schedule_type,
+            interval_seconds: schedule.interval_seconds,
+            cron_expression: schedule.cron_expression,
+            event_filter: schedule.event_filter,
+            timezone: schedule.timezone,
+        };
+    }
+
+    // Update resources if provided
+    let mut resources = Vec::new();
+    use edge_ai_storage::{AgentResource, ResourceType};
+
+    // Handle new resources format
+    if let Some(ref req_resources) = request.resources {
+        for req_resource in req_resources {
+            let resource_type = match req_resource.resource_type.as_str() {
+                "device" | "Device" => ResourceType::Device,
+                "metric" | "Metric" => ResourceType::Metric,
+                "command" | "Command" => ResourceType::Command,
+                _ => ResourceType::Device, // Default to Device for unknown types
+            };
+
+            resources.push(AgentResource {
+                resource_type,
+                resource_id: req_resource.resource_id.clone(),
+                name: req_resource.name.clone(),
+                config: req_resource.config.clone().unwrap_or_default(),
+            });
+        }
+    } else if has_old_format {
+        // Handle old format (backward compatibility)
+        // Add device resources
+        let device_ids = request.device_ids.unwrap_or_default();
+        for device_id in &device_ids {
+            resources.push(AgentResource {
+                resource_type: ResourceType::Device,
+                resource_id: device_id.clone(),
+                name: device_id.clone(),
+                config: json!({}),
+            });
+        }
+
+        // Add metric resources
+        if let Some(metrics) = request.metrics {
+            for metric in &metrics {
+                let mut config_json = json!({
+                    "device_id": metric.device_id,
+                });
+                if let Some(ref config) = metric.config {
+                    if let Some(data_collection) = config.get("data_collection") {
+                        config_json["data_collection"] = data_collection.clone();
+                    }
+                }
+                let display_name = if metric.display_name.is_empty() {
+                    &metric.metric_name
+                } else {
+                    &metric.display_name
+                };
+                resources.push(AgentResource {
+                    resource_type: ResourceType::Metric,
+                    resource_id: format!("{}:{}", metric.device_id, metric.metric_name),
+                    name: display_name.clone(),
+                    config: config_json,
+                });
+            }
+        }
+
+        // Add command resources
+        if let Some(commands) = request.commands {
+            for command in &commands {
+                let display_name = if command.display_name.is_empty() {
+                    &command.command_name
+                } else {
+                    &command.display_name
+                };
+                resources.push(AgentResource {
+                    resource_type: ResourceType::Command,
+                    resource_id: format!("{}:{}", command.device_id, command.command_name),
+                    name: display_name.clone(),
+                    config: json!({
+                        "device_id": command.device_id,
+                        "parameters": command.parameters,
+                    }),
+                });
+            }
+        }
+    }
+
+    // Only update resources if new resources were provided
+    if has_schedule_update || has_resources_update || has_old_format {
+        agent.resources = resources;
+    }
+
     agent.updated_at = chrono::Utc::now().timestamp();
 
     // Save
@@ -837,5 +1012,113 @@ pub async fn get_agent_stats(
         "successful_executions": agent.stats.successful_executions,
         "failed_executions": agent.stats.failed_executions,
         "avg_duration_ms": agent.stats.avg_duration_ms,
+    }))
+}
+
+// ============================================================================
+// User Message Endpoints
+// ============================================================================
+
+/// Request body for adding a user message.
+#[derive(Debug, serde::Deserialize)]
+pub struct AddUserMessageRequest {
+    /// Message content
+    content: String,
+    /// Optional message type/tag
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_type: Option<String>,
+}
+
+/// DTO for user message in responses.
+#[derive(Debug, serde::Serialize)]
+pub struct UserMessageDto {
+    id: String,
+    timestamp: i64,
+    content: String,
+    message_type: Option<String>,
+}
+
+impl From<UserMessage> for UserMessageDto {
+    fn from(msg: UserMessage) -> Self {
+        Self {
+            id: msg.id,
+            timestamp: msg.timestamp,
+            content: msg.content,
+            message_type: msg.message_type,
+        }
+    }
+}
+
+/// Add a user message to an agent.
+///
+/// POST /api/agents/{id}/messages
+pub async fn add_user_message(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+    Json(request): Json<AddUserMessageRequest>,
+) -> HandlerResult<Value> {
+    let store = &state.agent_store;
+
+    let message = store.add_user_message(&id, request.content, request.message_type).await
+        .map_err(|e| ErrorResponse::internal(&format!("Failed to add message: {}", e)))?;
+
+    tracing::info!("Added user message {} to agent {}", message.id, id);
+
+    ok(json!(UserMessageDto::from(message)))
+}
+
+/// Get user messages for an agent.
+///
+/// GET /api/agents/{id}/messages
+pub async fn get_user_messages(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Value> {
+    let store = &state.agent_store;
+
+    let messages = store.get_user_messages(&id, Some(50)).await
+        .map_err(|e| ErrorResponse::internal(&format!("Failed to get messages: {}", e)))?;
+
+    ok(json!(messages.into_iter().map(UserMessageDto::from).collect::<Vec<_>>()))
+}
+
+/// Delete a specific user message.
+///
+/// DELETE /api/agents/{id}/messages/{message_id}
+pub async fn delete_user_message(
+    State(state): State<ServerState>,
+    Path((id, message_id)): Path<(String, String)>,
+) -> HandlerResult<Value> {
+    let store = &state.agent_store;
+
+    let deleted = store.delete_user_message(&id, &message_id).await
+        .map_err(|e| ErrorResponse::internal(&format!("Failed to delete message: {}", e)))?;
+
+    if !deleted {
+        return Err(ErrorResponse::not_found(&format!("Message not found: {}", message_id)));
+    }
+
+    tracing::info!("Deleted user message {} from agent {}", message_id, id);
+
+    ok(json!({ "ok": true }))
+}
+
+/// Clear all user messages for an agent.
+///
+/// DELETE /api/agents/{id}/messages
+pub async fn clear_user_messages(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> HandlerResult<Value> {
+    let store = &state.agent_store;
+
+    let count = store.clear_user_messages(&id).await
+        .map_err(|e| ErrorResponse::internal(&format!("Failed to clear messages: {}", e)))?;
+
+    tracing::info!("Cleared {} user messages from agent {}", count, id);
+
+    ok(json!({
+        "ok": true,
+        "count": count,
     }))
 }

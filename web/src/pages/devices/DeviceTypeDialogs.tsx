@@ -14,6 +14,13 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { toast } from "@/components/ui/use-toast"
 import {
   DropdownMenu,
@@ -571,7 +578,11 @@ function DataDefinitionStep({
   onChange,
   errors,
 }: DataDefinitionStepProps) {
+  const { t } = useTranslation(['devices'])
   const isRawMode = data.mode === 'simple'
+  const [showImportDialog, setShowImportDialog] = useState(false)
+  const [jsonInput, setJsonInput] = useState('')
+  const [importError, setImportError] = useState('')
 
   // Add metric
   const addMetric = () => {
@@ -608,6 +619,185 @@ function DataDefinitionStep({
   const removeMetric = (index: number) => {
     const metrics = data.metrics || []
     onChange('metrics', metrics.filter((_, i) => i !== index))
+  }
+
+  // Infer data type from value
+  const inferDataType = (value: unknown): 'string' | 'integer' | 'float' | 'boolean' => {
+    if (typeof value === 'boolean') return 'boolean'
+    if (typeof value === 'number') {
+      return Number.isInteger(value) ? 'integer' : 'float'
+    }
+    if (typeof value === 'string') {
+      // Try to parse as number
+      if (/^-?\d+$/.test(value)) return 'integer'
+      if (/^-?\d+\.\d+$/.test(value)) return 'float'
+      if (value === 'true' || value === 'false') return 'boolean'
+    }
+    return 'string'
+  }
+
+  // Convert camelCase to snake_case
+  const toSnakeCase = (str: string): string => {
+    return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+  }
+
+  // Flatten nested JSON object into dot-notation paths
+  // Supports up to 10 levels of nesting, including arrays of objects
+  const flattenJson = (value: unknown, prefix: string = '', maxDepth: number = 10): Map<string, unknown> => {
+    const result = new Map<string, unknown>()
+
+    if (maxDepth <= 0) {
+      return result
+    }
+
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      // Object: recurse with dot notation
+      for (const [key, val] of Object.entries(value)) {
+        const newKey = prefix ? `${prefix}.${key}` : key
+
+        if (typeof val === 'object' && val !== null) {
+          if (Array.isArray(val)) {
+            // Check if array contains objects/arrays
+            const mayContainObjects = val.some(v =>
+              typeof v === 'object' && v !== null && (Array.isArray(v) || Object.keys(v).length > 0)
+            )
+            if (mayContainObjects) {
+              result.set(newKey, val) // Keep array as-is for complex arrays
+              const flattened = flattenJson(val, newKey, maxDepth - 1)
+              flattened.forEach((v, k) => result.set(k, v))
+            } else {
+              result.set(newKey, val) // Simple array of primitives
+            }
+          } else {
+            // Nested object - flatten it
+            const flattened = flattenJson(val, newKey, maxDepth - 1)
+            flattened.forEach((v, k) => result.set(k, v))
+          }
+        } else {
+          // Primitive value
+          result.set(newKey, val)
+        }
+      }
+    } else if (Array.isArray(value)) {
+      // Array: expand with index notation
+      for (let i = 0; i < value.length; i++) {
+        const val = value[i]
+        const newKey = prefix ? `${prefix}.${i}` : String(i)
+
+        if (typeof val === 'object' && val !== null) {
+          if (Array.isArray(val)) {
+            const mayContainObjects = val.some(v =>
+              typeof v === 'object' && v !== null && (Array.isArray(v) || Object.keys(v).length > 0)
+            )
+            if (mayContainObjects) {
+              result.set(newKey, val)
+              const flattened = flattenJson(val, newKey, maxDepth - 1)
+              flattened.forEach((v, k) => result.set(k, v))
+            } else {
+              result.set(newKey, val)
+            }
+          } else {
+            const flattened = flattenJson(val, newKey, maxDepth - 1)
+            flattened.forEach((v, k) => result.set(k, v))
+          }
+        } else {
+          result.set(newKey, val)
+        }
+      }
+    } else if (prefix) {
+      // Primitive value at root level
+      result.set(prefix, value)
+    }
+
+    return result
+  }
+
+  // Parse JSON and generate metrics
+  const parseJsonToMetrics = () => {
+    setImportError('')
+    try {
+      const parsed = JSON.parse(jsonInput)
+      const metricsToAdd: MetricDefinition[] = []
+
+      // Handle array of samples
+      const samples = Array.isArray(parsed) ? parsed : [parsed]
+
+      // Collect all unique keys and their values using flattenJson for nested support
+      const valueMap = new Map<string, Set<any>>()
+      for (const sample of samples) {
+        if (typeof sample === 'object' && sample !== null) {
+          // Use flattenJson to get all nested paths
+          const flattened = flattenJson(sample)
+          for (const [key, value] of flattened.entries()) {
+            // Skip array indices (paths ending with numbers like "data.0")
+            // We only want the actual field paths, not individual array elements
+            if (/^\d+$/.test(key)) continue
+            // Skip paths that are just array indices at any level
+            if (/\.\d+$/.test(key)) continue
+
+            if (!valueMap.has(key)) {
+              valueMap.set(key, new Set())
+            }
+            // Skip non-primitive values (objects, arrays) for type inference
+            if (typeof value !== 'object' || value === null) {
+              valueMap.get(key)!.add(value)
+            }
+          }
+        }
+      }
+
+      // Generate metrics from collected data
+      for (const [key, values] of valueMap.entries()) {
+        if (values.size === 0) continue
+
+        const sampleValue = Array.from(values)[0]
+        const dataType = inferDataType(sampleValue)
+
+        // Generate display name from key
+        // For nested paths like "sensor.temperature", use "Temperature" or "Sensor Temperature"
+        const parts = key.split('.')
+        const lastPart = parts[parts.length - 1]
+        const displayName = lastPart
+          .replace(/_/g, ' ')
+          .replace(/([A-Z])/g, ' $1')
+          .replace(/^\s/, '')
+          .replace(/^\w/, c => c.toUpperCase())
+
+        // For deeply nested paths, add prefix for clarity
+        const finalDisplayName = parts.length > 1
+          ? `${parts[parts.length - 2].replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())} ${displayName}`
+          : displayName
+
+        // Detect if this looks like an enum
+        const valueArray = Array.from(values)
+        let allowedValues: string[] | undefined
+        if (values.size > 1 && values.size <= 10) {
+          // Check if all values are strings and limited count -> might be enum
+          if (valueArray.every(v => typeof v === 'string')) {
+            allowedValues = valueArray as string[]
+          }
+        }
+
+        metricsToAdd.push({
+          // Convert dotted path to snake_case (e.g., "sensor.temperature" -> "sensor_temperature")
+          name: key.replace(/\./g, '_'),
+          display_name: finalDisplayName,
+          data_type: dataType,
+          unit: '',
+          ...(allowedValues && { allowed_values: allowedValues.map(v => ({ String: v })) }),
+        })
+      }
+
+      onChange('metrics', [...(data.metrics || []), ...metricsToAdd])
+      setShowImportDialog(false)
+      setJsonInput('')
+      toast({
+        title: t('devices:metricEditor.importSuccess'),
+        description: t('devices:metricEditor.importSuccessDesc', { count: metricsToAdd.length }),
+      })
+    } catch (e) {
+      setImportError(t('devices:metricEditor.jsonError'))
+    }
   }
 
   return (
@@ -673,18 +863,48 @@ function DataDefinitionStep({
       {/* Define Metrics Mode */}
       {!isRawMode && (
         <div className="flex flex-col h-full space-y-4">
+          {/* Quick Start */}
+          {(!data.metrics || data.metrics.length === 0) && (
+            <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+                {t('devices:metricEditor.quickStart')}
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 mb-3">
+                {t('devices:metricEditor.quickStartDesc')}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowImportDialog(true)}
+                  className="h-8 text-xs"
+                >
+                  <Code className="mr-1 h-3 w-3" />
+                  {t('devices:metricEditor.generateFromJson')}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Manual Entry List */}
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium">Metrics ({data.metrics?.length || 0})</h4>
+              <h4 className="text-sm font-medium">
+                {t('devices:metricEditor.metricCount', { count: data.metrics?.length || 0 })}
+              </h4>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-1 h-8">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowImportDialog(true)}
+                  className="gap-1 h-8"
+                >
                   <Code className="h-3 w-3" />
-                  Import from JSON
+                  {t('devices:metricEditor.importJson')}
                 </Button>
                 <Button onClick={addMetric} size="sm" variant="outline" className="h-8">
                   <Plus className="mr-1 h-3 w-3" />
-                  Add Metric
+                  {t('devices:metricEditor.addMetric')}
                 </Button>
               </div>
             </div>
@@ -694,7 +914,9 @@ function DataDefinitionStep({
                 <div className="text-center py-12">
                   <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">No metrics defined</p>
-                  <p className="text-xs text-muted-foreground mt-1">Add metrics manually or import from JSON</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Add metrics manually or import from JSON
+                  </p>
                 </div>
               </div>
             ) : (
@@ -723,14 +945,59 @@ function DataDefinitionStep({
             </div>
             <h4 className="font-medium mb-2">Raw Data Mode</h4>
             <p className="text-sm text-muted-foreground mb-2">
-              遥测数据将按原样存储，不进行自动解析
+              {t('devices:metricEditor.simpleModeDesc')}
             </p>
             <p className="text-xs text-muted-foreground">
-              适用于 16进制/二进制协议设备，可通过 Transforms 解码和提取指标
+              {t('devices:metricEditor.simpleModeNote')}
             </p>
           </div>
         </div>
       )}
+
+      {/* JSON Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('devices:metricEditor.jsonDialogTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('devices:metricEditor.jsonDialogDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Textarea
+              value={jsonInput}
+              onChange={(e) => setJsonInput(e.target.value)}
+              placeholder={t('devices:metricEditor.jsonPlaceholder')}
+              className="font-mono text-xs min-h-[150px] resize-none"
+            />
+            {importError && (
+              <p className="text-xs text-destructive flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {importError}
+              </p>
+            )}
+            <div className="p-3 bg-muted/50 rounded text-xs">
+              <p className="font-medium mb-1">{t('devices:metricEditor.exampleJson')}</p>
+              <pre className="text-muted-foreground">{`{
+  "sensor": {
+    "temperature": 25.5,
+    "humidity": 60
+  },
+  "status": "online",
+  "battery": 85
+}`}</pre>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              {t('devices:metricEditor.cancel')}
+            </Button>
+            <Button onClick={parseJsonToMetrics}>
+              {t('devices:metricEditor.parseAndGenerate')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -750,6 +1017,8 @@ function CommandsStep({
   onChange,
   errors,
 }: CommandsStepProps) {
+  const { t } = useTranslation(['devices'])
+
   // Add command
   const addCommand = () => {
     const commands = data.commands || []
@@ -1172,6 +1441,9 @@ function MetricEditorCompact({
   onRemove: () => void
   error?: string
 }) {
+  const { t } = useTranslation(['devices'])
+  const [expanded, setExpanded] = useState(false)
+
   return (
     <div className={cn(
       "rounded-lg border p-3 space-y-2",
@@ -1182,54 +1454,6 @@ function MetricEditorCompact({
           <span className="font-mono text-sm">{metric.name}</span>
           <Badge variant="outline" className="text-xs">{formatDataType(metric.data_type)}</Badge>
           {metric.unit && <span className="text-xs text-muted-foreground">{metric.unit}</span>}
-        </div>
-        <Button variant="ghost" size="icon" onClick={onRemove} className="h-6 w-6">
-          <Trash2 className="h-3 w-3 text-destructive" />
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <Input
-          value={metric.display_name}
-          onChange={(e) => onChange({ ...metric, display_name: e.target.value })}
-          placeholder="Display name"
-          className="h-8 text-sm"
-        />
-        <Input
-          value={metric.unit || ""}
-          onChange={(e) => onChange({ ...metric, unit: e.target.value })}
-          placeholder="Unit"
-          className="h-8 text-sm"
-        />
-      </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  )
-}
-
-function CommandEditorCompact({
-  command,
-  onChange,
-  onRemove,
-  error,
-}: {
-  command: CommandDefinition
-  onChange: (command: CommandDefinition) => void
-  onRemove: () => void
-  error?: string
-}) {
-  const [expanded, setExpanded] = useState(false)
-
-  return (
-    <div className={cn(
-      "rounded-lg border p-3 space-y-2",
-      error && "border-destructive"
-    )}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-sm">{command.name}</span>
-          <Badge variant="secondary" className="text-xs">
-            {command.parameters?.length || 0} params
-          </Badge>
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -1247,19 +1471,613 @@ function CommandEditorCompact({
       </div>
 
       {expanded && (
-        <div className="space-y-2 pt-2 border-t">
-          <Input
-            value={command.display_name}
-            onChange={(e) => onChange({ ...command, display_name: e.target.value })}
-            placeholder="Display name"
-            className="h-8 text-sm"
-          />
-          <Input
-            value={command.payload_template}
-            onChange={(e) => onChange({ ...command, payload_template: e.target.value })}
-            placeholder='{"action": "${value}"}'
-            className="h-8 text-sm font-mono"
-          />
+        <div className="space-y-3 pt-2 border-t">
+          {/* First row: Display name and identifier */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.displayName')}</Label>
+              <Input
+                value={metric.display_name}
+                onChange={(e) => onChange({ ...metric, display_name: e.target.value })}
+                placeholder={t('devices:metricEditor.displayNamePlaceholder')}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.metricId')}</Label>
+              <Input
+                value={metric.name}
+                onChange={(e) => onChange({ ...metric, name: e.target.value })}
+                placeholder={t('devices:metricEditor.metricIdPlaceholder')}
+                className="h-9 text-sm font-mono"
+              />
+            </div>
+          </div>
+
+          {/* Second row: Data type, unit, range */}
+          <div className="grid grid-cols-[1fr_1fr_1.5fr] gap-3 items-end">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.dataType')}</Label>
+              <Select
+                value={metric.data_type}
+                onValueChange={(value) => onChange({ ...metric, data_type: value as any })}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="string">{t('devices:metricEditor.types.string')}</SelectItem>
+                  <SelectItem value="integer">{t('devices:metricEditor.types.integer')}</SelectItem>
+                  <SelectItem value="float">{t('devices:metricEditor.types.float')}</SelectItem>
+                  <SelectItem value="boolean">{t('devices:metricEditor.types.boolean')}</SelectItem>
+                  <SelectItem value="binary">{t('devices:metricEditor.types.binary')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.unit')}</Label>
+              <Input
+                value={metric.unit || ""}
+                onChange={(e) => onChange({ ...metric, unit: e.target.value })}
+                placeholder={t('devices:metricEditor.unitPlaceholder')}
+                className="h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t('devices:metricEditor.minMax')}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={metric.min ?? ''}
+                  onChange={(e) => onChange({ ...metric, min: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  placeholder={t('devices:metricEditor.minPlaceholder')}
+                  className="h-9 text-sm flex-1"
+                />
+                <span className="text-muted-foreground text-xs shrink-0">{t('devices:metricEditor.to')}</span>
+                <Input
+                  type="number"
+                  value={metric.max ?? ''}
+                  onChange={(e) => onChange({ ...metric, max: e.target.value ? parseFloat(e.target.value) : undefined })}
+                  placeholder={t('devices:metricEditor.maxPlaceholder')}
+                  className="h-9 text-sm flex-1"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
+function CommandEditorCompact({
+  command,
+  onChange,
+  onRemove,
+  error,
+}: {
+  command: CommandDefinition
+  onChange: (command: CommandDefinition) => void
+  onRemove: () => void
+  error?: string
+}) {
+  const { t } = useTranslation(['devices'])
+  const [expanded, setExpanded] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [previewMode, setPreviewMode] = useState<'visual' | 'json'>('visual')
+
+  // Command templates for quick start
+  const commandTemplates: { name: string; template: CommandDefinition }[] = [
+    {
+      name: t('devices:commandEditor.templates.toggle.name'),
+      template: {
+        name: 'toggle',
+        display_name: t('devices:commandEditor.templates.toggle.displayName'),
+        payload_template: '{"state": "${state}"}',
+        parameters: [
+          { name: 'state', display_name: t('devices:commandEditor.templates.toggle.stateParam'), data_type: 'string', allowed_values: [{ String: 'on' }, { String: 'off' }], required: true }
+        ]
+      }
+    },
+    {
+      name: t('devices:commandEditor.templates.setValue.name'),
+      template: {
+        name: 'set_value',
+        display_name: t('devices:commandEditor.templates.setValue.displayName'),
+        payload_template: '{"value": ${value}}',
+        parameters: [
+          { name: 'value', display_name: t('devices:commandEditor.templates.setValue.valueParam'), data_type: 'float', required: true }
+        ]
+      }
+    },
+    {
+      name: t('devices:commandEditor.templates.setMode.name'),
+      template: {
+        name: 'set_mode',
+        display_name: t('devices:commandEditor.templates.setMode.displayName'),
+        payload_template: '{"mode": "${mode}"}',
+        parameters: [
+          { name: 'mode', display_name: t('devices:commandEditor.templates.setMode.modeParam'), data_type: 'string', required: true }
+        ]
+      }
+    },
+    {
+      name: t('devices:commandEditor.templates.trigger.name'),
+      template: {
+        name: 'trigger',
+        display_name: t('devices:commandEditor.templates.trigger.displayName'),
+        payload_template: '{"action": "trigger"}',
+        parameters: []
+      }
+    }
+  ]
+
+  // Add a new parameter
+  const addParameter = () => {
+    const params = command.parameters || []
+    const newParam = {
+      name: `param_${params.length + 1}`,
+      display_name: t('devices:commandEditor.newParam', { count: params.length + 1 }),
+      data_type: 'string' as const,
+      required: false,
+    }
+    onChange({ ...command, parameters: [...params, newParam] })
+  }
+
+  // Update a parameter
+  const updateParameter = (index: number, param: any) => {
+    const params = command.parameters || []
+    const newParams = [...params]
+    newParams[index] = { ...newParams[index], ...param }
+    onChange({ ...command, parameters: newParams })
+  }
+
+  // Remove a parameter
+  const removeParameter = (index: number) => {
+    const params = command.parameters || []
+    onChange({ ...command, parameters: params.filter((_, i) => i !== index) })
+  }
+
+  // Add a fixed value
+  const addFixedValue = () => {
+    const fixed = command.fixed_values || {}
+    onChange({ ...command, fixed_values: { ...fixed, [`fixed_${Object.keys(fixed).length + 1}`]: '' } })
+  }
+
+  // Update a fixed value
+  const updateFixedValue = (key: string, value: unknown) => {
+    const fixed = command.fixed_values || {}
+    onChange({ ...command, fixed_values: { ...fixed, [key]: value } })
+  }
+
+  // Remove a fixed value
+  const removeFixedValue = (key: string) => {
+    const fixed = command.fixed_values || {}
+    const newFixed = { ...fixed }
+    delete newFixed[key]
+    onChange({ ...command, fixed_values: Object.keys(newFixed).length > 0 ? newFixed : undefined })
+  }
+
+  // Generate preview of the payload
+  const generatePreview = (): string => {
+    let template = command.payload_template || '{}'
+    // Replace fixed values with example values
+    Object.entries(command.fixed_values || {}).forEach(([key, value]) => {
+      const placeholder = `\${${key}}`
+      const valueStr = typeof value === 'string' ? `"${value}"` : String(value)
+      template = template.replace(placeholder, valueStr)
+    })
+    // Replace parameters with placeholder values
+    command.parameters?.forEach(param => {
+      const placeholder = `\${${param.name}}`
+      let exampleValue = '...'
+      if (param.allowed_values && param.allowed_values.length > 0) {
+        exampleValue = typeof param.allowed_values[0] === 'string'
+          ? `"${param.allowed_values[0]}"`
+          : String(param.allowed_values[0])
+      } else if (param.data_type === 'integer') {
+        exampleValue = '0'
+      } else if (param.data_type === 'float') {
+        exampleValue = '0.0'
+      } else if (param.data_type === 'boolean') {
+        exampleValue = 'true'
+      } else {
+        exampleValue = `"${param.name}"`
+      }
+      template = template.replace(placeholder, exampleValue)
+    })
+    return template
+  }
+
+  // Format data type for display
+  const formatDataType = (dt: string | Record<string, unknown>): string => {
+    if (typeof dt === 'string') return dt
+    if (typeof dt === 'object' && dt !== null) {
+      if ('enum' in dt) return `enum: ${JSON.stringify((dt as any).enum)}`
+      return JSON.stringify(dt)
+    }
+    return String(dt)
+  }
+
+  // Apply template
+  const applyTemplate = (template: CommandDefinition) => {
+    onChange({
+      ...template,
+      name: command.name, // Keep the original command name
+      fixed_values: command.fixed_values, // Keep existing fixed values
+    })
+  }
+
+  return (
+    <div className={cn(
+      "rounded-lg border p-3 space-y-2",
+      error && "border-destructive"
+    )}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm">{command.name}</span>
+          <Badge variant="secondary" className="text-xs">
+            {t('devices:commandEditor.paramCount', { count: command.parameters?.length || 0 })}
+          </Badge>
+          {command.fixed_values && Object.keys(command.fixed_values).length > 0 && (
+            <Badge variant="outline" className="text-xs text-green-600">
+              {t('devices:commandEditor.fixedValueCount', { count: Object.keys(command.fixed_values).length })}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setExpanded(!expanded)}
+            className="h-6 w-6"
+          >
+            {expanded ? <ChevronLeft className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={onRemove} className="h-6 w-6">
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </Button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="space-y-4 pt-2 border-t">
+          {/* Quick Templates */}
+          {(!command.parameters || command.parameters.length === 0) && !command.payload_template && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-2">
+                {t('devices:commandEditor.quickStart')}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {commandTemplates.map((tmpl) => (
+                  <Button
+                    key={tmpl.name}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyTemplate(tmpl.template)}
+                    className="h-7 text-xs justify-start"
+                  >
+                    {tmpl.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Basic fields */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t('devices:commandEditor.displayName')}</Label>
+                <Input
+                  value={command.display_name}
+                  onChange={(e) => onChange({ ...command, display_name: e.target.value })}
+                  placeholder={t('devices:commandEditor.displayNamePlaceholder')}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t('devices:commandEditor.commandId')}</Label>
+                <Input
+                  value={command.name}
+                  onChange={(e) => onChange({ ...command, name: e.target.value })}
+                  placeholder={t('devices:commandEditor.commandIdPlaceholder')}
+                  className="h-8 text-sm font-mono"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Payload Builder */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium">{t('devices:commandEditor.payloadFormat')}</Label>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant={previewMode === 'visual' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setPreviewMode('visual')}
+                  className="h-6 text-xs"
+                >
+                  {t('devices:commandEditor.visual')}
+                </Button>
+                <Button
+                  variant={previewMode === 'json' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => setPreviewMode('json')}
+                  className="h-6 text-xs"
+                >
+                  {t('devices:commandEditor.json')}
+                </Button>
+              </div>
+            </div>
+
+            {previewMode === 'visual' ? (
+              <div className="p-3 bg-muted/30 rounded-lg border">
+                <div className="font-mono text-xs">
+                  {'{'}
+                  {[
+                    ...(Object.keys(command.fixed_values || {}).map(k => ({
+                      key: k,
+                      value: command.fixed_values![k],
+                      type: 'fixed' as const
+                    }))),
+                    ...(command.parameters || []).map(p => ({
+                      key: p.name,
+                      value: `\${${p.name}}`,
+                      type: 'param' as const,
+                      param: p
+                    }))
+                  ].map((item, idx, arr) => (
+                    <div key={item.key} className="ml-2">
+                      <span className="text-blue-600">"{item.key}"</span>
+                      <span className="text-muted-foreground">: </span>
+                      {item.type === 'fixed' ? (
+                        <span className="text-green-600">
+                          {typeof item.value === 'string' ? `"${item.value}"` : JSON.stringify(item.value)}
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-1 rounded">
+                          {item.value}
+                        </span>
+                      )}
+                      {idx < arr.length - 1 && <span className="text-muted-foreground">,</span>}
+                      {item.type === 'param' && (
+                        <div className="ml-4 text-xs text-muted-foreground">
+                          {(item as any).param?.display_name || (item as any).param?.name}
+                          {(item as any).param?.data_type !== 'string' && ` (${formatDataType((item as any).param?.data_type || 'string')})`}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {'}'}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2 italic">
+                  {t('devices:commandEditor.previewHint')}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Textarea
+                  value={command.payload_template || ''}
+                  onChange={(e) => onChange({ ...command, payload_template: e.target.value })}
+                  placeholder='{"action": "${value}"}'
+                  className="h-16 text-sm font-mono text-xs resize-none"
+                />
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{t('devices:commandEditor.preview')}</span>
+                  <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                    {generatePreview()}
+                  </code>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Parameters Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium">
+                {t('devices:commandEditor.userParams')}
+                <span className="text-muted-foreground font-normal ml-1">
+                  {t('devices:commandEditor.userParamsDesc')}
+                </span>
+              </Label>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addParameter}
+                className="h-7 text-xs"
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                {t('devices:commandEditor.addParam')}
+              </Button>
+            </div>
+
+            {(!command.parameters || command.parameters.length === 0) ? (
+              <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded text-center">
+                {t('devices:commandEditor.noParams')}
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="px-2 py-1 text-left font-medium">{t('devices:commandEditor.tableName')}</th>
+                      <th className="px-2 py-1 text-left font-medium">{t('devices:commandEditor.tableDisplayName')}</th>
+                      <th className="px-2 py-1 text-left font-medium">{t('devices:commandEditor.tableType')}</th>
+                      <th className="px-2 py-1 text-center font-medium">{t('devices:commandEditor.tableRequired')}</th>
+                      <th className="px-2 py-1 text-left font-medium">{t('devices:commandEditor.tableOptions')}</th>
+                      <th className="px-2 py-1 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {command.parameters.map((param, pIdx) => (
+                      <tr key={pIdx} className="border-t">
+                        <td className="px-2 py-1">
+                          <Input
+                            value={param.name}
+                            onChange={(e) => updateParameter(pIdx, { name: e.target.value })}
+                            placeholder={t('devices:commandEditor.paramNamePlaceholder')}
+                            className="h-7 text-xs font-mono"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <Input
+                            value={param.display_name || ''}
+                            onChange={(e) => updateParameter(pIdx, { display_name: e.target.value })}
+                            placeholder={t('devices:commandEditor.displayNamePlaceholder')}
+                            className="h-7 text-xs"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <Select
+                            value={typeof param.data_type === 'string' ? param.data_type : 'string'}
+                            onValueChange={(value) => updateParameter(pIdx, { data_type: value })}
+                          >
+                            <SelectTrigger className="h-7 text-xs px-2">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="string">{t('devices:commandEditor.types.string')}</SelectItem>
+                              <SelectItem value="integer">{t('devices:commandEditor.types.integer')}</SelectItem>
+                              <SelectItem value="float">{t('devices:commandEditor.types.float')}</SelectItem>
+                              <SelectItem value="boolean">{t('devices:commandEditor.types.boolean')}</SelectItem>
+                              <SelectItem value="binary">{t('devices:commandEditor.types.binary')}</SelectItem>
+                              <SelectItem value="array">{t('devices:commandEditor.types.array')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-2 py-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={param.required || false}
+                            onChange={(e) => updateParameter(pIdx, { required: e.target.checked })}
+                            className="h-3 w-3"
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          {param.data_type === 'integer' || param.data_type === 'float' ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                value={param.min ?? ''}
+                                onChange={(e) => updateParameter(pIdx, { min: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                placeholder={t('devices:commandEditor.minValuePlaceholder')}
+                                className="h-6 text-xs w-14"
+                              />
+                              <span className="text-muted-foreground">-</span>
+                              <Input
+                                type="number"
+                                value={param.max ?? ''}
+                                onChange={(e) => updateParameter(pIdx, { max: e.target.value ? parseFloat(e.target.value) : undefined })}
+                                placeholder={t('devices:commandEditor.maxValuePlaceholder')}
+                                className="h-6 text-xs w-14"
+                              />
+                            </div>
+                          ) : param.data_type === 'boolean' ? (
+                            <span className="text-muted-foreground text-xs">{t('devices:commandEditor.yesNo')}</span>
+                          ) : (
+                            <Input
+                              value={(param.allowed_values || []).join(',')}
+                              onChange={(e) => {
+                                const values = e.target.value.split(',').map(v => v.trim()).filter(v => v)
+                                updateParameter(pIdx, { allowed_values: values.length > 0 ? values : undefined })
+                              }}
+                              placeholder={t('devices:commandEditor.allowedValuesPlaceholder')}
+                              className="h-6 text-xs"
+                            />
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeParameter(pIdx)}
+                            className="h-6 w-6"
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Fixed Values Section - Advanced */}
+          <div className="space-y-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="h-7 text-xs text-muted-foreground"
+            >
+              {showAdvanced ? t('devices:commandEditor.hideAdvanced') : t('devices:commandEditor.advancedOptions')}
+            </Button>
+
+            {showAdvanced && (
+              <div className="p-3 bg-muted/30 rounded-lg space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {t('devices:commandEditor.fixedValuesDesc')}
+                </p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-green-600">
+                    {t('devices:commandEditor.fixedValues', { count: Object.keys(command.fixed_values || {}).length })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addFixedValue}
+                    className="h-6 text-xs"
+                  >
+                    <Plus className="mr-1 h-3 w-3" />
+                    {t('devices:commandEditor.add')}
+                  </Button>
+                </div>
+                {Object.entries(command.fixed_values || {}).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-1">
+                    <Input
+                      value={key}
+                      onChange={(e) => {
+                        const newFixed: Record<string, unknown> = {}
+                        Object.entries(command.fixed_values || {}).forEach(([k, v]) => {
+                          if (k === key) newFixed[e.target.value] = v
+                          else newFixed[k] = v
+                        })
+                        onChange({ ...command, fixed_values: newFixed })
+                      }}
+                      placeholder={t('devices:commandEditor.keyPlaceholder')}
+                      className="h-7 text-xs font-mono w-24"
+                    />
+                    <span className="text-muted-foreground text-xs">=</span>
+                    <Input
+                      value={String(value)}
+                      onChange={(e) => updateFixedValue(key, e.target.value)}
+                      placeholder={t('devices:commandEditor.valuePlaceholder')}
+                      className="h-7 text-xs font-mono flex-1"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeFixedValue(key)}
+                      className="h-6 w-6"
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+                {Object.keys(command.fixed_values || {}).length === 0 && (
+                  <div className="text-xs text-muted-foreground italic text-center py-2">
+                    {t('devices:commandEditor.noFixedValues')}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}

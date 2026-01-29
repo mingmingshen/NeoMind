@@ -121,5 +121,8 @@
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago",
     "date": "Date"
-  }
+  },
+  "info": "Info",
+  "createdAt": "Created",
+  "updatedAt": "Updated"
 }

@@ -24,6 +24,7 @@ import {
   LayoutDashboard,
   BellRing,
   Bot,
+  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -298,7 +299,7 @@ export function TopNav() {
                 {t('alerts.title')}
               </TooltipContent>
             </Tooltip>
-            <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">
+            <DropdownMenuContent align="end" className="w-80 max-h-80 overflow-y-auto">
               <div className="px-3 py-2 border-b">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-sm">{t('alerts.title')}</span>
@@ -322,51 +323,49 @@ export function TopNav() {
                       <div
                         key={alert.id}
                         className={cn(
-                          "px-3 py-2 border-b last:border-b-0 hover:bg-muted/50 transition-colors",
+                          "px-3 py-1.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors",
                           isUnread && "bg-muted/30"
                         )}
                       >
-                        <div className="flex items-start gap-2">
+                        <div className="flex items-center gap-2">
+                          {/* Severity badge - fixed size */}
                           <Badge
                             variant="outline"
-                            className={cn("text-xs shrink-0 mt-0.5", getSeverityColor(alert.severity))}
+                            className={cn(
+                              "text-[10px] px-1 py-0 shrink-0 h-5 flex items-center",
+                              getSeverityColor(alert.severity)
+                            )}
                           >
                             {alert.severity}
                           </Badge>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-medium truncate">{alert.title}</p>
-                              {isUnread && (
-                                <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0 mt-1" />
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
-                              {alert.message}
-                            </p>
-                            {alert.source && (
-                              <p className="text-xs text-muted-foreground/70 mt-1">
-                                {alert.source}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        {isUnread && (
-                          <div className="mt-2 flex justify-end">
+                          {/* Unread indicator */}
+                          {isUnread && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                          )}
+                          {/* Title - single line, truncate */}
+                          <p className="text-xs font-medium truncate flex-1">{alert.title}</p>
+                          {/* Acknowledge button - compact icon */}
+                          {isUnread && (
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-xs"
+                              size="icon"
+                              className="h-5 w-5 shrink-0"
                               onClick={() => handleAcknowledgeAlert(alert.id)}
+                              title={t('alerts.acknowledge')}
                             >
-                              {t('alerts.acknowledge')}
+                              <Check className="h-3 w-3" />
                             </Button>
-                          </div>
-                        )}
+                          )}
+                        </div>
+                        {/* Message - fixed height with single line clamp */}
+                        <p className="text-[11px] text-muted-foreground truncate ml-7 mt-0.5" title={alert.message}>
+                          {alert.message}
+                        </p>
                       </div>
                     )
                   })}
                   {alerts.length > 10 && (
-                    <div className="px-3 py-2 text-center text-xs text-muted-foreground">
+                    <div className="px-3 py-1.5 text-center text-xs text-muted-foreground">
                       {t('alerts.moreAlerts', { count: alerts.length - 10 })}
                     </div>
                   )}

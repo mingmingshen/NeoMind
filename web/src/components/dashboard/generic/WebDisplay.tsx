@@ -72,11 +72,11 @@ export function WebDisplay({
   src: propSrc,
   title,
   size = 'md',
-  sandbox = true,
+  sandbox = false, // Changed: disable sandbox by default to reduce console errors from extensions
   allowFullscreen = true,
-  allowScripts = false,
-  allowSameOrigin = false,
-  allowForms = false,
+  allowScripts = true, // Changed: allow scripts by default
+  allowSameOrigin = true,
+  allowForms = true,
   allowPopups = false,
   showHeader = true,
   showUrlBar = false,

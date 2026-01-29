@@ -1,12 +1,12 @@
 //! AI Agent executor - runs agents and records decision processes.
 
-use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, ContentPart, Message, MessageRole}};
+use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, ContentPart, Message, MessageRole}, error::Error as NeoTalkError, error};
 use edge_ai_storage::{
     AgentMemory, AgentStats, AgentStore, AgentExecutionRecord, AiAgent, DataCollected,
     Decision, DecisionProcess, ExecutionResult as StorageExecutionResult, ExecutionStatus,
     GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType,
     // New conversation types
-    ConversationTurn, TurnInput, TurnOutput, AgentRole,
+    ConversationTurn, TurnInput, TurnOutput,
     LlmBackendStore, LlmBackendInstance,
 };
 use edge_ai_devices::DeviceService;
@@ -16,16 +16,156 @@ use edge_ai_core::llm::backend::LlmRuntime;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use std::collections::{HashMap, HashSet};
+use futures::future::join_all;
 
 use crate::{Agent, AgentConfig, LlmBackend};
 use crate::error::AgentError;
-use crate::prompts::get_role_system_prompt;
-use crate::translation::Language;
+use crate::prompts::CONVERSATION_CONTEXT_ZH;
 
 /// Internal representation of image content for multimodal LLM messages.
 enum ImageContent {
     Url(String),
     Base64(String, String), // (data, mime_type)
+}
+
+/// Extract command name from decision description.
+/// Supports formats like "execute command: turn_on_light" or "execute: open_valve"
+fn extract_command_from_description(description: &str) -> Option<String> {
+    let desc_lower = description.to_lowercase();
+
+    // Try "command:" pattern
+    if let Some(idx) = desc_lower.find("command:") {
+        let after = &description[idx + 8..];
+        let cmd = after.split_whitespace().next().unwrap_or(after);
+        let cmd = cmd.trim_end_matches(|c: char| { !c.is_alphanumeric() && c.ne(&'_') });
+        if !cmd.is_empty() {
+            return Some(cmd.to_string());
+        }
+    }
+    // Try "execute:" pattern
+    if let Some(idx) = desc_lower.find("execute:") {
+        let after = &description[idx + 7..];
+        let cmd = after.split_whitespace().next().unwrap_or(after);
+        let cmd = cmd.trim_end_matches(|c: char| { !c.is_alphanumeric() && c.ne(&'_') });
+        if !cmd.is_empty() {
+            return Some(cmd.to_string());
+        }
+    }
+    // Try "execute " (with space) pattern
+    if let Some(idx) = desc_lower.find("execute ") {
+        let after = &description[idx + 7..];
+        let cmd = after.split_whitespace().next().unwrap_or(after);
+        let cmd = cmd.trim_end_matches(|c: char| { !c.is_alphanumeric() && c.ne(&'_') });
+        if !cmd.is_empty() {
+            return Some(cmd.to_string());
+        }
+    }
+
+    None
+}
+
+/// Extract device ID from decision description.
+/// Supports formats like "on device: thermostat" or "device: sensor1"
+fn extract_device_from_description(description: &str) -> Option<String> {
+    let desc_lower = description.to_lowercase();
+
+    if let Some(idx) = desc_lower.find("device:") {
+        let after = &description[idx + 7..];
+        let device = after.split_whitespace().next().unwrap_or(after);
+        let device = device.trim_end_matches(|c: char| { !c.is_alphanumeric() && c.ne(&'_') });
+        if !device.is_empty() {
+            return Some(device.to_string());
+        }
+    }
+    if let Some(idx) = desc_lower.find("device") {
+        let after = &description[idx + 3..];
+        let device = after.split_whitespace().next().unwrap_or(after);
+        let device = device.trim_end_matches(|c: char| { !c.is_alphanumeric() && c.ne(&'_') });
+        if !device.is_empty() {
+            return Some(device.to_string());
+        }
+    }
+    if let Some(idx) = desc_lower.find("on ") {
+        let after = &description[idx + 3..];
+        let device = after.split_whitespace().next().unwrap_or(after);
+        let device = device.trim_end_matches(|c: char| { !c.is_alphanumeric() && c.ne(&'_') });
+        if !device.is_empty() {
+            return Some(device.to_string());
+        }
+    }
+
+    None
+}
+
+/// Attempts to recover a truncated JSON string by finding the last complete object.
+/// Returns Some((recovered_json, was_truncated)) if recovery was possible,
+/// None if the JSON is beyond recovery.
+fn try_recover_truncated_json(json_str: &str) -> Option<(String, bool)> {
+    let trimmed = json_str.trim();
+
+    // First, try to close any open objects/arrays
+    let mut recovered = trimmed.to_string();
+    let mut open_braces: usize = 0;
+    let mut open_brackets: usize = 0;
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for ch in trimmed.chars() {
+        match ch {
+            '\\' if in_string => escape_next = true,
+            '"' if !escape_next => in_string = !in_string,
+            '{' if !in_string => open_braces += 1,
+            '}' if !in_string => open_braces = open_braces.saturating_sub(1),
+            '[' if !in_string => open_brackets += 1,
+            ']' if !in_string => open_brackets = open_brackets.saturating_sub(1),
+                            _ => {}
+        }
+        if escape_next && ch != '\\' {
+            escape_next = false;
+        }
+    }
+
+    // If no unclosed braces, JSON might be complete
+    if open_braces == 0 && open_brackets == 0 {
+        // Still might be truncated mid-string, try parsing
+        if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
+            return Some((trimmed.to_string(), false));
+        }
+    }
+
+    // Try to close the objects
+    for _ in 0..open_brackets {
+        recovered.push(']');
+    }
+    for _ in 0..open_braces {
+        recovered.push('}');
+    }
+
+    // Check if recovered JSON is valid
+    if serde_json::from_str::<serde_json::Value>(&recovered).is_ok() {
+        return Some((recovered, true));
+    }
+
+    // Try more aggressive recovery: find the last complete "step" object
+    // This handles cases where the JSON is truncated in the middle of reasoning_steps
+    if let Some(last_complete_idx) = trimmed.rfind(r#"  }"#) {
+        let truncated = &trimmed[..last_complete_idx + 4];
+        // Try to close the arrays and objects
+        let mut closed = truncated.to_string();
+        if trimmed.contains("reasoning_steps") {
+            closed.push_str("\n  ]");
+        }
+        if trimmed.contains("decisions") {
+            closed.push_str(",\n  \"decisions\": []");
+        }
+        closed.push_str("\n}");
+        if serde_json::from_str::<serde_json::Value>(&closed).is_ok() {
+            return Some((closed, true));
+        }
+    }
+
+    // Last resort: return None to signal using raw text fallback
+    None
 }
 
 /// Event data for triggering agent execution.
@@ -103,6 +243,9 @@ pub struct AgentExecutor {
     event_agents: Arc<RwLock<HashMap<String, AiAgent>>>,
     /// Track recent executions to prevent duplicates (agent_id, device_id, metric -> timestamp)
     recent_executions: Arc<RwLock<HashMap<(String, String, String), i64>>>,
+    /// LLM runtime cache: backend_id -> runtime
+    /// Key format: "{backend_type}:{endpoint}:{model}" for cache invalidation
+    llm_runtime_cache: Arc<RwLock<HashMap<String, Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>>>>,
 }
 
 impl AgentExecutor {
@@ -122,6 +265,7 @@ impl AgentExecutor {
             llm_backend_store,
             event_agents: Arc::new(RwLock::new(HashMap::new())),
             recent_executions: Arc::new(RwLock::new(HashMap::new())),
+            llm_runtime_cache: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -135,19 +279,99 @@ impl AgentExecutor {
         self.store.clone()
     }
 
+    /// Send a progress event for an agent execution.
+    async fn send_progress(
+        &self,
+        agent_id: &str,
+        execution_id: &str,
+        stage: &str,
+        stage_label: &str,
+        details: Option<&str>,
+    ) {
+        if let Some(ref bus) = self.event_bus {
+            let _ = bus.publish(edge_ai_core::NeoTalkEvent::AgentProgress {
+                agent_id: agent_id.to_string(),
+                execution_id: execution_id.to_string(),
+                stage: stage.to_string(),
+                stage_label: stage_label.to_string(),
+                progress: None,
+                details: details.map(|d| d.to_string()),
+                timestamp: chrono::Utc::now().timestamp(),
+            }).await;
+        }
+    }
+
+    /// Send a thinking event for an agent execution.
+    async fn send_thinking(
+        &self,
+        agent_id: &str,
+        execution_id: &str,
+        step_number: u32,
+        description: &str,
+    ) {
+        if let Some(ref bus) = self.event_bus {
+            let _ = bus.publish(edge_ai_core::NeoTalkEvent::AgentThinking {
+                agent_id: agent_id.to_string(),
+                execution_id: execution_id.to_string(),
+                step_number,
+                step_type: "progress".to_string(),
+                description: description.to_string(),
+                details: None,
+                timestamp: chrono::Utc::now().timestamp(),
+            }).await;
+        }
+    }
+
+    /// Build a cache key for LLM runtime based on backend configuration.
+    fn build_runtime_cache_key(backend_type: &str, endpoint: &str, model: &str) -> String {
+        format!("{}|{}|{}", backend_type, endpoint, model)
+    }
+
     /// Get the LLM runtime for a specific agent.
     /// If the agent has a specific backend ID configured, use that.
     /// Otherwise, fall back to the default runtime.
+    ///
+    /// Runtimes are cached by backend configuration to avoid repeated initialization.
     pub async fn get_llm_runtime_for_agent(
         &self,
         agent: &AiAgent,
-    ) -> Result<Option<Arc<dyn LlmRuntime + Send + Sync>>, AgentError> {
+    ) -> Result<Option<Arc<dyn LlmRuntime + Send + Sync>>, NeoTalkError> {
         // If agent has a specific backend ID, try to use it
         if let Some(ref backend_id) = agent.llm_backend_id {
             if let Some(ref store) = self.llm_backend_store {
                 if let Ok(Some(backend)) = store.load_instance(backend_id) {
                     use edge_ai_storage::LlmBackendType;
-                    match backend.backend_type {
+
+                    // Build cache key
+                    let endpoint = backend.endpoint.clone().unwrap_or_default();
+                    let model = backend.model.clone();
+                    let cache_key = Self::build_runtime_cache_key(
+                        format!("{:?}", backend.backend_type).as_str(),
+                        endpoint.as_str(),
+                        model.as_str()
+                    );
+
+                    // Check cache first
+                    {
+                        let cache = self.llm_runtime_cache.read().await;
+                        if let Some(runtime) = cache.get(&cache_key) {
+                            tracing::debug!(
+                                agent_id = %agent.id,
+                                backend = %backend_id,
+                                "LLM runtime cache hit"
+                            );
+                            return Ok(Some(runtime.clone()));
+                        }
+                    }
+
+                    // Cache miss - create new runtime
+                    tracing::debug!(
+                        agent_id = %agent.id,
+                        backend = %backend_id,
+                        "LLM runtime cache miss, creating new runtime"
+                    );
+
+                    let runtime = match backend.backend_type {
                         LlmBackendType::Ollama => {
                             let endpoint = backend.endpoint.clone().unwrap_or_else(|| "http://localhost:11434".to_string());
                             let model = backend.model.clone();
@@ -155,17 +379,12 @@ impl AgentExecutor {
                                 .ok()
                                 .and_then(|s| s.parse().ok())
                                 .unwrap_or(120);
-                            match OllamaRuntime::new(
+                            OllamaRuntime::new(
                                 OllamaConfig::new(&model)
                                     .with_endpoint(&endpoint)
                                     .with_timeout_secs(timeout)
-                            ) {
-                                Ok(runtime) => return Ok(Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>)),
-                                Err(e) => {
-                                    tracing::warn!(category = "ai", error = %e,
-                                        "Failed to create Ollama runtime for agent '{}'", agent.name);
-                                }
-                            }
+                            )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
                         }
                         LlmBackendType::OpenAi => {
                             let api_key = backend.api_key.clone().unwrap_or_default();
@@ -175,21 +394,79 @@ impl AgentExecutor {
                                 .ok()
                                 .and_then(|s| s.parse().ok())
                                 .unwrap_or(60);
-                            match CloudRuntime::new(
+                            CloudRuntime::new(
                                 CloudConfig::custom(&api_key, &endpoint)
                                     .with_model(&model)
                                     .with_timeout_secs(timeout)
-                            ) {
-                                Ok(runtime) => return Ok(Some(Arc::new(runtime) as Arc<dyn LlmRuntime + Send + Sync>)),
-                                Err(e) => {
-                                    tracing::warn!(category = "ai", error = %e,
-                                        "Failed to create OpenAI runtime for agent '{}'", agent.name);
-                                }
-                            }
+                            )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
                         }
-                        _ => {
-                            tracing::warn!(category = "ai", backend_type = ?backend.backend_type,
-                                "Unsupported backend type for agent '{}'", agent.name);
+                        LlmBackendType::Anthropic => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.anthropic.com/v1".to_string());
+                            let model = backend.model.clone();
+                            let timeout = std::env::var("ANTHROPIC_TIMEOUT_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(60);
+                            CloudRuntime::new(
+                                CloudConfig::anthropic(&api_key)
+                                    .with_model(&model)
+                                    .with_timeout_secs(timeout)
+                            )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                        }
+                        LlmBackendType::Google => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta".to_string());
+                            let model = backend.model.clone();
+                            let timeout = std::env::var("GOOGLE_TIMEOUT_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(60);
+                            CloudRuntime::new(
+                                CloudConfig::google(&api_key)
+                                    .with_model(&model)
+                                    .with_timeout_secs(timeout)
+                            )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                        }
+                        LlmBackendType::XAi => {
+                            let api_key = backend.api_key.clone().unwrap_or_default();
+                            let _endpoint = backend.endpoint.clone().unwrap_or_else(|| "https://api.x.ai/v1".to_string());
+                            let model = backend.model.clone();
+                            let timeout = std::env::var("XAI_TIMEOUT_SECS")
+                                .ok()
+                                .and_then(|s| s.parse().ok())
+                                .unwrap_or(60);
+                            CloudRuntime::new(
+                                CloudConfig::grok(&api_key)
+                                    .with_model(&model)
+                                    .with_timeout_secs(timeout)
+                            )
+                                .map(|rt| Arc::new(rt) as Arc<dyn LlmRuntime + Send + Sync>)
+                        }
+                    };
+
+                    match runtime {
+                        Ok(rt) => {
+                            // Store in cache
+                            let mut cache = self.llm_runtime_cache.write().await;
+                            cache.insert(cache_key, rt.clone());
+                            tracing::info!(
+                                agent_id = %agent.id,
+                                backend = %backend_id,
+                                "LLM runtime created and cached"
+                            );
+                            return Ok(Some(rt));
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                agent_id = %agent.id,
+                                backend_type = ?backend.backend_type,
+                                error = %e,
+                                "Failed to create LLM runtime for agent '{}'", agent.name
+                            );
                         }
                     }
                 }
@@ -253,7 +530,23 @@ Respond in JSON format:
             tools: Some(Vec::new()),
         };
 
-        match llm.generate(input).await {
+        // Add timeout for LLM generation (5 minutes max)
+        const LLM_TIMEOUT_SECS: u64 = 300;
+        let llm_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(LLM_TIMEOUT_SECS),
+            llm.generate(input)
+        ).await {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(
+                    "LLM intent parsing timed out after {}s",
+                    LLM_TIMEOUT_SECS
+                );
+                return Err(AgentError::Llm(format!("LLM timeout after {}s", LLM_TIMEOUT_SECS)));
+            }
+        };
+
+        match llm_result {
             Ok(output) => {
                 // Try to parse JSON from LLM output
                 let json_str = output.text.trim();
@@ -316,6 +609,14 @@ Respond in JSON format:
         self.refresh_event_agents().await;
 
         let event_agents = self.event_agents.read().await;
+
+        tracing::debug!(
+            device_id = %device_id,
+            metric = %metric,
+            event_agent_count = event_agents.len(),
+            "[EVENT] Checking device event against {} event-triggered agents",
+            event_agents.len()
+        );
 
         // Clone device_id for use in spawned tasks
         let device_id_for_spawn = device_id.clone();
@@ -457,6 +758,13 @@ Respond in JSON format:
         });
 
         if !has_device {
+            tracing::trace!(
+                agent_name = %agent.name,
+                device_id = %device_id,
+                "[EVENT] Agent {} does not have device {} in resources",
+                agent.name,
+                device_id
+            );
             return false;
         }
 
@@ -465,7 +773,24 @@ Respond in JSON format:
             r.resource_type == ResourceType::Metric && r.resource_id.contains(metric)
         });
 
-        has_metric || agent.resources.is_empty()
+        let matches = has_metric || agent.resources.is_empty();
+
+        tracing::trace!(
+            agent_name = %agent.name,
+            device_id = %device_id,
+            metric = %metric,
+            has_device = has_device,
+            has_metric = has_metric,
+            resources_empty = agent.resources.is_empty(),
+            matches = matches,
+            "[EVENT] Agent {} event filter check: has_device={}, has_metric={}, matches={}",
+            agent.name,
+            has_device,
+            has_metric,
+            matches
+        );
+
+        matches
     }
 
     /// Refresh the cache of event-triggered agents.
@@ -476,6 +801,7 @@ Respond in JSON format:
         };
 
         if let Ok(agents) = self.store.query_agents(filter).await {
+            let total_active = agents.len();
             let event_agents: HashMap<String, AiAgent> = agents
                 .into_iter()
                 .filter(|a| matches!(a.schedule.schedule_type, edge_ai_storage::ScheduleType::Event))
@@ -483,7 +809,27 @@ Respond in JSON format:
                 .collect();
 
             let mut cache = self.event_agents.write().await;
+            let previous_count = cache.len();
             *cache = event_agents;
+
+            tracing::debug!(
+                total_active_agents = total_active,
+                event_triggered_agents = cache.len(),
+                previous_count = previous_count,
+                "[EVENT] Refreshed event-triggered agents cache"
+            );
+
+            // Log each event-triggered agent for debugging
+            for (id, agent) in cache.iter() {
+                tracing::debug!(
+                    agent_id = %id,
+                    agent_name = %agent.name,
+                    resource_count = agent.resources.len(),
+                    "[EVENT] Event-triggered agent: {} with {} resources",
+                    agent.name,
+                    agent.resources.len()
+                );
+            }
         }
     }
 
@@ -587,39 +933,29 @@ Respond in JSON format:
             }
         };
 
-        // Save execution record
-        self.store
-            .save_execution(&record)
-            .await
-            .map_err(|e| AgentError::Storage(format!("Failed to save execution: {}", e)))?;
-
-        // Save conversation turn for context continuity
-        if let Some(decision_process) = decision_process_for_turn {
-            let turn = self.create_conversation_turn(
+        // Save execution record and conversation turn in a single transaction
+        let turn = decision_process_for_turn.as_ref().map(|dp| {
+            self.create_conversation_turn(
                 execution_id.clone(),
                 "manual".to_string(),
-                decision_process.data_collected.clone(),
+                dp.data_collected.clone(),
                 None, // event_data
-                &decision_process,
+                dp,
                 duration_ms,
                 success,
-            );
+            )
+        });
 
-            if let Err(e) = self.store.append_conversation_turn(&agent_id, &turn).await {
-                tracing::warn!(
-                    agent_id = %agent_id,
-                    execution_id = %execution_id,
-                    error = %e,
-                    "Failed to save conversation turn"
-                );
-            } else {
-                tracing::debug!(
-                    agent_id = %agent_id,
-                    execution_id = %execution_id,
-                    "Conversation turn saved successfully"
-                );
-            }
-        }
+        self.store
+            .save_execution_with_conversation(&record, Some(&agent_id), turn.as_ref())
+            .await
+            .map_err(|e| NeoTalkError::Storage(format!("Failed to save execution: {}", e)))?;
+
+        tracing::debug!(
+            agent_id = %agent_id,
+            execution_id = %execution_id,
+            "Execution and conversation turn saved successfully"
+        );
 
         // Reset agent status based on result
         let new_status = if record.status == ExecutionStatus::Completed {
@@ -772,37 +1108,27 @@ Respond in JSON format:
             }
         };
 
-        // Save execution record
-        self.store
-            .save_execution(&record)
-            .await
-            .map_err(|e| AgentError::Storage(format!("Failed to save execution: {}", e)))?;
-
-        // Save conversation turn for context continuity
-        if let Some(ref decision_process) = decision_process_for_turn {
-            let turn = self.create_conversation_turn(
+        // Save execution record and conversation turn in a single transaction
+        let turn = decision_process_for_turn.as_ref().map(|dp| {
+            self.create_conversation_turn(
                 execution_id.clone(),
                 format!("event:{}", event_metric_name),
-                decision_process.data_collected.clone(),
+                dp.data_collected.clone(),
                 Some(serde_json::json!({
                     "device_id": event_device_id,
                     "metric": event_metric_name,
                     "value": event_value_json,
                 })),
-                decision_process,
+                dp,
                 duration_ms,
                 success,
-            );
+            )
+        });
 
-            if let Err(e) = self.store.append_conversation_turn(&agent_id, &turn).await {
-                tracing::warn!(
-                    agent_id = %agent_id,
-                    execution_id = %execution_id,
-                    error = %e,
-                    "Failed to save conversation turn"
-                );
-            }
-        }
+        self.store
+            .save_execution_with_conversation(&record, Some(&agent_id), turn.as_ref())
+            .await
+            .map_err(|e| NeoTalkError::Storage(format!("Failed to save execution: {}", e)))?;
 
         // Reset agent status based on result
         let new_status = if record.status == ExecutionStatus::Completed {
@@ -971,9 +1297,30 @@ Respond in JSON format:
         context: ExecutionContext,
     ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
         let mut agent = context.agent;
+        let agent_id = agent.id.clone();
+        let execution_id = context.execution_id.clone();
+
+        // Progress: Collecting data
+        self.send_progress(&agent_id, &execution_id, "collecting", "Collecting data", Some("Gathering sensor data...")).await;
 
         // Step 1: Collect data
         let data_collected = self.collect_data(&agent).await?;
+
+        // Send thinking events for each data source collected
+        let mut step_num = 1;
+        for data in &data_collected {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Collected data source: {}", data.source)
+            ).await;
+            step_num += 1;
+            // Small delay for visual effect
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Progress: Analyzing
+        self.send_progress(&agent_id, &execution_id, "analyzing", "Analyzing",
+            Some(&format!("Analyzing {} data points...", data_collected.len()))
+        ).await;
 
         // Step 1.5: Parse intent if not already done
         let parsed_intent = if agent.parsed_intent.is_none() {
@@ -1001,9 +1348,55 @@ Respond in JSON format:
         let (situation_analysis, reasoning_steps, decisions, conclusion) =
             self.analyze_situation_with_intent(&agent, &data_collected, parsed_intent.as_ref(), &context.execution_id).await?;
 
+        // Send thinking event for analysis completion
+        self.send_thinking(&agent_id, &execution_id, step_num,
+            &format!("Analysis completed: Generated {} decision(s)", decisions.len())
+        ).await;
+        step_num += 1;
+
+        // Progress: Executing decisions
+        self.send_progress(&agent_id, &execution_id, "executing", "Executing decisions",
+            Some(&format!("Executing {} decision(s)...", decisions.len()))
+        ).await;
+
+        // Send initial executing status
+        self.send_thinking(&agent_id, &execution_id, step_num,
+            &format!("Starting execution of {} decision(s)", decisions.len())
+        ).await;
+        step_num += 1;
+
         // Step 3: Execute decisions
         let (actions_executed, notifications_sent) =
             self.execute_decisions(&agent, &decisions).await?;
+
+        // Send thinking events for each action executed
+        for action in &actions_executed {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Executing: {} -> {}", action.action_type, action.target)
+            ).await;
+            step_num += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Send thinking events for notifications
+        for notification in &notifications_sent {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Sending notification: {}", notification.message)
+            ).await;
+            step_num += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Send completion event for executing stage
+        if actions_executed.is_empty() && notifications_sent.is_empty() {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                "Execution completed: No additional actions required"
+            ).await;
+        } else {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Execution completed: {} action(s), {} notification(s)", actions_executed.len(), notifications_sent.len())
+            ).await;
+        }
 
         // Step 4: Generate report if needed
         let report = self.maybe_generate_report(&agent, &data_collected).await?;
@@ -1064,9 +1457,30 @@ Respond in JSON format:
         event_data: EventTriggerData,
     ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
         let mut agent = context.agent;
+        let agent_id = agent.id.clone();
+        let execution_id = context.execution_id.clone();
+        let mut step_num = 1u32;
+
+        // Progress: Collecting data
+        self.send_progress(&agent_id, &execution_id, "collecting", "Collecting data", Some("Gathering sensor data...")).await;
 
         // Step 1: Collect data including event data
         let data_collected = self.collect_data_with_event(&agent, &event_data).await?;
+
+        // Send thinking events for each data source collected
+        for data in &data_collected {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("📡 收集 {}: {} 个数据点", data.source, data.data_type)
+            ).await;
+            step_num += 1;
+            // Small delay for visual effect
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Progress: Analyzing
+        self.send_progress(&agent_id, &execution_id, "analyzing", "Analyzing",
+            Some(&format!("Analyzing {} data points...", data_collected.len()))
+        ).await;
 
         // Step 1.5: Parse intent if not already done
         let parsed_intent = if agent.parsed_intent.is_none() {
@@ -1094,9 +1508,55 @@ Respond in JSON format:
         let (situation_analysis, reasoning_steps, decisions, conclusion) =
             self.analyze_situation_with_intent(&agent, &data_collected, parsed_intent.as_ref(), &context.execution_id).await?;
 
+        // Send thinking event for analysis completion
+        self.send_thinking(&agent_id, &execution_id, step_num,
+            &format!("Analysis completed: Generated {} decision(s)", decisions.len())
+        ).await;
+        step_num += 1;
+
+        // Progress: Executing decisions
+        self.send_progress(&agent_id, &execution_id, "executing", "Executing decisions",
+            Some(&format!("Executing {} decision(s)...", decisions.len()))
+        ).await;
+
+        // Send initial executing status
+        self.send_thinking(&agent_id, &execution_id, step_num,
+            &format!("Starting execution of {} decision(s)", decisions.len())
+        ).await;
+        step_num += 1;
+
         // Step 3: Execute decisions
         let (actions_executed, notifications_sent) =
             self.execute_decisions(&agent, &decisions).await?;
+
+        // Send thinking events for each action executed
+        for action in &actions_executed {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Executing: {} -> {}", action.action_type, action.target)
+            ).await;
+            step_num += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Send thinking events for notifications
+        for notification in &notifications_sent {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Sending notification: {}", notification.message)
+            ).await;
+            step_num += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Send completion event for executing stage
+        if actions_executed.is_empty() && notifications_sent.is_empty() {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                "Execution completed: No additional actions required"
+            ).await;
+        } else {
+            self.send_thinking(&agent_id, &execution_id, step_num,
+                &format!("Execution completed: {} action(s), {} notification(s)", actions_executed.len(), notifications_sent.len())
+            ).await;
+        }
 
         // Step 4: Generate report if needed
         let report = self.maybe_generate_report(&agent, &data_collected).await?;
@@ -1151,315 +1611,35 @@ Respond in JSON format:
     }
 
     /// Collect real data from time series storage.
+    /// Uses parallel queries for improved performance when collecting multiple metrics.
     async fn collect_data(&self, agent: &AiAgent) -> Result<Vec<DataCollected>, AgentError> {
-        let mut data = Vec::new();
         let timestamp = chrono::Utc::now().timestamp();
 
-        // Collect real data from time series storage if available
-        if let Some(ref storage) = self.time_series_storage {
-            for resource in &agent.resources {
-                if resource.resource_type == ResourceType::Metric {
-                    // Parse device_id and metric from resource_id
-                    // Format: "device_id:metric_name"
-                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
-                    if parts.len() == 2 {
-                        let device_id = parts[0];
-                        let metric_name = parts[1];
+        // Split resources by type for parallel processing
+        let metric_resources: Vec<_> = agent.resources.iter()
+            .filter(|r| r.resource_type == ResourceType::Metric)
+            .cloned()
+            .collect();
 
-                        // Read data collection config from resource.config
-                        let time_range_minutes = resource.config
-                            .get("data_collection")
-                            .and_then(|dc| dc.get("time_range_minutes"))
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(60); // Default: 60 minutes
+        let device_resources: Vec<_> = agent.resources.iter()
+            .filter(|r| r.resource_type == ResourceType::Device)
+            .map(|r| r.resource_id.clone())
+            .collect();
 
-                        let include_history = resource.config
-                            .get("data_collection")
-                            .and_then(|dc| dc.get("include_history"))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false); // Default: only latest value
+        // Collect metric data in parallel
+        let metric_data = self.collect_metric_data_parallel(agent, metric_resources, timestamp).await?;
 
-                        let max_points = resource.config
-                            .get("data_collection")
-                            .and_then(|dc| dc.get("max_points"))
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(1000) as usize;
+        // Collect device data in parallel
+        let device_data = self.collect_device_data_parallel(agent, device_resources, timestamp).await?;
 
-                        // Query time series data with configured range
-                        let end_time = chrono::Utc::now().timestamp_millis();
-                        let start_time = end_time - ((time_range_minutes * 60) as i64 * 1000);
+        // Combine all data
+        let mut data = metric_data;
+        data.extend(device_data);
 
-                        if let Ok(result) = storage.query_range(
-                            device_id,
-                            metric_name,
-                            start_time,
-                            end_time,
-                        ).await {
-                            if !result.points.is_empty() {
-                                // Get the latest value
-                                let latest = &result.points[result.points.len() - 1];
-
-                                // Check if this is an image metric
-                                let is_image = is_image_metric(metric_name, &latest.value);
-                                let (image_url, image_base64, image_mime) = if is_image {
-                                    extract_image_data(&latest.value)
-                                } else {
-                                    (None, None, None)
-                                };
-
-                                let mut values_json = serde_json::json!({
-                                    "value": latest.value,
-                                    "timestamp": latest.timestamp,
-                                    "points_count": result.points.len(),
-                                    "time_range_minutes": time_range_minutes,
-                                });
-
-                                // Add image metadata if applicable
-                                if is_image {
-                                    values_json["_is_image"] = serde_json::json!(true);
-                                    if let Some(url) = &image_url {
-                                        values_json["image_url"] = serde_json::json!(url);
-                                    }
-                                    if let Some(base64) = &image_base64 {
-                                        values_json["image_base64"] = serde_json::json!(base64);
-                                    }
-                                    if let Some(mime) = &image_mime {
-                                        values_json["image_mime_type"] = serde_json::json!(mime);
-                                    }
-
-                                    tracing::debug!(
-                                        metric = %metric_name,
-                                        has_url = image_url.is_some(),
-                                        has_base64 = image_base64.is_some(),
-                                        mime = ?image_mime,
-                                        "Detected image metric in collect_data"
-                                    );
-                                }
-
-                                // Include history if configured and not an image
-                                // (images are usually too large for full history)
-                                if include_history && !is_image && result.points.len() > 1 {
-                                    let history_limit = max_points.min(result.points.len());
-                                    let start_idx = if result.points.len() > history_limit {
-                                        result.points.len() - history_limit
-                                    } else {
-                                        0
-                                    };
-
-                                    let history_values: Vec<_> = result.points[start_idx..]
-                                        .iter()
-                                        .map(|p| {
-                                            serde_json::json!({
-                                                "value": p.value,
-                                                "timestamp": p.timestamp
-                                            })
-                                        })
-                                        .collect();
-
-                                    values_json["history"] = serde_json::json!(history_values);
-                                    values_json["history_count"] = serde_json::json!(history_values.len());
-
-                                    // Calculate basic statistics for numeric values
-                                    let nums: Vec<f64> = result.points[start_idx..]
-                                        .iter()
-                                        .filter_map(|p| p.value.as_f64())
-                                        .collect();
-
-                                    if !nums.is_empty() {
-                                        let min_val = nums.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-                                        let max_val = nums.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-                                        let avg_val = nums.iter().sum::<f64>() / nums.len() as f64;
-
-                                        values_json["stats"] = serde_json::json!({
-                                            "min": min_val,
-                                            "max": max_val,
-                                            "avg": avg_val,
-                                            "count": nums.len()
-                                        });
-                                    }
-
-                                    tracing::debug!(
-                                        metric = %metric_name,
-                                        points_count = history_values.len(),
-                                        "Included metric history in data collection"
-                                    );
-                                }
-
-                                // Include trend data from memory if configured
-                                if resource.config
-                                    .get("data_collection")
-                                    .and_then(|dc| dc.get("include_trend"))
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false)
-                                {
-                                    let trend_points: Vec<_> = agent.memory.trend_data
-                                        .iter()
-                                        .filter(|tp| tp.metric == resource.resource_id)
-                                        .rev()
-                                        .take(100)
-                                        .map(|tp| serde_json::json!({
-                                            "timestamp": tp.timestamp,
-                                            "value": tp.value
-                                        }))
-                                        .collect();
-
-                                    if !trend_points.is_empty() {
-                                        values_json["trend_data"] = serde_json::json!(trend_points);
-                                    }
-                                }
-
-                                // Include baseline comparison if configured
-                                if resource.config
-                                    .get("data_collection")
-                                    .and_then(|dc| dc.get("include_baseline"))
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false)
-                                {
-                                    if let Some(baseline) = agent.memory.baselines.get(&resource.resource_id) {
-                                        if let Some(current_val) = latest.value.as_f64() {
-                                            let diff = current_val - baseline;
-                                            let diff_pct = if *baseline != 0.0 {
-                                                (diff / *baseline) * 100.0
-                                            } else {
-                                                0.0
-                                            };
-
-                                            values_json["baseline"] = serde_json::json!({
-                                                "value": baseline,
-                                                "diff": diff,
-                                                "diff_pct": diff_pct
-                                            });
-                                        }
-                                    }
-                                }
-
-                                data.push(DataCollected {
-                                    source: resource.resource_id.clone(),
-                                    data_type: metric_name.to_string(),
-                                    values: values_json,
-                                    timestamp,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // For Device type resources, also collect their metrics from time series
-        if let Some(ref device_service) = self.device_service {
-            for resource in &agent.resources {
-                if resource.resource_type == ResourceType::Device {
-                    let device_id = &resource.resource_id;
-
-                    // First, try to get device info
-                    if let Some(device) = device_service.get_device(device_id).await {
-                        // Get device info from DeviceConfig
-                        let device_values: serde_json::Value = serde_json::json!({
-                            "device_id": device.device_id,
-                            "device_type": device.device_type,
-                            "name": device.name,
-                            "adapter_type": device.adapter_type,
-                        });
-
-                        data.push(DataCollected {
-                            source: device_id.clone(),
-                            data_type: "device_info".to_string(),
-                            values: device_values,
-                            timestamp,
-                        });
-
-                        // Now, collect actual metrics from time series storage
-                        if let Some(ref storage) = self.time_series_storage {
-                            // Try to get available metrics for this device
-                            let end_time = chrono::Utc::now().timestamp_millis();
-                            let start_time = end_time - (300 * 1000); // Last 5 minutes
-
-                            // Get metric names from device template or storage
-                            // For now, try common image/snapshot metric names
-                            let potential_metrics = vec![
-                                "values.image", "image", "snapshot", "values.snapshot",
-                                "camera.image", "camera.snapshot",
-                                "picture", "values.picture",
-                                "frame", "values.frame",
-                            ];
-
-                            for metric_name in potential_metrics {
-                                if let Ok(result) = storage.query_range(
-                                    device_id,
-                                    metric_name,
-                                    start_time,
-                                    end_time,
-                                ).await {
-                                    if !result.points.is_empty() {
-                                        let latest = &result.points[result.points.len() - 1];
-
-                                        // Check if this is an image metric
-                                        let is_image = is_image_metric(metric_name, &latest.value);
-                                        let (image_url, image_base64, image_mime) = if is_image {
-                                            extract_image_data(&latest.value)
-                                        } else {
-                                            (None, None, None)
-                                        };
-
-                                        let mut values_json = serde_json::json!({
-                                            "value": latest.value,
-                                            "timestamp": latest.timestamp,
-                                            "points_count": result.points.len(),
-                                        });
-
-                                        // Add image metadata if applicable
-                                        if is_image {
-                                            values_json["_is_image"] = serde_json::json!(true);
-                                            if let Some(url) = &image_url {
-                                                values_json["image_url"] = serde_json::json!(url);
-                                            }
-                                            if let Some(base64) = &image_base64 {
-                                                values_json["image_base64"] = serde_json::json!(base64);
-                                            }
-                                            if let Some(mime) = &image_mime {
-                                                values_json["image_mime_type"] = serde_json::json!(mime);
-                                            }
-
-                                            tracing::info!(
-                                                device_id = %device_id,
-                                                metric = %metric_name,
-                                                has_url = image_url.is_some(),
-                                                has_base64 = image_base64.is_some(),
-                                                "Collected image metric for device resource"
-                                            );
-                                        }
-
-                                        data.push(DataCollected {
-                                            source: format!("{}:{}", device_id, metric_name),
-                                            data_type: metric_name.to_string(),
-                                            values: values_json,
-                                            timestamp,
-                                        });
-
-                                        // If we found an image, we can stop looking for other image metrics
-                                        // (one image per device is usually enough for analysis)
-                                        if is_image {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add memory context
-        if !agent.memory.state_variables.is_empty() {
-            data.push(DataCollected {
-                source: "memory".to_string(),
-                data_type: "state".to_string(),
-                values: serde_json::to_value(&agent.memory.state_variables)
-                    .unwrap_or_default(),
-                timestamp,
-            });
+        // Add condensed memory context
+        let memory_data = self.collect_memory_summary(agent, timestamp)?;
+        if let Some(mem_data) = memory_data {
+            data.push(mem_data);
         }
 
         // If no data collected, add a placeholder
@@ -1475,6 +1655,373 @@ Respond in JSON format:
         Ok(data)
     }
 
+    /// Collect data from multiple metric resources in parallel.
+    async fn collect_metric_data_parallel(
+        &self,
+        _agent: &AiAgent,  // Reserved for future use
+        resources: Vec<AgentResource>,
+        timestamp: i64,
+    ) -> Result<Vec<DataCollected>, AgentError> {
+        let storage = self.time_series_storage.clone().ok_or(NeoTalkError::validation(
+            "Time series storage not available".to_string()
+        ))?;
+
+        // Create parallel futures for each metric resource
+        let collect_futures: Vec<_> = resources.into_iter()
+            .filter_map(|resource| {
+                // Parse device_id and metric from resource_id (format: "device_id:metric_name")
+                let parts: Vec<&str> = resource.resource_id.split(':').collect();
+                if parts.len() != 2 {
+                    return None;
+                }
+                let (device_id, metric_name) = (parts[0], parts[1]);
+
+                // Extract config
+                let time_range_minutes = resource.config
+                    .get("data_collection")
+                    .and_then(|dc| dc.get("time_range_minutes"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(60);
+
+                let include_history = resource.config
+                    .get("data_collection")
+                    .and_then(|dc| dc.get("include_history"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let max_points = resource.config
+                    .get("data_collection")
+                    .and_then(|dc| dc.get("max_points"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1000) as usize;
+
+                let include_trend = resource.config
+                    .get("data_collection")
+                    .and_then(|dc| dc.get("include_trend"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let include_baseline = resource.config
+                    .get("data_collection")
+                    .and_then(|dc| dc.get("include_baseline"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                // Clone necessary data for the async block
+                let resource_id = resource.resource_id.clone();
+                let storage_clone = storage.clone();
+                let metric_name = metric_name.to_string();
+                let device_id = device_id.to_string();
+
+                Some(async move {
+                    Self::collect_single_metric(
+                        storage_clone,
+                        &device_id,
+                        &metric_name,
+                        resource_id,
+                        time_range_minutes,
+                        include_history,
+                        max_points,
+                        include_trend,
+                        include_baseline,
+                        timestamp,
+                    ).await
+                })
+            })
+            .collect();
+
+        // Execute all queries in parallel with timeout
+        // Each query gets a maximum of 10 seconds to complete
+        const QUERY_TIMEOUT_SECS: u64 = 10;
+
+        let timeout_futures: Vec<_> = collect_futures.into_iter()
+            .map(|fut| async move {
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+                    fut
+                ).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        tracing::warn!("Data collection query timed out after {}s", QUERY_TIMEOUT_SECS);
+                        Err(AgentError::Llm(format!("Query timeout after {}s", QUERY_TIMEOUT_SECS)))
+                    }
+                }
+            })
+            .collect();
+
+        let results = join_all(timeout_futures).await;
+
+        // Filter out errors and collect successful results
+        let collected: Vec<_> = results.into_iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|opt| opt)
+            .collect();
+        Ok(collected)
+    }
+
+    /// Collect data from a single metric resource.
+    async fn collect_single_metric(
+        storage: Arc<edge_ai_storage::TimeSeriesStore>,
+        device_id: &str,
+        metric_name: &str,
+        resource_id: String,
+        time_range_minutes: u64,
+        include_history: bool,
+        max_points: usize,
+        _include_trend: bool,  // Reserved for future use
+        _include_baseline: bool,  // Reserved for future use
+        timestamp: i64,
+    ) -> Result<Option<DataCollected>, AgentError> {
+        let end_time = chrono::Utc::now().timestamp_millis();
+        let start_time = end_time - ((time_range_minutes * 60) as i64 * 1000);
+
+        let result = storage.query_range(device_id, metric_name, start_time, end_time).await
+            .map_err(|e| AgentError::Storage(format!("Query failed: {}", e)))?;
+
+        if result.points.is_empty() {
+            return Ok(None);
+        }
+
+        let latest = &result.points[result.points.len() - 1];
+
+        // Check if this is an image metric
+        let is_image = is_image_metric(metric_name, &latest.value);
+        let (image_url, image_base64, image_mime) = if is_image {
+            extract_image_data(&latest.value)
+        } else {
+            (None, None, None)
+        };
+
+        // Build values JSON - construct once with all conditional fields
+        let mut values_json = serde_json::json!({
+            "value": latest.value,
+            "timestamp": latest.timestamp,
+            "points_count": result.points.len(),
+            "time_range_minutes": time_range_minutes,
+            "_is_image": is_image,
+        });
+
+        // Add image metadata if applicable
+        if let Some(url) = &image_url {
+            values_json["image_url"] = serde_json::json!(url);
+        }
+        if let Some(base64) = &image_base64 {
+            values_json["image_base64"] = serde_json::json!(base64);
+        }
+        if let Some(mime) = &image_mime {
+            values_json["image_mime_type"] = serde_json::json!(mime);
+        }
+
+        // Include history if configured and not an image
+        if include_history && !is_image && result.points.len() > 1 {
+            let history_limit = max_points.min(result.points.len());
+            let start_idx = if result.points.len() > history_limit {
+                result.points.len() - history_limit
+            } else {
+                0
+            };
+
+            let history_values: Vec<_> = result.points[start_idx..]
+                .iter()
+                .map(|p| serde_json::json!({
+                    "value": p.value,
+                    "timestamp": p.timestamp
+                }))
+                .collect();
+
+            // Calculate statistics for numeric values
+            let stats = if let Some(nums) = calculate_stats(&result.points[start_idx..]) {
+                Some(serde_json::json!({
+                    "min": nums.min,
+                    "max": nums.max,
+                    "avg": nums.avg,
+                    "count": nums.count
+                }))
+            } else {
+                None
+            };
+
+            values_json["history"] = serde_json::json!(history_values);
+            values_json["history_count"] = serde_json::json!(history_values.len());
+            if let Some(s) = stats {
+                values_json["stats"] = s;
+            }
+        }
+
+        Ok(Some(DataCollected {
+            source: resource_id,
+            data_type: metric_name.to_string(),
+            values: values_json,
+            timestamp,
+        }))
+    }
+
+    /// Collect data from multiple device resources in parallel.
+    async fn collect_device_data_parallel(
+        &self,
+        _agent: &AiAgent,  // Reserved for future use
+        device_ids: Vec<String>,
+        timestamp: i64,
+    ) -> Result<Vec<DataCollected>, AgentError> {
+        let device_service = self.device_service.as_ref()
+            .ok_or(NeoTalkError::validation("Device service not available".to_string()))?;
+
+        let storage = self.time_series_storage.clone()
+            .ok_or(NeoTalkError::validation("Time series storage not available".to_string()))?;
+
+        // Collect device info and metrics in parallel with timeout
+        const QUERY_TIMEOUT_SECS: u64 = 10;
+
+        let timeout_futures: Vec<_> = device_ids.into_iter()
+            .map(|device_id| {
+                let device_service = device_service.clone();
+                let storage = storage.clone();
+                async move {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+                        Self::collect_single_device_data(device_service, storage, &device_id, timestamp)
+                    ).await {
+                        Ok(result) => result,
+                        Err(_) => {
+                            tracing::warn!(device_id = %device_id, "Device data collection timed out after {}s", QUERY_TIMEOUT_SECS);
+                            Ok(Vec::new()) // Return empty result on timeout
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        let results = join_all(timeout_futures).await;
+        let collected: Vec<_> = results.into_iter()
+            .filter_map(|r| r.ok())
+            .flat_map(|v| v.into_iter())
+            .collect();
+        Ok(collected)
+    }
+
+    /// Collect data from a single device resource.
+    async fn collect_single_device_data(
+        device_service: Arc<DeviceService>,
+        storage: Arc<edge_ai_storage::TimeSeriesStore>,
+        device_id: &str,
+        timestamp: i64,
+    ) -> Result<Vec<DataCollected>, AgentError> {
+        let mut data = Vec::new();
+
+        // Get device info
+        if let Some(device) = device_service.get_device(device_id).await {
+            let device_values = serde_json::json!({
+                "device_id": device.device_id,
+                "device_type": device.device_type,
+                "name": device.name,
+                "adapter_type": device.adapter_type,
+            });
+
+            data.push(DataCollected {
+                source: device_id.to_string(),
+                data_type: "device_info".to_string(),
+                values: device_values,
+                timestamp,
+            });
+
+            // Try to get image metrics
+            let end_time = chrono::Utc::now().timestamp_millis();
+            let start_time = end_time - (300 * 1000); // Last 5 minutes
+
+            let potential_metrics = vec![
+                "values.image", "image", "snapshot", "values.snapshot",
+                "camera.image", "camera.snapshot",
+                "picture", "values.picture",
+                "frame", "values.frame",
+            ];
+
+            // Try each metric until we find an image
+            for metric_name in potential_metrics {
+                if let Ok(result) = storage.query_range(device_id, metric_name, start_time, end_time).await {
+                    if !result.points.is_empty() {
+                        let latest = &result.points[result.points.len() - 1];
+                        let is_image = is_image_metric(metric_name, &latest.value);
+
+                        if is_image {
+                            let (image_url, image_base64, image_mime) = extract_image_data(&latest.value);
+
+                            let values_json = serde_json::json!({
+                                "value": latest.value,
+                                "timestamp": latest.timestamp,
+                                "points_count": result.points.len(),
+                                "_is_image": true,
+                                "image_url": image_url,
+                                "image_base64": image_base64,
+                                "image_mime_type": image_mime,
+                            });
+
+                            data.push(DataCollected {
+                                source: format!("{}:{}", device_id, metric_name),
+                                data_type: metric_name.to_string(),
+                                values: values_json,
+                                timestamp,
+                            });
+
+                            break; // Found an image, stop looking
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(data)
+    }
+
+    /// Collect condensed memory summary.
+    fn collect_memory_summary(
+        &self,
+        agent: &AiAgent,
+        timestamp: i64,
+    ) -> Result<Option<DataCollected>, AgentError> {
+        if agent.memory.state_variables.is_empty() {
+            return Ok(None);
+        }
+
+        let mut memory_summary = serde_json::Map::new();
+
+        // Add last conclusion only
+        if let Some(conclusion) = agent.memory.state_variables.get("last_conclusion").and_then(|v| v.as_str()) {
+            memory_summary.insert("last_conclusion".to_string(), serde_json::json!(conclusion));
+        }
+
+        // Add condensed recent analyses (only conclusions)
+        if let Some(analyses) = agent.memory.state_variables.get("recent_analyses").and_then(|v| v.as_array()) {
+            let condensed: Vec<_> = analyses.iter()
+                .take(2)
+                .filter_map(|a| {
+                    a.get("conclusion")
+                        .and_then(|c| c.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|c| serde_json::json!(c))
+                })
+                .collect();
+            if !condensed.is_empty() {
+                memory_summary.insert("recent_conclusions".to_string(), serde_json::json!(condensed));
+            }
+        }
+
+        // Add execution count
+        if let Some(count) = agent.memory.state_variables.get("total_executions").and_then(|v| v.as_i64()) {
+            memory_summary.insert("total_executions".to_string(), serde_json::json!(count));
+        }
+
+        if memory_summary.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(DataCollected {
+                source: "memory".to_string(),
+                data_type: "summary".to_string(),
+                values: serde_json::to_value(memory_summary).unwrap_or_default(),
+                timestamp,
+            }))
+        }
+    }
+
     /// Collect data including the triggering event data.
     /// This ensures that the event that triggered the agent is included in the analysis.
     async fn collect_data_with_event(
@@ -1483,7 +2030,7 @@ Respond in JSON format:
         event_data: &EventTriggerData,
     ) -> Result<Vec<DataCollected>, AgentError> {
         let mut data = Vec::new();
-        let timestamp = chrono::Utc::now().timestamp();
+        let _timestamp = chrono::Utc::now().timestamp();  // Reserved for future use
 
         // First, add the triggering event data directly
         let event_value_json = serde_json::to_value(&event_data.value).unwrap_or_default();
@@ -1568,11 +2115,12 @@ Respond in JSON format:
         parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
         execution_id: &str,
     ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
-        // Try LLM-based analysis first
         tracing::info!(
             agent_id = %agent.id,
             agent_name = %agent.name,
-            "Starting situation analysis, checking LLM availability..."
+            data_count = data.len(),
+            execution_id = %execution_id,
+            "[ANALYZE] Starting situation analysis"
         );
 
         match self.get_llm_runtime_for_agent(agent).await {
@@ -1640,9 +2188,29 @@ Respond in JSON format:
         });
 
         // Build text data summary for non-image data
+        // Limit to prevent token overflow - prioritize most recent/important data
+        let max_metrics = 10; // Limit to 10 metrics at once
         let text_data_summary: Vec<_> = data.iter()
             .filter(|d| !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
-            .map(|d| format!("- {}: {} = {}", d.source, d.data_type, d.values))
+            .take(max_metrics)
+            .map(|d| {
+                // Create a more compact representation of values
+                let value_str = if let Some(v) = d.values.get("value") {
+                    format!("{}", v) // Compact value representation
+                } else if let Some(v) = d.values.get("history") {
+                    format!("[历史数据: {}个点]", v.as_array().map(|a| a.len()).unwrap_or(0))
+                } else {
+                    // Fallback to compact JSON - use character-safe truncation
+                    let json_str = serde_json::to_string(&d.values).unwrap_or_default();
+                    if json_str.chars().count() > 200 {
+                        // Truncate at character boundary, not byte boundary
+                        json_str.chars().take(200).collect::<String>() + "..."
+                    } else {
+                        json_str
+                    }
+                };
+                format!("- {}: {} = {}", d.source, d.data_type, value_str)
+            })
             .collect();
 
         // Collect image parts
@@ -1785,12 +2353,8 @@ Respond in JSON format:
             "".to_string()
         };
 
-        // Build system prompt for the agent role
-        let role_prompt = match agent.role {
-            AgentRole::Monitor => "你是一个监控智能体，负责监控IoT设备和指标。分析当前数据，判断是否异常或需要告警。",
-            AgentRole::Executor => "你是一个执行智能体，负责根据条件执行控制操作。分析当前数据，决定是否需要执行动作。",
-            AgentRole::Analyst => "你是一个分析智能体，负责分析数据趋势和模式。深入分析数据，提供有价值的洞察。",
-        };
+        // Generic system prompt for all agents
+        let role_prompt = "You are a NeoTalk IoT automation assistant. Analyze data, make decisions, and execute actions based on user instructions.";
 
         // Enhanced system prompt for image analysis
         let system_prompt = if has_images {
@@ -1816,21 +2380,39 @@ Respond in JSON format:
                 ## 响应格式\n\
                 请以JSON格式回复:\n\
                 {{\n\
-                  \"situation_analysis\": \"情况分析描述（包括对图像的观察）\",\n\
+                  \"situation_analysis\": \"Description of the current situation\",\n\
                   \"reasoning_steps\": [\n\
-                    {{\"step\": 1, \"description\": \"步骤描述\", \"confidence\": 0.9}}\n\
+                    {{\"step\": 1, \"description\": \"Step description\", \"confidence\": 0.9}}\n\
                   ],\n\
                   \"decisions\": [\n\
                     {{\n\
-                      \"decision_type\": \"类型\",\n\
-                      \"description\": \"决策描述\",\n\
-                      \"action\": \"动作名称\",\n\
-                      \"rationale\": \"决策理由\",\n\
-                      \"confidence\": 0.85\n\
+                      \"decision_type\": \"alert\",\n\
+                      \"description\": \"Person detected in image, triggering alert\",\n\
+                      \"action\": \"send_alert\",\n\
+                      \"rationale\": \"Person presence detected, meeting alert criteria\",\n\
+                      \"confidence\": 0.95\n\
+                    }},\n\
+                    {{\n\
+                      \"decision_type\": \"command\",\n\
+                      \"description\": \"Temperature exceeds threshold, execute command: turn_on_fan\",\n\
+                      \"action\": \"execute_command\",\n\
+                      \"rationale\": \"Automatic device control required. Specify command name in description\",\n\
+                      \"confidence\": 0.90\n\
                     }}\n\
                   ],\n\
-                  \"conclusion\": \"总结结论\"\n\
-                }}",
+                  \"conclusion\": \"Summary conclusion\"\n\
+                }}\n\
+                \n\
+                ## 重要说明\n\
+                - decision_type 使用 \"alert\" 表示需要发送告警\n\
+                - decision_type 使用 \"command\" 表示需要执行控制指令\n\
+                - action 使用 \"send_alert\" 会触发告警通知\n\
+                - action 使用 \"execute_command\" 会执行已配置的设备指令\n\
+                - **要指定执行特定指令**，在description中使用格式: \"command: 指令名称\"\n\
+                -   例如: \"execute command: turn_on_fan\" 只执行turn_on_fan指令\n\
+                -   例如: \"execute command on device: thermostat\" 只执行thermostat设备的指令\n\
+                -   不指定则执行所有已配置的指令\n\
+                - 如果图像中检测到用户关注的对象（如人员），decision_type 应设为 \"alert\"",
                 role_prompt,
                 agent.user_prompt,
                 intent_context,
@@ -1852,21 +2434,38 @@ Respond in JSON format:
                 ## 响应格式\n\
                 请以JSON格式回复:\n\
                 {{\n\
-                  \"situation_analysis\": \"情况分析描述\",\n\
+                  \"situation_analysis\": \"Description of the current situation\",\n\
                   \"reasoning_steps\": [\n\
-                    {{\"step\": 1, \"description\": \"步骤描述\", \"confidence\": 0.9}}\n\
+                    {{\"step\": 1, \"description\": \"Step description\", \"confidence\": 0.9}}\n\
                   ],\n\
                   \"decisions\": [\n\
                     {{\n\
-                      \"decision_type\": \"类型\",\n\
-                      \"description\": \"决策描述\",\n\
-                      \"action\": \"动作名称\",\n\
-                      \"rationale\": \"决策理由\",\n\
+                      \"decision_type\": \"alert\",\n\
+                      \"description\": \"Abnormal condition detected, triggering alert\",\n\
+                      \"action\": \"send_alert\",\n\
+                      \"rationale\": \"Data exceeds normal range\",\n\
                       \"confidence\": 0.85\n\
+                    }},\n\
+                    {{\n\
+                      \"decision_type\": \"command\",\n\
+                      \"description\": \"Temperature too high, execute command: turn_on_fan\",\n\
+                      \"action\": \"execute_command\",\n\
+                      \"rationale\": \"Automatic device control required. Specify command name in description\",\n\
+                      \"confidence\": 0.90\n\
                     }}\n\
                   ],\n\
-                  \"conclusion\": \"总结结论\"\n\
-                }}",
+                  \"conclusion\": \"Summary conclusion\"\n\
+                }}\n\
+                \n\
+                ## 重要说明\n\
+                - decision_type 使用 \"alert\" 表示需要发送告警\n\
+                - decision_type 使用 \"command\" 表示需要执行控制指令\n\
+                - action 使用 \"send_alert\" 会触发告警通知\n\
+                - action 使用 \"execute_command\" 会执行已配置的设备指令\n\
+                - **要指定执行特定指令**，在description中使用格式: \"command: 指令名称\"\n\
+                -   例如: \"execute command: turn_on_fan\" 只执行turn_on_fan指令\n\
+                -   例如: \"execute command on device: thermostat\" 只执行thermostat设备的指令\n\
+                -   不指定则执行所有已配置的指令",
                 role_prompt,
                 agent.user_prompt,
                 intent_context,
@@ -1928,7 +2527,7 @@ Respond in JSON format:
             messages,
             params: GenerationParams {
                 temperature: Some(0.7),
-                max_tokens: Some(3000), // Increased to prevent JSON truncation for image analysis
+                max_tokens: Some(8000), // Increased for image analysis with detailed descriptions
                 ..Default::default()
             },
             model: None,
@@ -1936,7 +2535,24 @@ Respond in JSON format:
             tools: Some(Vec::new()),
         };
 
-        match llm.generate(input).await {
+        // Add timeout for LLM generation (5 minutes max)
+        const LLM_TIMEOUT_SECS: u64 = 300;
+        let llm_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(LLM_TIMEOUT_SECS),
+            llm.generate(input)
+        ).await {
+            Ok(result) => result,
+            Err(_) => {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    "LLM generation timed out after {}s",
+                    LLM_TIMEOUT_SECS
+                );
+                return Err(AgentError::Llm(format!("LLM timeout after {}s", LLM_TIMEOUT_SECS)));
+            }
+        };
+
+        match llm_result {
             Ok(output) => {
                 let json_str = output.text.trim();
                 // Extract JSON if wrapped in markdown
@@ -1985,7 +2601,7 @@ Respond in JSON format:
                         let reasoning_steps: Vec<edge_ai_storage::ReasoningStep> = response.reasoning_steps
                             .into_iter()
                             .enumerate()
-                            .map(|(i, step)| edge_ai_storage::ReasoningStep {
+                            .map(|(_i, step)| edge_ai_storage::ReasoningStep {
                                 step_number: step.step as u32,
                                 description: step.description,
                                 step_type: "llm_analysis".to_string(),
@@ -2046,14 +2662,66 @@ Respond in JSON format:
                         tracing::warn!(
                             error = %parse_error,
                             response_preview = %json_str.chars().take(500).collect::<String>(),
-                            "Failed to parse LLM JSON response, attempting to extract text content"
+                            "Failed to parse LLM JSON response, attempting recovery"
                         );
 
-                        // Try to extract useful content from the non-JSON response
-                        // Use the raw text as situation_analysis and create minimal reasoning steps
+                        // Try to recover truncated JSON by finding the last complete object
+                        let recovered = try_recover_truncated_json(json_str);
+
+                        if let Some((recovered_json, was_truncated)) = recovered {
+                            if was_truncated {
+                                tracing::info!(
+                                    agent_id = %agent.id,
+                                    "Successfully recovered truncated JSON response"
+                                );
+                            }
+                            match serde_json::from_str::<LlmResponse>(&recovered_json) {
+                                Ok(response) => {
+                                    let reasoning_steps: Vec<edge_ai_storage::ReasoningStep> = response.reasoning_steps
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(_i, step)| edge_ai_storage::ReasoningStep {
+                                            step_number: step.step as u32,
+                                            description: step.description,
+                                            step_type: "llm_analysis".to_string(),
+                                            input: Some(text_data_summary.join("\n")),
+                                            output: response.situation_analysis.clone(),
+                                            confidence: step.confidence,
+                                        })
+                                        .collect();
+
+                                    let decisions: Vec<edge_ai_storage::Decision> = response.decisions
+                                        .into_iter()
+                                        .map(|decision| edge_ai_storage::Decision {
+                                            decision_type: decision.decision_type,
+                                            description: decision.description,
+                                            action: decision.action,
+                                            rationale: decision.rationale,
+                                            expected_outcome: format!("Confidence: {:.0}%", decision.confidence * 100.0),
+                                        })
+                                        .collect();
+
+                                    return Ok((
+                                        response.situation_analysis,
+                                        reasoning_steps,
+                                        decisions,
+                                        if was_truncated {
+                                            format!("{} (Response was truncated, some content may be incomplete)", response.conclusion)
+                                        } else {
+                                            response.conclusion
+                                        },
+                                    ));
+                                }
+                                Err(e) => {
+                                    tracing::debug!(error = %e, "Recovered JSON still failed to parse, using raw text fallback");
+                                }
+                            }
+                        }
+
+                        // Final fallback: use raw text - use character-safe truncation
                         let raw_text = output.text.trim();
-                        let situation_analysis = if raw_text.len() > 500 {
-                            format!("{}...", &raw_text[..500])
+                        let situation_analysis = if raw_text.chars().count() > 1000 {
+                            raw_text.chars().take(1000).collect::<String>() + "..."
                         } else {
                             raw_text.to_string()
                         };
@@ -2061,7 +2729,7 @@ Respond in JSON format:
                         let reasoning_steps = vec![
                             edge_ai_storage::ReasoningStep {
                                 step_number: 1,
-                                description: "LLM analysis completed (response format varied)".to_string(),
+                                description: "LLM analysis completed".to_string(),
                                 step_type: "llm_analysis".to_string(),
                                 input: Some(format!("{} data sources", data.len())),
                                 output: situation_analysis.clone(),
@@ -2079,7 +2747,7 @@ Respond in JSON format:
                             }
                         ];
 
-                        let conclusion = format!("LLM analysis completed. Raw response: {}", situation_analysis);
+                        let conclusion = format!("LLM analysis completed. Raw response length: {} chars", raw_text.len());
 
                         tracing::info!(
                             agent_id = %agent.id,
@@ -2304,75 +2972,131 @@ Respond in JSON format:
                 );
 
                 if should_send_alert {
-                    let alert_message = format!("Agent '{}' triggered: {}", agent.name, decision.description);
+                    self.send_alert_for_decision(agent, decision, &mut notifications_sent).await;
+                }
+            }
 
-                    // Send via AlertManager if available
-                    if let Some(ref alert_manager) = self.alert_manager {
-                        use edge_ai_alerts::{Alert as AlertsAlert, AlertSeverity as AlertsAlertSeverity};
-                        let alert = AlertsAlert::new(
-                            AlertsAlertSeverity::Info,
-                            format!("Agent Alert: {}", agent.name),
-                            alert_message.clone(),
-                            agent.id.clone(),
-                        );
+            // NEW: Send alert for alert-type decisions regardless of parsed_intent
+            // Check if this decision is an alert decision
+            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert") ||
+                                   decision.action.to_lowercase().contains("alert") ||
+                                   decision.action.to_lowercase().contains("报警") ||
+                                   decision.action.to_lowercase().contains("notify") ||
+                                   decision.action.to_lowercase().contains("通知");
 
-                        tracing::info!(
-                            agent_id = %agent.id,
-                            alert_message = %alert_message,
-                            "Sending alert via AlertManager"
-                        );
+            if is_alert_decision {
+                tracing::info!(
+                    agent_id = %agent.id,
+                    decision_type = %decision.decision_type,
+                    decision_action = %decision.action,
+                    "Alert-type decision detected, sending notification"
+                );
+                self.send_alert_for_decision(agent, decision, &mut notifications_sent).await;
+            }
 
-                        match alert_manager.create_alert(alert).await {
-                            Ok(alert) => {
-                                notifications_sent.push(edge_ai_storage::NotificationSent {
-                                    channel: "alert_manager".to_string(),
-                                    recipient: "configured_channels".to_string(),
-                                    message: alert_message,
-                                    sent_at: chrono::Utc::now().timestamp(),
-                                    success: true,
-                                });
-                                tracing::info!(
-                                    agent_id = %agent.id,
-                                    alert_id = %alert.id.to_string(),
-                                    "Alert sent via AlertManager successfully"
-                                );
+            // Execute specific actions based on decision.action
+            if decision.action.to_lowercase().contains("execute_command") ||
+               decision.action.to_lowercase().contains("command") ||
+               decision.action.to_lowercase().contains("执行指令") ||
+               decision.action.to_lowercase().contains("控制") {
+                // Execute commands defined in agent resources
+                if let Some(ref device_service) = self.device_service {
+                    // Check if decision.description specifies which commands to execute
+                    // Format: "execute command: turn_on_light" or "执行指令: open_valve"
+                    let mentioned_command = extract_command_from_description(&decision.description);
+                    let mentioned_device = extract_device_from_description(&decision.description);
+
+                    let commands_to_execute: Vec<_> = agent.resources.iter()
+                        .filter(|r| r.resource_type == ResourceType::Command)
+                        .filter(|r| {
+                            // Filter by mentioned command if specified
+                            if let Some(ref cmd_name) = mentioned_command {
+                                r.resource_id.ends_with(&format!(":{}", cmd_name)) ||
+                                r.resource_id.contains(cmd_name)
+                            } else if let Some(ref dev_id) = mentioned_device {
+                                r.resource_id.starts_with(&format!("{}:", dev_id))
+                            } else {
+                                true // No filter, include all commands (safe default)
                             }
-                            Err(e) => {
-                                notifications_sent.push(edge_ai_storage::NotificationSent {
-                                    channel: "alert_manager".to_string(),
-                                    recipient: "configured_channels".to_string(),
-                                    message: alert_message.clone(),
-                                    sent_at: chrono::Utc::now().timestamp(),
-                                    success: false,
-                                });
-                                tracing::warn!(
-                                    agent_id = %agent.id,
-                                    error = %e,
-                                    "Failed to send alert via AlertManager"
-                                );
-                            }
-                        }
-                    } else {
-                        // Fallback: Publish event to EventBus if AlertManager not available
+                        })
+                        .collect();
+
+                    if commands_to_execute.is_empty() {
                         tracing::warn!(
                             agent_id = %agent.id,
-                            "AlertManager not available, using EventBus fallback"
+                            decision_description = %decision.description,
+                            "No matching commands found for execution"
                         );
-                        if let Some(ref bus) = self.event_bus {
-                            let _ = bus.publish(NeoTalkEvent::AlertCreated {
-                                alert_id: uuid::Uuid::new_v4().to_string(),
-                                title: format!("Agent Alert: {}", agent.name),
-                                severity: "info".to_string(),
-                                message: decision.description.clone(),
-                                timestamp: chrono::Utc::now().timestamp(),
-                            }).await;
+                    } else {
+                        tracing::info!(
+                            agent_id = %agent.id,
+                            command_count = commands_to_execute.len(),
+                            "Executing {} command(s) from decision",
+                            commands_to_execute.len()
+                        );
+                    }
 
-                            notifications_sent.push(edge_ai_storage::NotificationSent {
-                                channel: "event_bus".to_string(),
-                                recipient: "event_subscribers".to_string(),
-                                message: alert_message,
-                                sent_at: chrono::Utc::now().timestamp(),
-                                success: true,
+                    for resource in commands_to_execute {
+                        // Parse device_id and command from resource_id
+                        // Format: "device_id:command_name"
+                        let parts: Vec<&str> = resource.resource_id.split(':').collect();
+                        if parts.len() == 2 {
+                            let device_id = parts[0];
+                            let command_name = parts[1];
+
+                            // Get parameters from resource config
+                            let parameters = resource.config.get("parameters")
+                                .and_then(|v| v.as_object())
+                                .cloned()
+                                .unwrap_or_default();
+
+                            // Convert parameters to HashMap for DeviceService
+                            let params_map: std::collections::HashMap<String, serde_json::Value> = parameters
+                                .into_iter()
+                                .map(|(k, v)| (k, v))
+                                .collect();
+
+                            tracing::info!(
+                                agent_id = %agent.id,
+                                device_id = %device_id,
+                                command = %command_name,
+                                "Executing command from decision action"
+                            );
+
+                            // Actually execute the command via DeviceService
+                            let execution_result = device_service.send_command(
+                                device_id,
+                                command_name,
+                                params_map,
+                            ).await;
+
+                            let (success, result) = match execution_result {
+                                Ok(_) => (true, Some("Command sent successfully".to_string())),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        agent_id = %agent.id,
+                                        device_id = %device_id,
+                                        command = %command_name,
+                                        error = %e,
+                                        "Failed to send command"
+                                    );
+                                    (false, Some(format!("Failed: {}", e)))
+                                }
+                            };
+
+                            // Re-create parameters for ActionExecuted record
+                            let parameters_for_record = resource.config.get("parameters")
+                                .and_then(|v| v.as_object())
+                                .cloned()
+                                .unwrap_or_default();
+
+                            actions_executed.push(edge_ai_storage::ActionExecuted {
+                                action_type: "device_command".to_string(),
+                                description: format!("Execute {} on {} (triggered by decision: {})", command_name, device_id, decision.action),
+                                target: device_id.to_string(),
+                                parameters: serde_json::to_value(parameters_for_record).unwrap_or_default(),
+                                success,
+                                result,
                             });
                         }
                     }
@@ -2381,6 +3105,101 @@ Respond in JSON format:
         }
 
         Ok((actions_executed, notifications_sent))
+    }
+
+    /// Send an alert for a specific decision.
+    async fn send_alert_for_decision(
+        &self,
+        agent: &AiAgent,
+        decision: &edge_ai_storage::Decision,
+        notifications_sent: &mut Vec<edge_ai_storage::NotificationSent>,
+    ) {
+        let alert_message = format!("Agent '{}' - {}: {}", agent.name, decision.decision_type, decision.description);
+
+        // Send via AlertManager if available
+        if let Some(ref alert_manager) = self.alert_manager {
+            use edge_ai_alerts::{Alert as AlertsAlert, AlertSeverity as AlertsAlertSeverity};
+
+            // Determine severity based on decision type
+            let severity = if decision.decision_type.to_lowercase().contains("critical") ||
+                             decision.decision_type.to_lowercase().contains("emergency") ||
+                             decision.decision_type.to_lowercase().contains("紧急") {
+                AlertsAlertSeverity::Critical
+            } else if decision.decision_type.to_lowercase().contains("warning") ||
+                       decision.decision_type.to_lowercase().contains("警告") {
+                AlertsAlertSeverity::Warning
+            } else {
+                AlertsAlertSeverity::Info
+            };
+
+            let alert = AlertsAlert::new(
+                severity,
+                format!("Agent Alert: {}", agent.name),
+                alert_message.clone(),
+                agent.id.clone(),
+            );
+
+            tracing::info!(
+                agent_id = %agent.id,
+                alert_message = %alert_message,
+                severity = ?severity,
+                "Sending alert via AlertManager"
+            );
+
+            match alert_manager.create_alert(alert).await {
+                Ok(alert) => {
+                    notifications_sent.push(edge_ai_storage::NotificationSent {
+                        channel: "alert_manager".to_string(),
+                        recipient: "configured_channels".to_string(),
+                        message: alert_message,
+                        sent_at: chrono::Utc::now().timestamp(),
+                        success: true,
+                    });
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        alert_id = %alert.id.to_string(),
+                        "Alert sent via AlertManager successfully"
+                    );
+                }
+                Err(e) => {
+                    notifications_sent.push(edge_ai_storage::NotificationSent {
+                        channel: "alert_manager".to_string(),
+                        recipient: "configured_channels".to_string(),
+                        message: alert_message.clone(),
+                        sent_at: chrono::Utc::now().timestamp(),
+                        success: false,
+                    });
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        error = %e,
+                        "Failed to send alert via AlertManager"
+                    );
+                }
+            }
+        } else {
+            // Fallback: Publish event to EventBus if AlertManager not available
+            tracing::warn!(
+                agent_id = %agent.id,
+                "AlertManager not available, using EventBus fallback"
+            );
+            if let Some(ref bus) = self.event_bus {
+                let _ = bus.publish(NeoTalkEvent::AlertCreated {
+                    alert_id: uuid::Uuid::new_v4().to_string(),
+                    title: format!("Agent Alert: {}", agent.name),
+                    severity: "info".to_string(),
+                    message: decision.description.clone(),
+                    timestamp: chrono::Utc::now().timestamp(),
+                }).await;
+
+                notifications_sent.push(edge_ai_storage::NotificationSent {
+                    channel: "event_bus".to_string(),
+                    recipient: "event_subscribers".to_string(),
+                    message: alert_message,
+                    sent_at: chrono::Utc::now().timestamp(),
+                    success: true,
+                });
+            }
+        }
     }
 
     /// Generate report if needed.
@@ -2635,12 +3454,13 @@ Respond in JSON format:
     ) -> Vec<Message> {
         let mut messages = Vec::new();
 
-        // 1. Role-specific system prompt with conversation context
-        let role_str = format!("{:?}", agent.role);
-        let system_prompt = get_role_system_prompt(
-            &role_str,
-            &agent.user_prompt,
-            Language::Chinese,
+        // 1. Generic system prompt with conversation context
+        let role_prompt = "你是一个 NeoTalk 智能物联网系统的自动化助手。根据用户的指令分析数据、做出决策并执行相应操作。";
+        let system_prompt = format!(
+            "{}\n\n## 你的任务\n{}\n\n{}",
+            role_prompt,
+            agent.user_prompt,
+            CONVERSATION_CONTEXT_ZH
         );
         messages.push(Message::system(system_prompt));
 
@@ -2755,6 +3575,37 @@ Respond in JSON format:
             success,
         }
     }
+}
+
+/// Calculate statistics from time series data points.
+/// Returns None if no numeric values are found.
+fn calculate_stats(points: &[edge_ai_storage::DataPoint]) -> Option<Stats> {
+    let nums: Vec<f64> = points.iter()
+        .filter_map(|p| p.value.as_f64())
+        .collect();
+
+    if nums.is_empty() {
+        return None;
+    }
+
+    let min_val = nums.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+    let max_val = nums.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let avg_val = nums.iter().sum::<f64>() / nums.len() as f64;
+
+    Some(Stats {
+        min: min_val,
+        max: max_val,
+        avg: avg_val,
+        count: nums.len(),
+    })
+}
+
+/// Statistics for numeric data.
+struct Stats {
+    min: f64,
+    max: f64,
+    avg: f64,
+    count: usize,
 }
 
 /// Check if a metric value contains image data.

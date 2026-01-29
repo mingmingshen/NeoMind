@@ -35,9 +35,6 @@ pub struct AiAgent {
     pub id: String,
     /// Agent name
     pub name: String,
-    /// Agent role (Monitor, Executor, Analyst)
-    #[serde(default)]
-    pub role: AgentRole,
     /// User-provided description (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -67,6 +64,9 @@ pub struct AiAgent {
     /// Conversation history - recent executions for context
     #[serde(default)]
     pub conversation_history: Vec<ConversationTurn>,
+    /// User messages sent between executions
+    #[serde(default)]
+    pub user_messages: Vec<UserMessage>,
     /// Compressed summary of old conversation turns
     #[serde(default)]
     pub conversation_summary: Option<String>,
@@ -111,24 +111,6 @@ pub enum IntentType {
     Control,
     /// Complex multi-step automation
     Automation,
-}
-
-/// Agent role defining its core responsibility.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentRole {
-    /// Data monitoring and alerting
-    Monitor,
-    /// Device control and automation
-    Executor,
-    /// Data analysis and reporting
-    Analyst,
-}
-
-impl Default for AgentRole {
-    fn default() -> Self {
-        AgentRole::Monitor
-    }
 }
 
 /// A resource selected by the agent.
@@ -326,6 +308,22 @@ pub struct ConversationTurn {
     pub duration_ms: u64,
     /// Whether this turn completed successfully
     pub success: bool,
+}
+
+/// User message sent to an agent between executions.
+///
+/// Users can send messages to agents during the gap between executions
+/// to provide additional context, corrections, or updates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserMessage {
+    /// Unique message ID
+    pub id: String,
+    /// Timestamp when the message was sent
+    pub timestamp: i64,
+    /// The message content from the user
+    pub content: String,
+    /// Optional message type/tag for categorization
+    pub message_type: Option<String>,
 }
 
 /// Agent execution record with full decision process.
@@ -820,6 +818,73 @@ impl AgentStore {
         Ok(())
     }
 
+    /// Save execution record and optionally append conversation turn in a single transaction.
+    /// This is more efficient than calling save_execution and append_conversation_turn separately.
+    pub async fn save_execution_with_conversation(
+        &self,
+        execution: &AgentExecutionRecord,
+        agent_id: Option<&str>,
+        conversation_turn: Option<&ConversationTurn>,
+    ) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+
+        // Save execution record
+        {
+            let mut table = write_txn.open_table(AGENT_EXECUTIONS_TABLE)?;
+            let value = serde_json::to_vec(execution)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(execution.id.as_str(), value.as_slice())?;
+        }
+
+        // Optionally update conversation history in the same transaction
+        if let (Some(agent_id), Some(turn)) = (agent_id, conversation_turn) {
+            // Get current agent state using the write transaction (it can also read)
+            let mut agent = {
+                let mut table = write_txn.open_table(AGENTS_TABLE)?;
+                match table.get(agent_id)? {
+                    Some(bytes) => {
+                        let a: AiAgent = serde_json::from_slice(bytes.value())
+                            .map_err(|e| Error::Serialization(e.to_string()))?;
+                        a
+                    }
+                    None => {
+                        return Err(Error::NotFound(format!("Agent {} not found", agent_id)));
+                    }
+                }
+            };
+
+            // Update conversation history
+            agent.conversation_history.push(turn.clone());
+
+            // Trim history to prevent unbounded growth
+            if agent.conversation_history.len() > Self::MAX_CONVERSATION_TURNS {
+                let removed_count = agent.conversation_history.len() - Self::MAX_CONVERSATION_TURNS;
+                agent.conversation_history = agent.conversation_history
+                    .split_off(Self::MAX_CONVERSATION_TURNS);
+
+                tracing::debug!(
+                    agent_id = %agent_id,
+                    removed_count = removed_count,
+                    remaining_count = agent.conversation_history.len(),
+                    "Trimmed conversation history to prevent unbounded growth"
+                );
+            }
+
+            agent.updated_at = chrono::Utc::now().timestamp();
+
+            // Save updated agent
+            {
+                let mut table = write_txn.open_table(AGENTS_TABLE)?;
+                let value = serde_json::to_vec(&agent)
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                table.insert(agent_id, value.as_slice())?;
+            }
+        }
+
+        write_txn.commit()?;
+        Ok(())
+    }
+
     /// Get an execution record by ID.
     pub async fn get_execution(&self, id: &str) -> Result<Option<AgentExecutionRecord>, Error> {
         let read_txn = self.db.begin_read()?;
@@ -971,7 +1036,12 @@ impl AgentStore {
 
     // ========== Conversation History Methods ==========
 
+    /// Maximum number of conversation turns to keep in history.
+    /// Older turns are automatically removed to prevent unbounded growth.
+    const MAX_CONVERSATION_TURNS: usize = 20;
+
     /// Append a new conversation turn to an agent's history.
+    /// Automatically trims history to MAX_CONVERSATION_TURNS to prevent unbounded growth.
     pub async fn append_conversation_turn(
         &self,
         agent_id: &str,
@@ -981,6 +1051,21 @@ impl AgentStore {
             .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
 
         agent.conversation_history.push(turn.clone());
+
+        // Trim history to prevent unbounded growth
+        if agent.conversation_history.len() > Self::MAX_CONVERSATION_TURNS {
+            let removed_count = agent.conversation_history.len() - Self::MAX_CONVERSATION_TURNS;
+            agent.conversation_history = agent.conversation_history
+                .split_off(Self::MAX_CONVERSATION_TURNS);
+
+            tracing::debug!(
+                agent_id = %agent_id,
+                removed_count = removed_count,
+                remaining_count = agent.conversation_history.len(),
+                "Trimmed conversation history to prevent unbounded growth"
+            );
+        }
+
         agent.updated_at = chrono::Utc::now().timestamp();
 
         // Save the updated agent
@@ -1069,6 +1154,132 @@ impl AgentStore {
 
         Ok(())
     }
+
+    // ========== User Message Methods ==========
+
+    /// Maximum number of user messages to keep.
+    const MAX_USER_MESSAGES: usize = 50;
+
+    /// Add a user message to an agent.
+    pub async fn add_user_message(
+        &self,
+        agent_id: &str,
+        content: String,
+        message_type: Option<String>,
+    ) -> Result<UserMessage, Error> {
+        let mut agent = self.get_agent(agent_id).await?
+            .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
+
+        let message = UserMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+            content,
+            message_type,
+        };
+
+        agent.user_messages.push(message.clone());
+
+        // Trim old messages if needed
+        if agent.user_messages.len() > Self::MAX_USER_MESSAGES {
+            let removed_count = agent.user_messages.len() - Self::MAX_USER_MESSAGES;
+            agent.user_messages = agent.user_messages.split_off(Self::MAX_USER_MESSAGES);
+
+            tracing::debug!(
+                agent_id = %agent_id,
+                removed_count = removed_count,
+                remaining_count = agent.user_messages.len(),
+                "Trimmed user messages to prevent unbounded growth"
+            );
+        }
+
+        agent.updated_at = chrono::Utc::now().timestamp();
+
+        // Save the updated agent
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(AGENTS_TABLE)?;
+            let value = serde_json::to_vec(&agent)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(agent_id, value.as_slice())?;
+        }
+        write_txn.commit()?;
+
+        Ok(message)
+    }
+
+    /// Get user messages for an agent.
+    pub async fn get_user_messages(
+        &self,
+        agent_id: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<UserMessage>, Error> {
+        let agent = self.get_agent(agent_id).await?;
+        let agent = agent.ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
+
+        let messages = &agent.user_messages;
+        if let Some(limit) = limit {
+            if messages.len() > limit {
+                Ok(messages[messages.len() - limit..].to_vec())
+            } else {
+                Ok(messages.clone())
+            }
+        } else {
+            Ok(messages.clone())
+        }
+    }
+
+    /// Delete a specific user message.
+    pub async fn delete_user_message(
+        &self,
+        agent_id: &str,
+        message_id: &str,
+    ) -> Result<bool, Error> {
+        let mut agent = self.get_agent(agent_id).await?
+            .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
+
+        let original_len = agent.user_messages.len();
+        agent.user_messages.retain(|m| m.id != message_id);
+
+        if agent.user_messages.len() < original_len {
+            agent.updated_at = chrono::Utc::now().timestamp();
+
+            // Save the updated agent
+            let write_txn = self.db.begin_write()?;
+            {
+                let mut table = write_txn.open_table(AGENTS_TABLE)?;
+                let value = serde_json::to_vec(&agent)
+                    .map_err(|e| Error::Serialization(e.to_string()))?;
+                table.insert(agent_id, value.as_slice())?;
+            }
+            write_txn.commit()?;
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Clear all user messages for an agent.
+    pub async fn clear_user_messages(&self, agent_id: &str) -> Result<usize, Error> {
+        let mut agent = self.get_agent(agent_id).await?
+            .ok_or_else(|| Error::NotFound(format!("Agent {} not found", agent_id)))?;
+
+        let count = agent.user_messages.len();
+        agent.user_messages.clear();
+        agent.updated_at = chrono::Utc::now().timestamp();
+
+        // Save the updated agent
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(AGENTS_TABLE)?;
+            let value = serde_json::to_vec(&agent)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            table.insert(agent_id, value.as_slice())?;
+        }
+        write_txn.commit()?;
+
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
@@ -1086,8 +1297,9 @@ mod tests {
         let agent = AiAgent {
             id: "agent-1".to_string(),
             name: "Temperature Monitor".to_string(),
-            role: AgentRole::Monitor,
+            description: None,
             user_prompt: "Monitor warehouse temperatures and alert if above 30°C".to_string(),
+            llm_backend_id: None,
             parsed_intent: None,
             resources: vec![],
             schedule: AgentSchedule {
@@ -1104,6 +1316,7 @@ mod tests {
             stats: AgentStats::default(),
             memory: AgentMemory::default(),
             conversation_history: vec![],
+            user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
             error_message: None,
@@ -1113,7 +1326,6 @@ mod tests {
         let retrieved = store.get_agent("agent-1").await.unwrap().unwrap();
         assert_eq!(retrieved.id, "agent-1");
         assert_eq!(retrieved.name, "Temperature Monitor");
-        assert_eq!(retrieved.role, AgentRole::Monitor);
     }
 
     #[tokio::test]
@@ -1123,8 +1335,9 @@ mod tests {
         let agent = AiAgent {
             id: "agent-1".to_string(),
             name: "Test Agent".to_string(),
-            role: AgentRole::Monitor,
+            description: None,
             user_prompt: "Test".to_string(),
+            llm_backend_id: None,
             parsed_intent: None,
             resources: vec![],
             schedule: AgentSchedule {
@@ -1141,6 +1354,7 @@ mod tests {
             stats: AgentStats::default(),
             memory: AgentMemory::default(),
             conversation_history: vec![],
+            user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
             error_message: None,
@@ -1192,8 +1406,9 @@ mod tests {
         let mut agent = AiAgent {
             id: "agent-1".to_string(),
             name: "Learning Agent".to_string(),
-            role: AgentRole::Analyst,
+            description: None,
             user_prompt: "Learn patterns".to_string(),
+            llm_backend_id: None,
             parsed_intent: None,
             resources: vec![],
             schedule: AgentSchedule {
@@ -1210,6 +1425,7 @@ mod tests {
             stats: AgentStats::default(),
             memory: AgentMemory::default(),
             conversation_history: vec![],
+            user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
             error_message: None,
@@ -1248,8 +1464,9 @@ mod tests {
         let agent = AiAgent {
             id: "agent-1".to_string(),
             name: "Stats Agent".to_string(),
-            role: AgentRole::Monitor,
+            description: None,
             user_prompt: "Test stats".to_string(),
+            llm_backend_id: None,
             parsed_intent: None,
             resources: vec![],
             schedule: AgentSchedule {
@@ -1266,6 +1483,7 @@ mod tests {
             stats: AgentStats::default(),
             memory: AgentMemory::default(),
             conversation_history: vec![],
+            user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
             error_message: None,

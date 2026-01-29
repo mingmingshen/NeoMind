@@ -1,6 +1,49 @@
 {
   "title": "AI Agents",
   "description": "User-defined AI automation agents with persistent memory",
+  "createButton": "Create",
+  "detailTitle": "Agent Details",
+  "card": {
+    "createAgent": "Create Agent",
+    "noDescription": "No description",
+    "executions": "Executions",
+    "successRate": "Success Rate",
+    "avgDuration": "Avg Duration",
+    "neverExecuted": "Never executed"
+  },
+  "confirm": {
+    "pauseTitle": "Confirm pause agent?",
+    "pauseDesc": "After pausing, the agent \"{{name}}\" will stop executing tasks automatically.",
+    "resumeTitle": "Confirm start agent?",
+    "resumeDesc": "After starting, the agent \"{{name}}\" will begin executing tasks automatically.",
+    "confirmPause": "Confirm Pause",
+    "confirmResume": "Confirm Start"
+  },
+  "detail": {
+    "selectAgent": "Select an agent to view details",
+    "edit": "Edit",
+    "execute": "Execute",
+    "refresh": "Refresh",
+    "executions": "Execs",
+    "success": "Success",
+    "failed": "Failed",
+    "avgDuration": "Avg",
+    "overview": "Overview",
+    "history": "History",
+    "memory": "Memory",
+    "schedule": "Schedule",
+    "type": "Type",
+    "interval": "Interval",
+    "resources": "Resources",
+    "moreResources": "{{count}} more resources...",
+    "noMemory": "No memory data",
+    "messages": "Messages",
+    "stateVariables": "State Variables",
+    "learnedPatterns": "Learned Patterns",
+    "baselines": "Baselines",
+    "trendData": "Trend Data",
+    "noDataAvailable": "No data"
+  },
   "tabs": {
     "agents": "Agents",
     "executions": "Executions",
@@ -51,15 +94,6 @@
   "noDevices": "No devices available. Add devices first.",
   "metrics": "Metrics to Monitor",
   "commands": "Available Commands",
-  "role": "Role",
-  "roles": {
-    "monitor": "Monitor",
-    "executor": "Executor",
-    "analyst": "Analyst",
-    "scheduler": "Scheduler",
-    "notifier": "Notifier",
-    "controller": "Controller"
-  },
   "stats": "Stats",
   "time": {
     "justNow": "Just now",
@@ -82,6 +116,15 @@
   "execution": {
     "title": "Execution Details",
     "description": "Detailed view of agent execution process and results"
+  },
+  "thinking": {
+    "executing": "Executing...",
+    "completed": "Completed",
+    "failed": "Failed",
+    "waiting": "Waiting for thinking data...",
+    "steps": "steps",
+    "reasoningSteps": "Reasoning Steps",
+    "decisions": "Decisions"
   },
   "memory": {
     "title": "Agent Memory",
@@ -107,8 +150,23 @@
     "input": "Input",
     "output": "Output",
     "action": "Action",
+    "parameters": "Parameters",
+    "result": "Result",
     "sources": "sources",
-    "points": "points"
+    "points": "points",
+    "step": "Step",
+    "dataPoints": "data points",
+    "metric": "metric",
+    "value": "Value",
+    "target": "Target",
+    "channel": "Channel",
+    "recipient": "Recipient"
+  },
+  "userMessages": {
+    "empty": "No messages yet",
+    "emptyHint": "Send a message to provide additional context for this agent",
+    "placeholder": "Type a message to the agent...",
+    "hint": "Press Cmd+Enter to send"
   },
   "creator": {
     "title": "Create Agent",
@@ -119,38 +177,6 @@
       "resources": "Resources"
     },
     "basicInfo": {
-      "selectRole": "Select Agent Role",
-      "roles": {
-        "monitor": {
-          "label": "Monitor",
-          "description": "Continuously monitor device status, detect anomalies, and send alerts"
-        },
-        "executor": {
-          "label": "Executor",
-          "description": "Automatically control devices based on conditions and execute preset commands"
-        },
-        "analyst": {
-          "label": "Analyst",
-          "description": "Analyze data trends, generate reports, and provide decision recommendations"
-        },
-        "scheduler": {
-          "label": "Scheduler",
-          "description": "Schedule and coordinate automated tasks based on time or events"
-        },
-        "notifier": {
-          "label": "Notifier",
-          "description": "Send notifications and alerts to users or external systems"
-        },
-        "controller": {
-          "label": "Controller",
-          "description": "Manage and control multiple devices in coordination"
-        },
-        "custom": {
-          "label": "Custom",
-          "description": "Define your own custom role",
-          "placeholder": "Custom role name"
-        }
-      },
       "name": "Name",
       "namePlaceholder": "e.g., Warehouse Temperature Monitor, Equipment Anomaly Analysis",
       "description": "Description",
@@ -166,6 +192,28 @@
       "defaultBackend": "Default Model",
       "useActiveBackend": "Use the currently active model",
       "active": "Active"
+    },
+    "promptTemplates": {
+      "label": "Template",
+      "empty": {
+        "label": "Custom",
+        "description": "Blank, write your own prompt"
+      },
+      "monitor": {
+        "label": "Monitor",
+        "description": "Continuously monitor data changes, detect anomalies, and send alerts",
+        "template": "Please monitor the following data metrics and alert when anomalies are detected:\n\nMonitoring Targets:\n- Data Range:\n- Anomaly Threshold:\n- Alert Method:\n\nPlease analyze historical data to identify normal fluctuation ranges, and send alert notifications when data exceeds normal ranges."
+      },
+      "control": {
+        "label": "Control",
+        "description": "Automatically execute device control operations based on conditions",
+        "template": "Please automatically control devices based on the following conditions:\n\nTrigger Conditions:\n- Device Status:\n- Data Threshold:\n\nExecution Actions:\n- Target Device:\n- Control Command:\n\nPlease verify conditions before execution and avoid frequent repetitive operations."
+      },
+      "analysis": {
+        "label": "Analysis",
+        "description": "Periodically analyze data trends and generate reports",
+        "template": "Please periodically analyze the following data and generate reports:\n\nAnalysis Scope:\n- Data Metrics:\n- Time Range:\n\nReport Contents:\n1. Data trend analysis\n2. Anomaly event records\n3. Root cause analysis\n4. Optimization recommendations\n\nPlease compare with historical data and provide valuable insights and action recommendations."
+      }
     },
     "schedule": {
       "selectStrategy": "Select Execution Strategy",
@@ -193,6 +241,7 @@
         "preview": "Daily at {{hour}}:{{minute}}"
       },
       "weekly": {
+        "on": "Every",
         "every": "Every",
         "at": ":00",
         "execute": "execute",
@@ -207,6 +256,8 @@
       },
       "event": {
         "triggerEvent": "Trigger Event",
+        "relatedDevice": "Related Device",
+        "manualHint": "Requires manual trigger via API",
         "events": {
           "device.online": "Device Online",
           "device.offline": "Device Offline",
@@ -251,29 +302,62 @@
       },
       "timezone": "Timezone"
     },
+    "dataStrategy": {
+      "hint": {
+        "interval": "Will use last {{minutes}} minutes of data for trend analysis",
+        "daily": "Will use yesterday's full day data to generate daily report",
+        "weekly": "Will use past 7 days data to generate weekly report",
+        "event": "Will use latest data + historical baseline comparison"
+      }
+    },
+    "metricConfig": {
+      "timeRange": "Data Time Range",
+      "configureHint": "Configure data strategy in main interface after selection",
+      "descriptions": {
+        "fullWeek": "Full weekly report data",
+        "fullDay": "Full day data + trend + baseline",
+        "trend": "Historical data + trend",
+        "history": "Historical data",
+        "baseline": "Current value + baseline comparison"
+      },
+      "timeRanges": {
+        "30": "30 minutes",
+        "60": "1 hour",
+        "180": "3 hours",
+        "360": "6 hours",
+        "720": "12 hours",
+        "1440": "24 hours",
+        "10080": "7 days"
+      }
+    },
     "resources": {
-      "searchPlaceholder": "Search device name or type...",
+      "title": "Data Resources",
+      "searchPlaceholder": "Search resource name or type...",
       "selectedCount": "{{count}} selected",
-      "noDevicesFound": "No devices found",
-      "selectDevice": "Select a device from the left panel",
+      "noResourcesFound": "No resources found",
+      "selectResource": "Select a resource from the list",
+      "selectDevice": "Select a device",
       "metrics": "Metrics",
       "commands": "Commands",
       "metricCount": "{{count}} metrics",
       "commandCount": "{{count}} commands",
       "topologyPreview": "Topology Preview",
-      "selectResourceHint": "Please select at least one device resource",
+      "selectResourceHint": "Please select at least one data resource",
       "noMetrics": "No metrics",
       "noOutputs": "No outputs",
       "moreMetrics": "+{{count}} metrics",
       "moreCommands": "+{{count}} commands",
       "dataInput": "Data Input",
       "dataOutput": "Data Output",
-      "selectAfterShow": "Select device resources to show topology",
-      "devices": "devices",
+      "selectAfterShow": "Select resources to show details",
+      "resources": "resources",
       "selected": "selected",
       "clearAll": "Clear All",
       "selectAll": "Select All",
-      "deselectAll": "Deselect All"
+      "deselectAll": "Deselect All",
+      "dataStream": "Data Stream",
+      "device": "Device",
+      "externalData": "External Data"
     },
     "advanced": {
       "title": "Advanced",
@@ -292,7 +376,7 @@
       "nameRequired": "Please enter agent name",
       "requirementRequired": "Please describe your requirements",
       "resourceRequired": "Please select at least one device resource",
-      "customRoleRequired": "Please enter custom role name"
+      "eventTypeRequired": "Please select trigger event type"
     },
     "actions": {
       "cancel": "Cancel",

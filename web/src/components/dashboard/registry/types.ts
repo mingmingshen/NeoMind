@@ -16,6 +16,7 @@ export type ComponentCategory =
   | 'controls'      // Interactive inputs
   | 'display'       // Content display (images, web, markdown)
   | 'spatial'       // Spatial & media (maps, video, layers)
+  | 'business'      // Business-specific components (agents, etc.)
 
 // ============================================================================
 // Component Metadata

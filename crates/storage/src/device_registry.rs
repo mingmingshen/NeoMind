@@ -98,12 +98,18 @@ pub struct CommandDefinition {
     pub payload_template: String,
     #[serde(default)]
     pub parameters: Vec<ParameterDefinition>,
+    /// Fixed values - parameters that are always sent with the same value
+    #[serde(default)]
+    pub fixed_values: std::collections::HashMap<String, serde_json::Value>,
     /// Sample command payloads (for Simple mode / LLM reference)
     #[serde(default)]
     pub samples: Vec<serde_json::Value>,
     /// LLM hints for command usage
     #[serde(default)]
     pub llm_hints: String,
+    /// Parameter groups for organizing related parameters
+    #[serde(default)]
+    pub parameter_groups: Vec<ParameterGroup>,
 }
 
 /// Parameter definition (matches edge_ai_devices::mdl_format::ParameterDefinition)
@@ -126,6 +132,49 @@ pub struct ParameterDefinition {
     /// Allowed values (for enum types)
     #[serde(default)]
     pub allowed_values: Vec<ParamMetricValue>,
+    /// Whether this parameter is required
+    #[serde(default)]
+    pub required: bool,
+    /// Conditional visibility - show this parameter only when condition is met
+    #[serde(default)]
+    pub visible_when: Option<String>,
+    /// Parameter group for organizing related parameters
+    #[serde(default)]
+    pub group: Option<String>,
+    /// Help text for this parameter
+    #[serde(default)]
+    pub help_text: String,
+    /// Validation rules
+    #[serde(default)]
+    pub validation: Vec<ValidationRule>,
+}
+
+/// Validation rule for parameter values
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ValidationRule {
+    /// Pattern validation for strings (regex)
+    Pattern { regex: String, error_message: String },
+    /// Range validation for numbers
+    Range { min: f64, max: f64, error_message: String },
+    /// Length validation for strings/arrays
+    Length { min: usize, max: usize, error_message: String },
+    /// Custom validation (by name)
+    Custom { validator: String, params: serde_json::Value },
+}
+
+/// Parameter group for organizing parameters in the UI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParameterGroup {
+    pub id: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub collapsed: bool,
+    pub parameters: Vec<String>,
+    #[serde(default)]
+    pub order: i32,
 }
 
 

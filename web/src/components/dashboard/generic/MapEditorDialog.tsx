@@ -162,7 +162,7 @@ export function MapEditorDialog({
         markerType: binding.icon || binding.type,
         // Use actual device status
         status: binding.type === 'device' ? getDeviceStatus(ds.deviceId) : undefined,
-        metricValue: binding.type === 'metric' ? (metricValue || '--') : undefined,
+        metricValue: binding.type === 'metric' ? (metricValue || '-') : undefined,
         deviceId: ds?.deviceId,
         deviceName: ds?.deviceId ? getDeviceName(ds.deviceId) : undefined,
         metricName: ds?.metricId || ds?.property,

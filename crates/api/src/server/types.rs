@@ -721,10 +721,15 @@ impl ServerState {
             let mut cached_service = self.rule_engine_event_service.lock().await;
             if cached_service.is_none() {
                 let device_registry = self.device_service.get_registry().await;
-                *cached_service = Some(RuleEngineEventService::new(
+                let mut service = RuleEngineEventService::new(
                     (*event_bus).clone(),
                     rule_engine.clone(),
-                ).with_device_registry(device_registry));
+                ).with_device_registry(device_registry);
+                // Add rule store for persisting rule state after execution
+                if let Some(ref store) = self.rule_store {
+                    service = service.with_rule_store(store.clone());
+                }
+                *cached_service = Some(service);
             }
         }
 
@@ -789,27 +794,13 @@ impl ServerState {
                                 if metric.starts_with(prefix) {
                                     let stripped_metric = &metric[prefix.len()..];
                                     provider.set_value(&device_id, stripped_metric, num_value);
-                                    tracing::debug!(
-                                        "Also stored with stripped metric: {} {} = {}",
-                                        device_id, stripped_metric, num_value
-                                    );
                                     break;
                                 }
                             }
-
-                            tracing::info!(
-                                "Updated value provider: {} {} = {}",
-                                device_id, metric, num_value
-                            );
                         }
 
                         // Update rule states (for FOR clauses)
                         rule_engine_for_update.update_states().await;
-                    } else {
-                        tracing::warn!(
-                            "Could not extract numeric value from: {} {} = {:?}",
-                            device_id, metric, value
-                        );
                     }
                 }
             }
@@ -1169,6 +1160,44 @@ impl ServerState {
         };
 
         let executor = manager.executor().clone();
+        let store = executor.store().clone();
+
+        // Cleanup agents stuck in Executing status on startup
+        tokio::spawn(async move {
+            if let Ok(agents) = store.query_agents(edge_ai_storage::AgentFilter {
+                status: Some(edge_ai_storage::AgentStatus::Executing),
+                ..Default::default()
+            }).await {
+                let now = chrono::Utc::now().timestamp();
+                for agent in agents {
+                    // Check if agent has been executing for more than 10 minutes
+                    if let Some(last_exec) = agent.last_execution_at {
+                        let exec_duration_secs = now - last_exec;
+                        if exec_duration_secs > 600 { // 10 minutes
+                            tracing::warn!(
+                                agent_id = %agent.id,
+                                agent_name = %agent.name,
+                                exec_duration_secs = exec_duration_secs,
+                                "Agent stuck in Executing status, resetting to Active"
+                            );
+                            let _ = store.update_agent_status(&agent.id, edge_ai_storage::AgentStatus::Active, Some(
+                                "Execution timeout - status reset".to_string()
+                            )).await;
+                        }
+                    } else {
+                        // No last execution time but status is Executing - reset it
+                        tracing::warn!(
+                            agent_id = %agent.id,
+                            agent_name = %agent.name,
+                            "Agent in Executing status with no execution time, resetting to Active"
+                        );
+                        let _ = store.update_agent_status(&agent.id, edge_ai_storage::AgentStatus::Active, Some(
+                            "Invalid executing state - status reset".to_string()
+                        )).await;
+                    }
+                }
+            }
+        });
 
         tokio::spawn(async move {
             let mut rx = event_bus.subscribe();

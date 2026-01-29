@@ -276,8 +276,8 @@ export function AlertsTab() {
 
       {/* Alert Detail Dialog */}
       <Dialog open={!!selectedAlert} onOpenChange={() => setSelectedAlert(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Bell className="h-5 w-5" />
               {selectedAlert?.title}
@@ -287,7 +287,7 @@ export function AlertsTab() {
             </DialogDescription>
           </DialogHeader>
           {selectedAlert && (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <span className="text-muted-foreground">{t('common:status')}:</span>{' '}
@@ -308,12 +308,14 @@ export function AlertsTab() {
               </div>
 
               <div>
-                <h4 className="font-medium mb-2">{t('alerts:detailDescription')}</h4>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedAlert.message}</p>
+                <h4 className="text-sm font-medium mb-2">{t('alerts:detailDescription')}</h4>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+                  {selectedAlert.message}
+                </p>
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             {!selectedAlert?.acknowledged && (
               <Button
                 onClick={() => {

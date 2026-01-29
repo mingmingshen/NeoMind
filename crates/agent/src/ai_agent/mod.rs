@@ -134,14 +134,6 @@ impl AiAgentManager {
         // Build resources first (before moving anything from request)
         let resources = Self::build_resources(&request);
 
-        // Parse role from string
-        let agent_role = match request.role.as_str() {
-            "Monitor" => edge_ai_storage::AgentRole::Monitor,
-            "Executor" => edge_ai_storage::AgentRole::Executor,
-            "Analyst" => edge_ai_storage::AgentRole::Analyst,
-            _ => edge_ai_storage::AgentRole::Monitor, // Default fallback
-        };
-
         // Build agent from request
         let agent = AiAgent {
             id: uuid::Uuid::new_v4().to_string(),
@@ -159,9 +151,8 @@ impl AiAgentManager {
             stats: Default::default(),
             memory: Default::default(),
             error_message: None,
-            // New conversation fields
-            role: agent_role,
             conversation_history: Default::default(),
+            user_messages: Default::default(),
             conversation_summary: Default::default(),
             context_window_size: Default::default(),
         };

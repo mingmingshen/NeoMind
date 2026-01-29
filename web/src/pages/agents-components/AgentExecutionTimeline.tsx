@@ -28,12 +28,14 @@ interface AgentExecutionTimelineProps {
   executions: AgentExecution[]
   loading: boolean
   agentId: string
+  onViewExecutionDetail?: (agentId: string, executionId: string) => void
 }
 
 export function AgentExecutionTimeline({
   executions,
   loading,
   agentId,
+  onViewExecutionDetail,
 }: AgentExecutionTimelineProps) {
   const { t } = useTranslation(['common', 'agents'])
   const [expandedExecutions, setExpandedExecutions] = useState<Set<string>>(new Set())
@@ -87,6 +89,12 @@ export function AgentExecutionTimeline({
     }
   }
 
+  // Format duration
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`
+    return `${(ms / 1000).toFixed(2)}s`
+  }
+
   return (
     <div className="h-full flex flex-col">
       <ScrollArea className="flex-1">
@@ -102,8 +110,8 @@ export function AgentExecutionTimeline({
             </div>
           ) : (
             <div className="relative">
-              {/* Timeline Line */}
-              <div className="absolute left-[19px] top-2 bottom-2 w-0.5 bg-border" />
+              {/* Timeline Line - aligned to center of dots (left-[16px] = 8px position + 8px half of 16px dot) */}
+              <div className="absolute left-[16px] top-2 bottom-2 w-0.5 bg-border" />
 
               {/* Timeline Items */}
               <div className="space-y-4">
@@ -116,9 +124,9 @@ export function AgentExecutionTimeline({
 
                   return (
                     <div key={execution.id} className="relative pl-12">
-                      {/* Timeline Node */}
+                      {/* Timeline Node - position at left-2 (8px) with w-4 (16px) so center is at 16px */}
                       <div className={cn(
-                        "absolute left-2.5 top-3 w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                        "absolute left-2 top-3 w-4 h-4 rounded-full border-2 flex items-center justify-center bg-background",
                         statusConfig.bg.replace('/10', '/30'),
                         statusConfig.color.replace('text-', 'border-')
                       )}>
@@ -160,7 +168,7 @@ export function AgentExecutionTimeline({
                               {execution.duration_ms > 0 && (
                                 <span className="flex items-center gap-1">
                                   <Zap className="h-3.5 w-3.5" />
-                                  {execution.duration_ms}ms
+                                  {formatDuration(execution.duration_ms)}
                                 </span>
                               )}
                               {execution.error && (
@@ -271,7 +279,7 @@ export function AgentExecutionTimeline({
                                     title={t('agents:memory.generatedReport')}
                                   >
                                     <Card className="p-3">
-                                      <pre className="text-sm whitespace-pre-wrap font-mono text-xs">
+                                      <pre className="text-sm whitespace-pre-wrap font-mono text-xs overflow-x-auto max-h-60">
                                         {detail.result.report}
                                       </pre>
                                     </Card>
@@ -286,15 +294,43 @@ export function AgentExecutionTimeline({
                                   >
                                     <div className="space-y-2">
                                       {detail.result.actions_executed.map((action, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-2 border rounded">
-                                          <div className="text-sm">
-                                            <div className="font-medium">{action.description}</div>
-                                            <div className="text-xs text-muted-foreground">{action.target}</div>
+                                        <Card key={idx} className="p-3">
+                                          <div className="flex items-start justify-between gap-3 mb-2">
+                                            <div className="text-sm flex-1 min-w-0">
+                                              <div className="font-medium truncate" title={action.description}>
+                                                {action.description}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground truncate" title={action.target}>
+                                                {action.target}
+                                              </div>
+                                            </div>
+                                            <Badge variant={action.success ? "default" : "destructive"} className="shrink-0">
+                                              {action.success ? t('common:success') : t('common:failed')}
+                                            </Badge>
                                           </div>
-                                          <Badge variant={action.success ? "default" : "destructive"}>
-                                            {action.success ? t('common:success') : t('common:failed')}
-                                          </Badge>
-                                        </div>
+                                          {/* Parameters */}
+                                          {action.parameters && Object.keys(action.parameters).length > 0 && (
+                                            <div className="mt-2 pt-2 border-t">
+                                              <div className="text-xs text-muted-foreground mb-1">
+                                                {t('agents:memory.parameters')}:
+                                              </div>
+                                              <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-20">
+                                                {JSON.stringify(action.parameters, null, 2)}
+                                              </pre>
+                                            </div>
+                                          )}
+                                          {/* Result */}
+                                          {action.result && (
+                                            <div className="mt-2 pt-2 border-t">
+                                              <div className="text-xs text-muted-foreground mb-1">
+                                                {t('agents:memory.result')}:
+                                              </div>
+                                              <div className="text-xs bg-muted p-2 rounded max-h-20 overflow-auto">
+                                                {action.result}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </Card>
                                       ))}
                                     </div>
                                   </TimelineSection>
@@ -308,21 +344,29 @@ export function AgentExecutionTimeline({
                                   >
                                     <div className="space-y-2">
                                       {detail.result.notifications_sent.map((notification, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-2 border rounded">
-                                          <div className="text-sm flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                              <span className="font-medium">{notification.channel}</span>
-                                              <span className="text-xs text-muted-foreground">→</span>
-                                              <span className="text-xs">{notification.recipient}</span>
+                                        <Card key={idx} className="p-3">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="text-sm flex-1 min-w-0">
+                                              <div className="flex items-center gap-2 mb-1">
+                                                <span className="font-medium">{notification.channel}</span>
+                                                <span className="text-xs text-muted-foreground">→</span>
+                                                <span className="text-xs">{notification.recipient}</span>
+                                              </div>
+                                              <div className="text-xs text-muted-foreground mb-2" title={notification.message}>
+                                                {notification.message}
+                                              </div>
+                                              {notification.sent_at && (
+                                                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                                  <Clock className="h-3 w-3" />
+                                                  {formatTimestamp(notification.sent_at, false)}
+                                                </div>
+                                              )}
                                             </div>
-                                            <div className="text-xs text-muted-foreground truncate max-w-[200px]" title={notification.message}>
-                                              {notification.message}
-                                            </div>
+                                            <Badge variant={notification.success ? "default" : "destructive"} className="shrink-0">
+                                              {notification.success ? t('common:sent') : t('common:failed')}
+                                            </Badge>
                                           </div>
-                                          <Badge variant={notification.success ? "default" : "destructive"} className="ml-2">
-                                            {notification.success ? t('common:sent') : t('common:failed')}
-                                          </Badge>
-                                        </div>
+                                        </Card>
                                       ))}
                                     </div>
                                   </TimelineSection>
@@ -375,13 +419,14 @@ function TimelineSection({ icon, title, subtitle, children }: TimelineSectionPro
 }
 
 function DataCollectedItem({ data }: { data: DataCollected }) {
+  const { t } = useTranslation(['common', 'agents'])
   return (
     <Card className="p-2">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium">{data.source}</span>
-        <Badge variant="outline" className="text-xs h-5">{data.data_type}</Badge>
+        <span className="text-xs font-medium truncate flex-1" title={data.source}>{data.source}</span>
+        <Badge variant="outline" className="text-xs h-5 ml-2 shrink-0">{data.data_type}</Badge>
       </div>
-      <pre className="text-xs bg-muted p-1.5 rounded overflow-x-auto max-h-20">
+      <pre className="text-xs bg-muted p-1.5 rounded overflow-x-auto max-h-24">
         {typeof data.values === 'object'
           ? JSON.stringify(data.values, null, 2)
           : String(data.values)}
@@ -391,30 +436,31 @@ function DataCollectedItem({ data }: { data: DataCollected }) {
 }
 
 function ReasoningStepItem({ step }: { step: ReasoningStep }) {
+  const { t } = useTranslation(['common', 'agents'])
   return (
-    <div className="flex gap-2">
-      <div className="flex flex-col items-center">
-        <div className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
+    <div className="flex gap-3">
+      <div className="flex flex-col items-center shrink-0">
+        <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
           {step.step_number}
         </div>
-        {step.step_number < 10 && <div className="w-0.5 flex-1 bg-border min-h-[20px]" />}
+        {step.step_number < 10 && <div className="w-0.5 flex-1 bg-border min-h-[24px]" />}
       </div>
-      <div className="flex-1 pb-3">
+      <div className="flex-1 pb-4">
         <div className="text-sm">{step.description}</div>
         {step.input && (
           <div className="text-xs text-muted-foreground mt-1">
-            输入: {step.input}
+            {t('agents:memory.input')}: {step.input}
           </div>
         )}
         {step.output && (
           <div className="text-xs bg-muted p-2 rounded mt-2">
-            输出: {step.output}
+            {t('agents:memory.output')}: {step.output}
           </div>
         )}
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
           <Badge variant="outline" className="text-xs h-5">{step.step_type}</Badge>
           <span className="text-xs text-muted-foreground">
-            置信度: {(step.confidence * 100).toFixed(0)}%
+            {t('agents:memory.confidence')}: {(step.confidence * 100).toFixed(0)}%
           </span>
         </div>
       </div>
@@ -423,6 +469,7 @@ function ReasoningStepItem({ step }: { step: ReasoningStep }) {
 }
 
 function DecisionItem({ decision }: { decision: Decision }) {
+  const { t } = useTranslation(['common', 'agents'])
   return (
     <Card className="p-2">
       <div className="text-sm font-medium mb-1">{decision.description}</div>
@@ -430,7 +477,7 @@ function DecisionItem({ decision }: { decision: Decision }) {
         <div className="text-xs text-muted-foreground mb-2">{decision.rationale}</div>
       )}
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">操作</span>
+        <span className="text-muted-foreground">{t('agents:memory.action')}</span>
         <Badge variant="secondary" className="h-5">{decision.action}</Badge>
       </div>
     </Card>

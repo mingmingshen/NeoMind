@@ -775,5 +775,122 @@
     "alarm": "报警器",
     "lock": "门锁",
     "unknown": "未知设备"
+  },
+  "metricEditor": {
+    "displayName": "显示名称",
+    "displayNamePlaceholder": "如：温度",
+    "metricId": "指标标识",
+    "metricIdPlaceholder": "temperature",
+    "dataType": "数据类型",
+    "unit": "单位",
+    "unitPlaceholder": "°C, %, ...",
+    "minMax": "最小 / 最大值",
+    "minPlaceholder": "最小",
+    "maxPlaceholder": "最大",
+    "to": "至",
+    "types": {
+      "string": "文本",
+      "integer": "整数",
+      "float": "小数",
+      "boolean": "是/否",
+      "binary": "二进制",
+      "array": "数组"
+    },
+    "quickStart": "从设备遥测数据快速开始：",
+    "quickStartDesc": "粘贴设备上报的 JSON 数据，系统会自动解析并生成指标定义",
+    "generateFromJson": "从 JSON 生成指标",
+    "importJson": "导入 JSON",
+    "addMetric": "添加指标",
+    "metricCount": "指标定义 ({{count}})",
+    "simpleModeDesc": "遥测数据将按原样存储，不进行自动解析",
+    "simpleModeNote": "适用于 16进制/二进制协议设备，可通过 Transforms 解码和提取指标",
+    "jsonDialogTitle": "从 JSON 生成指标定义",
+    "jsonDialogDesc": "粘贴设备上报的 JSON 数据，系统会自动解析字段并生成指标定义（支持嵌套对象）",
+    "jsonPlaceholder": "粘贴设备上报的 JSON 数据，例如：\n{\n  \"sensor\": {\n    \"temperature\": 25.5,\n    \"humidity\": 60\n  },\n  \"status\": \"online\",\n  \"battery\": 85\n}",
+    "exampleJson": "示例 JSON：",
+    "cancel": "取消",
+    "parseAndGenerate": "解析并生成指标",
+    "importSuccess": "导入成功",
+    "importSuccessDesc": "从 JSON 解析出 {{count}} 个指标",
+    "jsonError": "JSON 格式无效，请检查后重试"
+  },
+  "commandEditor": {
+    "templates": {
+      "toggle": {
+        "name": "开关控制",
+        "displayName": "开关控制",
+        "stateParam": "状态"
+      },
+      "setValue": {
+        "name": "数值设置",
+        "displayName": "设置数值",
+        "valueParam": "数值"
+      },
+      "setMode": {
+        "name": "模式选择",
+        "displayName": "设置模式",
+        "modeParam": "模式"
+      },
+      "trigger": {
+        "name": "无参数命令",
+        "displayName": "触发命令"
+      }
+    },
+    "paramCount": "{{count}} 参数",
+    "fixedValueCount": "{{count}} 固定值",
+    "quickStart": "从模板快速开始：",
+    "displayName": "显示名称",
+    "displayNamePlaceholder": "如：开关控制",
+    "commandId": "命令标识",
+    "commandIdPlaceholder": "toggle",
+    "payloadFormat": "命令负载格式",
+    "visual": "可视化",
+    "json": "JSON",
+    "previewHint": "💡 提示：参数会显示为黄色占位符，固定值会自动包含",
+    "preview": "预览：",
+    "userParams": "用户输入参数",
+    "userParamsDesc": "(用户执行命令时需要填写的值)",
+    "addParam": "添加参数",
+    "noParams": "无参数 - 点击上方按钮添加用户可配置的参数",
+    "tableName": "参数名",
+    "tableDisplayName": "显示名称",
+    "tableType": "类型",
+    "tableRequired": "必填",
+    "tableOptions": "选项/范围",
+    "paramNamePlaceholder": "参数名",
+    "displayNamePlaceholder": "显示名称",
+    "types": {
+      "string": "文本",
+      "integer": "整数",
+      "float": "小数",
+      "boolean": "是/否",
+      "binary": "二进制",
+      "array": "数组"
+    },
+    "minValuePlaceholder": "最小值",
+    "maxValuePlaceholder": "最大值",
+    "yesNo": "是/否",
+    "allowedValuesPlaceholder": "选项1,选项2",
+    "advancedOptions": "▶ 高级选项（固定值等）",
+    "hideAdvanced": "▼ 高级选项（固定值等）",
+    "fixedValuesDesc": "固定值会在每次发送命令时自动包含，用户无法修改。适用于协议版本、设备类型等常量。",
+    "fixedValues": "固定值 ({{count}})",
+    "add": "添加",
+    "keyPlaceholder": "键名",
+    "valuePlaceholder": "固定值",
+    "noFixedValues": "暂无固定值",
+    "newParam": "参数 {{count}}"
+  },
+  "commandsStep": {
+    "title": "Commands (Downlink)",
+    "noCommands": "暂无命令定义",
+    "addCommand": "添加命令",
+    "commandsCount": "命令定义 ({{count}})",
+    "commandsDesc": "定义设备可执行的命令",
+    "importJson": "导入 JSON",
+    "importFailed": "导入失败",
+    "importSuccess": "导入成功",
+    "importSuccessDesc": "已添加 {{count}} 个命令",
+    "invalidJson": "无效的 JSON 格式"
   }
 }

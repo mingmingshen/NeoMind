@@ -43,13 +43,6 @@ interface AgentListPanelProps {
   onViewMemory: (agentId: string, agentName: string) => void
 }
 
-// Role configuration
-const ROLE_CONFIG: Record<string, { label: string; icon: typeof Activity; color: string }> = {
-  Monitor: { label: '监控', icon: Activity, color: 'text-blue-500' },
-  Executor: { label: '执行', icon: Zap, color: 'text-orange-500' },
-  Analyst: { label: '分析', icon: Brain, color: 'text-purple-500' },
-}
-
 // Status configuration
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof CheckCircle2; color: string }> = {
   Active: { label: '运行中', icon: CheckCircle2, color: 'text-green-500' },
@@ -96,8 +89,6 @@ export function AgentListPanel({
     <div className="py-2">
       {agents.map((agent) => {
         const isSelected = selectedAgent?.id === agent.id
-        const roleConfig = ROLE_CONFIG[agent.role] || ROLE_CONFIG.Monitor
-        const RoleIcon = roleConfig.icon
         const statusConfig = STATUS_CONFIG[agent.status] || STATUS_CONFIG.Paused
 
         return (
@@ -136,7 +127,6 @@ export function AgentListPanel({
                   {agent.name}
                 </div>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <RoleIcon className={cn("h-3 w-3", roleConfig.color)} />
                   <statusConfig.icon className={cn(
                     "h-3 w-3",
                     statusConfig.color,

@@ -39,7 +39,66 @@ use edge_ai_storage::device_registry::{
     MetricDefinition as StorageMetricDefinition,
     ParamMetricValue as StorageMetricValue,
     ParameterDefinition as StorageParameterDefinition,
+    ParameterGroup as StorageParameterGroup,
+    ValidationRule as StorageValidationRule,
 };
+
+// Conversion function for ValidationRule
+fn convert_validation_rule_to_storage(vr: &super::mdl_format::ValidationRule) -> StorageValidationRule {
+    match vr {
+        super::mdl_format::ValidationRule::Pattern { regex, error_message } => {
+            StorageValidationRule::Pattern { regex: regex.clone(), error_message: error_message.clone() }
+        }
+        super::mdl_format::ValidationRule::Range { min, max, error_message } => {
+            StorageValidationRule::Range { min: *min, max: *max, error_message: error_message.clone() }
+        }
+        super::mdl_format::ValidationRule::Length { min, max, error_message } => {
+            StorageValidationRule::Length { min: *min, max: *max, error_message: error_message.clone() }
+        }
+        super::mdl_format::ValidationRule::Custom { validator, params } => {
+            StorageValidationRule::Custom { validator: validator.clone(), params: params.clone() }
+        }
+    }
+}
+
+fn convert_validation_rule_from_storage(vr: StorageValidationRule) -> super::mdl_format::ValidationRule {
+    match vr {
+        StorageValidationRule::Pattern { regex, error_message } => {
+            super::mdl_format::ValidationRule::Pattern { regex, error_message }
+        }
+        StorageValidationRule::Range { min, max, error_message } => {
+            super::mdl_format::ValidationRule::Range { min, max, error_message }
+        }
+        StorageValidationRule::Length { min, max, error_message } => {
+            super::mdl_format::ValidationRule::Length { min, max, error_message }
+        }
+        StorageValidationRule::Custom { validator, params } => {
+            super::mdl_format::ValidationRule::Custom { validator, params }
+        }
+    }
+}
+
+fn convert_parameter_group_to_storage(pg: &super::mdl_format::ParameterGroup) -> StorageParameterGroup {
+    StorageParameterGroup {
+        id: pg.id.clone(),
+        display_name: pg.display_name.clone(),
+        description: pg.description.clone(),
+        collapsed: pg.collapsed,
+        parameters: pg.parameters.clone(),
+        order: pg.order,
+    }
+}
+
+fn convert_parameter_group_from_storage(pg: StorageParameterGroup) -> super::mdl_format::ParameterGroup {
+    super::mdl_format::ParameterGroup {
+        id: pg.id,
+        display_name: pg.display_name,
+        description: pg.description,
+        collapsed: pg.collapsed,
+        parameters: pg.parameters,
+        order: pg.order,
+    }
+}
 
 /// Device type mode: simple (raw data + LLM) or full (structured definitions)
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -362,6 +421,7 @@ impl DeviceRegistry {
                         name: c.name,
                         display_name: c.display_name,
                         payload_template: c.payload_template,
+                        fixed_values: c.fixed_values,
                         parameters: c
                             .parameters
                             .into_iter()
@@ -381,11 +441,17 @@ impl DeviceRegistry {
                                     max: p.max,
                                     unit: p.unit,
                                     allowed_values,
+                                    required: p.required,
+                                    visible_when: p.visible_when,
+                                    group: p.group,
+                                    help_text: p.help_text,
+                                    validation: p.validation.into_iter().map(convert_validation_rule_from_storage).collect(),
                                 }
                             })
                             .collect(),
                         samples: c.samples,
                         llm_hints: c.llm_hints,
+                        parameter_groups: c.parameter_groups.into_iter().map(convert_parameter_group_from_storage).collect(),
                     })
                     .collect(),
             };
@@ -479,6 +545,7 @@ impl DeviceRegistry {
                         name: c.name.clone(),
                         display_name: c.display_name.clone(),
                         payload_template: c.payload_template.clone(),
+                        fixed_values: c.fixed_values.clone(),
                         parameters: c
                             .parameters
                             .iter()
@@ -498,10 +565,16 @@ impl DeviceRegistry {
                                     .iter()
                                     .filter_map(|v| convert_metric_value_to_storage(v.clone()))
                                     .collect(),
+                                required: p.required,
+                                visible_when: p.visible_when.clone(),
+                                group: p.group.clone(),
+                                help_text: p.help_text.clone(),
+                                validation: p.validation.iter().map(convert_validation_rule_to_storage).collect(),
                             })
                             .collect(),
                         samples: c.samples.clone(),
                         llm_hints: c.llm_hints.clone(),
+                        parameter_groups: c.parameter_groups.iter().map(convert_parameter_group_to_storage).collect(),
                     })
                     .collect(),
             };
@@ -591,6 +664,7 @@ impl DeviceRegistry {
                     name: c.name.clone(),
                     display_name: c.display_name.clone(),
                     payload_template: c.payload_template.clone(),
+                    fixed_values: c.fixed_values.clone(),
                     parameters: c
                         .parameters
                         .iter()
@@ -610,10 +684,16 @@ impl DeviceRegistry {
                                 .iter()
                                 .filter_map(|v| convert_metric_value_to_storage(v.clone()))
                                 .collect(),
+                            required: p.required,
+                            visible_when: p.visible_when.clone(),
+                            group: p.group.clone(),
+                            help_text: p.help_text.clone(),
+                            validation: p.validation.iter().map(convert_validation_rule_to_storage).collect(),
                         })
                         .collect(),
                     samples: c.samples.clone(),
                     llm_hints: c.llm_hints.clone(),
+                    parameter_groups: c.parameter_groups.iter().map(convert_parameter_group_to_storage).collect(),
                 })
                 .collect(),
         };

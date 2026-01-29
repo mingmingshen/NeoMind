@@ -660,17 +660,75 @@ impl RuleEngine {
                     Ok(format!("ALERT [{}]: {} (logged only)", sev_str, title))
                 }
             }
-            RuleAction::HttpRequest { method, url, .. } => {
+            RuleAction::HttpRequest { method, url, headers, body } => {
                 let method_str = match method {
-                    HttpMethod::Get => "GET",
-                    HttpMethod::Post => "POST",
-                    HttpMethod::Put => "PUT",
-                    HttpMethod::Delete => "DELETE",
-                    HttpMethod::Patch => "PATCH",
+                    HttpMethod::Get => reqwest::Method::GET,
+                    HttpMethod::Post => reqwest::Method::POST,
+                    HttpMethod::Put => reqwest::Method::PUT,
+                    HttpMethod::Delete => reqwest::Method::DELETE,
+                    HttpMethod::Patch => reqwest::Method::PATCH,
                 };
-                tracing::info!("HTTP: {} {}", method_str, url);
-                // In a real implementation, you would make the actual HTTP request
-                Ok(format!("HTTP: {} {}", method_str, url))
+
+                // Build HTTP request with timeout
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build();
+
+                let client = match client {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::error!("Failed to create HTTP client: {}", e);
+                        return Err(format!("HTTP client error: {}", e));
+                    }
+                };
+
+                let mut request = client.request(method_str.clone(), url);
+
+                // Add headers if provided
+                if let Some(hdrs) = headers {
+                    for (key, value) in hdrs {
+                        request = request.header(key, value);
+                    }
+                }
+
+                // Add body if provided (for POST/PUT/PATCH)
+                if let Some(b) = body {
+                    request = request.body(b.clone());
+                }
+
+                // Execute the request
+                match request.send().await {
+                    Ok(response) => {
+                        let status = response.status();
+                        let status_code = status.as_u16();
+
+                        // Try to get response body
+                        let body_result = match response.text().await {
+                            Ok(text) => {
+                                // Truncate if too long
+                                if text.len() > 500 {
+                                    format!("{}... (truncated)", &text[..500])
+                                } else {
+                                    text
+                                }
+                            }
+                            Err(e) => format!("Failed to read response: {}", e),
+                        };
+
+                        tracing::info!(
+                            "HTTP request completed: {} {} -> {}",
+                            method_str,
+                            url,
+                            status_code
+                        );
+
+                        Ok(format!("HTTP: {} {} -> {} ({})", method_str, url, status_code, body_result))
+                    }
+                    Err(e) => {
+                        tracing::error!("HTTP request failed: {} {} - {}", method_str, url, e);
+                        Err(format!("HTTP request failed: {}", e))
+                    }
+                }
             }
         }
     }

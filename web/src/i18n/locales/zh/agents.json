@@ -1,6 +1,49 @@
 {
   "title": "AI 智能体",
   "description": "用户定义的自动化智能体，具有持久化记忆能力",
+  "createButton": "创建",
+  "detailTitle": "智能体详情",
+  "card": {
+    "createAgent": "创建智能体",
+    "noDescription": "暂无描述",
+    "executions": "执行次数",
+    "successRate": "成功率",
+    "avgDuration": "平均耗时",
+    "neverExecuted": "从未执行"
+  },
+  "confirm": {
+    "pauseTitle": "确认暂停智能体？",
+    "pauseDesc": "暂停后，智能体\"{{name}}\"将停止自动执行任务。",
+    "resumeTitle": "确认启动智能体？",
+    "resumeDesc": "启动后，智能体\"{{name}}\"将开始自动执行任务。",
+    "confirmPause": "确认暂停",
+    "confirmResume": "确认启动"
+  },
+  "detail": {
+    "selectAgent": "选择一个智能体查看详情",
+    "edit": "编辑",
+    "execute": "执行",
+    "refresh": "刷新",
+    "executions": "执行",
+    "success": "成功",
+    "failed": "失败",
+    "avgDuration": "平均",
+    "overview": "概览",
+    "history": "历史",
+    "memory": "记忆",
+    "schedule": "执行策略",
+    "type": "类型",
+    "interval": "间隔",
+    "resources": "资源",
+    "moreResources": "还有 {{count}} 个资源...",
+    "noMemory": "暂无记忆数据",
+    "messages": "消息",
+    "stateVariables": "状态变量",
+    "learnedPatterns": "学习模式",
+    "baselines": "历史基线",
+    "trendData": "趋势数据",
+    "noDataAvailable": "无数据"
+  },
   "tabs": {
     "agents": "智能体",
     "executions": "执行记录",
@@ -51,15 +94,6 @@
   "noDevices": "暂无可用设备，请先添加设备",
   "metrics": "监控指标",
   "commands": "可用命令",
-  "role": "角色",
-  "roles": {
-    "monitor": "监控专员",
-    "executor": "执行专员",
-    "analyst": "分析专员",
-    "scheduler": "调度专员",
-    "notifier": "通知专员",
-    "controller": "控制专员"
-  },
   "stats": "统计",
   "time": {
     "justNow": "刚刚",
@@ -82,6 +116,15 @@
   "execution": {
     "title": "执行详情",
     "description": "智能体执行过程和结果的详细视图"
+  },
+  "thinking": {
+    "executing": "执行中...",
+    "completed": "已完成",
+    "failed": "失败",
+    "waiting": "等待推理数据...",
+    "steps": "个步骤",
+    "reasoningSteps": "推理步骤",
+    "decisions": "决策"
   },
   "memory": {
     "title": "智能体记忆",
@@ -107,8 +150,23 @@
     "input": "输入",
     "output": "输出",
     "action": "操作",
+    "parameters": "参数",
+    "result": "结果",
     "sources": "个来源",
-    "points": "个数据点"
+    "points": "个数据点",
+    "step": "步骤",
+    "dataPoints": "数据点",
+    "metric": "指标",
+    "value": "值",
+    "target": "目标",
+    "channel": "渠道",
+    "recipient": "接收者"
+  },
+  "userMessages": {
+    "empty": "暂无消息",
+    "emptyHint": "发送消息为智能体提供额外上下文",
+    "placeholder": "输入消息内容...",
+    "hint": "按 Cmd+Enter 发送"
   },
   "creator": {
     "title": "创建智能体",
@@ -119,38 +177,6 @@
       "resources": "资源选择"
     },
     "basicInfo": {
-      "selectRole": "选择智能体角色",
-      "roles": {
-        "monitor": {
-          "label": "监控专员",
-          "description": "持续监控设备状态，检测异常情况并发送告警"
-        },
-        "executor": {
-          "label": "执行专员",
-          "description": "根据条件自动控制设备，执行预设的操作指令"
-        },
-        "analyst": {
-          "label": "分析专员",
-          "description": "分析数据趋势，生成报告并提供决策建议"
-        },
-        "scheduler": {
-          "label": "调度专员",
-          "description": "根据时间或事件自动调度和协调任务"
-        },
-        "notifier": {
-          "label": "通知专员",
-          "description": "向用户或外部系统发送通知和告警"
-        },
-        "controller": {
-          "label": "控制专员",
-          "description": "统一管理和协调控制多个设备"
-        },
-        "custom": {
-          "label": "自定义",
-          "description": "定义您自己的角色",
-          "placeholder": "自定义角色名称"
-        }
-      },
       "name": "名称",
       "namePlaceholder": "例如：仓库温度监控、设备异常分析",
       "description": "描述",
@@ -166,6 +192,28 @@
       "defaultBackend": "默认模型",
       "useActiveBackend": "使用当前激活的模型",
       "active": "已激活"
+    },
+    "promptTemplates": {
+      "label": "模板",
+      "empty": {
+        "label": "自定义",
+        "description": "空白，自行编写提示词"
+      },
+      "monitor": {
+        "label": "监控告警",
+        "description": "持续监控数据变化，检测异常并发送告警",
+        "template": "请监控以下数据指标，当出现异常时及时告警：\n\n监控目标：\n- 数据范围：\n- 异常阈值：\n- 告警方式：\n\n请分析历史数据，识别正常波动范围，当数据超出正常范围时发送告警通知。"
+      },
+      "control": {
+        "label": "自动控制",
+        "description": "根据条件自动执行设备控制操作",
+        "template": "请根据以下条件自动控制设备：\n\n触发条件：\n- 设备状态：\n- 数据阈值：\n\n执行动作：\n- 目标设备：\n- 控制指令：\n\n请确保在执行前验证条件，避免频繁重复操作。"
+      },
+      "analysis": {
+        "label": "数据分析",
+        "description": "定期分析数据趋势并生成报告",
+        "template": "请定期分析以下数据并生成报告：\n\n分析范围：\n- 数据指标：\n- 时间范围：\n\n报告内容：\n1. 数据趋势分析\n2. 异常事件记录\n3. 变化原因分析\n4. 优化建议\n\n请对比历史数据，提供有价值的洞察和行动建议。"
+      }
     },
     "schedule": {
       "selectStrategy": "选择执行策略",
@@ -193,6 +241,7 @@
         "preview": "每天 {{hour}}:{{minute}} 执行"
       },
       "weekly": {
+        "on": "每",
         "every": "每",
         "at": "点",
         "execute": "执行",
@@ -207,6 +256,8 @@
       },
       "event": {
         "triggerEvent": "触发事件",
+        "relatedDevice": "关联设备",
+        "manualHint": "需要通过API手动触发执行",
         "events": {
           "device.online": "设备上线",
           "device.offline": "设备离线",
@@ -251,29 +302,62 @@
       },
       "timezone": "时区"
     },
+    "dataStrategy": {
+      "hint": {
+        "interval": "将使用最近 {{minutes}} 分钟的数据进行趋势分析",
+        "daily": "将使用昨日全天数据生成日报",
+        "weekly": "将使用过去7天数据生成周报",
+        "event": "将使用最新数据 + 历史基线对比"
+      }
+    },
+    "metricConfig": {
+      "timeRange": "数据时间范围",
+      "configureHint": "选中后可在主界面配置数据策略",
+      "descriptions": {
+        "fullWeek": "完整周报数据",
+        "fullDay": "全天数据+趋势+基线",
+        "trend": "历史数据+趋势",
+        "history": "历史数据",
+        "baseline": "当前值+基线对比"
+      },
+      "timeRanges": {
+        "30": "30分钟",
+        "60": "1小时",
+        "180": "3小时",
+        "360": "6小时",
+        "720": "12小时",
+        "1440": "24小时",
+        "10080": "7天"
+      }
+    },
     "resources": {
-      "searchPlaceholder": "搜索设备名称或类型...",
+      "title": "数据资源",
+      "searchPlaceholder": "搜索资源名称或类型...",
       "selectedCount": "已选 {{count}} 项",
-      "noDevicesFound": "没有找到设备",
-      "selectDevice": "请从左侧选择一个设备",
-      "metrics": "监控指标",
-      "commands": "执行指令",
-      "metricCount": "{{count}}指标",
-      "commandCount": "{{count}}指令",
+      "noResourcesFound": "暂无可用资源",
+      "selectResource": "请从列表中选择资源",
+      "selectDevice": "选择设备",
+      "metrics": "数据指标",
+      "commands": "控制指令",
+      "metricCount": "{{count}} 项指标",
+      "commandCount": "{{count}} 项指令",
       "topologyPreview": "拓扑预览",
-      "selectResourceHint": "请至少选择一个设备资源",
+      "selectResourceHint": "请至少选择一项数据资源",
       "noMetrics": "无指标",
       "noOutputs": "无输出",
-      "moreMetrics": "+{{count}} 个指标",
-      "moreCommands": "+{{count}} 个指令",
+      "moreMetrics": "+{{count}} 项指标",
+      "moreCommands": "+{{count}} 项指令",
       "dataInput": "数据输入",
       "dataOutput": "结果输出",
-      "selectAfterShow": "选择设备资源后显示拓扑",
-      "devices": "个设备",
+      "selectAfterShow": "选择资源后显示详情",
+      "resources": "项资源",
       "selected": "项已选",
       "clearAll": "清空",
       "selectAll": "全选",
-      "deselectAll": "取消全选"
+      "deselectAll": "取消全选",
+      "dataStream": "数据流",
+      "device": "设备",
+      "externalData": "外部数据"
     },
     "advanced": {
       "title": "高级配置",
@@ -292,7 +376,7 @@
       "nameRequired": "请输入智能体名称",
       "requirementRequired": "请描述你的需求",
       "resourceRequired": "请至少选择一个设备资源",
-      "customRoleRequired": "请输入自定义角色名称"
+      "eventTypeRequired": "请选择触发事件类型"
     },
     "actions": {
       "cancel": "取消",

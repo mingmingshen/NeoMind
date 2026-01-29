@@ -36,6 +36,10 @@ pub enum DeviceIntegrationError {
     #[error("Command execution failed: {0}")]
     CommandFailed(String),
 
+    /// HTTP request failed
+    #[error("HTTP request failed: {0}")]
+    HttpRequest(String),
+
     /// Other error
     #[error("Device integration error: {0}")]
     Other(#[from] anyhow::Error),
@@ -373,10 +377,72 @@ impl DeviceActionExecutor {
                 actions_executed.push(format!("alert:{}:{}", sev_str, title));
                 info!("Created alert [{}]: {} - {}", sev_str, title, message);
             }
-            RuleAction::HttpRequest { method, url, .. } => {
-                let method_str = format!("{:?}", method);
-                actions_executed.push(format!("http:{}{}", method_str, url));
-                info!("HTTP request: {} {}", method_str, url);
+            RuleAction::HttpRequest { method, url, headers, body } => {
+                use crate::dsl::HttpMethod;
+
+                let method_str = match method {
+                    HttpMethod::Get => reqwest::Method::GET,
+                    HttpMethod::Post => reqwest::Method::POST,
+                    HttpMethod::Put => reqwest::Method::PUT,
+                    HttpMethod::Delete => reqwest::Method::DELETE,
+                    HttpMethod::Patch => reqwest::Method::PATCH,
+                };
+
+                // Build HTTP request with timeout
+                let client = match reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()
+                {
+                    Ok(c) => c,
+                    Err(e) => {
+                        error!("Failed to create HTTP client: {}", e);
+                        actions_executed.push(format!("http:error:{}", e));
+                        return Err(DeviceIntegrationError::HttpRequest(e.to_string()));
+                    }
+                };
+
+                let mut request = client.request(method_str.clone(), url);
+
+                // Add headers if provided
+                if let Some(hdrs) = headers {
+                    for (key, value) in hdrs {
+                        request = request.header(key, value);
+                    }
+                }
+
+                // Add body if provided (for POST/PUT/PATCH)
+                if let Some(b) = body {
+                    request = request.body(b.clone());
+                }
+
+                // Execute the request
+                match request.send().await {
+                    Ok(response) => {
+                        let status = response.status();
+                        let status_code = status.as_u16();
+
+                        // Try to get response body
+                        let body_result = match response.text().await {
+                            Ok(text) => {
+                                // Truncate if too long
+                                if text.len() > 200 {
+                                    format!("{}...", &text[..200])
+                                } else {
+                                    text
+                                }
+                            }
+                            Err(_) => "".to_string(),
+                        };
+
+                        actions_executed.push(format!("http:{}:{}->{}", method_str, url, status_code));
+                        info!("HTTP request completed: {} {} -> {}", method_str, url, status_code);
+                    }
+                    Err(e) => {
+                        actions_executed.push(format!("http:error:{}:{}", url, e));
+                        error!("HTTP request failed: {} {} - {}", method_str, url, e);
+                        return Err(DeviceIntegrationError::HttpRequest(e.to_string()));
+                    }
+                }
             }
         }
 

@@ -247,7 +247,7 @@ export function MergedMessageList({
 
             {/* Timestamp */}
             <p className="text-xs text-muted-foreground mt-1 px-1">
-              {formatTimestamp(message.timestamp / 1000, false)}
+              {formatTimestamp(message.timestamp, false)}
             </p>
           </div>
 

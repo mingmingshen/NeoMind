@@ -25,6 +25,7 @@ import {
   Loader2,
   Clock,
   Plus,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -35,6 +36,7 @@ interface CreateCardProps {
 }
 
 export function CreateCard({ onClick }: CreateCardProps) {
+  const { t } = useTranslation('agents')
   return (
     <button
       onClick={onClick}
@@ -43,13 +45,15 @@ export function CreateCard({ onClick }: CreateCardProps) {
       <div className="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
         <Plus className="h-6 w-6 text-muted-foreground group-hover:text-primary transition-colors" />
       </div>
-      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">创建智能体</span>
+      <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
+        {t('card.createAgent')}
+      </span>
     </button>
   )
 }
 
 interface AgentCardProps {
-  agent: AiAgent
+  agent: AiAgent & { currentThinking?: string | null }
   onToggleStatus: (agent: AiAgent) => void
   onExecute: (agent: AiAgent) => void
   onEdit: (agent: AiAgent) => void
@@ -57,12 +61,12 @@ interface AgentCardProps {
   onClick: () => void
 }
 
-// Status configuration
-const STATUS_CONFIG: Record<string, { label: string; icon: typeof Activity; color: string; bg: string }> = {
-  Active: { label: '运行中', icon: Activity, color: 'text-green-500', bg: 'bg-green-500/10' },
-  Paused: { label: '已暂停', icon: Pause, color: 'text-muted-foreground', bg: 'bg-muted/50' },
-  Error: { label: '错误', icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10' },
-  Executing: { label: '执行中', icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+// Status icons configuration (labels use i18n)
+const STATUS_CONFIG: Record<string, { icon: typeof Activity; color: string; bg: string }> = {
+  Active: { icon: Activity, color: 'text-green-500', bg: 'bg-green-500/10' },
+  Paused: { icon: Pause, color: 'text-muted-foreground', bg: 'bg-muted/50' },
+  Error: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10' },
+  Executing: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10' },
 }
 
 export function AgentCard({
@@ -80,11 +84,11 @@ export function AgentCard({
     const isCurrentlyActive = agent.status === 'Active' || agent.status === 'Executing'
 
     const confirmed = await confirm({
-      title: isCurrentlyActive ? '确认暂停智能体？' : '确认启动智能体？',
+      title: isCurrentlyActive ? t('agents:confirm.pauseTitle') : t('agents:confirm.resumeTitle'),
       description: isCurrentlyActive
-        ? `暂停后，智能体"${agent.name}"将停止自动执行任务。`
-        : `启动后，智能体"${agent.name}"将开始自动执行任务。`,
-      confirmText: isCurrentlyActive ? '确认暂停' : '确认启动',
+        ? t('agents:confirm.pauseDesc', { name: agent.name })
+        : t('agents:confirm.resumeDesc', { name: agent.name }),
+      confirmText: isCurrentlyActive ? t('agents:confirm.confirmPause') : t('agents:confirm.confirmResume'),
       cancelText: t('common:cancel'),
       variant: 'default',
     })
@@ -100,6 +104,12 @@ export function AgentCard({
   const successRate = agent.execution_count > 0
     ? Math.round((agent.success_count / agent.execution_count) * 100)
     : 0
+
+  // Get status label from i18n
+  const getStatusLabel = (status: string) => {
+    const key = status.toLowerCase() as 'active' | 'paused' | 'error' | 'executing'
+    return t(`agents:status.${key}`)
+  }
 
   return (
     <div
@@ -141,7 +151,7 @@ export function AgentCard({
             )} />
           </div>
           <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">
-            {agent.user_prompt || agent.description || '暂无描述'}
+            {agent.user_prompt || agent.description || t('agents:card.noDescription')}
           </p>
         </div>
 
@@ -177,11 +187,11 @@ export function AgentCard({
       </div>
 
       {/* Stats Grid - simplified without borders */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-3 gap-3 mb-3">
         {/* Execution Count */}
         <div className="text-center p-2 rounded-lg bg-muted/30">
           <div className="text-lg font-semibold">{agent.execution_count}</div>
-          <div className="text-xs text-muted-foreground">执行次数</div>
+          <div className="text-xs text-muted-foreground">{t('agents:card.executions')}</div>
         </div>
 
         {/* Success Rate */}
@@ -192,7 +202,7 @@ export function AgentCard({
           )}>
             {successRate}%
           </div>
-          <div className="text-xs text-muted-foreground">成功率</div>
+          <div className="text-xs text-muted-foreground">{t('agents:card.successRate')}</div>
         </div>
 
         {/* Avg Duration */}
@@ -200,15 +210,29 @@ export function AgentCard({
           <div className="text-lg font-semibold">
             {agent.avg_duration_ms > 0 ? `${(agent.avg_duration_ms / 1000).toFixed(1)}s` : '-'}
           </div>
-          <div className="text-xs text-muted-foreground">平均耗时</div>
+          <div className="text-xs text-muted-foreground">{t('agents:card.avgDuration')}</div>
         </div>
       </div>
+
+      {/* Real-time Thinking - shown when executing */}
+      {agent.status === 'Executing' && agent.currentThinking && (
+        <div className="mb-3 px-3 py-2 rounded-lg bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200/50 dark:border-blue-800/50">
+          <div className="flex items-center gap-2 text-xs">
+            <Sparkles className="h-3.5 w-3.5 text-blue-500 animate-pulse shrink-0" />
+            <span className="text-blue-700 dark:text-blue-300 line-clamp-2">
+              {agent.currentThinking}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Footer: Last Execution + Toggle */}
       <div className="flex items-center justify-between pt-2 border-t border-border/50">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Clock className="h-4 w-4" />
-          <span className="truncate max-w-[120px]">{agent.last_execution_at ? formatTimestamp(agent.last_execution_at, false) : '从未执行'}</span>
+          <span className="truncate max-w-[120px]">
+            {agent.last_execution_at ? formatTimestamp(agent.last_execution_at, false) : t('agents:card.neverExecuted')}
+          </span>
         </div>
 
         <Switch

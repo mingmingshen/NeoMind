@@ -3,6 +3,7 @@
  *
  * User-defined AI Agents for autonomous IoT automation.
  * Card grid layout with detail dialog for viewing individual agent details.
+ * Uses WebSocket events for real-time agent status updates.
  */
 
 import { useState, useCallback, useEffect } from "react"
@@ -11,9 +12,11 @@ import { PageLayout } from "@/components/layout/PageLayout"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
+import { useEvents } from "@/hooks/useEvents"
 import { Loader2, Bot } from "lucide-react"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail } from "@/types"
+import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
 
 // Import components
 import { AgentCard, CreateCard } from "./agents-components/AgentCard"
@@ -46,6 +49,11 @@ export function AgentsPage() {
   // Data state
   const [agents, setAgents] = useState<AiAgent[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Track executing agents for real-time updates with timestamps for timeout
+  const [executingAgents, setExecutingAgents] = useState<Map<string, number>>(new Map())
+  // Track current thinking state per agent
+  const [agentThinking, setAgentThinking] = useState<Record<string, string>>({})
 
   // Resources for dialogs
   const [devices, setDevices] = useState<any[]>([])
@@ -83,6 +91,116 @@ export function AgentsPage() {
   // Load items on mount
   useEffect(() => {
     loadItems()
+  }, [loadItems])
+
+  // Listen to WebSocket events for real-time agent status updates
+  useEvents({
+    enabled: true,
+    eventTypes: ['AgentExecutionStarted', 'AgentExecutionCompleted', 'AgentThinking'],
+    onEvent: (event) => {
+      const eventData = event.data as { agent_id?: string }
+
+      switch (event.type) {
+        case 'AgentExecutionStarted': {
+          const startedData = (event as AgentExecutionStartedEvent).data
+          // Add to executing map with timestamp
+          setExecutingAgents(prev => new Map(prev).set(startedData.agent_id, Date.now()))
+
+          // Update the specific agent's status in the list
+          setAgents(prev => prev.map(agent =>
+            agent.id === startedData.agent_id
+              ? { ...agent, status: 'Executing' as const }
+              : agent
+          ))
+
+          // Update selected agent if it's the same one
+          if (selectedAgent?.id === startedData.agent_id) {
+            setSelectedAgent(prev => prev ? { ...prev, status: 'Executing' } : null)
+          }
+          break
+        }
+
+        case 'AgentExecutionCompleted': {
+          const completedData = (event as AgentExecutionCompletedEvent).data
+          // Remove from executing map immediately
+          setExecutingAgents(prev => {
+            const next = new Map(prev)
+            next.delete(completedData.agent_id)
+            return next
+          })
+
+          // Clear thinking state immediately
+          setAgentThinking(prev => {
+            const next = { ...prev }
+            delete next[completedData.agent_id]
+            return next
+          })
+
+          // Immediately update the agent's status in the list to Active or Error
+          setAgents(prev => prev.map(agent =>
+            agent.id === completedData.agent_id
+              ? { ...agent, status: completedData.success ? 'Active' : 'Error' }
+              : agent
+          ))
+
+          // Update selected agent if it's the same one
+          if (selectedAgent?.id === completedData.agent_id) {
+            setSelectedAgent(prev => prev ? {
+              ...prev,
+              status: completedData.success ? 'Active' : 'Error'
+            } : null)
+          }
+
+          // Reload agents to get updated stats (non-blocking)
+          loadItems()
+          break
+        }
+
+        case 'AgentThinking': {
+          const thinkingData = (event as AgentThinkingEvent).data
+          // Update current thinking for this agent
+          setAgentThinking(prev => ({
+            ...prev,
+            [thinkingData.agent_id]: thinkingData.description
+          }))
+          break
+        }
+      }
+    },
+  })
+
+  // Auto-cleanup: Remove agents from executing state after timeout (5 minutes)
+  useEffect(() => {
+    const EXECUTION_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+
+    const interval = setInterval(() => {
+      const now = Date.now()
+      setExecutingAgents(prev => {
+        const next = new Map<string, number>()
+        let hasChanges = false
+
+        prev.forEach((timestamp, agentId) => {
+          if (now - timestamp > EXECUTION_TIMEOUT_MS) {
+            // Agent has been executing too long, remove it
+            hasChanges = true
+            // Also clear thinking state
+            setAgentThinking(prevThinking => {
+              const nextThinking = { ...prevThinking }
+              delete nextThinking[agentId]
+              return nextThinking
+            })
+            // Reload agents to get actual status from server
+            loadItems()
+          } else {
+            next.set(agentId, timestamp)
+          }
+        })
+
+        return hasChanges ? next : prev
+      })
+    }, 30000) // Check every 30 seconds
+
+    return () => clearInterval(interval)
   }, [loadItems])
 
   // Handlers
@@ -158,8 +276,11 @@ export function AgentsPage() {
         title: tCommon('success'),
         description: tAgent('executionStarted', { id: result.execution_id }),
       })
-      // Reload after a short delay to show updated status
-      setTimeout(() => loadItems(), 500)
+      // Immediately mark as executing (WebSocket will also update this)
+      setAgents(prev => prev.map(a =>
+        a.id === agent.id ? { ...a, status: 'Executing' } : a
+      ))
+      setExecutingAgents(prev => new Map(prev).set(agent.id, Date.now()))
     } catch (error) {
       console.error('Failed to execute agent:', error)
       toast({
@@ -220,6 +341,24 @@ export function AgentsPage() {
     }
   }, [agents, detailSheetOpen, selectedAgent?.id])
 
+  // Merge executing state from WebSocket with agent data
+  // Only show Executing if agent is currently executing AND not paused/error in database
+  const agentsWithExecutingStatus = agents.map(agent => {
+    // If agent is paused or error in database, don't override with executing state
+    if (agent.status === 'Paused' || agent.status === 'Error') {
+      return {
+        ...agent,
+        currentThinking: null
+      };
+    }
+    // Show Executing only if in executing set and currently Active/Executing in database
+    return {
+      ...agent,
+      status: executingAgents.has(agent.id) ? 'Executing' : agent.status,
+      currentThinking: executingAgents.has(agent.id) ? (agentThinking[agent.id] || null) : null
+    };
+  })
+
   return (
     <PageLayout
       title={tAgent('title')}
@@ -244,7 +383,7 @@ export function AgentsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <CreateCard onClick={handleCreate} />
-          {agents.map((agent) => (
+          {agentsWithExecutingStatus.map((agent) => (
             <AgentCard
               key={agent.id}
               agent={agent}
@@ -272,7 +411,7 @@ export function AgentsPage() {
       <Sheet open={detailSheetOpen} onOpenChange={setDetailSheetOpen}>
         <SheetContent className="w-full sm:max-w-3xl p-0 gap-0">
           <div className="px-6 pt-6 pb-4 border-b flex items-center justify-between">
-            <h2 className="text-lg font-semibold">智能体详情</h2>
+            <h2 className="text-lg font-semibold">{tAgent('detailTitle')}</h2>
           </div>
           <div className="h-[calc(100vh-100px)] overflow-y-auto">
             {selectedAgent && (

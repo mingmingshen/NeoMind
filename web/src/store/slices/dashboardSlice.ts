@@ -411,6 +411,9 @@ export const createDashboardSlice: StateCreator<
       const { currentDashboard, dashboards } = get()
       if (!currentDashboard) return
 
+      console.log('[DashboardSlice] updateComponent called:', { id, updates })
+      console.log('[DashboardSlice] currentDashboard.components before:', currentDashboard.components.find(c => c.id === id))
+
       const updatedDashboard = {
         ...currentDashboard,
         components: currentDashboard.components.map((c) =>
@@ -418,6 +421,9 @@ export const createDashboardSlice: StateCreator<
         ),
         updatedAt: Date.now(),
       }
+
+      const updatedComponent = updatedDashboard.components.find(c => c.id === id)
+      console.log('[DashboardSlice] updatedDashboard.components after:', updatedComponent)
 
       const updatedDashboards = dashboards.map((d) =>
         d.id === currentDashboard.id ? updatedDashboard : d
