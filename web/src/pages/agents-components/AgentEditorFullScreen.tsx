@@ -646,14 +646,6 @@ export function AgentEditorFullScreen({
           <h1 className="text-lg font-semibold">
             {isEditing ? tAgent('creator.editTitle') : tAgent('creator.title')}
           </h1>
-          <button
-            type="button"
-            onClick={() => !saving && onOpenChange(false)}
-            disabled={saving}
-            className="p-2 rounded-lg hover:bg-muted transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
 
         {/* Scrollable Content */}
