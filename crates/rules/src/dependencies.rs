@@ -201,7 +201,7 @@ impl DependencyManager {
     ) -> DependencyValidationResult {
         // Check for missing dependencies
         let mut missing = Vec::new();
-        for (_rule_id, deps) in &self.dependencies {
+        for deps in self.dependencies.values() {
             for dep in deps {
                 if !existing_rules.contains(dep) {
                     missing.push(dep.clone());

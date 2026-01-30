@@ -469,7 +469,7 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine context size: use max_context from params, or compute from model capabilities
         // CRITICAL: Qwen3 requires >= 16k context to avoid infinite repetition loops
-        let num_ctx = input.params.max_context.or_else(|| {
+        let num_ctx = input.params.max_context.or({
             // Use a safe default of 16k for models that support it
             if caps.max_context >= 16384 {
                 Some(16384)
@@ -749,7 +749,7 @@ impl LlmRuntime for OllamaRuntime {
 
         // Determine context size: use max_context from params, or compute from model capabilities
         // CRITICAL: Qwen3 requires >= 16k context to avoid infinite repetition loops
-        let num_ctx = input.params.max_context.or_else(|| {
+        let num_ctx = input.params.max_context.or({
             // Use a safe default of 16k for models that support it
             if caps.max_context >= 16384 {
                 Some(16384)
@@ -883,7 +883,7 @@ impl LlmRuntime for OllamaRuntime {
                     let mut total_chars = 0usize; // Track total output characters
                     let mut thinking_chars = 0usize; // Track thinking characters separately
                     let mut thinking_start_time: Option<Instant> = None; // Track when thinking started
-                    let mut terminate_early = false; // Flag to terminate stream early
+                    let terminate_early = false; // Flag to terminate stream early
                     let mut skip_remaining_thinking = false; // Skip thinking chunks but wait for content
                     let mut last_thinking_chunk = String::new(); // Track last thinking chunk for loop detection
                     let mut consecutive_same_thinking = 0usize; // Count consecutive identical thinking chunks
@@ -911,7 +911,7 @@ impl LlmRuntime for OllamaRuntime {
 
                             // Send progress update through a special content marker
                             // We encode progress as a special comment in the thinking stream
-                            let progress_json = serde_json::json!({
+                            let _progress_json = serde_json::json!({
                                 "type": "progress",
                                 "elapsed": elapsed_secs,
                                 "remaining": remaining.as_secs(),
@@ -934,7 +934,7 @@ impl LlmRuntime for OllamaRuntime {
                                     let remaining = max_duration.saturating_sub(elapsed);
 
                                     // Send warning through progress mechanism
-                                    let warning_json = serde_json::json!({
+                                    let _warning_json = serde_json::json!({
                                         "type": "warning",
                                         "message": format!("执行中... 已耗时 {} 秒，剩余约 {} 秒",
                                             elapsed_secs, remaining.as_secs()),

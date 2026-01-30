@@ -8,7 +8,7 @@
 //! The system gracefully degrades if LLM is unavailable or returns invalid data.
 
 use crate::discovery::types::*;
-use crate::discovery::{StructureAnalyzer, StatisticsAnalyzer, HexAnalyzer, ValuePattern, SuggestedType, ValueStatistics, DataType, ValueRange, InferredType};
+use crate::discovery::{StructureAnalyzer, StatisticsAnalyzer, HexAnalyzer, ValuePattern, ValueStatistics, DataType, ValueRange, InferredType};
 use edge_ai_core::{LlmRuntime, Message, GenerationParams, llm::backend::LlmInput};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -248,12 +248,11 @@ impl SemanticInference {
             ).await {
                 Ok(llm_results) => {
                     for (field_name, values) in fields {
-                        if let Some(semantic) = llm_results.get(field_name.as_str()) {
-                            if semantic.confidence >= self.config.min_llm_confidence {
+                        if let Some(semantic) = llm_results.get(field_name.as_str())
+                            && semantic.confidence >= self.config.min_llm_confidence {
                                 results.insert((*field_name).clone(), semantic.clone());
                                 continue;
                             }
-                        }
                         // Use heuristic for remaining fields
                         let semantic = self.heuristic_inference(field_name, values, context);
                         results.insert((*field_name).clone(), semantic);
@@ -339,7 +338,7 @@ impl SemanticInference {
         context: &InferenceContext,
         use_llm: bool,
     ) -> Vec<DiscoveredMetric> {
-        use crate::discovery::{StructureResult, PathInfo, InferredType, normalize_path};
+        use crate::discovery::InferredType;
 
         if samples.is_empty() {
             return vec![];
@@ -567,11 +566,10 @@ impl SemanticInference {
             let mut array_samples = Vec::new();
             for sample in samples.iter().take(10) {
                 // Navigate to the array path in the sample
-                if let Some(array_value) = Self::navigate_to_path(sample, &parent_path) {
-                    if array_value.is_array() {
+                if let Some(array_value) = Self::navigate_to_path(sample, &parent_path)
+                    && array_value.is_array() {
                         array_samples.push(array_value.clone());
                     }
-                }
             }
 
             if !array_samples.is_empty() {
@@ -777,7 +775,7 @@ impl SemanticInference {
                 }
         }
 
-        Some(results).unwrap_or_default()
+        results
     }
 
     /// Enhance discovered metrics with LLM-generated descriptions and display names
@@ -790,7 +788,7 @@ impl SemanticInference {
         device_category: &str,
         metrics: &[crate::discovery::DiscoveredMetric],
     ) -> Vec<(String, MetricEnhancement)> {
-        use crate::discovery::DiscoveredMetric;
+        
 
         let llm = match self.llm.as_ref() {
             Some(l) => l,
@@ -872,8 +870,8 @@ impl SemanticInference {
         ).await {
             Ok(Ok(output)) => {
                 let response = output.text.trim().trim_start_matches("```json").trim_start_matches("```").trim();
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response) {
-                    if let Some(obj) = parsed.get("metrics").and_then(|v| v.as_object()) {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(response)
+                    && let Some(obj) = parsed.get("metrics").and_then(|v| v.as_object()) {
                         tracing::info!("LLM enhancement completed for {} metrics", obj.len());
                         let mut results = Vec::new();
                         for (metric_name, enhancement_data) in obj {
@@ -882,7 +880,7 @@ impl SemanticInference {
                                 MetricEnhancement {
                                     display_name: enhancement_data.get("display_name")
                                         .and_then(|v| v.as_str())
-                                        .unwrap_or(&metric_name)
+                                        .unwrap_or(metric_name)
                                         .to_string(),
                                     description: enhancement_data.get("description")
                                         .and_then(|v| v.as_str())
@@ -898,7 +896,6 @@ impl SemanticInference {
                         }
                         return results;
                     }
-                }
                 tracing::warn!("Failed to parse LLM enhancement response");
                 vec![]
             }
@@ -920,7 +917,7 @@ impl SemanticInference {
         field_values: &[serde_json::Value],
         _context: &InferenceContext,
     ) -> FieldSemantic {
-        let name_lower = field_name.to_lowercase();
+        let _name_lower = field_name.to_lowercase();
 
         // First try rule-based semantic type
         let first_value = field_values.first().cloned();
@@ -956,11 +953,10 @@ impl SemanticInference {
         }
 
         // Hex handling
-        if hex_info.is_hex {
-            if let Some(decoded) = hex_info.decoded_integer {
+        if hex_info.is_hex
+            && let Some(decoded) = hex_info.decoded_integer {
                 reasoning = format!("Hex value detected, decoded as {}", decoded);
             }
-        }
 
         // Build result
         let standard_name = Self::standardize_name(field_name);
@@ -1196,11 +1192,11 @@ impl SemanticInference {
         }
 
         // Determine dominant type
-        let num_count = if has_numbers { total } else { 0 };
-        let str_count = if has_strings { total } else { 0 };
-        let bool_count = if has_bools { total } else { 0 };
-        let obj_count = if has_objects { total } else { 0 };
-        let arr_count = if has_arrays { total } else { 0 };
+        let _num_count = if has_numbers { total } else { 0 };
+        let _str_count = if has_strings { total } else { 0 };
+        let _bool_count = if has_bools { total } else { 0 };
+        let _obj_count = if has_objects { total } else { 0 };
+        let _arr_count = if has_arrays { total } else { 0 };
 
         // Simple heuristic: count unique types seen
         let type_count = [has_numbers, has_strings, has_bools, has_objects, has_arrays]

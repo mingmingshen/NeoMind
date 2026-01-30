@@ -53,7 +53,7 @@ impl DataPoint {
             MetricValue::Boolean(b) => Value::Bool(*b),
             MetricValue::Array(arr) => {
                 // Convert array to JSON array
-                let json_arr: Vec<Value> = arr.iter().map(|v| Self::metric_value_to_json(v)).collect();
+                let json_arr: Vec<Value> = arr.iter().map(Self::metric_value_to_json).collect();
                 Value::Array(json_arr)
             }
             MetricValue::Binary(data) => Value::String(base64::encode(data)),

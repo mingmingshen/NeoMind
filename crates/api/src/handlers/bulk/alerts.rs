@@ -4,7 +4,7 @@ use axum::{Json, extract::State};
 use serde_json::json;
 
 use edge_ai_alerts::{Alert, AlertId, AlertSeverity};
-use edge_ai_core::{eventbus::EventBus, event::NeoTalkEvent};
+use edge_ai_core::event::NeoTalkEvent;
 
 use super::models::{
     BulkAcknowledgeAlertsRequest, BulkCreateAlertsRequest, BulkDeleteAlertsRequest,

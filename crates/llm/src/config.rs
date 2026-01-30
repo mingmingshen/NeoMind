@@ -148,7 +148,7 @@ impl LlmConfig {
                     }
                     #[cfg(not(feature = "cloud"))]
                     {
-                        return Err(LlmError::BackendUnavailable("cloud feature not enabled".to_string()));
+                        Err(LlmError::BackendUnavailable("cloud feature not enabled".to_string()))
                     }
                 }
                 _ => Err(LlmError::InvalidInput(format!(

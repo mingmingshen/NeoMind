@@ -736,7 +736,7 @@ async fn handle_ws_socket(
                                     let backend_id = chat_req.backend_id.as_deref();
 
                                     // Check if request contains images (multimodal input)
-                                    let has_images = chat_req.images.as_ref().map_or(false, |i| !i.is_empty());
+                                    let has_images = chat_req.images.as_ref().is_some_and(|i| !i.is_empty());
 
                                     if has_images {
                                         // Process multimodal message with images - now with streaming support!
@@ -903,9 +903,8 @@ async fn handle_ws_socket(
     }
 
     // Cleanup: persist session history AFTER loop ends (when connection closes)
-    if let Some(session_id) = current_session_id.read().await.as_ref() {
-        if let Err(e) = state.session_manager.persist_history(session_id).await {
+    if let Some(session_id) = current_session_id.read().await.as_ref()
+        && let Err(e) = state.session_manager.persist_history(session_id).await {
             tracing::warn!(category = "session", error = %e, "Failed to persist history on disconnect");
         }
-    }
 }

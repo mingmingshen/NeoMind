@@ -337,7 +337,7 @@ impl RuleDslParser {
         let mut lines: Vec<&str> = preprocessed.lines().collect();
 
         // Find and extract the rule name
-        let (name, mut description, mut tags) = Self::extract_rule_header(&mut lines)?;
+        let (name, description, tags) = Self::extract_rule_header(&mut lines)?;
 
         // Find and parse the WHEN clause (now supports complex conditions)
         let condition = Self::parse_when_clause(&mut lines)?;
@@ -446,8 +446,8 @@ impl RuleDslParser {
         }
 
         // Handle parenthesized expressions
-        if input.starts_with('(') {
-            if let Some(close_pos) = Self::find_matching_paren(input, 0) {
+        if input.starts_with('(')
+            && let Some(close_pos) = Self::find_matching_paren(input, 0) {
                 let inner = &input[1..close_pos];
                 let rest = input[close_pos + 1..].trim();
 
@@ -467,19 +467,18 @@ impl RuleDslParser {
                     return Self::parse_condition(inner);
                 }
             }
-        }
 
         // Handle AND (higher precedence than OR)
         if let Some(pos) = Self::find_operator_ignore_parens(input, "AND") {
             let left = Self::parse_condition(&input[..pos])?;
-            let right = Self::parse_condition(&input[pos + 5..].trim())?;
+            let right = Self::parse_condition(input[pos + 5..].trim())?;
             return Ok(RuleCondition::And(vec![left, right]));
         }
 
         // Handle OR (lower precedence than AND)
         if let Some(pos) = Self::find_operator_ignore_parens(input, "OR") {
             let left = Self::parse_condition(&input[..pos])?;
-            let right = Self::parse_condition(&input[pos + 4..].trim())?;
+            let right = Self::parse_condition(input[pos + 4..].trim())?;
             return Ok(RuleCondition::Or(vec![left, right]));
         }
 
@@ -489,7 +488,7 @@ impl RuleDslParser {
     }
 
     /// Find matching closing parenthesis.
-    fn find_matching_paren(input: &str, start: usize) -> Option<usize> {
+    fn find_matching_paren(input: &str, _start: usize) -> Option<usize> {
         let mut depth = 0;
         for (i, c) in input.chars().enumerate() {
             if c == '(' {
@@ -821,12 +820,12 @@ impl RuleDslParser {
     /// Extract all quoted strings from input.
     fn extract_all_quoted_strings(input: &str) -> Vec<String> {
         let mut results = Vec::new();
-        let mut chars = input.chars().peekable();
+        let chars = input.chars().peekable();
         let mut in_quotes = false;
         let mut current = String::new();
         let mut escape_next = false;
 
-        while let Some(c) = chars.next() {
+        for c in chars {
             if escape_next {
                 current.push(c);
                 escape_next = false;

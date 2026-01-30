@@ -255,6 +255,16 @@ export class EventsWebSocket {
     }
   }
 
+  /**
+   * Ensure connection is active (no-op if already connected)
+   * This is a safer alternative to connect() for repeated calls
+   */
+  ensureConnected() {
+    if (!this.isConnected()) {
+      this.connect()
+    }
+  }
+
   private connectWebSocket(protocol: string, category: string, eventTypes: EventType[]) {
     const params = new URLSearchParams()
     if (category !== 'all') {
@@ -519,16 +529,19 @@ const eventConnections = new Map<string, EventsWebSocket>()
 
 /**
  * Get or create an events WebSocket connection
- * Always attempts to connect (will reconnect if token changed)
+ * Ensures connection is active but won't reconnect if already connected
  */
 export function getEventsConnection(key = 'default', config?: EventsConfig): EventsWebSocket {
   let connection = eventConnections.get(key)
   if (!connection) {
     connection = new EventsWebSocket(config)
     eventConnections.set(key, connection)
+  } else if (config && Object.keys(config).length > 0) {
+    // Update config if provided
+    connection.updateConfig(config)
   }
-  // Always try to connect (will check token and reconnect if needed)
-  connection.connect()
+  // Use ensureConnected instead of connect to avoid unnecessary reconnection attempts
+  connection.ensureConnected()
   return connection
 }
 

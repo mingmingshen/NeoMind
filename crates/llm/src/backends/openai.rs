@@ -531,8 +531,8 @@ impl LlmRuntime for CloudRuntime {
                                         let _ = tx.send(Ok((String::new(), false))).await;
                                         continue;
                                     }
-                                    if let Some(json) = line.strip_prefix("data: ") {
-                                        if let Ok(evt) =
+                                    if let Some(json) = line.strip_prefix("data: ")
+                                        && let Ok(evt) =
                                             serde_json::from_str::<StreamChunkEvent>(json)
                                             && let Some(choice) = evt.choices.first() {
                                                 let delta = &choice.delta.content;
@@ -541,7 +541,6 @@ impl LlmRuntime for CloudRuntime {
                                                         tx.send(Ok((delta.clone(), false))).await;
                                                 }
                                             }
-                                    }
                                 }
                             }
                             Err(e) => {
@@ -602,8 +601,8 @@ impl LlmRuntime for CloudRuntime {
 fn extract_data_url(url: &str) -> (String, String) {
     if url.starts_with("data:") {
         // Format: data:image/png;base64,iVBORw0KGgo...
-        if let Some(rest) = url.strip_prefix("data:") {
-            if let Some((mime_and_encoding, data)) = rest.split_once(',') {
+        if let Some(rest) = url.strip_prefix("data:")
+            && let Some((mime_and_encoding, data)) = rest.split_once(',') {
                 // mime_and_encoding is like "image/png;base64"
                 let media_type = mime_and_encoding
                     .split(';')
@@ -612,7 +611,6 @@ fn extract_data_url(url: &str) -> (String, String) {
                     .to_string();
                 return (media_type, data.to_string());
             }
-        }
     }
     // Fallback
     ("image/png".to_string(), url.to_string())

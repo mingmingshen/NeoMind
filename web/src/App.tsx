@@ -78,18 +78,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-// Public Route component (redirect to dashboard if already authenticated)
-// Uses tokenManager.getToken() directly to avoid race condition with store hydration
-function PublicRoute({ children }: { children: React.ReactNode }) {
-  const token = tokenManager.getToken()
-
-  if (token) {
-    return <Navigate to="/" replace />
-  }
-
-  return <>{children}</>
-}
-
 // Setup Required Route component
 // Checks if setup is needed and redirects to /setup if required
 // Otherwise redirects to login if authenticated

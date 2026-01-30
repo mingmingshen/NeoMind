@@ -83,7 +83,7 @@ impl CompactionConfig {
 
     /// Set the maximum history share (0.0 - 1.0).
     pub fn with_max_history_share(mut self, share: f64) -> Self {
-        assert!(share >= 0.0 && share <= 1.0, "max_history_share must be between 0.0 and 1.0");
+        assert!((0.0..=1.0).contains(&share), "max_history_share must be between 0.0 and 1.0");
         self.max_history_share = share;
         self
     }
@@ -252,7 +252,7 @@ pub fn compact_messages(
                     // Summarize old tool result
                     let truncated = truncate_text(&content_text, 200);
                     let summary_msg = Message {
-                        role: msg.role.clone(),
+                        role: msg.role,
                         content: crate::message::Content::Text(
                             format!("[Previous tool result: {}]", truncated)
                         ),

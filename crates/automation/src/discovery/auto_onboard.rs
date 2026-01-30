@@ -304,7 +304,7 @@ impl AutoOnboardManager {
         let drafts = self.drafts.read().await;
 
         // Check if there's an existing draft for this device
-        if let Some(draft) = drafts.get(device_id) {
+        if let Some(_draft) = drafts.get(device_id) {
             drop(drafts);
             return self.add_sample_to_draft(device_id, data, is_binary).await;
         }
@@ -678,11 +678,10 @@ impl AutoOnboardManager {
 
         // Get the generated type from drafts
         let drafts = self.drafts.read().await;
-        if let Some(draft) = drafts.get(device_id) {
-            if let Some(ref gen_type) = draft.generated_type {
+        if let Some(draft) = drafts.get(device_id)
+            && let Some(ref gen_type) = draft.generated_type {
                 return Ok(gen_type.clone());
             }
-        }
 
         Err(DiscoveryError::Parse("Generated type not found".to_string()))
     }
@@ -693,7 +692,7 @@ impl AutoOnboardManager {
         draft_id: &str,
         device_id: &str,
     ) -> Result<()> {
-        let (device_type, mdl_def) = {
+        let (device_type, _mdl_def) = {
             let drafts = self.drafts.read().await;
             let draft = drafts.get(device_id).ok_or_else(|| {
                 DiscoveryError::InvalidData(format!("Draft not found: {}", device_id))
@@ -763,7 +762,7 @@ impl AutoOnboardManager {
         );
 
         // Get the draft and its metrics
-        let (draft, metrics) = {
+        let (_draft, metrics) = {
             let drafts = self.drafts.read().await;
             let draft = drafts.get(device_id).ok_or_else(|| {
                 DiscoveryError::InvalidData(format!("Draft not found: {}", device_id))
@@ -791,7 +790,7 @@ impl AutoOnboardManager {
         let enhancement_map: std::collections::HashMap<String, _> = enhancements.into_iter().collect();
 
         let enhanced_metrics: Vec<DiscoveredMetric> = metrics.into_iter().map(|mut m| {
-            if let Some(ref enhancement) = enhancement_map.get(&m.name) {
+            if let Some(enhancement) = enhancement_map.get(&m.name) {
                 m.display_name = enhancement.display_name.clone();
                 m.description = enhancement.description.clone();
                 m.unit = enhancement.unit.clone();
@@ -840,7 +839,7 @@ impl AutoOnboardManager {
         // Publish event with system_device_id
         let manager = self.clone();
         let draft_id_str = draft_id.to_string();
-        let original_device_id = device_id.to_string();
+        let _original_device_id = device_id.to_string();
         let system_device_id_clone = system_device_id.clone();
         let type_id_clone = type_id.clone();
         tokio::spawn(async move {
@@ -1049,7 +1048,7 @@ impl AutoOnboardManager {
         &self,
         device_id: &str,
         category: &DeviceCategory,
-        metrics: &[DiscoveredMetric],
+        _metrics: &[DiscoveredMetric],
     ) -> String {
         // Try to extract a meaningful name from device_id
         let base_name = device_id
@@ -1234,8 +1233,8 @@ impl AutoOnboardManager {
         }
 
         // Look up the device_type from the signature hash
-        if let Some((sig_hash, similarity)) = best_match {
-            if let Some(device_type) = type_signatures.get(&sig_hash) {
+        if let Some((sig_hash, similarity)) = best_match
+            && let Some(device_type) = type_signatures.get(&sig_hash) {
                 tracing::info!(
                     "Found similar type '{}' with similarity {:.2}%",
                     device_type,
@@ -1243,7 +1242,6 @@ impl AutoOnboardManager {
                 );
                 return Some(device_type.clone());
             }
-        }
 
         None
     }
@@ -1332,11 +1330,10 @@ impl AutoOnboardManager {
         // Update signature -> device_type mapping
         {
             let mut signatures = self.type_signatures.write().await;
-            if let Some(existing_type) = signatures.get(&signature_hash) {
-                if existing_type == old_name {
+            if let Some(existing_type) = signatures.get(&signature_hash)
+                && existing_type == old_name {
                     signatures.insert(signature_hash.clone(), new_name.to_string());
                 }
-            }
         }
 
         // Update device_type -> signature mapping

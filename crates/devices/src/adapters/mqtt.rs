@@ -1371,8 +1371,8 @@ impl MqttAdapter {
                     // Fall back to simple metric extraction for non-uplink messages
                     // This requires a device_id to be extractable from the topic
                     let device_id_for_fallback = extract_device_id_from_topic(&topic, config);
-                    if let Some(device_id) = device_id_for_fallback {
-                        if let Ok(value) = MqttAdapter::default_parse_value(&payload) {
+                    if let Some(device_id) = device_id_for_fallback
+                        && let Ok(value) = MqttAdapter::default_parse_value(&payload) {
                             let metric_name = extract_metric_name_from_topic(&topic)
                                 .unwrap_or_else(|| "value".to_string());
 
@@ -1423,8 +1423,7 @@ impl MqttAdapter {
                             } else {
                                 warn!("EventBus is None in handle_mqtt_notification - cannot publish DeviceOnline");
                             }
-                        }
-                    } // Close: if let Some(device_id)
+                        } // Close: if let Some(device_id)
                 } // Close: if is_standard_uplink
 
                 // Auto-onboarding: For non-standard topics, trigger auto-discovery

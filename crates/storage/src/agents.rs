@@ -183,6 +183,7 @@ pub enum AgentStatus {
 
 /// Agent execution statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AgentStats {
     /// Total executions
     pub total_executions: u64,
@@ -196,17 +197,6 @@ pub struct AgentStats {
     pub last_duration_ms: Option<u64>,
 }
 
-impl Default for AgentStats {
-    fn default() -> Self {
-        Self {
-            total_executions: 0,
-            successful_executions: 0,
-            failed_executions: 0,
-            avg_duration_ms: 0,
-            last_duration_ms: None,
-        }
-    }
-}
 
 /// Hierarchical memory for an agent across executions.
 ///
@@ -1004,7 +994,7 @@ impl AgentStore {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(AGENTS_TABLE)?;
 
-        let mut agent = match table.get(id)? {
+        let agent = match table.get(id)? {
             Some(bytes) => {
                 let mut ag: AiAgent = serde_json::from_slice(bytes.value())
                     .map_err(|e| Error::Serialization(e.to_string()))?;
@@ -1040,7 +1030,7 @@ impl AgentStore {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(AGENTS_TABLE)?;
 
-        let mut agent = match table.get(id)? {
+        let agent = match table.get(id)? {
             Some(bytes) => {
                 let mut ag: AiAgent = serde_json::from_slice(bytes.value())
                     .map_err(|e| Error::Serialization(e.to_string()))?;
@@ -1116,7 +1106,7 @@ impl AgentStore {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(AGENTS_TABLE)?;
 
-        let mut agent = match table.get(id)? {
+        let agent = match table.get(id)? {
             Some(bytes) => {
                 let mut ag: AiAgent = serde_json::from_slice(bytes.value())
                     .map_err(|e| Error::Serialization(e.to_string()))?;
@@ -1205,7 +1195,7 @@ impl AgentStore {
         if let (Some(agent_id), Some(turn)) = (agent_id, conversation_turn) {
             // Get current agent state using the write transaction (it can also read)
             let mut agent = {
-                let mut table = write_txn.open_table(AGENTS_TABLE)?;
+                let table = write_txn.open_table(AGENTS_TABLE)?;
                 match table.get(agent_id)? {
                     Some(bytes) => {
                         let a: AiAgent = serde_json::from_slice(bytes.value())

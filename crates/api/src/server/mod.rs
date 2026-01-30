@@ -57,7 +57,7 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     startup.service("Auto-onboarding events", ServiceStatus::Started);
 
     // Initialize AI Agent manager
-    state.start_agent_manager().await;
+    let _ = state.start_agent_manager().await;
     startup.service("AI Agent manager", ServiceStatus::Started);
 
     // Initialize AI Agent event listener

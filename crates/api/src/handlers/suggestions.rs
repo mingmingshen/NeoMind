@@ -11,12 +11,11 @@ use axum::{
     response::Json as ResponseJson,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::collections::HashMap;
-use chrono::{Timelike, Datelike};
+use chrono::Timelike;
 
 use crate::server::ServerState;
-use edge_ai_storage::{AgentFilter, AiAgent, SessionStore};
+use edge_ai_storage::AgentFilter;
 use edge_ai_devices::adapter::ConnectionStatus;
 
 /// Suggestion item with enhanced metadata
@@ -283,14 +282,13 @@ async fn generate_device_based_suggestions(state: &ServerState) -> Vec<Suggestio
         if let Ok(status) = tokio::time::timeout(
             std::time::Duration::from_millis(100),
             state.device_service.get_device_connection_status(&device.device_id)
-        ).await {
-            if matches!(status, ConnectionStatus::Connected) {
+        ).await
+            && matches!(status, ConnectionStatus::Connected) {
                 online_count += 1;
             }
-        }
     }
 
-    if online_count < devices.len() && devices.len() > 0 {
+    if online_count < devices.len() && !devices.is_empty() {
         suggestions.push(SuggestionItem {
             id: "device-offline-check".to_string(),
             label: format!("检查离线设备 ({}个)", devices.len() - online_count),
@@ -331,11 +329,10 @@ async fn generate_recent_operation_suggestions(state: &ServerState) -> Vec<Sugge
     let mut operation_counts: HashMap<String, usize> = HashMap::new();
 
     for session_info in sessions.iter().take(10) {  // Check last 10 sessions
-        if let Some(ref title) = session_info.title {
-            if !title.is_empty() {
+        if let Some(ref title) = session_info.title
+            && !title.is_empty() {
                 *operation_counts.entry(title.clone()).or_insert(0) += 1;
             }
-        }
     }
 
     // Generate suggestions from common operations (top 3)
@@ -374,14 +371,13 @@ async fn generate_pattern_based_suggestions(state: &ServerState) -> Vec<Suggesti
     for agent in agents {
         for pattern in &agent.memory.learned_patterns {
             if pattern.confidence > 0.7 {
-                if let Some(action) = pattern.data.get("action") {
-                    if let Some(action_str) = action.as_str() {
+                if let Some(action) = pattern.data.get("action")
+                    && let Some(action_str) = action.as_str() {
                         high_confidence_patterns.push((
                             format!("类似: {}", action_str),
                             pattern.confidence,
                         ));
                     }
-                }
                 if !pattern.description.is_empty() {
                     high_confidence_patterns.push((
                         pattern.description.clone(),

@@ -18,7 +18,7 @@ use super::error::ToolError;
 use edge_ai_core::tools::{ToolExample, UsageScenario, ToolCategory, ToolRelationships};
 
 use edge_ai_storage::AgentStore;
-use edge_ai_storage::agents::{AiAgent, AgentFilter, AgentStatus, ScheduleType, LearnedPattern};
+use edge_ai_storage::agents::{AgentFilter, AgentStatus, ScheduleType, LearnedPattern};
 
 // ============================================================================
 // Agent Query Tools

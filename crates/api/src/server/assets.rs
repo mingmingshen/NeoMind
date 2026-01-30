@@ -7,10 +7,9 @@
 //! indicating that static assets are not available.
 
 use axum::{
-    body::Body,
     extract::Path,
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
 };
 
 #[cfg(feature = "static")]

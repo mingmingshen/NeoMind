@@ -187,9 +187,11 @@ pub struct PendingStreamState {
 
 /// Current stage of stream processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum StreamStage {
     /// Initial stage - waiting for response
     #[serde(rename = "waiting")]
+    #[default]
     Waiting,
     /// Model is thinking/reasoning
     #[serde(rename = "thinking")]
@@ -205,11 +207,6 @@ pub enum StreamStage {
     Complete,
 }
 
-impl Default for StreamStage {
-    fn default() -> Self {
-        Self::Waiting
-    }
-}
 
 impl PendingStreamState {
     /// Create a new pending stream state.

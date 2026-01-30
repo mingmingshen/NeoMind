@@ -320,11 +320,10 @@ impl VectorStore {
 
         for doc in docs.values() {
             // Apply metadata filter if specified
-            if let Some(ref filter) = options.metadata_filter {
-                if !doc.matches_filter(filter) {
+            if let Some(ref filter) = options.metadata_filter
+                && !doc.matches_filter(filter) {
                     continue;
                 }
-            }
 
             let score = self.similarity(query, &doc.embedding);
 

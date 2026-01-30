@@ -5,7 +5,6 @@ use axum::{
     extract::{Path, State},
 };
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use chrono;
 
 use edge_ai_rules::{CompiledRule, RuleId, RuleStatus, RuleCondition, RuleAction, ComparisonOperator, MetricDataType as RulesMetricDataType};
@@ -299,7 +298,7 @@ pub async fn update_rule_handler(
     // If DSL is provided, re-parse and replace the entire rule
     if let Some(dsl) = dsl {
         // Use the inner engine to parse DSL and get a CompiledRule
-        let parsed = edge_ai_rules::dsl::RuleDslParser::parse(&dsl)
+        let parsed = edge_ai_rules::dsl::RuleDslParser::parse(dsl)
             .map_err(|e| ErrorResponse::internal(format!("Failed to parse DSL: {}", e)))?;
 
         // Create a compiled rule from the parsed DSL, then override with original ID
@@ -334,11 +333,10 @@ pub async fn update_rule_handler(
             .map_err(|e| ErrorResponse::internal(format!("Failed to update rule: {}", e)))?;
 
         // Persist to store
-        if let Some(ref store) = state.rule_store {
-            if let Err(e) = store.save(&rule) {
+        if let Some(ref store) = state.rule_store
+            && let Err(e) = store.save(&rule) {
                 tracing::warn!("Failed to save rule to store: {}", e);
             }
-        }
 
         return ok(json!({
             "rule": RuleDetailDto::from(&rule),
@@ -459,8 +457,8 @@ pub async fn set_rule_status_handler(
     }
 
     // Also update in persistent store
-    if let Some(ref store) = state.rule_store {
-        if let Some(rule) = state.rule_engine.get_rule(&rule_id).await {
+    if let Some(ref store) = state.rule_store
+        && let Some(rule) = state.rule_engine.get_rule(&rule_id).await {
             if let Err(e) = store.save(&rule) {
                 tracing::warn!("Failed to update rule status in store: {}", e);
                 // Don't fail the request if persistence fails
@@ -468,7 +466,6 @@ pub async fn set_rule_status_handler(
                 tracing::debug!("Updated rule {} status in persistent store", rule_id);
             }
         }
-    }
 
     ok(json!({
         "rule_id": id,
@@ -503,9 +500,9 @@ pub async fn test_rule_handler(
     // Extract condition fields using pattern matching
     let (dsl_device_id, metric, operator, threshold) = match &rule.condition {
         RuleCondition::Simple { device_id, metric, operator, threshold } => {
-            (device_id.clone(), metric.clone(), operator.clone(), *threshold)
+            (device_id.clone(), metric.clone(), *operator, *threshold)
         }
-        RuleCondition::Range { device_id, metric, min, max } => {
+        RuleCondition::Range { device_id, metric, min: _, max } => {
             // For range conditions, use the max as threshold for testing
             (device_id.clone(), metric.clone(), ComparisonOperator::GreaterThan, *max)
         }
@@ -645,7 +642,7 @@ pub async fn create_rule_handler(
     let source = req.get("source").cloned();
 
     // Parse the DSL and create rule with source
-    let parsed = edge_ai_rules::dsl::RuleDslParser::parse(&dsl)
+    let parsed = edge_ai_rules::dsl::RuleDslParser::parse(dsl)
         .map_err(|e| ErrorResponse::internal(format!("Failed to parse DSL: {}", e)))?;
 
     // Create a compiled rule from the parsed DSL with source

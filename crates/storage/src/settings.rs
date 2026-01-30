@@ -660,7 +660,7 @@ impl SettingsStore {
         let table = read_txn.open_table(CONFIG_HISTORY_TABLE)?;
 
         let mut entries = Vec::new();
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (_, data) = result?;
             if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value())
@@ -684,7 +684,7 @@ impl SettingsStore {
         let table = read_txn.open_table(CONFIG_HISTORY_TABLE)?;
 
         let mut entries = Vec::new();
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (_, data) = result?;
             if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value()) {
@@ -707,7 +707,7 @@ impl SettingsStore {
 
         // Collect all entries
         let mut entries: Vec<(String, i64)> = Vec::new();
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (key, data) = result?;
             if let Ok(entry) = serde_json::from_slice::<ConfigChangeEntry>(data.value()) {
@@ -991,7 +991,7 @@ impl SettingsStore {
         let table = read_txn.open_table(EXTERNAL_BROKERS_TABLE)?;
 
         let mut brokers = Vec::new();
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (_, data) = result?;
             let broker: ExternalBroker = serde_json::from_slice(data.value())

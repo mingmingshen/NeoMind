@@ -4,11 +4,9 @@
 //! of LLM backends at runtime, enabling third-party extensions without
 //! modifying the core codebase.
 
-use crate::backends::{OllamaConfig, OllamaRuntime};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::OnceLock;
 
 #[cfg(feature = "cloud")]
 use crate::backends::openai::{CloudConfig, CloudRuntime};

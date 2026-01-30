@@ -445,7 +445,7 @@ impl LlmBackendStore {
         let table = read_txn.open_table(LLM_BACKENDS_TABLE)?;
 
         let mut instances = Vec::new();
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (_, data) = result?;
             let mut instance: LlmBackendInstance = serde_json::from_slice(data.value())
@@ -559,6 +559,7 @@ impl LlmBackendStore {
 
     /// Migrate from legacy LlmSettings if not already done
     #[cfg(not(feature = "settings"))]
+    #[allow(dead_code)]
     fn try_migrate_legacy(&self) -> Result<Option<LlmBackendInstance>, Error> {
         Ok(None)
     }

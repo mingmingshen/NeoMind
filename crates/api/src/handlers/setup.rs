@@ -6,11 +6,11 @@
 use axum::{
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Json},
+    response::Json,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::auth_users::{AuthUserState, RegisterRequest, UserRole};
+use crate::auth_users::UserRole;
 use crate::models::error::ErrorResponse;
 use crate::server::ServerState;
 
@@ -201,7 +201,7 @@ pub async fn complete_setup_handler(
 ///
 /// Allows configuring the LLM backend during the setup wizard.
 pub async fn save_llm_config_handler(
-    State(state): State<ServerState>,
+    State(_state): State<ServerState>,
     Json(req): Json<LlmConfigRequest>,
 ) -> Result<Json<serde_json::Value>, ErrorResponse> {
     // Validate provider
@@ -227,7 +227,7 @@ pub async fn save_llm_config_handler(
 
     // Save to settings storage
     // This will integrate with the existing settings system
-    let config = serde_json::json!({
+    let _config = serde_json::json!({
         "backend": req.provider,
         "model": req.model,
         "endpoint": req.endpoint,

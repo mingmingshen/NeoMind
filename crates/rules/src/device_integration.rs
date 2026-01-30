@@ -422,7 +422,7 @@ impl DeviceActionExecutor {
                         let status_code = status.as_u16();
 
                         // Try to get response body
-                        let body_result = match response.text().await {
+                        let _body_result = match response.text().await {
                             Ok(text) => {
                                 // Truncate if too long
                                 if text.len() > 200 {

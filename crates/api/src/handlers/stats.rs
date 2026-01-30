@@ -234,7 +234,7 @@ pub async fn get_system_stats_handler(
             .map(|(_, c)| *c)
             .sum();
         let success_rate = if total_commands > 0 {
-            ((total_commands - failed_commands) as f32 / total_commands as f32 * 100.0)
+            (total_commands - failed_commands) as f32 / total_commands as f32 * 100.0
         } else {
             0.0
         };
@@ -366,8 +366,7 @@ fn detect_gpus() -> Vec<GpuInfo> {
         .arg("--query-gpu=name,memory.total,driver_version")
         .arg("--format=csv,noheader,nounits")
         .output()
-    {
-        if output.status.success() {
+        && output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.trim().split(',').collect();
@@ -385,21 +384,19 @@ fn detect_gpus() -> Vec<GpuInfo> {
             }
             return gpus;
         }
-    }
 
     // Try to detect AMD GPUs using rocm-smi or lspci
     if let Ok(output) = std::process::Command::new("rocm-smi")
         .arg("--showproductname")
         .output()
-    {
-        if output.status.success() {
+        && output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             // Parse rocm-smi output for GPU names
             for line in stdout.lines() {
                 if line.contains("Card series") || line.contains("GPU") {
                     let name = line
                         .split(':')
-                        .last()
+                        .next_back()
                         .map(|s| s.trim().to_string())
                         .unwrap_or_else(|| "AMD GPU".to_string());
                     gpus.push(GpuInfo {
@@ -414,16 +411,14 @@ fn detect_gpus() -> Vec<GpuInfo> {
                 return gpus;
             }
         }
-    }
 
     // Try to detect Apple Silicon GPUs
-    if std::env::consts::OS == "macos" && std::env::consts::ARCH == "aarch64" {
-        if let Ok(output) = std::process::Command::new("system_profiler")
+    if std::env::consts::OS == "macos" && std::env::consts::ARCH == "aarch64"
+        && let Ok(output) = std::process::Command::new("system_profiler")
             .arg("SPDisplaysDataType")
             .arg("-json")
             .output()
-        {
-            if output.status.success() {
+            && output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 // Look for Apple GPU in the output
                 if stdout.contains("Apple") && stdout.contains("GPU") {
@@ -436,16 +431,13 @@ fn detect_gpus() -> Vec<GpuInfo> {
                 }
                 return gpus;
             }
-        }
-    }
 
     // Fallback: try lspci for basic GPU detection (Linux)
-    if std::env::consts::OS == "linux" {
-        if let Ok(output) = std::process::Command::new("lspci")
+    if std::env::consts::OS == "linux"
+        && let Ok(output) = std::process::Command::new("lspci")
             .arg("-nn")
             .output()
-        {
-            if output.status.success() {
+            && output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
                     if line.contains("VGA compatible controller")
@@ -482,8 +474,6 @@ fn detect_gpus() -> Vec<GpuInfo> {
                     }
                 }
             }
-        }
-    }
 
     gpus
 }

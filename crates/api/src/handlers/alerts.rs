@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use edge_ai_alerts::{Alert, AlertId, AlertSeverity, AlertStatus};
-use edge_ai_core::{eventbus::EventBus, event::NeoTalkEvent};
+use edge_ai_core::event::NeoTalkEvent;
 
 use super::{
     ServerState,

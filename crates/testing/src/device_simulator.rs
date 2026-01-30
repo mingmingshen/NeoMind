@@ -365,7 +365,7 @@ impl SimulatedDevice {
                     base_value - day_factor * 10.0 + (rand::random::<f64>() - 0.5) * self.variance
                 } else if *metric == "illuminance" {
                     // Light follows day/night cycle
-                    if hour >= 6.0 && hour <= 18.0 {
+                    if (6.0..=18.0).contains(&hour) {
                         let day_progress = (hour - 6.0) / 12.0;
                         let peak = (day_progress * (1.0 - day_progress) * 4.0).max(0.0);
                         base_value * peak + (rand::random::<f64>() - 0.5) * self.variance

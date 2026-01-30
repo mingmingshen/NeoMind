@@ -170,11 +170,10 @@ pub async fn register_device_adapter_handler(
         .await;
 
     // Auto-start if requested
-    if auto_start {
-        if let Err(e) = adapter.start().await {
+    if auto_start
+        && let Err(e) = adapter.start().await {
             tracing::warn!("Failed to auto-start adapter {}: {}", id, e);
         }
-    }
 
     ok(json!({
         "message": "Device adapter registered successfully",

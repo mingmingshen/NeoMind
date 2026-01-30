@@ -841,7 +841,7 @@ pub fn build_context_window_with_config(
     let mut current_tokens = 0;
 
     for msg in compacted.iter().rev() {
-        let msg_tokens = estimate_message_tokens(&msg);
+        let msg_tokens = estimate_message_tokens(msg);
 
         // Calculate priority for this message
         let priority = message_priority(&msg.role);
@@ -898,11 +898,10 @@ fn estimate_message_tokens(msg: &AgentMessage) -> usize {
     }
 
     // Add tokens for images (rough estimate)
-    if let Some(images) = &msg.images {
-        if !images.is_empty() {
+    if let Some(images) = &msg.images
+        && !images.is_empty() {
             tokens += 85 * images.len();
         }
-    }
 
     tokens
 }
@@ -922,15 +921,14 @@ fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
     }
 
     // Also truncate thinking if present
-    if let Some(thinking) = &truncated.thinking {
-        if thinking.len() > max_len / 2 {
+    if let Some(thinking) = &truncated.thinking
+        && thinking.len() > max_len / 2 {
             truncated.thinking = Some(if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
                 format!("{}...", &thinking[..last_space])
             } else {
                 format!("{}...", &thinking[..max_len / 2])
             });
         }
-    }
 
     truncated
 }
@@ -1997,8 +1995,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
     // Add images as ContentPart
     for image_data in &images {
-        if image_data.starts_with("data:image/") {
-            if let Some(base64_part) = image_data.split(',').nth(1) {
+        if image_data.starts_with("data:image/")
+            && let Some(base64_part) = image_data.split(',').nth(1) {
                 // Extract mime type from data URL
                 let mime_type = if image_data.contains("data:image/png") {
                     "image/png"
@@ -2013,7 +2011,6 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 };
                 parts.push(ContentPart::image_base64(base64_part, mime_type));
             }
-        }
     }
 
     // Get conversation history

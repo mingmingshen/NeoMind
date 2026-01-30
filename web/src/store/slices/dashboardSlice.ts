@@ -41,6 +41,9 @@ export interface DashboardState {
   currentDashboardId: string | null
   templates: DashboardTemplate[]
 
+  // Internal: Track current fetch request to prevent race conditions
+  _fetchId: number | null
+
   // UI State
   dashboardsLoading: boolean
   editMode: boolean
@@ -140,6 +143,22 @@ function generateId(): string {
   return crypto.randomUUID()
 }
 
+/**
+ * Deep clone utility using structuredClone with fallback
+ * Preserves more types than JSON.stringify (Date, Map, Set, etc.)
+ */
+function deepClone<T>(obj: T): T {
+  if (typeof structuredClone !== 'undefined') {
+    try {
+      return structuredClone(obj)
+    } catch {
+      // Fallback for circular references or unsupported types
+    }
+  }
+  // Fallback to JSON method for older browsers
+  return JSON.parse(JSON.stringify(obj))
+}
+
 // ============================================================================
 // Create Slice
 // ============================================================================
@@ -168,6 +187,7 @@ export const createDashboardSlice: StateCreator<
     currentDashboard: null,
     currentDashboardId: null,
     templates: DEFAULT_TEMPLATES,
+    _fetchId: null,
 
     dashboardsLoading: false,
     editMode: false,
@@ -183,18 +203,25 @@ export const createDashboardSlice: StateCreator<
     // ========================================================================
 
     fetchDashboards: async () => {
-      set({ dashboardsLoading: true })
+      // Generate unique ID for this fetch request
+      const fetchId = Date.now()
+      set({ _fetchId: fetchId, dashboardsLoading: true })
 
       try {
         const result = await storage.load()
 
-        // Always get current state after potential async changes
+        // Check if this is still the latest fetch request
         const currentState = get()
+        if (currentState._fetchId !== fetchId) {
+          // A newer fetch request has been initiated, discard this result
+          console.log('[DashboardSlice] Discarding stale fetch result')
+          return
+        }
 
         if (result.error) {
           console.warn('[DashboardSlice] Failed to load dashboards:', result.error.message)
           // Set empty array when loading fails
-          set({ dashboards: [] })
+          set({ dashboards: [], dashboardsLoading: false })
         } else if (result.data) {
           // Migration: Move dataSource from config to component level
           // This handles legacy data where dataSource was stored inside config
@@ -220,6 +247,13 @@ export const createDashboardSlice: StateCreator<
               }),
             }
           })
+
+          // Final check before updating state
+          const finalState = get()
+          if (finalState._fetchId !== fetchId) {
+            console.log('[DashboardSlice] Discarding stale fetch result (final check)')
+            return
+          }
 
           set({ dashboards: migratedDashboards })
 
@@ -256,10 +290,18 @@ export const createDashboardSlice: StateCreator<
         }
       } catch (err) {
         console.error('[DashboardSlice] Unexpected error loading dashboards:', err)
-        // Set empty array on unexpected errors
-        set({ dashboards: [] })
+        // Only update state if this is still the latest fetch
+        const currentState = get()
+        if (currentState._fetchId === fetchId) {
+          // Set empty array on unexpected errors
+          set({ dashboards: [] })
+        }
       } finally {
-        set({ dashboardsLoading: false })
+        // Only clear loading if this is still the latest fetch
+        const currentState = get()
+        if (currentState._fetchId === fetchId) {
+          set({ dashboardsLoading: false })
+        }
       }
     },
 
@@ -441,7 +483,7 @@ export const createDashboardSlice: StateCreator<
     },
 
     removeComponent(id) {
-      const { currentDashboard, dashboards } = get()
+      const { currentDashboard, dashboards, selectedComponent, configComponentId } = get()
       if (!currentDashboard) return
 
       const updatedDashboard = {
@@ -454,9 +496,15 @@ export const createDashboardSlice: StateCreator<
         d.id === currentDashboard.id ? updatedDashboard : d
       )
 
+      // Clear selection if the deleted component was selected
+      const newSelectedComponent = selectedComponent === id ? null : selectedComponent
+      const newConfigComponentId = configComponentId === id ? null : configComponentId
+
       set({
         dashboards: updatedDashboards,
         currentDashboard: updatedDashboard,
+        selectedComponent: newSelectedComponent,
+        configComponentId: newConfigComponentId,
       })
 
       storage.sync(updatedDashboard).catch(() => {})
@@ -496,7 +544,7 @@ export const createDashboardSlice: StateCreator<
       if (!original) return
 
       const newComponent = {
-        ...JSON.parse(JSON.stringify(original)),
+        ...deepClone(original),
         id: generateId(),
         position: {
           ...original.position,
@@ -528,14 +576,38 @@ export const createDashboardSlice: StateCreator<
 
     setEditMode: (edit) => set({ editMode: edit, selectedComponent: null }),
 
-    setSelectedComponent: (id) => set({ selectedComponent: id }),
+    setSelectedComponent: (id) => {
+      const { currentDashboard } = get()
+      // Validate that the component exists before selecting it
+      if (id && currentDashboard?.components) {
+        const componentExists = currentDashboard.components.some((c) => c.id === id)
+        if (!componentExists) {
+          // Component no longer exists, clear selection
+          set({ selectedComponent: null })
+          return
+        }
+      }
+      set({ selectedComponent: id })
+    },
 
     setComponentLibraryOpen: (open) => set({ componentLibraryOpen: open }),
 
-    setConfigPanelOpen: (open, componentId) => set({
-      configPanelOpen: open,
-      configComponentId: componentId || null,
-    }),
+    setConfigPanelOpen: (open, componentId) => {
+      const { currentDashboard } = get()
+      // Validate that the component exists before opening config
+      if (open && componentId && currentDashboard?.components) {
+        const componentExists = currentDashboard.components.some((c) => c.id === componentId)
+        if (!componentExists) {
+          // Component no longer exists, don't open config panel
+          set({ configPanelOpen: false, configComponentId: null })
+          return
+        }
+      }
+      set({
+        configPanelOpen: open,
+        configComponentId: componentId || null,
+      })
+    },
 
     setTemplateDialogOpen: (open) => set({ templateDialogOpen: open }),
 

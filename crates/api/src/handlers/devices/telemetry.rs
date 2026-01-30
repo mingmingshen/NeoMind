@@ -311,25 +311,22 @@ pub async fn get_device_telemetry_summary_handler(
         }
     } else {
         // Template mode - add template metrics
-        match state.device_service.get_device_with_template(&device_id).await {
-            Ok((_, template)) => {
-                for m in &template.metrics {
-                    let data_type_str = match m.data_type {
-                        edge_ai_devices::mdl::MetricDataType::Integer => "integer".to_string(),
-                        edge_ai_devices::mdl::MetricDataType::Float => "float".to_string(),
-                        edge_ai_devices::mdl::MetricDataType::String => "string".to_string(),
-                        edge_ai_devices::mdl::MetricDataType::Boolean => "boolean".to_string(),
-                        edge_ai_devices::mdl::MetricDataType::Binary => "binary".to_string(),
-                        edge_ai_devices::mdl::MetricDataType::Enum { .. } => "enum".to_string(),
-                        edge_ai_devices::mdl::MetricDataType::Array { .. } => "array".to_string(),
-                    };
-                    metric_info_map.insert(
-                        m.name.clone(),
-                        (m.display_name.clone(), m.unit.clone(), data_type_str, false),
-                    );
-                }
+        if let Ok((_, template)) = state.device_service.get_device_with_template(&device_id).await {
+            for m in &template.metrics {
+                let data_type_str = match m.data_type {
+                    edge_ai_devices::mdl::MetricDataType::Integer => "integer".to_string(),
+                    edge_ai_devices::mdl::MetricDataType::Float => "float".to_string(),
+                    edge_ai_devices::mdl::MetricDataType::String => "string".to_string(),
+                    edge_ai_devices::mdl::MetricDataType::Boolean => "boolean".to_string(),
+                    edge_ai_devices::mdl::MetricDataType::Binary => "binary".to_string(),
+                    edge_ai_devices::mdl::MetricDataType::Enum { .. } => "enum".to_string(),
+                    edge_ai_devices::mdl::MetricDataType::Array { .. } => "array".to_string(),
+                };
+                metric_info_map.insert(
+                    m.name.clone(),
+                    (m.display_name.clone(), m.unit.clone(), data_type_str, false),
+                );
             }
-            Err(_) => {}
         }
     }
 

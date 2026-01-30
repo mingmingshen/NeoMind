@@ -97,11 +97,10 @@ impl IntentParser {
         ];
 
         for (keyword, metric) in metric_mappings {
-            if prompt.contains(keyword) {
-                if !metrics.contains(&metric.to_string()) {
+            if prompt.contains(keyword)
+                && !metrics.contains(&metric.to_string()) {
                     metrics.push(metric.to_string());
                 }
-            }
         }
 
         // If no metrics found, add temperature as default for monitoring

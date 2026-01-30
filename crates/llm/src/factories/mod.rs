@@ -280,7 +280,7 @@ impl LlmRuntime for MockRuntime {
             .messages
             .last()
             .map(|m| m.text())
-            .unwrap_or_else(String::new);
+            .unwrap_or_default();
         Ok(edge_ai_core::llm::backend::LlmOutput {
             text: format!("Mock response to: {}", last_msg),
             finish_reason: edge_ai_core::llm::backend::FinishReason::Stop,
@@ -303,7 +303,7 @@ impl LlmRuntime for MockRuntime {
             .messages
             .last()
             .map(|m| m.text())
-            .unwrap_or_else(String::new);
+            .unwrap_or_default();
         let response = format!("Mock stream response to: {}", last_msg);
         let chunks: Vec<_> = response
             .chars()

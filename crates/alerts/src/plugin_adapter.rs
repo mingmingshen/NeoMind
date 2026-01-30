@@ -3,10 +3,8 @@
 //! This module provides type definitions and factory methods for alert channels,
 //! allowing them to be created and managed through the alert system.
 
-use async_trait::async_trait;
 use edge_ai_core::alerts::{Alert, AlertChannel, ChannelFactory};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::channels::{ConsoleChannelFactory, MemoryChannelFactory};

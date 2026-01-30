@@ -429,11 +429,10 @@ impl AgentMessage {
         match self.role.as_str() {
             "user" => {
                 // Check if this message has images - create multimodal message
-                if let Some(ref images) = self.images {
-                    if !images.is_empty() {
+                if let Some(ref images) = self.images
+                    && !images.is_empty() {
                         return self.to_core_multimodal();
                     }
-                }
                 Message::user(&self.content)
             }
             "assistant" => {

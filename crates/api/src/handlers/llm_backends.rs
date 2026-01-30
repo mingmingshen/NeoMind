@@ -778,7 +778,7 @@ async fn get_model_capabilities_from_show(
         .unwrap_or(false);
 
     // Extract details for context size detection
-    let details = show_response["details"].as_object();
+    let _details = show_response["details"].as_object();
 
     // Thinking capability is NOT provided by Ollama's API, need to infer from model name
     let supports_thinking = detect_thinking_from_name(model_name);

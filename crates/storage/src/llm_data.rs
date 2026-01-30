@@ -525,7 +525,7 @@ impl LongTermMemoryStore {
             Ok(txn) => match txn.open_table(MEMORY_TABLE) {
                 Ok(table) => {
                     let mut count = 0;
-                    let _ = table.iter().inspect(|x| {
+                    let _ = table.iter().inspect(|_x| {
                         count += 1;
                     });
                     count

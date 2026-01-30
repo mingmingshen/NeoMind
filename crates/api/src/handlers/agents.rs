@@ -8,8 +8,7 @@ use serde_json::{Value, json};
 
 use edge_ai_storage::{
     AiAgent, AgentMemory, AgentSchedule, AgentStats, AgentStatus, AgentExecutionRecord,
-    AgentFilter, DecisionProcess, ExecutionStatus, ExecutionResult, IntentType,
-    ParsedIntent, ScheduleType, ResourceType,
+    AgentFilter, ScheduleType, ResourceType,
     UserMessage,
 };
 
@@ -629,7 +628,7 @@ pub async fn list_agents(
 ) -> HandlerResult<Value> {
     let store = &state.agent_store;
     let agents = store.query_agents(AgentFilter::default()).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to query agents: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to query agents: {}", e)))?;
 
     let dtos: Vec<AgentDto> = agents.into_iter().map(AgentDto::from).collect();
 
@@ -646,8 +645,8 @@ pub async fn get_agent(
 ) -> HandlerResult<Value> {
     let store = &state.agent_store;
     let agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     let dto = AgentDetailDto::from(&agent);
 
@@ -665,7 +664,7 @@ pub async fn create_agent(
         "cron" => ScheduleType::Cron,
         "event" => ScheduleType::Event,
         "once" => ScheduleType::Once,
-        _ => return Err(ErrorResponse::bad_request(&format!("Invalid schedule type: {}", request.schedule.schedule_type))),
+        _ => return Err(ErrorResponse::bad_request(format!("Invalid schedule type: {}", request.schedule.schedule_type))),
     };
 
     let schedule = AgentSchedule {
@@ -697,11 +696,10 @@ pub async fn create_agent(
         });
 
         // Merge data_collection config if provided
-        if let Some(ref metric_config) = metric.config {
-            if let Some(data_collection) = metric_config.get("data_collection") {
+        if let Some(ref metric_config) = metric.config
+            && let Some(data_collection) = metric_config.get("data_collection") {
                 config_json["data_collection"] = data_collection.clone();
             }
-        }
 
         resources.push(AgentResource {
             resource_type: ResourceType::Metric,
@@ -750,7 +748,7 @@ pub async fn create_agent(
     // Save to storage
     let store = &state.agent_store;
     store.save_agent(&agent).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to save agent: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save agent: {}", e)))?;
 
     tracing::info!("Created AI Agent: {} ({})", agent.name, agent.id);
 
@@ -771,8 +769,8 @@ pub async fn update_agent(
 
     // Get existing agent
     let mut agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     // Update basic fields
     if let Some(name) = request.name {
@@ -792,7 +790,7 @@ pub async fn update_agent(
             "active" => AgentStatus::Active,
             "paused" => AgentStatus::Paused,
             "error" => AgentStatus::Error,
-            _ => return Err(ErrorResponse::bad_request(&format!("Invalid status: {}", status_str))),
+            _ => return Err(ErrorResponse::bad_request(format!("Invalid status: {}", status_str))),
         };
     }
 
@@ -808,7 +806,7 @@ pub async fn update_agent(
             "cron" => edge_ai_storage::ScheduleType::Cron,
             "event" => edge_ai_storage::ScheduleType::Event,
             "once" => edge_ai_storage::ScheduleType::Once,
-            _ => return Err(ErrorResponse::bad_request(&format!("Invalid schedule_type: {}", schedule.schedule_type))),
+            _ => return Err(ErrorResponse::bad_request(format!("Invalid schedule_type: {}", schedule.schedule_type))),
         };
 
         agent.schedule = edge_ai_storage::AgentSchedule {
@@ -860,11 +858,10 @@ pub async fn update_agent(
                 let mut config_json = json!({
                     "device_id": metric.device_id,
                 });
-                if let Some(ref config) = metric.config {
-                    if let Some(data_collection) = config.get("data_collection") {
+                if let Some(ref config) = metric.config
+                    && let Some(data_collection) = config.get("data_collection") {
                         config_json["data_collection"] = data_collection.clone();
                     }
-                }
                 let display_name = if metric.display_name.is_empty() {
                     &metric.metric_name
                 } else {
@@ -909,7 +906,7 @@ pub async fn update_agent(
 
     // Save
     store.save_agent(&agent).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to update agent: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to update agent: {}", e)))?;
 
     tracing::info!("Updated AI Agent: {}", id);
 
@@ -927,12 +924,12 @@ pub async fn delete_agent(
 
     // Check if agent exists
     let _agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     // Delete
     store.delete_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to delete agent: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to delete agent: {}", e)))?;
 
     tracing::info!("Deleted AI Agent: {}", id);
 
@@ -949,11 +946,11 @@ pub async fn execute_agent(
 ) -> HandlerResult<Value> {
     // Get or initialize the agent manager
     let agent_manager = state.get_or_init_agent_manager().await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent manager: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent manager: {}", e)))?;
 
     // Execute the agent using the manager (this does full execution with data collection, analysis, and actions)
     let summary = agent_manager.execute_agent_now(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to execute agent: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to execute agent: {}", e)))?;
 
     tracing::info!(
         execution_id = %summary.execution_id,
@@ -983,12 +980,12 @@ pub async fn get_agent_executions(
 
     // Check if agent exists
     let _agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     // Get executions
     let executions = store.get_agent_executions(&id, 50).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get executions: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
 
     let dtos: Vec<AgentExecutionDto> = executions.into_iter().map(AgentExecutionDto::from).collect();
 
@@ -1008,11 +1005,11 @@ pub async fn get_execution(
 
     // Get execution
     let executions = store.get_agent_executions(&id, 100).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get executions: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get executions: {}", e)))?;
 
     let execution = executions.into_iter()
         .find(|e| e.id == execution_id)
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Execution not found: {}", execution_id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Execution not found: {}", execution_id)))?;
 
     let dto = AgentExecutionDetailDto::from(execution);
 
@@ -1033,12 +1030,12 @@ pub async fn set_agent_status(
         "active" => AgentStatus::Active,
         "paused" => AgentStatus::Paused,
         "error" => AgentStatus::Error,
-        _ => return Err(ErrorResponse::bad_request(&format!("Invalid status: {}", status_str))),
+        _ => return Err(ErrorResponse::bad_request(format!("Invalid status: {}", status_str))),
     };
 
     let store = &state.agent_store;
     store.update_agent_status(&id, new_status, None).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to update status: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to update status: {}", e)))?;
 
     tracing::info!("Updated AI Agent {} status to: {}", id, status_str);
 
@@ -1056,8 +1053,8 @@ pub async fn get_agent_memory(
     let store = &state.agent_store;
 
     let agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     let memory = AgentMemoryDto {
         // Hierarchical memory
@@ -1127,15 +1124,15 @@ pub async fn clear_agent_memory(
 
     // Check if agent exists
     let mut agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     // Clear memory
     agent.memory = AgentMemory::default();
     agent.updated_at = chrono::Utc::now().timestamp();
 
     store.save_agent(&agent).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to update agent: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to update agent: {}", e)))?;
 
     tracing::info!("Cleared memory for AI Agent: {}", id);
 
@@ -1152,8 +1149,8 @@ pub async fn get_agent_stats(
     let store = &state.agent_store;
 
     let agent = store.get_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get agent: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
     ok(json!({
         "total_executions": agent.stats.total_executions,
@@ -1208,7 +1205,7 @@ pub async fn add_user_message(
     let store = &state.agent_store;
 
     let message = store.add_user_message(&id, request.content, request.message_type).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to add message: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to add message: {}", e)))?;
 
     tracing::info!("Added user message {} to agent {}", message.id, id);
 
@@ -1225,7 +1222,7 @@ pub async fn get_user_messages(
     let store = &state.agent_store;
 
     let messages = store.get_user_messages(&id, Some(50)).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to get messages: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to get messages: {}", e)))?;
 
     ok(json!(messages.into_iter().map(UserMessageDto::from).collect::<Vec<_>>()))
 }
@@ -1240,10 +1237,10 @@ pub async fn delete_user_message(
     let store = &state.agent_store;
 
     let deleted = store.delete_user_message(&id, &message_id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to delete message: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to delete message: {}", e)))?;
 
     if !deleted {
-        return Err(ErrorResponse::not_found(&format!("Message not found: {}", message_id)));
+        return Err(ErrorResponse::not_found(format!("Message not found: {}", message_id)));
     }
 
     tracing::info!("Deleted user message {} from agent {}", message_id, id);
@@ -1261,7 +1258,7 @@ pub async fn clear_user_messages(
     let store = &state.agent_store;
 
     let count = store.clear_user_messages(&id).await
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to clear messages: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to clear messages: {}", e)))?;
 
     tracing::info!("Cleared {} user messages from agent {}", count, id);
 

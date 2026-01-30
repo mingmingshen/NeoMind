@@ -6,15 +6,14 @@
 //! - Approving/rejecting draft devices
 //! - Managing auto-onboarding configuration
 
-use edge_ai_automation::{AutoOnboardManager, DraftDevice, GeneratedDeviceType, DiscoveredMetric, ProcessingSummary, RegistrationResult};
+use edge_ai_automation::{AutoOnboardManager, DiscoveredMetric};
 use edge_ai_automation::discovery::auto_onboard::AutoOnboardConfig;
 use edge_ai_automation::discovery::types::DataType;
 use edge_ai_automation::SemanticType;
 use edge_ai_core::llm::backend::LlmRuntime;
-use edge_ai_llm::backends::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
-use edge_ai_devices::{DeviceService, DeviceTypeTemplate, MdlMetricDefinition as MetricDefinition, CommandDefinition, DeviceConfig, ConnectionConfig, DeviceTypeMode};
+use edge_ai_llm::backends::{OllamaConfig, OllamaRuntime};
+use edge_ai_devices::{DeviceTypeTemplate, MdlMetricDefinition as MetricDefinition, DeviceConfig, ConnectionConfig, DeviceTypeMode};
 
-use crate::handlers::devices::models::*;
 use crate::handlers::common::{HandlerResult, ok};
 use crate::models::ErrorResponse;
 use crate::server::types::ServerState;
@@ -26,12 +25,11 @@ use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
 use futures::Stream;
-use tokio::sync::RwLock;
 
 /// Helper to create an LLM runtime from a configuration
 /// This creates a simple default runtime for auto-onboarding when LLM is not fully configured
 fn create_default_llm_runtime() -> Arc<dyn LlmRuntime> {
-    use std::time::Duration;
+    
 
     // Create a default Ollama runtime with standard settings
     let config = OllamaConfig::new("qwen2.5:3b")
@@ -130,7 +128,7 @@ pub async fn get_draft_device(
     let draft = manager
         .get_draft(&device_id)
         .await
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Draft device '{}' not found", device_id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
 
     ok(DraftDeviceDto::from(draft))
 }
@@ -145,7 +143,7 @@ pub async fn update_draft_device(
     manager
         .update_draft(&device_id, request.name, request.description)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(SuccessResponse {
         message: format!("Draft device '{}' updated", device_id),
@@ -172,9 +170,9 @@ pub async fn approve_draft_device(
     let draft = manager
         .get_draft(&device_id)
         .await
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Draft device '{}' not found", device_id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
 
-    let draft_id = draft.id.clone();
+    let _draft_id = draft.id.clone();
 
     // Get device name from request (user-provided name for this device instance)
     let device_instance_name = request.as_ref()
@@ -221,7 +219,7 @@ pub async fn approve_draft_device(
         device_service
             .register_device(device_config)
             .await
-            .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
         (existing_type.clone(), device_id.clone(), topic, format!(
             "Device '{}' assigned to existing type '{}'",
@@ -274,7 +272,7 @@ pub async fn approve_draft_device(
         device_service
             .register_template(template)
             .await
-            .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
         tracing::info!("Registered device type '{}'", type_id);
 
@@ -302,7 +300,7 @@ pub async fn approve_draft_device(
         device_service
             .register_device(device_config)
             .await
-            .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+            .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
         tracing::info!("Registered device '{}' with type '{}'", device_id, type_id);
 
@@ -315,7 +313,7 @@ pub async fn approve_draft_device(
     // Remove draft completely after successful registration (same behavior as reject)
     // This allows the device to be re-discovered if needed and keeps the pending list clean
     manager.remove_draft(&device_id).await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(ApproveDraftResponse {
         original_device_id: device_id.clone(),
@@ -405,7 +403,7 @@ pub async fn reject_draft_device(
     manager
         .reject_device(&device_id, &request.reason)
         .await
-        .map_err(|e| ErrorResponse::internal(&e.to_string()))?;
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
 
     ok(SuccessResponse {
         message: format!("Draft device '{}' rejected", device_id),
@@ -421,7 +419,7 @@ pub async fn trigger_draft_analysis(
     let draft = manager
         .get_draft(&device_id)
         .await
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Draft device '{}' not found", device_id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
 
     let draft_id = draft.id.clone();
     let samples = draft.json_samples();
@@ -456,7 +454,7 @@ pub async fn enhance_draft_with_llm(
     let draft = manager
         .get_draft(&device_id)
         .await
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Draft device '{}' not found", device_id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
 
     let gen_type = draft.generated_type.as_ref()
         .ok_or_else(|| ErrorResponse::bad_request("Draft device has no generated type yet. Please analyze it first."))?;
@@ -478,7 +476,7 @@ pub async fn enhance_draft_with_llm(
         let enhancement_map: std::collections::HashMap<String, _> = enhancements.into_iter().collect();
 
         let enhanced_metrics: Vec<edge_ai_automation::DiscoveredMetric> = metrics_clone.into_iter().map(|mut m| {
-            if let Some(ref enhancement) = enhancement_map.get(&m.name) {
+            if let Some(enhancement) = enhancement_map.get(&m.name) {
                 m.display_name = enhancement.display_name.clone();
                 m.description = enhancement.description.clone();
                 m.unit = enhancement.unit.clone();
@@ -542,7 +540,7 @@ pub async fn suggest_device_types(
     let draft = manager
         .get_draft(&device_id)
         .await
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Draft device '{}' not found", device_id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Draft device '{}' not found", device_id)))?;
 
     let gen_type = draft.generated_type.as_ref()
         .ok_or_else(|| ErrorResponse::bad_request("Draft device has no generated type. Please analyze it first."))?;
@@ -562,7 +560,7 @@ pub async fn suggest_device_types(
     if all_types.is_empty() {
         return ok(SuggestedTypesResponse {
             suggestions: vec![],
-            exact_match: exact_match,
+            exact_match,
         });
     }
 
@@ -618,7 +616,7 @@ pub async fn suggest_device_types(
 
     ok(SuggestedTypesResponse {
         suggestions,
-        exact_match: exact_match,
+        exact_match,
     })
 }
 

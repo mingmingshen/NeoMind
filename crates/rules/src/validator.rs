@@ -267,8 +267,8 @@ impl RuleValidator {
             RuleCondition::Range {
                 device_id,
                 metric,
-                min,
-                max,
+                min: _,
+                max: _,
             } => {
                 // Check device exists
                 let device = context
@@ -495,7 +495,7 @@ impl RuleValidator {
             }
             RuleAction::HttpRequest { url, .. } => {
                 // Validate URL format
-                if let Err(_) = url::Url::parse(url) {
+                if url::Url::parse(url).is_err() {
                     issues.push(ValidationIssue {
                         code: "INVALID_URL".to_string(),
                         message: format!("Invalid URL: {}", url),

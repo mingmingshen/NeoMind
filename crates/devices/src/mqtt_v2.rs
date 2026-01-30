@@ -857,8 +857,8 @@ impl MqttDeviceManager {
         metric_cache: &Arc<
             RwLock<HashMap<String, HashMap<String, (MetricValue, chrono::DateTime<chrono::Utc>)>>>,
         >,
-        time_series_storage: &Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
-        storage: &Arc<RwLock<Option<Arc<MdlStorage>>>>,
+        _time_series_storage: &Arc<RwLock<Option<Arc<TimeSeriesStorage>>>>,
+        _storage: &Arc<RwLock<Option<Arc<MdlStorage>>>>,
         event_bus: &Option<Arc<EventBus>>,
     ) -> bool {
         // Case 1: Check manually registered topic mappings
@@ -869,8 +869,8 @@ impl MqttDeviceManager {
                 devices_guard.get(&device_id).map(|d| d.device_type.clone())
             };
 
-            if let Some(device_type_name) = device_type_name {
-                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
+            if let Some(device_type_name) = device_type_name
+                && let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
                     // Process device data inline
                     let now = chrono::Utc::now();
 
@@ -937,13 +937,12 @@ impl MqttDeviceManager {
 
                     return true;
                 }
-            }
         }
 
         // Case 2: Check device registry for custom telemetry topics (auto-onboarding)
-        if let Some(registry) = device_registry {
-            if let Some((device_id, config)) = registry.find_device_by_telemetry_topic(topic).await {
-                if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
+        if let Some(registry) = device_registry
+            && let Some((device_id, config)) = registry.find_device_by_telemetry_topic(topic).await
+                && let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(payload) {
                     // Process device data inline
                     let now = chrono::Utc::now();
 
@@ -1010,8 +1009,6 @@ impl MqttDeviceManager {
 
                     return true;
                 }
-            }
-        }
 
         // Case 3: Fall back to standard topic format: device/{device_type}/{device_id}/uplink
         // Our standard topic format: device/{device_type}/{device_id}/uplink
@@ -1025,7 +1022,7 @@ impl MqttDeviceManager {
         let direction = parts.get(3).copied();
 
         // Check if this device type exists
-        let device_type = match mdl_registry.get(&device_type_name).await {
+        let _device_type = match mdl_registry.get(&device_type_name).await {
             Some(dt) => dt,
             None => {
                 // Unknown device type, not a registered device
@@ -1041,7 +1038,7 @@ impl MqttDeviceManager {
                 let now = chrono::Utc::now();
 
                 let is_new_device = {
-                    let mut devices_mut = devices.write().await;
+                    let devices_mut = devices.write().await;
                     !devices_mut.contains_key(&device_id)
                 };
 
@@ -1203,7 +1200,7 @@ impl MqttDeviceManager {
     async fn handle_hass_discovery_message(
         topic: &str,
         payload: &[u8],
-        hass_discovered_devices: &Arc<RwLock<HashMap<String, DiscoveredHassDevice>>>,
+        _hass_discovered_devices: &Arc<RwLock<HashMap<String, DiscoveredHassDevice>>>,
     ) {
         tracing::info!(
             "HASS discovery is deprecated, ignoring: topic={}, payload_len={}",

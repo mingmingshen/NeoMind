@@ -24,7 +24,6 @@
 
 use crate::message::{Content, ContentPart, Message, MessageRole};
 use once_cell::sync::Lazy;
-use std::sync::Arc;
 
 #[cfg(feature = "tiktoken")]
 use tiktoken_rs::{cl100k_base, p50k_base, CoreBPE};
@@ -43,8 +42,10 @@ pub enum CounterMode {
 
 /// Token encoding type for tiktoken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum EncodingType {
     /// cl100k_base - used by GPT-4, GPT-3.5-turbo, text-embedding-ada-002
+    #[default]
     Cl100kBase,
     /// p50k_base - used by code-davinci-002, code-cushman-002
     P50kBase,
@@ -54,11 +55,6 @@ pub enum EncodingType {
     Auto,
 }
 
-impl Default for EncodingType {
-    fn default() -> Self {
-        Self::Cl100kBase // Most common for modern models
-    }
-}
 
 /// Token counter that can use different counting strategies.
 #[derive(Clone)]
@@ -259,6 +255,7 @@ pub fn heuristic_count(text: &str) -> usize {
 }
 
 /// Check if a character is CJK.
+#[allow(dead_code)]
 fn is_chinese(c: char) -> bool {
     let cp = c as u32;
     (0x4E00..=0x9FFF).contains(&cp)

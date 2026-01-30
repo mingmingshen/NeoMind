@@ -36,7 +36,7 @@ struct QueueItem {
 impl QueueItem {
     fn new(command: CommandRequest, sequence: u64) -> Self {
         // Priority is inverted for min-heap
-        let priority = (6 - command.priority.value());
+        let priority = 6 - command.priority.value();
         Self {
             command,
             priority,

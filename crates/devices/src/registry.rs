@@ -885,11 +885,10 @@ impl DeviceRegistry {
     pub async fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
         let devices = self.devices.read().await;
         for (device_id, config) in devices.iter() {
-            if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic {
-                if telemetry_topic == topic {
+            if let Some(ref telemetry_topic) = config.connection_config.telemetry_topic
+                && telemetry_topic == topic {
                     return Some((device_id.clone(), config.clone()));
                 }
-            }
         }
         None
     }

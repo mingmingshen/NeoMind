@@ -685,7 +685,7 @@ impl IntentClassifier {
             score += 0.25;
         }
 
-        (score as f32).min(1.0).max(0.0)
+        score.min(1.0).max(0.0)
     }
 
     /// 告警通道意图评分
@@ -742,7 +742,7 @@ impl IntentClassifier {
             }
         }
 
-        (score as f32).min(1.0).max(0.0)
+        score.min(1.0).max(0.0)
     }
 
     /// 构建澄清结果

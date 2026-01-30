@@ -478,7 +478,7 @@ pub async fn event_history_handler(
 
     // Get total count by doing a separate query without limit/offset
     // For performance, we estimate or do a lightweight count query
-    let total_filter = EventFilter::new()
+    let _total_filter = EventFilter::new()
         .with_time_range(
             query.start.unwrap_or(i64::MAX - 86400 * 30),
             query.end.unwrap_or(i64::MAX)

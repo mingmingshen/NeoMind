@@ -27,7 +27,6 @@ import {
   Zap,
   Bell,
   FileText,
-  Save,
   Lightbulb,
   Clock,
   AlertTriangle,
@@ -348,7 +347,7 @@ function reconstructDeviceIdFromCondition(
   // Try range format first
   const rangeMatch = conditionPart.match(/(\S+)\s+BETWEEN\s+(\d+)\s+AND\s+(\d+)/i)
   if (rangeMatch) {
-    const [_, path, min, max] = rangeMatch
+    const [_, path, _min, _max] = rangeMatch
     const result = parseDeviceMetricPath(path, devices)
     return { device_id: result.device_id, metric: result.metric }
   }
@@ -356,7 +355,7 @@ function reconstructDeviceIdFromCondition(
   // Try simple format: DeviceName.metric operator threshold
   const simpleMatch = conditionPart.match(/(\S+\.\S+)\s*([<>=!]+)\s*(.+)/)
   if (simpleMatch) {
-    const [_, path, operator, threshold] = simpleMatch
+    const [_, path, _operator, _threshold] = simpleMatch
     const result = parseDeviceMetricPath(path, devices)
     return { device_id: result.device_id, metric: result.metric }
   }
@@ -587,10 +586,6 @@ export function SimpleRuleBuilderSplit({
       setCompletedSteps(new Set())
 
       if (rule) {
-        console.log('[DEBUG] Loading rule into form:', rule)
-        console.log('[DEBUG] Rule condition:', rule.condition)
-        console.log('[DEBUG] Rule source:', (rule as any).source)
-        console.log('[DEBUG] Rule actions:', rule.actions)
         setName(rule.name || '')
         setDescription(rule.description || '')
         setEnabled(rule.enabled ?? true)
@@ -599,23 +594,19 @@ export function SimpleRuleBuilderSplit({
         // Try to restore from source.uiCondition first (exact restoration)
         const sourceUiCond = (rule as any).source?.uiCondition
         if (sourceUiCond) {
-          console.log('[DEBUG] Restoring from source.uiCondition:', sourceUiCond)
           setCondition(sourceUiCond)
         } else if (rule.condition) {
           // Fall back to converting the condition
           // Pass devices and dsl to help reconstruct device_id if missing
           const uiCond = ruleConditionToUiCondition(rule.condition, resources.devices, rule.dsl)
-          console.log('[DEBUG] Converted UI condition from rule.condition:', uiCond)
           setCondition(uiCond)
         } else {
-          console.log('[DEBUG] No condition in rule, setting to null')
           setCondition(null)
         }
 
         // Restore actions - prefer source.uiActions for exact restoration
         const sourceUiActions = (rule as any).source?.uiActions
         if (sourceUiActions && sourceUiActions.length > 0) {
-          console.log('[DEBUG] Restoring from source.uiActions:', sourceUiActions)
           setActions(sourceUiActions)
         } else if (rule.actions && rule.actions.length > 0) {
           // Validate and clean up actions to ensure correct structure
@@ -978,7 +969,7 @@ interface BasicInfoStepProps {
   tBuilder: (key: string) => string
 }
 
-function BasicInfoStep({ name, onNameChange, description, onDescriptionChange, enabled, onEnabledChange, errors, t, tBuilder }: BasicInfoStepProps) {
+function BasicInfoStep({ name, onNameChange, description, onDescriptionChange, enabled, onEnabledChange, errors, _t, tBuilder }: BasicInfoStepProps) {
   return (
     <div className="space-y-6 max-w-2xl mx-auto py-4">
       <div className="text-center mb-6">

@@ -1,15 +1,13 @@
 //! AI Agent executor - runs agents and records decision processes.
 
-use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, ContentPart, Message, MessageRole}, error::Error as NeoTalkError, error};
+use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, ContentPart, Message, MessageRole}, error::Error as NeoTalkError};
 use edge_ai_storage::{
-    AgentMemory, AgentStats, AgentStore, AgentExecutionRecord, AiAgent, DataCollected,
+    AgentMemory, AgentStore, AgentExecutionRecord, AiAgent, DataCollected,
     Decision, DecisionProcess, ExecutionResult as StorageExecutionResult, ExecutionStatus,
     GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType, LearnedPattern,
     // New conversation types
     ConversationTurn, TurnInput, TurnOutput,
-    // Hierarchical memory types
-    WorkingMemory, ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory,
-    LlmBackendStore, LlmBackendInstance,
+    LlmBackendStore,
 };
 use edge_ai_devices::DeviceService;
 use edge_ai_alerts::AlertManager;
@@ -17,10 +15,10 @@ use edge_ai_llm::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
 use edge_ai_core::llm::backend::LlmRuntime;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use futures::future::join_all;
 
-use crate::{Agent, AgentConfig, LlmBackend};
+use crate::LlmBackend;
 use crate::error::AgentError;
 use crate::prompts::CONVERSATION_CONTEXT_ZH;
 
@@ -266,8 +264,8 @@ fn extract_threshold_from_data(
 ) -> Option<f64> {
     // Try to extract numeric value from decision description
     for item in data {
-        if let Some(val) = item.values.get("value") {
-            if let Some(num) = val.as_f64() {
+        if let Some(val) = item.values.get("value")
+            && let Some(num) = val.as_f64() {
                 // Check if baseline exists
                 if let Some(&baseline) = baselines.get(&item.source) {
                     let deviation = ((num - baseline) / baseline * 100.0).abs();
@@ -276,7 +274,6 @@ fn extract_threshold_from_data(
                     }
                 }
             }
-        }
     }
     None
 }
@@ -448,13 +445,11 @@ fn compact_history_context(
     // 1. Always preserve: system prompt (already separate), current data (already separate)
 
     // 2. Preserve medium-term summary if available
-    if let Some(summary) = memory.state_variables.get("medium_term_summary") {
-        if let Some(summary_obj) = summary.as_object() {
-            if let Some(summary_text) = summary_obj.get("summary").and_then(|v| v.as_str()) {
+    if let Some(summary) = memory.state_variables.get("medium_term_summary")
+        && let Some(summary_obj) = summary.as_object()
+            && let Some(summary_text) = summary_obj.get("summary").and_then(|v| v.as_str()) {
                 preserved.push(format!("## 历史摘要\n{}", summary_text));
             }
-        }
-    }
 
     // 3. Preserve high-confidence learned patterns (top 3 by category)
     let mut pattern_categories = std::collections::HashMap::new();
@@ -666,9 +661,9 @@ impl AgentExecutor {
         agent: &AiAgent,
     ) -> Result<Option<Arc<dyn LlmRuntime + Send + Sync>>, NeoTalkError> {
         // If agent has a specific backend ID, try to use it
-        if let Some(ref backend_id) = agent.llm_backend_id {
-            if let Some(ref store) = self.llm_backend_store {
-                if let Ok(Some(backend)) = store.load_instance(backend_id) {
+        if let Some(ref backend_id) = agent.llm_backend_id
+            && let Some(ref store) = self.llm_backend_store
+                && let Ok(Some(backend)) = store.load_instance(backend_id) {
                     use edge_ai_storage::LlmBackendType;
 
                     // Build cache key
@@ -799,8 +794,6 @@ impl AgentExecutor {
                         }
                     }
                 }
-            }
-        }
 
         // Fall back to default runtime
         Ok(self.llm_runtime.clone())
@@ -809,11 +802,10 @@ impl AgentExecutor {
     /// Parse user intent from natural language using LLM or keyword-based fallback.
     pub async fn parse_intent(&self, user_prompt: &str) -> Result<edge_ai_storage::ParsedIntent, AgentError> {
         // Try LLM-based parsing if available
-        if let Some(ref llm) = self.llm_runtime {
-            if let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await {
+        if let Some(ref llm) = self.llm_runtime
+            && let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await {
                 return Ok(intent);
             }
-        }
 
         // Fall back to keyword-based parsing
         self.parse_intent_keywords(user_prompt).await
@@ -2141,7 +2133,7 @@ Respond in JSON format:
         // Filter out errors and collect successful results
         let collected: Vec<_> = results.into_iter()
             .filter_map(|r| r.ok())
-            .filter_map(|opt| opt)
+            .flatten()
             .collect();
         Ok(collected)
     }
@@ -2217,16 +2209,12 @@ Respond in JSON format:
                 .collect();
 
             // Calculate statistics for numeric values
-            let stats = if let Some(nums) = calculate_stats(&result.points[start_idx..]) {
-                Some(serde_json::json!({
+            let stats = calculate_stats(&result.points[start_idx..]).map(|nums| serde_json::json!({
                     "min": nums.min,
                     "max": nums.max,
                     "avg": nums.avg,
                     "count": nums.count
-                }))
-            } else {
-                None
-            };
+                }));
 
             values_json["history"] = serde_json::json!(history_values);
             values_json["history_count"] = serde_json::json!(history_values.len());
@@ -2324,8 +2312,8 @@ Respond in JSON format:
 
             // Try each metric until we find an image
             for metric_name in potential_metrics {
-                if let Ok(result) = storage.query_range(device_id, metric_name, start_time, end_time).await {
-                    if !result.points.is_empty() {
+                if let Ok(result) = storage.query_range(device_id, metric_name, start_time, end_time).await
+                    && !result.points.is_empty() {
                         let latest = &result.points[result.points.len() - 1];
                         let is_image = is_image_metric(metric_name, &latest.value);
 
@@ -2352,7 +2340,6 @@ Respond in JSON format:
                             break; // Found an image, stop looking
                         }
                     }
-                }
             }
         }
 
@@ -2565,7 +2552,7 @@ Respond in JSON format:
 
         let current_time = chrono::Utc::now();
         let time_str = current_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-        let timestamp = current_time.timestamp();
+        let _timestamp = current_time.timestamp();
 
         tracing::info!(
             agent_id = %agent.id,
@@ -2640,7 +2627,7 @@ Respond in JSON format:
             .collect();
 
         // Build intent context
-        let intent_context = if let Some(ref intent) = parsed_intent.or(agent.parsed_intent.as_ref()) {
+        let _intent_context = if let Some(intent) = parsed_intent.or(agent.parsed_intent.as_ref()) {
             format!(
                 "\n意图类型: {:?}\n目标指标: {:?}\n条件: {:?}\n动作: {:?}",
                 intent.intent_type, intent.target_metrics, intent.conditions, intent.actions
@@ -2655,8 +2642,8 @@ Respond in JSON format:
         // Add memory summary if available
         if !agent.memory.state_variables.is_empty() {
             // Get recent analyses from memory
-            if let Some(analyses) = agent.memory.state_variables.get("recent_analyses").and_then(|v| v.as_array()) {
-                if !analyses.is_empty() {
+            if let Some(analyses) = agent.memory.state_variables.get("recent_analyses").and_then(|v| v.as_array())
+                && !analyses.is_empty() {
                     let summary: Vec<_> = analyses.iter()
                         .take(1) // Reduced to 1 for small models
                         .filter_map(|a| {
@@ -2681,7 +2668,6 @@ Respond in JSON format:
                         ));
                     }
                 }
-            }
 
             // === SEMANTIC PATTERNS (Long-term memory) ===
             // Use learned_patterns instead of raw decision_patterns
@@ -2692,7 +2678,7 @@ Respond in JSON format:
                 for pattern in &agent.memory.learned_patterns {
                     pattern_groups
                         .entry(pattern.pattern_type.as_str())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(pattern);
                 }
 
@@ -2762,7 +2748,7 @@ Respond in JSON format:
         // === INTELLIGENT COMPACTION ===
         // Use semantic-aware compaction instead of simple truncation
         // Threshold: ~1000 characters (~330 tokens) for small models
-        let history_context = if should_compact_context(&history_context, 1000) {
+        let _history_context = if should_compact_context(&history_context, 1000) {
             tracing::info!(
                 history_len = history_context.chars().count(),
                 "Context exceeds threshold, applying semantic compaction"
@@ -3056,8 +3042,8 @@ Respond in JSON format:
                         }
 
                         // Lenient extraction: parse as Value and extract fields (handles different LLM JSON shapes)
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            if let Some(obj) = value.as_object() {
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str)
+                            && let Some(obj) = value.as_object() {
                                 let situation_analysis: String = obj
                                     .get("situation_analysis")
                                     .and_then(|v| v.as_str())
@@ -3145,7 +3131,6 @@ Respond in JSON format:
                                     ));
                                 }
                             }
-                        }
 
                         // Final fallback: use raw text - show actual content, not placeholder
                         let raw_text = output.text.trim();
@@ -3242,7 +3227,7 @@ Respond in JSON format:
 
         // Step 2: Evaluate conditions based on parsed intent
         let intent = parsed_intent.or(agent.parsed_intent.as_ref());
-        if let Some(ref intent) = intent {
+        if let Some(intent) = intent {
             for condition in &intent.conditions {
                 let result = self.evaluate_condition(condition, data).await;
 
@@ -3298,19 +3283,17 @@ Respond in JSON format:
 
         // Check if any data meets the condition
         for data_item in data {
-            if let Some(value) = data_item.values.get("value") {
-                if let Some(num) = value.as_f64() {
+            if let Some(value) = data_item.values.get("value")
+                && let Some(num) = value.as_f64() {
                     if condition_lower.contains("大于") || condition_lower.contains(">") || condition_lower.contains("超过") {
                         if let Some(threshold) = extract_threshold(&condition_lower) {
                             return num > threshold;
                         }
-                    } else if condition_lower.contains("小于") || condition_lower.contains("<") || condition_lower.contains("低于") {
-                        if let Some(threshold) = extract_threshold(&condition_lower) {
+                    } else if (condition_lower.contains("小于") || condition_lower.contains("<") || condition_lower.contains("低于"))
+                        && let Some(threshold) = extract_threshold(&condition_lower) {
                             return num < threshold;
                         }
-                    }
                 }
-            }
         }
 
         false
@@ -3348,7 +3331,6 @@ Respond in JSON format:
                                 // Convert parameters to HashMap for DeviceService
                                 let params_map: std::collections::HashMap<String, serde_json::Value> = parameters
                                     .into_iter()
-                                    .map(|(k, v)| (k, v))
                                     .collect();
 
                                 // Actually execute the command via DeviceService
@@ -3491,7 +3473,6 @@ Respond in JSON format:
                             // Convert parameters to HashMap for DeviceService
                             let params_map: std::collections::HashMap<String, serde_json::Value> = parameters
                                 .into_iter()
-                                .map(|(k, v)| (k, v))
                                 .collect();
 
                             tracing::info!(
@@ -3647,8 +3628,8 @@ Respond in JSON format:
         data: &[DataCollected],
     ) -> Result<Option<GeneratedReport>, AgentError> {
         // Only generate reports for report generation agents
-        if let Some(ref intent) = agent.parsed_intent {
-            if matches!(
+        if let Some(ref intent) = agent.parsed_intent
+            && matches!(
                 intent.intent_type,
                 edge_ai_storage::IntentType::ReportGeneration
             ) {
@@ -3669,7 +3650,6 @@ Respond in JSON format:
                     generated_at: chrono::Utc::now().timestamp(),
                 }));
             }
-        }
 
         Ok(None)
     }
@@ -3759,8 +3739,8 @@ Respond in JSON format:
                 continue;
             }
 
-            if let Some(value) = data_item.values.get("value") {
-                if let Some(num) = value.as_f64() {
+            if let Some(value) = data_item.values.get("value")
+                && let Some(num) = value.as_f64() {
                     // Add to trend data (limit to 1000 points)
                     memory.trend_data.push(TrendPoint {
                         timestamp: data_item.timestamp,
@@ -3777,7 +3757,6 @@ Respond in JSON format:
                     let baseline = memory.baselines.entry(data_item.source.clone()).or_insert(num);
                     *baseline = *baseline * 0.9 + num * 0.1;
                 }
-            }
         }
 
         // === LEGACY STATE_VARIABLES (for backward compatibility) ===
@@ -4153,23 +4132,21 @@ fn extract_conditions(text: &str) -> Vec<String> {
     let mut conditions = Vec::new();
 
     // Look for patterns like "大于30", "小于50", "超过", "低于"
-    if text.contains("大于") || text.contains("超过") {
-        if let Some(start) = text.find("大于").or_else(|| text.find("超过")) {
+    if (text.contains("大于") || text.contains("超过"))
+        && let Some(start) = text.find("大于").or_else(|| text.find("超过")) {
             let end = start + 2;
             if end + 10 <= text.len() {
                 conditions.push(text[start..end + 10].to_string());
             }
         }
-    }
 
-    if text.contains("小于") || text.contains("低于") {
-        if let Some(start) = text.find("小于").or_else(|| text.find("低于")) {
+    if (text.contains("小于") || text.contains("低于"))
+        && let Some(start) = text.find("小于").or_else(|| text.find("低于")) {
             let end = start + 2;
             if end + 10 <= text.len() {
                 conditions.push(text[start..end + 10].to_string());
             }
         }
-    }
 
     conditions
 }

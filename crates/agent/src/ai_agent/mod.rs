@@ -14,9 +14,8 @@ pub mod executor;
 pub mod intent_parser;
 pub mod scheduler;
 
-use edge_ai_storage::{AiAgent, AgentExecutionRecord, AgentMemory, AgentSchedule, AgentStatus, ExecutionStatus};
+use edge_ai_storage::{AiAgent, AgentExecutionRecord, AgentSchedule, AgentStatus, ExecutionStatus};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

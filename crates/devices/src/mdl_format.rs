@@ -581,16 +581,14 @@ impl MdlRegistry {
             if matches!(
                 metric.data_type,
                 MetricDataType::Integer | MetricDataType::Float
-            ) {
-                if let (Some(min), Some(max)) = (metric.min, metric.max) {
-                    if min > max {
+            )
+                && let (Some(min), Some(max)) = (metric.min, metric.max)
+                    && min > max {
                         return Err(DeviceError::InvalidParameter(format!(
                             "metric '{}': min ({}) cannot be greater than max ({})",
                             metric.name, min, max
                         )));
                     }
-                }
-            }
         }
 
         // Validate command definitions
@@ -618,14 +616,13 @@ impl MdlRegistry {
                 // Validate data_type-specific constraints
                 match &param.data_type {
                     MetricDataType::Integer | MetricDataType::Float => {
-                        if let (Some(min), Some(max)) = (param.min, param.max) {
-                            if min > max {
+                        if let (Some(min), Some(max)) = (param.min, param.max)
+                            && min > max {
                                 return Err(DeviceError::InvalidParameter(format!(
                                     "command '{}', parameter '{}': min ({}) cannot be greater than max ({})",
                                     command.name, param.name, min, max
                                 )));
                             }
-                        }
                     }
                     MetricDataType::Enum { options } => {
                         if !param.allowed_values.is_empty() && !options.is_empty() {
@@ -648,14 +645,13 @@ impl MdlRegistry {
                 }
 
                 // Validate default value type matches data_type
-                if let Some(default_value) = &param.default_value {
-                    if !self.validate_metric_value_type(default_value, &param.data_type) {
+                if let Some(default_value) = &param.default_value
+                    && !self.validate_metric_value_type(default_value, &param.data_type) {
                         return Err(DeviceError::InvalidParameter(format!(
                             "command '{}', parameter '{}': default value type does not match data_type",
                             command.name, param.name
                         )));
                     }
-                }
             }
 
             // Validate parameter groups reference valid parameters
@@ -1098,7 +1094,7 @@ impl MdlStorage {
             ))
         })?;
 
-        let mut iter = table.iter().map_err(|e| {
+        let iter = table.iter().map_err(|e| {
             DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
@@ -1136,7 +1132,7 @@ impl MdlStorage {
             ))
         })?;
 
-        let mut iter = table.iter().map_err(|e| {
+        let iter = table.iter().map_err(|e| {
             DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))
@@ -1273,7 +1269,7 @@ impl MdlStorage {
             ))
         })?;
 
-        let mut iter = table.iter().map_err(|e| {
+        let iter = table.iter().map_err(|e| {
             DeviceError::Io(std::io::Error::other(
                 e.to_string(),
             ))

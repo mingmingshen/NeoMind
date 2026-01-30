@@ -240,7 +240,7 @@ impl RuleStore {
             Err(_) => return Ok(rules), // Table doesn't exist yet
         };
 
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (_, value) = result?;
             let rule: CompiledRule = serde_json::from_slice(value.value())?;
@@ -260,7 +260,7 @@ impl RuleStore {
             Err(_) => return Ok(ids), // Table doesn't exist yet
         };
 
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (key, _) = result?;
             let key_str = key.value();
@@ -327,7 +327,7 @@ impl RuleStore {
         let table = read_txn.open_table(RULE_HISTORY_TABLE)?;
 
         let rule_id_str = rule_id.to_string();
-        let mut iter = table.iter()?;
+        let iter = table.iter()?;
         for result in iter {
             let (_, value) = result?;
             let entry: RuleHistoryEntry = serde_json::from_slice(value.value())?;
@@ -421,7 +421,7 @@ impl RuleStore {
             // Collect keys to remove from rules table
             let mut rule_keys = Vec::new();
             {
-                let mut iter = rules_table.iter()?;
+                let iter = rules_table.iter()?;
                 for result in iter {
                     let (key, _) = result?;
                     rule_keys.push(key.value().to_string());
@@ -436,7 +436,7 @@ impl RuleStore {
             // Collect keys to remove from history table
             let mut history_keys = Vec::new();
             {
-                let mut iter = history_table.iter()?;
+                let iter = history_table.iter()?;
                 for result in iter {
                     let (key, _) = result?;
                     history_keys.push(key.value().to_string());

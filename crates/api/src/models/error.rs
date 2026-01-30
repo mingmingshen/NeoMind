@@ -176,7 +176,7 @@ macro_rules! validation_error {
         Err($crate::models::error::ErrorResponse::validation($msg))
     };
     ($fmt:expr, $($arg:tt)*) => {
-        Err(crate::models::error::ErrorResponse::validation(format!($fmt, $($arg)*)))
+        Err($crate::models::error::ErrorResponse::validation(format!($fmt, $($arg)*)))
     };
 }
 
@@ -195,7 +195,7 @@ macro_rules! bad_request_error {
         Err($crate::models::error::ErrorResponse::bad_request($msg))
     };
     ($fmt:expr, $($arg:tt)*) => {
-        Err(crate::models::error::ErrorResponse::bad_request(format!($fmt, $($arg)*)))
+        Err($crate::models::error::ErrorResponse::bad_request(format!($fmt, $($arg)*)))
     };
 }
 

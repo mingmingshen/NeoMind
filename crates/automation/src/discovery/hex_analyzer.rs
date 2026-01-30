@@ -203,7 +203,7 @@ impl HexAnalyzer {
         // 2. Format checks (up to 40 points)
         let chars: Vec<char> = value.chars().collect();
         let valid_hex_count = chars.iter()
-            .filter(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
+            .filter(|c: &&char| c.is_ascii_hexdigit())
             .count();
 
         if valid_hex_count == chars.len() {
@@ -214,7 +214,7 @@ impl HexAnalyzer {
 
         // 3. Length characteristics (up to 20 points)
         let len = value.len();
-        if len >= 4 && len % 2 == 0 {
+        if len >= 4 && len.is_multiple_of(2) {
             score += 10; // Even length, typical for hex
         }
         if len >= 8 {
@@ -252,7 +252,7 @@ impl HexAnalyzer {
         let decoded_integer = u64::from_str_radix(clean_hex, 16).ok();
 
         // Try to decode as bytes
-        let as_bytes = if clean_hex.len() % 2 == 0 {
+        let as_bytes = if clean_hex.len().is_multiple_of(2) {
             hex_to_bytes(clean_hex)
         } else {
             None
@@ -304,7 +304,7 @@ impl HexAnalyzer {
                     }
                 }
                 Value::Bool(_) => SuggestedType::Boolean,
-                Value::String(s) => {
+                Value::String(_s) => {
                     if stats.boolean_like {
                         SuggestedType::Boolean
                     } else {
@@ -335,7 +335,7 @@ impl HexAnalyzer {
     fn suggest_hex_name(&self, path: &str, hex_info: &HexInfo) -> Option<String> {
         let base_name = extract_field_name(path);
 
-        if let Some(int_val) = hex_info.decoded_integer {
+        if let Some(_int_val) = hex_info.decoded_integer {
             // If it decodes to a reasonable integer, use that
             Some(format!("{}_decoded", base_name))
         } else if let Some(bytes) = &hex_info.as_bytes {
@@ -358,19 +358,19 @@ impl HexAnalyzer {
         }
 
         // Must have even length (unless odd length is allowed)
-        if value.len() % 2 != 0 && !value.starts_with("0x") {
+        if !value.len().is_multiple_of(2) && !value.starts_with("0x") {
             return false;
         }
 
         let clean = value.trim_start_matches("0x").trim_start_matches("0X");
-        clean.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F'))
+        clean.chars().all(|c: char| c.is_ascii_hexdigit())
     }
 
     /// Try to convert a hex string to bytes
     pub fn hex_to_bytes(hex_str: &str) -> Option<Vec<u8>> {
         let clean = hex_str.trim_start_matches("0x").trim_start_matches("0X");
 
-        if clean.len() % 2 != 0 {
+        if !clean.len().is_multiple_of(2) {
             return None;
         }
 
@@ -483,7 +483,7 @@ pub fn compute_stats(values: &[Value]) -> ValueStats {
     };
 
     let hex_like = !string_values.is_empty() && (hex_count as f64) / (string_values.len() as f64) > 0.5;
-    let boolean_like = values.len() > 0 && (boolean_count as f64) / (values.len() as f64) > 0.8;
+    let boolean_like = !values.is_empty() && (boolean_count as f64) / (values.len() as f64) > 0.8;
 
     // Detect unit hints from values
     let unit_hint = detect_unit_hint(&numeric_values, &string_values);
@@ -503,7 +503,7 @@ pub fn compute_stats(values: &[Value]) -> ValueStats {
 fn detect_unit_hint(numeric: &[f64], strings: &[String]) -> Option<String> {
     // Check for temperature ranges
     if let Some(max_temp) = numeric.iter().cloned().reduce(f64::max) {
-        if max_temp >= 10.0 && max_temp <= 50.0 {
+        if (10.0..=50.0).contains(&max_temp) {
             return Some("°C".to_string());
         } else if max_temp > 50.0 && max_temp <= 120.0 {
             return Some("°F".to_string());
@@ -511,15 +511,12 @@ fn detect_unit_hint(numeric: &[f64], strings: &[String]) -> Option<String> {
     }
 
     // Check for percentage ranges (0-100)
-    if let Some(max_val) = numeric.iter().cloned().reduce(f64::max) {
-        if max_val >= 0.0 && max_val <= 100.0 {
-            if let Some(min_val) = numeric.iter().cloned().reduce(f64::min) {
-                if min_val >= 0.0 {
+    if let Some(max_val) = numeric.iter().cloned().reduce(f64::max)
+        && (0.0..=100.0).contains(&max_val)
+            && let Some(min_val) = numeric.iter().cloned().reduce(f64::min)
+                && min_val >= 0.0 {
                     return Some("%".to_string());
                 }
-            }
-        }
-    }
 
     // Check string values for units
     for s in strings {

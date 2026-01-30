@@ -262,7 +262,7 @@ impl DeviceStateStore {
             .get_state(&device_id)
             .await
             .ok()
-            .map(|s| if s.online { true } else { false });
+            .map(|s| s.online);
         let old_type = self
             .get_state(&device_id)
             .await

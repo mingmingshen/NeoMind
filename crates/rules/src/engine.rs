@@ -188,11 +188,10 @@ impl CompiledRule {
             // For simple conditions, map the device name (derived from device_id during parsing)
             if let Some(device_id) = cond.get("device_id").and_then(|v| v.as_str()) {
                 // Also check if there's a device name that needs to be mapped
-                if let Some(name) = cond.get("deviceName").and_then(|v| v.as_str()) {
-                    if !name.is_empty() && !device_id.is_empty() {
+                if let Some(name) = cond.get("deviceName").and_then(|v| v.as_str())
+                    && !name.is_empty() && !device_id.is_empty() {
                         mapping.insert(name.to_string(), device_id.to_string());
                     }
-                }
                 // Direct mapping: the parsed DSL uses device_id as the key
                 // but the value is stored under the actual device ID
                 if !device_id.is_empty() {
@@ -334,7 +333,7 @@ impl RuleEngine {
     /// Get a reference to the alert manager (if set).
     pub async fn get_alert_manager(&self) -> Option<Arc<edge_ai_alerts::AlertManager>> {
         let guard = self.alert_manager.read().await;
-        guard.as_ref().map(|arc| Arc::clone(arc))
+        guard.as_ref().map(Arc::clone)
     }
 
     /// Set the maximum history size.

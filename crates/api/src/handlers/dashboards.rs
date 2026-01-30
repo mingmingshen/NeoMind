@@ -8,7 +8,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::sync::Arc;
 
 use super::{
     ServerState,
@@ -16,7 +15,7 @@ use super::{
 };
 use crate::models::ErrorResponse;
 use edge_ai_storage::dashboards::{
-    Dashboard as StoredDashboard, DashboardStore, DashboardTemplate as StoredTemplate,
+    Dashboard as StoredDashboard, DashboardTemplate as StoredTemplate,
     DashboardLayout as StoredLayout, DashboardComponent as StoredComponent, default_templates,
 };
 
@@ -292,7 +291,7 @@ pub async fn list_dashboards_handler(
     State(state): State<ServerState>,
 ) -> HandlerResult<DashboardsResponse> {
     let dashboards = state.dashboard_store.list_all()
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to list dashboards: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to list dashboards: {}", e)))?;
 
     let api_dashboards: Vec<Dashboard> = dashboards.iter().map(stored_to_api).collect();
     let count = api_dashboards.len();
@@ -313,7 +312,7 @@ pub async fn get_dashboard_handler(
         let templates = default_templates();
         let template = templates.into_iter()
             .find(|t| t.id == id)
-            .ok_or_else(|| ErrorResponse::not_found(&format!("Template '{}' not found", id)))?;
+            .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 
         let now = chrono::Utc::now().timestamp();
         return ok(Dashboard {
@@ -328,8 +327,8 @@ pub async fn get_dashboard_handler(
     }
 
     let dashboard = state.dashboard_store.load(&id)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to load dashboard: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Dashboard '{}' not found", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
 
     ok(stored_to_api(&dashboard))
 }
@@ -360,7 +359,7 @@ pub async fn create_dashboard_handler(
     };
 
     state.dashboard_store.save(&stored_dashboard)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to save dashboard: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
     ok(stored_to_api(&stored_dashboard))
 }
@@ -372,8 +371,8 @@ pub async fn update_dashboard_handler(
     Json(req): Json<UpdateDashboardRequest>,
 ) -> HandlerResult<Dashboard> {
     let mut dashboard = state.dashboard_store.load(&id)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to load dashboard: {}", e)))?
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Dashboard '{}' not found", id)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to load dashboard: {}", e)))?
+        .ok_or_else(|| ErrorResponse::not_found(format!("Dashboard '{}' not found", id)))?;
 
     // Update fields if provided
     if let Some(name) = req.name {
@@ -391,7 +390,7 @@ pub async fn update_dashboard_handler(
     dashboard.updated_at = chrono::Utc::now().timestamp();
 
     state.dashboard_store.save(&dashboard)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to save dashboard: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save dashboard: {}", e)))?;
 
     ok(stored_to_api(&dashboard))
 }
@@ -403,12 +402,12 @@ pub async fn delete_dashboard_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Check if dashboard exists
     if !state.dashboard_store.exists(&id)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to check dashboard: {}", e)))? {
-        return Err(ErrorResponse::not_found(&format!("Dashboard '{}' not found", id)));
+        .map_err(|e| ErrorResponse::internal(format!("Failed to check dashboard: {}", e)))? {
+        return Err(ErrorResponse::not_found(format!("Dashboard '{}' not found", id)));
     }
 
     state.dashboard_store.delete(&id)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to delete dashboard: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to delete dashboard: {}", e)))?;
 
     ok(serde_json::json!({
         "ok": true,
@@ -423,12 +422,12 @@ pub async fn set_default_dashboard_handler(
 ) -> HandlerResult<serde_json::Value> {
     // Check if dashboard exists
     if !state.dashboard_store.exists(&id)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to check dashboard: {}", e)))? {
-        return Err(ErrorResponse::not_found(&format!("Dashboard '{}' not found", id)));
+        .map_err(|e| ErrorResponse::internal(format!("Failed to check dashboard: {}", e)))? {
+        return Err(ErrorResponse::not_found(format!("Dashboard '{}' not found", id)));
     }
 
     state.dashboard_store.set_default(&id)
-        .map_err(|e| ErrorResponse::internal(&format!("Failed to set default dashboard: {}", e)))?;
+        .map_err(|e| ErrorResponse::internal(format!("Failed to set default dashboard: {}", e)))?;
 
     ok(serde_json::json!({
         "id": id,
@@ -452,7 +451,7 @@ pub async fn get_template_handler(
     let templates = default_templates();
     let template = templates.into_iter()
         .find(|t| t.id == id)
-        .ok_or_else(|| ErrorResponse::not_found(&format!("Template '{}' not found", id)))?;
+        .ok_or_else(|| ErrorResponse::not_found(format!("Template '{}' not found", id)))?;
 
     ok(stored_template_to_api(&template))
 }

@@ -484,7 +484,7 @@ impl AuthUserState {
         // Generate token
         let token = {
             let users = self.users.read().await;
-            let user = users.get(username).ok_or_else(|| AuthError::UserNotFound)?;
+            let user = users.get(username).ok_or(AuthError::UserNotFound)?;
             self.generate_token(user)?
         };
 

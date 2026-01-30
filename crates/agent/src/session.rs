@@ -904,7 +904,7 @@ impl SessionManager {
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoTalkError::Validation(
                     "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。".to_string()
-                ).into());
+                ));
             }
         }
 
@@ -930,7 +930,7 @@ impl SessionManager {
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoTalkError::Validation(
                     "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。".to_string()
-                ).into());
+                ));
             }
         }
 
@@ -950,7 +950,7 @@ impl SessionManager {
             if !agent.llm_interface().supports_multimodal().await {
                 return Err(super::error::NeoTalkError::Validation(
                     "当前模型不支持图像输入。请选择支持视觉的模型（如 qwen3-vl）或移除图片后重试。".to_string()
-                ).into());
+                ));
             }
         }
         let agent = self.get_session(session_id).await?;

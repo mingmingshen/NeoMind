@@ -609,8 +609,7 @@ impl DeviceService {
     /// Get adapter information for a specific adapter
     pub async fn get_adapter_info(&self, adapter_id: &str) -> Option<AdapterInfo> {
         let adapters = self.adapters.read().await;
-        if let Some(adapter) = adapters.get(adapter_id) {
-            Some(AdapterInfo {
+        adapters.get(adapter_id).map(|adapter| AdapterInfo {
                 id: adapter_id.to_string(),
                 name: adapter.name().to_string(),
                 adapter_type: adapter.adapter_type().to_string(),
@@ -619,9 +618,6 @@ impl DeviceService {
                 status: format!("{:?}", adapter.connection_status()),
                 last_activity: chrono::Utc::now().timestamp(),
             })
-        } else {
-            None
-        }
     }
 
     /// List all adapters with their information
@@ -866,11 +862,10 @@ impl DeviceService {
     pub async fn find_device_by_telemetry_topic(&self, topic: &str) -> Option<(String, DeviceConfig)> {
         let devices = self.list_devices().await;
         for device in devices {
-            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic {
-                if telemetry_topic == topic {
+            if let Some(ref telemetry_topic) = device.connection_config.telemetry_topic
+                && telemetry_topic == topic {
                     return Some((device.device_id.clone(), device));
                 }
-            }
         }
         None
     }

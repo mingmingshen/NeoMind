@@ -367,9 +367,9 @@ impl LlmInterface {
     /// When using instance manager, reads from the active backend instance.
     /// Otherwise falls back to local ChatConfig values.
     async fn get_effective_params(&self) -> (f32, f32, usize, usize) {
-        if self.uses_instance_manager() {
-            if let Some(manager) = &self.instance_manager {
-                if let Some(inst) = manager.get_active_instance() {
+        if self.uses_instance_manager()
+            && let Some(manager) = &self.instance_manager
+                && let Some(inst) = manager.get_active_instance() {
                     return (
                         inst.temperature,
                         inst.top_p,
@@ -377,8 +377,6 @@ impl LlmInterface {
                         inst.max_tokens,
                     );
                 }
-            }
-        }
         // Fall back to local config
         (self.temperature, self.top_p, self.top_k, self.max_tokens)
     }
@@ -453,14 +451,12 @@ impl LlmInterface {
     /// Returns a conservative default (4096) if the LLM is not ready.
     pub async fn max_context_length(&self) -> usize {
         // Try instance manager first if enabled
-        if self.uses_instance_manager() {
-            if let Some(manager) = &self.instance_manager {
-                if let Some(instance) = manager.get_active_instance() {
+        if self.uses_instance_manager()
+            && let Some(manager) = &self.instance_manager
+                && let Some(instance) = manager.get_active_instance() {
                     // Instance has capabilities with max_context
                     return instance.capabilities.max_context;
                 }
-            }
-        }
 
         // Fall back to querying the runtime directly
         match self.get_runtime().await {
@@ -474,14 +470,12 @@ impl LlmInterface {
     /// Returns true if the active backend supports image input, false otherwise.
     pub async fn supports_multimodal(&self) -> bool {
         // Try instance manager first if enabled
-        if self.uses_instance_manager() {
-            if let Some(manager) = &self.instance_manager {
-                if let Some(instance) = manager.get_active_instance() {
+        if self.uses_instance_manager()
+            && let Some(manager) = &self.instance_manager
+                && let Some(instance) = manager.get_active_instance() {
                     // Instance has capabilities with supports_multimodal (storage layer)
                     return instance.capabilities.supports_multimodal;
                 }
-            }
-        }
 
         // Fall back to querying the runtime directly
         match self.get_runtime().await {

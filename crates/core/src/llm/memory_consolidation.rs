@@ -78,7 +78,7 @@ impl MemoryConfig {
 
     /// Set the consolidation ratio (0.0 - 1.0).
     pub fn with_consolidation_ratio(mut self, ratio: f64) -> Self {
-        assert!(ratio >= 0.0 && ratio <= 1.0, "consolidation_ratio must be between 0.0 and 1.0");
+        assert!((0.0..=1.0).contains(&ratio), "consolidation_ratio must be between 0.0 and 1.0");
         self.consolidation_ratio = ratio;
         self
     }
@@ -334,6 +334,7 @@ impl MemoryConsolidator {
     }
 
     /// Check if a message is too old based on max_message_age_seconds.
+    #[allow(dead_code)]
     fn is_message_too_old(&self, timestamp: i64, current_time: i64) -> bool {
         if let Some(max_age) = self.config.max_message_age_seconds {
             let age = current_time - timestamp;

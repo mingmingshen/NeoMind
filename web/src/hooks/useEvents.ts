@@ -160,6 +160,7 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
     let unsubscribeError: (() => void) | undefined
     let unsubscribeEvent: (() => void) | undefined
     let isMounted = true
+    let isSubscribed = false
 
     // Dynamically import to avoid SSR issues
     import('@/lib/events').then((eventsLib) => {
@@ -211,6 +212,8 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
           onEventRef.current?.(event)
         }
       })
+
+      isSubscribed = true
     }).catch((err) => {
       console.error('Failed to load events lib:', err)
     })
@@ -218,9 +221,12 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
     // Cleanup on unmount
     return () => {
       isMounted = false
-      unsubscribeConnection?.()
-      unsubscribeError?.()
-      unsubscribeEvent?.()
+      // Only unsubscribe if we successfully subscribed
+      if (isSubscribed) {
+        unsubscribeConnection?.()
+        unsubscribeError?.()
+        unsubscribeEvent?.()
+      }
     }
   }, [category, useSSE, enabled, maxEvents])
 

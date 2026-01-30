@@ -135,7 +135,7 @@ impl ServerState {
         let event_bus = Arc::new(EventBus::new());
 
         // Create device status broadcast channel
-        let device_update_tx: broadcast::Sender<DeviceStatusUpdate> = broadcast::channel(100).0;
+        let _device_update_tx: broadcast::Sender<DeviceStatusUpdate> = broadcast::channel(100).0;
 
         // Ensure data directory exists
         if let Err(e) = std::fs::create_dir_all("data") {
@@ -636,7 +636,7 @@ impl ServerState {
 
     /// Initialize tool registry with real service connections.
     pub async fn init_tools(&self) {
-        use edge_ai_tools::{ToolRegistryBuilder, real};
+        use edge_ai_tools::ToolRegistryBuilder;
         use std::sync::Arc;
 
         // Build tool registry with real implementations that connect to actual services
@@ -804,8 +804,7 @@ impl ServerState {
                             // Rules might reference "battery" while events use "values.battery"
                             let common_prefixes = ["values.", "value.", "data.", "telemetry.", "metrics.", "state."];
                             for prefix in &common_prefixes {
-                                if metric.starts_with(prefix) {
-                                    let stripped_metric = &metric[prefix.len()..];
+                                if let Some(stripped_metric) = metric.strip_prefix(prefix) {
                                     provider.set_value(&device_id, stripped_metric, num_value);
                                     break;
                                 }
@@ -908,11 +907,11 @@ impl ServerState {
 
             while let Some((event, _metadata)) = rx.recv().await {
                 // Check if this is an unknown device data event
-                if let edge_ai_core::NeoTalkEvent::Custom { event_type, data } = event {
-                    if event_type == "unknown_device_data" {
+                if let edge_ai_core::NeoTalkEvent::Custom { event_type, data } = event
+                    && event_type == "unknown_device_data" {
                         // Extract device_id and sample from the event data
-                        if let Some(device_id) = data.get("device_id").and_then(|v| v.as_str()) {
-                            if let Some(sample) = data.get("sample") {
+                        if let Some(device_id) = data.get("device_id").and_then(|v| v.as_str())
+                            && let Some(sample) = data.get("sample") {
                                 // Extract the actual payload data from sample
                                 let payload_data = sample.get("data").unwrap_or(sample);
 
@@ -978,9 +977,7 @@ impl ServerState {
                                     }
                                 }
                             }
-                        }
                     }
-                }
             }
         });
 
@@ -1124,7 +1121,7 @@ impl ServerState {
 
         let manager = edge_ai_agent::ai_agent::AiAgentManager::new(executor_config)
             .await
-            .map_err(|e| crate::models::ErrorResponse::internal(&format!("Failed to create agent manager: {}", e)))?;
+            .map_err(|e| crate::models::ErrorResponse::internal(format!("Failed to create agent manager: {}", e)))?;
 
         *mgr_guard = Some(manager.clone());
 
@@ -1140,7 +1137,7 @@ impl ServerState {
     pub async fn start_agent_manager(&self) -> Result<(), crate::models::ErrorResponse> {
         let manager = self.get_or_init_agent_manager().await?;
         manager.start().await
-            .map_err(|e| crate::models::ErrorResponse::internal(&format!("Failed to start agent manager: {}", e)))?;
+            .map_err(|e| crate::models::ErrorResponse::internal(format!("Failed to start agent manager: {}", e)))?;
         tracing::info!("AI Agent manager scheduler started");
         Ok(())
     }

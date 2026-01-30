@@ -8,9 +8,8 @@ use std::time::Duration;
 
 use edge_ai_core::eventbus::EventBus;
 use edge_ai_core::event::{EventMetadata, NeoTalkEvent};
-use edge_ai_core::MetricValue;
 use edge_ai_storage::business::{EventLog, EventLogStore, EventSeverity};
-use edge_ai_rules::{CompiledRule, RuleCondition};
+use edge_ai_rules::RuleCondition;
 
 /// Event persistence configuration.
 #[derive(Clone)]
@@ -453,7 +452,7 @@ impl RuleEngineEventService {
                             metric,
                             value,
                             timestamp,
-                            quality,
+                            quality: _,
                         } = event
                         {
                             // Extract numeric value for rule evaluation
@@ -514,7 +513,7 @@ impl RuleEngineEventService {
         value: f64,
         timestamp: i64,
     ) {
-        use edge_ai_core::event::{EventMetadata, NeoTalkEvent};
+        use edge_ai_core::event::NeoTalkEvent;
 
         tracing::info!(
             target: "rule_engine_evaluation",
@@ -555,8 +554,7 @@ impl RuleEngineEventService {
                 // Check if rule_metric is event_metric with prefix stripped
                 let common_prefixes = ["values.", "value.", "data.", "telemetry.", "metrics.", "state."];
                 for prefix in &common_prefixes {
-                    if event_metric.starts_with(prefix) {
-                        let stripped = &event_metric[prefix.len()..];
+                    if let Some(stripped) = event_metric.strip_prefix(prefix) {
                         if rule_metric == stripped {
                             return true;
                         }
@@ -564,8 +562,7 @@ impl RuleEngineEventService {
                 }
                 // Check if event_metric is rule_metric with prefix stripped
                 for prefix in &common_prefixes {
-                    if rule_metric.starts_with(prefix) {
-                        let stripped = &rule_metric[prefix.len()..];
+                    if let Some(stripped) = rule_metric.strip_prefix(prefix) {
                         if stripped == event_metric {
                             return true;
                         }
@@ -665,8 +662,8 @@ impl RuleEngineEventService {
                 );
 
                 // Persist updated rule state (including last_triggered) to store
-                if let Some(store) = rule_store {
-                    if let Some(updated_rule) = rule_engine.get_rule(&rule.id).await {
+                if let Some(store) = rule_store
+                    && let Some(updated_rule) = rule_engine.get_rule(&rule.id).await {
                         if let Err(e) = store.save(&updated_rule) {
                             tracing::warn!(
                                 category = "rule_engine",
@@ -683,12 +680,12 @@ impl RuleEngineEventService {
                             );
                         }
                     }
-                }
             }
         }
     }
 
     /// Check if a rule condition matches a device metric value.
+    #[allow(dead_code)]
     fn condition_matches_metric(
         condition: &edge_ai_rules::dsl::RuleCondition,
         device_id: &str,
@@ -706,6 +703,7 @@ impl RuleEngineEventService {
     }
 
     /// Evaluate the comparison part of a condition.
+    #[allow(dead_code)]
     fn evaluate_condition_comparison(condition_str: &str, value: f64) -> bool {
         // Simplified evaluation - checks for common comparison patterns
         // In production, this would properly parse and evaluate the DSL
@@ -726,16 +724,16 @@ impl RuleEngineEventService {
             if let Some(threshold) = Self::extract_threshold(condition_str) {
                 return value <= threshold;
             }
-        } else if condition_str.contains("==") {
-            if let Some(threshold) = Self::extract_threshold(condition_str) {
+        } else if condition_str.contains("==")
+            && let Some(threshold) = Self::extract_threshold(condition_str) {
                 return (value - threshold).abs() < 0.001;
             }
-        }
 
         false
     }
 
     /// Extract threshold value from condition string.
+    #[allow(dead_code)]
     fn extract_threshold(condition_str: &str) -> Option<f64> {
         // Find numbers in the condition string
         use regex::Regex;
@@ -752,15 +750,12 @@ impl RuleEngineEventService {
         event_device_id: &str,
     ) -> Option<String> {
         // First try to get device_id from source.uiCondition
-        if let Some(source) = &rule.source {
-            if let Some(ui_cond) = source.get("uiCondition") {
-                if let Some(device_id) = ui_cond.get("device_id").and_then(|v| v.as_str()) {
-                    if !device_id.is_empty() {
+        if let Some(source) = &rule.source
+            && let Some(ui_cond) = source.get("uiCondition")
+                && let Some(device_id) = ui_cond.get("device_id").and_then(|v| v.as_str())
+                    && !device_id.is_empty() {
                         return Some(device_id.to_string());
                     }
-                }
-            }
-        }
 
         // Get the DSL device_id (which is actually a device name from the DSL)
         let dsl_device_name = if let RuleCondition::Simple { device_id, .. } = &rule.condition {
@@ -929,7 +924,7 @@ impl TransformEventService {
 
             while running.load(Ordering::Relaxed) {
                 match rx.recv().await {
-                    Some((event, metadata)) => {
+                    Some((event, _metadata)) => {
                         // Log event type for debugging
                         if matches!(event, NeoTalkEvent::DeviceMetric { .. }) {
                             tracing::info!("TransformEventService: Received DeviceMetric event");
@@ -996,7 +991,7 @@ impl TransformEventService {
                             let data_point = edge_ai_devices::telemetry::DataPoint {
                                 timestamp,
                                 value: ts_value,
-                                quality: quality.clone(),
+                                quality: quality,
                             };
                             if let Err(e) = time_series_storage.write(&device_id, &metric, data_point).await {
                                 tracing::warn!(

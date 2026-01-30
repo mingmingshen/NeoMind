@@ -447,14 +447,13 @@ impl RuleHistoryStore {
         let mut count = 0u64;
         for result in table.iter()? {
             let (_key, value) = result?;
-            if let Ok(execution) = serde_json::from_slice::<RuleExecution>(value.value()) {
-                if execution.timestamp >= since_timestamp {
+            if let Ok(execution) = serde_json::from_slice::<RuleExecution>(value.value())
+                && execution.timestamp >= since_timestamp {
                     // Count only triggered rules (not "NotTriggered")
                     if !matches!(execution.result, RuleExecutionResult::NotTriggered) {
                         count += 1;
                     }
                 }
-            }
         }
 
         Ok(count)

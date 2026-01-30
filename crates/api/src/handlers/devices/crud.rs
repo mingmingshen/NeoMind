@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::compat::{config_to_device_instance, format_status_to_str};
 use super::models::{
-    AddDeviceRequest, BatchCurrentValuesRequest, BatchCurrentValuesResponse, DeviceCurrentValues,
+    AddDeviceRequest, BatchCurrentValuesRequest,
     DeviceDto, PaginationMeta, PaginationQuery, UpdateDeviceRequest,
 };
 use crate::handlers::{

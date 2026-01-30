@@ -425,6 +425,9 @@ export function useDataSource<T = unknown>(
   // Telemetry refresh trigger - incremented when WebSocket event matches telemetry source
   const [telemetryRefreshTrigger, setTelemetryRefreshTrigger] = useState(0)
 
+  // Track interval with ref to prevent leaks when dataSources change
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // CRITICAL: Memoize dataSources to prevent infinite re-renders
   // Using stable key generation ensures consistency
   const dataSourceKey = useMemo(() => {
@@ -447,6 +450,11 @@ export function useDataSource<T = unknown>(
   // Ref to track if initial telemetry fetch has completed
   // This prevents showing loading state on refreshes/updates
   const initialTelemetryFetchDoneRef = useRef(false)
+
+  // Track processed event IDs to prevent duplicate processing
+  // Events array changes frequently, but we only need to process new events
+  const processedEventsRef = useRef<Set<string>>(new Set())
+  const lastProcessedEventCountRef = useRef(0)
 
   // Check for command source
   const hasCommandSource = dataSources.some((ds) => ds.type === 'command')
@@ -741,7 +749,11 @@ export function useDataSource<T = unknown>(
 
     readDataFromStore()
 
+    let unsubscribed = false
     const unsubscribe = useStore.subscribe((state: any, prevState: any) => {
+      // Guard against cleanup
+      if (unsubscribed) return
+
       const devicesChanged = state.devices.length !== prevState.devices.length
       let currentValuesChanged = false
 
@@ -781,7 +793,10 @@ export function useDataSource<T = unknown>(
       }
     })
 
-    return unsubscribe
+    return () => {
+      unsubscribed = true
+      unsubscribe()
+    }
   }, [dataSources.length, enabled])
 
   // WebSocket events handling
@@ -805,299 +820,320 @@ export function useDataSource<T = unknown>(
   useEffect(() => {
     if (dataSources.length === 0 || !enabled || events.length === 0) return
 
-    const latestEvent = events[events.length - 1]
-    if (!latestEvent) return
+    // Only process new events since the last run
+    // This prevents re-processing all events on every render
+    const newEvents = events.slice(lastProcessedEventCountRef.current)
+    if (newEvents.length === 0) return
 
-    const eventData = (latestEvent as any).data || latestEvent
-    const eventType = (latestEvent as any).type
+    // Update the processed count
+    lastProcessedEventCountRef.current = events.length
 
-    // Normalize event type - handle both PascalCase (DeviceMetric) and snake_case (device.metric)
-    const normalizedEventType = eventType?.toLowerCase().replace('.', '')
-    const isDeviceMetricEvent = normalizedEventType.includes('devicemetric') ||
-                                normalizedEventType.includes('metric') ||
-                                eventType === 'DeviceMetric'
-    const hasDeviceId = eventData && typeof eventData === 'object' && 'device_id' in eventData
+    // Process each new event
+    for (const latestEvent of newEvents) {
+      const eventData = (latestEvent as any).data || latestEvent
+      const eventType = (latestEvent as any).type
 
-    let shouldUpdate = false
-
-    // Update store for device metric events: use metric name as property so
-    // current_values[metricName] = value (e.g. current_values.temperature = 23.5)
-    if (isDeviceMetricEvent && hasDeviceId) {
-      const deviceId = eventData.device_id as string
-      const store = useStore.getState()
-      if ('metric' in eventData && 'value' in eventData) {
-        store.updateDeviceMetric(deviceId, eventData.metric as string, eventData.value)
+      // Skip events we've already processed (by ID)
+      const eventId = latestEvent.id || `${eventType}_${Date.now()}_${Math.random()}`
+      if (processedEventsRef.current.has(eventId)) {
+        continue
       }
-      for (const [key, value] of Object.entries(eventData)) {
-        if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id' && key !== 'metric' && key !== 'value') {
-          store.updateDeviceMetric(deviceId, key, value)
+      processedEventsRef.current.add(eventId)
+
+      // Limit the processed events set size to prevent memory leaks
+      if (processedEventsRef.current.size > 1000) {
+        const entries = Array.from(processedEventsRef.current)
+        processedEventsRef.current = new Set(entries.slice(-500))
+      }
+
+      // Normalize event type - handle both PascalCase (DeviceMetric) and snake_case (device.metric)
+      const normalizedEventType = eventType?.toLowerCase().replace('.', '')
+      const isDeviceMetricEvent = normalizedEventType.includes('devicemetric') ||
+                                  normalizedEventType.includes('metric') ||
+                                  eventType === 'DeviceMetric'
+      const hasDeviceId = eventData && typeof eventData === 'object' && 'device_id' in eventData
+
+      let shouldUpdate = false
+
+      // Update store for device metric events: use metric name as property so
+      // current_values[metricName] = value (e.g. current_values.temperature = 23.5)
+      if (isDeviceMetricEvent && hasDeviceId) {
+        const deviceId = eventData.device_id as string
+        const store = useStore.getState()
+        if ('metric' in eventData && 'value' in eventData) {
+          store.updateDeviceMetric(deviceId, eventData.metric as string, eventData.value)
+        }
+        for (const [key, value] of Object.entries(eventData)) {
+          if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id' && key !== 'metric' && key !== 'value') {
+            store.updateDeviceMetric(deviceId, key, value)
+          }
+        }
+        shouldUpdate = true
+      }
+
+      // Check if event matches data sources
+      for (const ds of dataSources) {
+        if (ds.type === 'device' && hasDeviceId && eventData.device_id === ds.deviceId && isDeviceMetricEvent) {
+          shouldUpdate = true
+          break
+        } else if (ds.type === 'metric' && (isDeviceMetricEvent || eventType === 'metric.update')) {
+          shouldUpdate = true
+          break
+        } else if (
+          ds.type === 'command' &&
+          hasDeviceId &&
+          eventData.device_id === ds.deviceId &&
+          (isDeviceMetricEvent || eventType === 'device.command_result')
+        ) {
+          shouldUpdate = true
+          break
+        } else if (
+          // Telemetry sources: trigger refresh when matching device metric event occurs
+          ds.type === 'telemetry' &&
+          hasDeviceId &&
+          eventData.device_id === ds.deviceId &&
+          isDeviceMetricEvent
+        ) {
+          shouldUpdate = true
+          break
+        } else if (
+          // Computed sources: trigger update when any relevant device data changes
+          ds.type === 'computed' &&
+          isDeviceMetricEvent
+        ) {
+          shouldUpdate = true
+          break
         }
       }
-      shouldUpdate = true
-    }
 
-    // Check if event matches data sources
-    for (const ds of dataSources) {
-      if (ds.type === 'device' && hasDeviceId && eventData.device_id === ds.deviceId && isDeviceMetricEvent) {
-        shouldUpdate = true
-        break
-      } else if (ds.type === 'metric' && (isDeviceMetricEvent || eventType === 'metric.update')) {
-        shouldUpdate = true
-        break
-      } else if (
-        ds.type === 'command' &&
-        hasDeviceId &&
-        eventData.device_id === ds.deviceId &&
-        (isDeviceMetricEvent || eventType === 'device.command_result')
-      ) {
-        shouldUpdate = true
-        break
-      } else if (
-        // Telemetry sources: trigger refresh when matching device metric event occurs
-        ds.type === 'telemetry' &&
-        hasDeviceId &&
-        eventData.device_id === ds.deviceId &&
-        isDeviceMetricEvent
-      ) {
-        shouldUpdate = true
-        break
-      } else if (
-        // Computed sources: trigger update when any relevant device data changes
-        ds.type === 'computed' &&
-        isDeviceMetricEvent
-      ) {
-        shouldUpdate = true
-        break
+      // For telemetry sources, also trigger telemetry cache invalidation and refetch
+      const hasTelemetrySource = dataSources.some((ds) => ds.type === 'telemetry')
+      if (hasTelemetrySource && isDeviceMetricEvent && hasDeviceId) {
+        const eventDeviceId = eventData.device_id as string
+        const matchingTelemetrySources = dataSources.filter((ds) =>
+          ds.type === 'telemetry' && ds.deviceId === eventDeviceId
+        )
+
+        // Invalidate telemetry cache for affected sources and trigger refresh
+        if (matchingTelemetrySources.length > 0) {
+          matchingTelemetrySources.forEach((ds) => {
+            const cacheKey = `${ds.deviceId}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
+            telemetryCache.delete(cacheKey)
+          })
+
+          // Trigger telemetry refresh by updating the trigger state
+          setTelemetryRefreshTrigger(prev => prev + 1)
+        }
       }
-    }
 
-    // For telemetry sources, also trigger telemetry cache invalidation and refetch
-    const hasTelemetrySource = dataSources.some((ds) => ds.type === 'telemetry')
-    if (hasTelemetrySource && isDeviceMetricEvent && hasDeviceId) {
-      const eventDeviceId = eventData.device_id as string
-      const matchingTelemetrySources = dataSources.filter((ds) =>
-        ds.type === 'telemetry' && ds.deviceId === eventDeviceId
-      )
+      if (shouldUpdate) {
+        const { transform: transformFn } = optionsRef.current
 
-      // Invalidate telemetry cache for affected sources and trigger refresh
-      if (matchingTelemetrySources.length > 0) {
-        matchingTelemetrySources.forEach((ds) => {
-          const cacheKey = `${ds.deviceId}|${ds.metricId}|${ds.timeRange ?? 1}|${ds.limit ?? 50}|${ds.aggregate ?? ds.aggregateExt ?? 'raw'}`
-          telemetryCache.delete(cacheKey)
-        })
+        // Extract value directly from event
+        const currentDataSources = dataSourcesRef.current
+        const currentDevices = useStore.getState().devices
 
-        // Trigger telemetry refresh by updating the trigger state
-        setTelemetryRefreshTrigger(prev => prev + 1)
-      }
-    }
+        const results = currentDataSources.map((ds) => {
+          let result: unknown
 
-    if (shouldUpdate) {
-      const { transform: transformFn } = optionsRef.current
-
-      // Extract value directly from event
-      const currentDataSources = dataSourcesRef.current
-      const currentDevices = useStore.getState().devices
-
-      const results = currentDataSources.map((ds) => {
-        let result: unknown
-
-        switch (ds.type) {
-          case 'static':
-            result = ds.staticValue
-            break
-
-          case 'device': {
-            const deviceId = ds.deviceId!
-            const property = ds.property as string | undefined
-
-            // If no property specified, return full device object
-            if (!property) {
-              result = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId) ?? null
+          switch (ds.type) {
+            case 'static':
+              result = ds.staticValue
               break
-            }
 
-            if (isDeviceMetricEvent && eventData.device_id === deviceId) {
-              if ('metric' in eventData && eventData.metric === property && 'value' in eventData) {
-                result = eventData.value
+            case 'device': {
+              const deviceId = ds.deviceId!
+              const property = ds.property as string | undefined
+
+              // If no property specified, return full device object
+              if (!property) {
+                result = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId) ?? null
                 break
               }
-              const extracted = extractValueFromData(eventData, property)
-              if (extracted !== undefined) {
-                result = extracted
-                break
-              }
-            }
 
-            const device = currentDevices.find((d: any) => d.id === deviceId)
-            if (device?.current_values && typeof device.current_values === 'object') {
-              const extracted = extractValueFromData(device.current_values, property)
-              result = extracted !== undefined ? extracted : '-'
-            } else {
-              result = '-'
-            }
-            result = safeExtractValue(result, '-')
-            break
-          }
-
-          case 'metric': {
-            const metricId = ds.metricId ?? 'value'
-
-            if (isDeviceMetricEvent) {
-              if ('metric' in eventData && eventData.metric === metricId && 'value' in eventData) {
-                result = eventData.value
-                break
-              }
-              const extracted = extractValueFromData(eventData, metricId)
-              if (extracted !== undefined) {
-                result = extracted
-                break
-              }
-            }
-
-            for (const device of currentDevices) {
-              if (device.current_values && typeof device.current_values === 'object') {
-                const value = extractValueFromData(device.current_values, metricId)
-                if (value !== undefined) {
-                  result = value
+              if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+                if ('metric' in eventData && eventData.metric === property && 'value' in eventData) {
+                  result = eventData.value
+                  break
+                }
+                const extracted = extractValueFromData(eventData, property)
+                if (extracted !== undefined) {
+                  result = extracted
                   break
                 }
               }
-            }
 
-            if (result === undefined) {
-              result = optionsRef.current.fallback ?? '-'
-            }
-            result = safeExtractValue(result, '-')
-            break
-          }
-
-          case 'command': {
-            const deviceId = ds.deviceId
-            const property = ds.property || 'state'
-
-            if (isDeviceMetricEvent && eventData.device_id === deviceId) {
-              if ('metric' in eventData && eventData.metric === property && 'value' in eventData) {
-                result = eventData.value
-                break
-              }
-              const extracted = extractValueFromData(eventData, property)
-              if (extracted !== undefined) {
-                result = extracted
-                break
-              }
-            }
-
-            const device = currentDevices.find((d: any) => d.id === deviceId)
-            if (device?.current_values && typeof device.current_values === 'object') {
-              const extracted = extractValueFromData(device.current_values, property)
-              result = extracted !== undefined ? extracted : false
-            } else {
-              result = false
-            }
-            result = safeExtractValue(result, false)
-            break
-          }
-
-          case 'device-info': {
-            const deviceId = ds.deviceId
-            const infoProperty = ds.infoProperty || 'name'
-            const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
-
-            if (!device) {
-              result = optionsRef.current.fallback ?? '-'
-            } else {
-              switch (infoProperty) {
-                case 'name':
-                  result = device.name || '-'
-                  break
-                case 'status':
-                  result = device.status || 'unknown'
-                  break
-                case 'online':
-                  result = device.online ?? false
-                  break
-                case 'last_seen':
-                  result = device.last_seen || '-'
-                  break
-                case 'device_type':
-                  result = device.device_type || '-'
-                  break
-                case 'plugin_name':
-                  result = device.plugin_name || device.adapter_id || '-'
-                  break
-                case 'adapter_id':
-                  result = device.adapter_id || '-'
-                  break
-                default:
-                  result = optionsRef.current.fallback ?? '-'
-              }
-            }
-            result = safeExtractValue(result as unknown, (optionsRef.current.fallback ?? '-') as any)
-            break
-          }
-
-          case 'telemetry': {
-            // For telemetry sources, try to get the latest value from store on WebSocket events
-            // This provides immediate updates while the API fetch runs in background
-            const deviceId = ds.deviceId
-            const metricId = ds.metricId || ds.property || 'value'
-
-            if (isDeviceMetricEvent && eventData.device_id === deviceId) {
-              // Try to extract value from the event first
-              if ('metric' in eventData && eventData.metric === metricId && 'value' in eventData) {
-                result = eventData.value
-                break
-              }
-              const extracted = extractValueFromData(eventData, metricId)
-              if (extracted !== undefined) {
-                result = extracted
-                break
-              }
-            }
-
-            // If not found in event, try to get from store (latest device state)
-            const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
-            if (device?.current_values && typeof device.current_values === 'object') {
-              const extracted = extractValueFromData(device.current_values, metricId)
-              if (extracted !== undefined) {
-                result = extracted
-                break
-              }
-            }
-
-            // If no latest value found, preserve current data for display
-            // This prevents flickering while waiting for API response
-            const currentData = data as any
-            if (result === undefined) {
-              if (Array.isArray(currentData) && currentData.length > 0) {
-                // Keep existing data, will be updated by telemetry fetch
-                result = currentData
+              const device = currentDevices.find((d: any) => d.id === deviceId)
+              if (device?.current_values && typeof device.current_values === 'object') {
+                const extracted = extractValueFromData(device.current_values, property)
+                result = extracted !== undefined ? extracted : '-'
               } else {
+                result = '-'
+              }
+              result = safeExtractValue(result, '-')
+              break
+            }
+
+            case 'metric': {
+              const metricId = ds.metricId ?? 'value'
+
+              if (isDeviceMetricEvent) {
+                if ('metric' in eventData && eventData.metric === metricId && 'value' in eventData) {
+                  result = eventData.value
+                  break
+                }
+                const extracted = extractValueFromData(eventData, metricId)
+                if (extracted !== undefined) {
+                  result = extracted
+                  break
+                }
+              }
+
+              for (const device of currentDevices) {
+                if (device.current_values && typeof device.current_values === 'object') {
+                  const value = extractValueFromData(device.current_values, metricId)
+                  if (value !== undefined) {
+                    result = value
+                    break
+                  }
+                }
+              }
+
+              if (result === undefined) {
                 result = optionsRef.current.fallback ?? '-'
               }
+              result = safeExtractValue(result, '-')
+              break
             }
-            break
+
+            case 'command': {
+              const deviceId = ds.deviceId
+              const property = ds.property || 'state'
+
+              if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+                if ('metric' in eventData && eventData.metric === property && 'value' in eventData) {
+                  result = eventData.value
+                  break
+                }
+                const extracted = extractValueFromData(eventData, property)
+                if (extracted !== undefined) {
+                  result = extracted
+                  break
+                }
+              }
+
+              const device = currentDevices.find((d: any) => d.id === deviceId)
+              if (device?.current_values && typeof device.current_values === 'object') {
+                const extracted = extractValueFromData(device.current_values, property)
+                result = extracted !== undefined ? extracted : false
+              } else {
+                result = false
+              }
+              result = safeExtractValue(result, false)
+              break
+            }
+
+            case 'device-info': {
+              const deviceId = ds.deviceId
+              const infoProperty = ds.infoProperty || 'name'
+              const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+
+              if (!device) {
+                result = optionsRef.current.fallback ?? '-'
+              } else {
+                switch (infoProperty) {
+                  case 'name':
+                    result = device.name || '-'
+                    break
+                  case 'status':
+                    result = device.status || 'unknown'
+                    break
+                  case 'online':
+                    result = device.online ?? false
+                    break
+                  case 'last_seen':
+                    result = device.last_seen || '-'
+                    break
+                  case 'device_type':
+                    result = device.device_type || '-'
+                    break
+                  case 'plugin_name':
+                    result = device.plugin_name || device.adapter_id || '-'
+                    break
+                  case 'adapter_id':
+                    result = device.adapter_id || '-'
+                    break
+                  default:
+                    result = optionsRef.current.fallback ?? '-'
+                }
+              }
+              result = safeExtractValue(result as unknown, (optionsRef.current.fallback ?? '-') as any)
+              break
+            }
+
+            case 'telemetry': {
+              // For telemetry sources, try to get the latest value from store on WebSocket events
+              // This provides immediate updates while the API fetch runs in background
+              const deviceId = ds.deviceId
+              const metricId = ds.metricId || ds.property || 'value'
+
+              if (isDeviceMetricEvent && eventData.device_id === deviceId) {
+                // Try to extract value from the event first
+                if ('metric' in eventData && eventData.metric === metricId && 'value' in eventData) {
+                  result = eventData.value
+                  break
+                }
+                const extracted = extractValueFromData(eventData, metricId)
+                if (extracted !== undefined) {
+                  result = extracted
+                  break
+                }
+              }
+
+              // If not found in event, try to get from store (latest device state)
+              const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+              if (device?.current_values && typeof device.current_values === 'object') {
+                const extracted = extractValueFromData(device.current_values, metricId)
+                if (extracted !== undefined) {
+                  result = extracted
+                  break
+                }
+              }
+
+              // If no latest value found, preserve current data for display
+              // This prevents flickering while waiting for API response
+              const currentData = data as any
+              if (result === undefined) {
+                if (Array.isArray(currentData) && currentData.length > 0) {
+                  // Keep existing data, will be updated by telemetry fetch
+                  result = currentData
+                } else {
+                  result = optionsRef.current.fallback ?? '-'
+                }
+              }
+              break
+            }
+
+            default:
+              return
           }
 
-          default:
-            return
+          return result
+        })
+
+        let finalData: unknown
+        if (currentDataSources.length > 1) {
+          finalData = results
+        } else {
+          finalData = results[0]
         }
 
-        return result
-      })
-
-      let finalData: unknown
-      if (currentDataSources.length > 1) {
-        finalData = results
-      } else {
-        finalData = results[0]
+        const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
+        setData(transformedData)
+        setLastUpdate(Date.now())
       }
-
-      const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
-      setData(transformedData)
-      setLastUpdate(Date.now())
     }
-  }, [events, dataSources, enabled])
+  }, [events.length, dataSources, enabled])  // Only depend on events.length, not the full array
 
   // Telemetry data fetching (for historical time-series data)
   // Use stable key for dependency to prevent infinite re-renders
@@ -1122,6 +1158,11 @@ export function useDataSource<T = unknown>(
 
   useEffect(() => {
     if (!hasTelemetrySource || !enabled) {
+      // Clean up any existing interval when disabled
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
       return
     }
 
@@ -1337,6 +1378,12 @@ export function useDataSource<T = unknown>(
       }
     }
 
+    // Clean up existing interval before creating a new one
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+
     fetchTelemetryData()
 
     // Set up refresh interval if specified (refresh is in seconds, convert to ms)
@@ -1345,11 +1392,16 @@ export function useDataSource<T = unknown>(
 
     if (minRefreshSeconds) {
       const minRefreshMs = minRefreshSeconds * 1000
-      const interval = setInterval(fetchTelemetryData, minRefreshMs)
-      return () => clearInterval(interval)
+      intervalRef.current = setInterval(fetchTelemetryData, minRefreshMs)
     }
-    // If no periodic refresh, still return cleanup that will re-run on trigger changes
-    return () => {}
+
+    // Cleanup function - always clear interval on unmount or dependency change
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
   }, [telemetryKey, enabled, telemetryRefreshTrigger])
 
   return {

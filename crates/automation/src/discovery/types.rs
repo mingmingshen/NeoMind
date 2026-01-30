@@ -452,7 +452,7 @@ impl SemanticType {
         let name_lower = field_name.to_lowercase();
 
         // For nested fields like "detections.0.class_name", also check the last segment
-        let last_segment = name_lower.split('.').last().unwrap_or(&name_lower);
+        let last_segment = name_lower.split('.').next_back().unwrap_or(&name_lower);
 
         // Check field name patterns - prioritize more specific patterns first
 
@@ -1208,7 +1208,7 @@ impl GeneratedDeviceType {
 
     fn generate_insights(metrics: &[DiscoveredMetric], commands: &[DiscoveredCommand]) -> (Vec<String>, Vec<String>) {
         let mut insights = Vec::new();
-        let mut warnings = Vec::new();
+        let warnings = Vec::new();
 
         // Analyze metrics
         let temp_count = metrics.iter().filter(|m| m.semantic_type == SemanticType::Temperature).count();

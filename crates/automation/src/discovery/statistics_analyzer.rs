@@ -268,7 +268,7 @@ impl StatisticsAnalyzer {
         let sum: f64 = values.iter().sum();
         let mean = sum / count as f64;
 
-        let median = if count % 2 == 0 {
+        let median = if count.is_multiple_of(2) {
             (sorted[count / 2 - 1] + sorted[count / 2]) / 2.0
         } else {
             sorted[count / 2]
@@ -346,37 +346,32 @@ impl StatisticsAnalyzer {
 
         if let ValueStatistics::Numeric(num_stats) = stats {
             // Temperature ranges
-            if num_stats.min >= -50.0 && num_stats.max <= 60.0 {
-                if path_lower.contains("temp") || path_lower.contains("temperature") {
+            if num_stats.min >= -50.0 && num_stats.max <= 60.0
+                && (path_lower.contains("temp") || path_lower.contains("temperature")) {
                     return Some("°C".to_string());
                 }
-            }
-            if num_stats.min >= 30.0 && num_stats.max <= 120.0 {
-                if path_lower.contains("temp") || path_lower.contains("temperature") {
+            if num_stats.min >= 30.0 && num_stats.max <= 120.0
+                && (path_lower.contains("temp") || path_lower.contains("temperature")) {
                     return Some("°F".to_string());
                 }
-            }
 
             // Percentage range (0-100)
-            if num_stats.min >= 0.0 && num_stats.max <= 100.0 {
-                if path_lower.contains("humidity") || path_lower.contains("level")
-                    || path_lower.contains("percent") || path_lower.contains("ratio")
+            if num_stats.min >= 0.0 && num_stats.max <= 100.0
+                && (path_lower.contains("humidity") || path_lower.contains("level")
+                    || path_lower.contains("percent") || path_lower.contains("ratio"))
                 {
                     return Some("%".to_string());
                 }
-            }
 
             // Pressure ranges
-            if num_stats.min >= 900.0 && num_stats.max <= 1100.0 {
-                if path_lower.contains("pressure") || path_lower.contains("bar") {
+            if num_stats.min >= 900.0 && num_stats.max <= 1100.0
+                && (path_lower.contains("pressure") || path_lower.contains("bar")) {
                     return Some("hPa".to_string());
                 }
-            }
-            if num_stats.min >= 28.0 && num_stats.max <= 32.0 {
-                if path_lower.contains("pressure") || path_lower.contains("in") {
+            if num_stats.min >= 28.0 && num_stats.max <= 32.0
+                && (path_lower.contains("pressure") || path_lower.contains("in")) {
                     return Some("inHg".to_string());
                 }
-            }
         }
 
         // Check for explicit unit indicators in path
@@ -420,13 +415,12 @@ impl StatisticsAnalyzer {
                 if unit.as_deref() == Some("%") {
                     return ValuePattern::Percentage;
                 }
-                if num.min >= 0.0 && num.max <= 100.0 {
-                    if path_lower.contains("humidity") || path_lower.contains("level")
-                        || path_lower.contains("percent") || path_lower.contains("ratio")
+                if num.min >= 0.0 && num.max <= 100.0
+                    && (path_lower.contains("humidity") || path_lower.contains("level")
+                        || path_lower.contains("percent") || path_lower.contains("ratio"))
                     {
                         return ValuePattern::Percentage;
                     }
-                }
 
                 // Temperature patterns
                 if unit.as_deref() == Some("°C") {
@@ -437,12 +431,11 @@ impl StatisticsAnalyzer {
                 }
 
                 // Boolean-like (0/1 values)
-                if num.min >= 0.0 && num.max <= 1.0 && num.std_dev < 0.6 {
-                    if num.p25 == num.median && num.p75 == num.median {
+                if num.min >= 0.0 && num.max <= 1.0 && num.std_dev < 0.6
+                    && num.p25 == num.median && num.p75 == num.median {
                         // Most values are either 0 or 1
                         return ValuePattern::BooleanLike;
                     }
-                }
 
                 ValuePattern::Numeric
             }
@@ -450,24 +443,22 @@ impl StatisticsAnalyzer {
             ValueStatistics::String(str_stats) => {
                 // Enumeration pattern (few unique values)
                 if str_stats.unique_count <= 10 && str_stats.unique_count < str_stats.count / 2 {
-                    let mut unique_values: Vec<String> = vec![];
+                    let unique_values: Vec<String> = vec![];
                     // We'd need the original values to get this right
                     return ValuePattern::Enumeration(unique_values);
                 }
 
                 // UUID/Identifier pattern
-                if str_stats.avg_length >= 32.0 && str_stats.avg_length <= 40.0 {
-                    if str_stats.min_length == str_stats.max_length {
+                if str_stats.avg_length >= 32.0 && str_stats.avg_length <= 40.0
+                    && str_stats.min_length == str_stats.max_length {
                         return ValuePattern::Identifier;
                     }
-                }
 
                 // Check for hex-like strings
-                if str_stats.unique_count > 10 && str_stats.avg_length > 8.0 {
-                    if path_lower.contains("id") || path_lower.contains("uuid") || path_lower.contains("key") {
+                if str_stats.unique_count > 10 && str_stats.avg_length > 8.0
+                    && (path_lower.contains("id") || path_lower.contains("uuid") || path_lower.contains("key")) {
                         return ValuePattern::Identifier;
                     }
-                }
 
                 ValuePattern::Unknown
             }
@@ -518,11 +509,10 @@ pub fn compute_quick_stats(values: &[Value]) -> (Option<f64>, Option<f64>, Optio
     let mut nums: Vec<f64> = Vec::new();
 
     for v in values {
-        if let Value::Number(n) = v {
-            if let Some(f) = n.as_f64() {
+        if let Value::Number(n) = v
+            && let Some(f) = n.as_f64() {
                 nums.push(f);
             }
-        }
     }
 
     if nums.is_empty() {

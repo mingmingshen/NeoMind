@@ -23,7 +23,6 @@ use edge_ai_devices::DataPoint;
 // Import automation types for transform processing
 use edge_ai_automation::Automation;
 // Import auto-onboarding types
-use edge_ai_automation::discovery::auto_onboard::AutoOnboardManager;
 
 /// Webhook data from device
 #[derive(Debug, serde::Deserialize)]
@@ -101,7 +100,7 @@ pub async fn webhook_handler(
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
                 let runtime = OllamaRuntime::new(llm)
-                    .map_err(|e| ErrorResponse::internal(&format!("Failed to create LLM runtime: {}", e)))?;
+                    .map_err(|e| ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e)))?;
                 let event_bus = state.event_bus.as_ref()
                     .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
                     .clone();
@@ -413,7 +412,7 @@ pub async fn webhook_generic_handler(
                     .with_endpoint("http://localhost:11434")
                     .with_timeout_secs(120);
                 let runtime = OllamaRuntime::new(llm)
-                    .map_err(|e| ErrorResponse::internal(&format!("Failed to create LLM runtime: {}", e)))?;
+                    .map_err(|e| ErrorResponse::internal(format!("Failed to create LLM runtime: {}", e)))?;
                 let event_bus = state.event_bus.as_ref()
                     .ok_or_else(|| ErrorResponse::internal("EventBus not available"))?
                     .clone();
