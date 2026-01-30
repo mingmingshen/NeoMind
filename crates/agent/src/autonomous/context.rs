@@ -593,7 +593,13 @@ impl MetricAggregation {
         if values.is_empty() {
             return 0.0;
         }
-        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // Handle NaN values - filter them out first
+        values.retain(|v| v.is_finite());
+        if values.is_empty() {
+            return 0.0;
+        }
+        // Safe to unwrap because we filtered out NaN values
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let len = values.len();
         if len.is_multiple_of(2) {
             (values[len / 2 - 1] + values[len / 2]) / 2.0

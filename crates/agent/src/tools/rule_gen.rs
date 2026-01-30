@@ -391,7 +391,10 @@ impl Tool for ValidateRuleDslTool {
 
         let result = self.validate(dsl).await;
 
-        Ok(ToolOutput::success(serde_json::to_value(result).unwrap()))
+        match serde_json::to_value(result) {
+            Ok(value) => Ok(ToolOutput::success(value)),
+            Err(e) => Err(ToolError::Execution(format!("Failed to serialize validation result: {}", e))),
+        }
     }
 }
 
@@ -523,7 +526,10 @@ impl Tool for CreateRuleTool {
         let check_duplicates = args["check_duplicates"].as_bool().unwrap_or(true);
 
         match self.create(dsl, check_duplicates).await {
-            Ok(result) => Ok(ToolOutput::success(serde_json::to_value(result).unwrap())),
+            Ok(result) => match serde_json::to_value(result) {
+                Ok(value) => Ok(ToolOutput::success(value)),
+                Err(e) => Err(ToolError::Execution(format!("Failed to serialize created rule: {}", e))),
+            },
             Err(e) => match &e {
                 RuleError::Parse(msg) => {
                     Err(ToolError::InvalidArguments(format!("Parse error: {}", msg)))

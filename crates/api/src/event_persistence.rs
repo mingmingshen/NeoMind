@@ -978,6 +978,9 @@ impl TransformEventService {
 
                             // IMPORTANT: Write raw metrics to time series storage for dashboard/query
                             // This stores the actual device data so it can be retrieved later
+                            tracing::debug!("Writing to time series storage: device_id={}, metric={}, timestamp={}",
+                                device_id, metric, timestamp);
+
                             let ts_value = match &value {
                                 edge_ai_core::MetricValue::Float(v) => edge_ai_devices::MetricValue::Float(*v),
                                 edge_ai_core::MetricValue::Integer(v) => edge_ai_devices::MetricValue::Integer(*v),

@@ -61,14 +61,33 @@ impl TaskOrchestrator {
 
                 // Get the first step
                 let tasks = self.tasks.read().await;
-                let task_session = tasks.get(&task_id).unwrap();
+                let task_session = match tasks.get(&task_id) {
+                    Some(session) => session,
+                    None => {
+                        // Session was just inserted but not found - return error response
+                        return Ok(TaskResponse {
+                            task_id: task_id.clone(),
+                            response_type: ResponseType::Clarification,
+                            message: "创建任务会话失败，请重试。".to_string(),
+                            current_step: None,
+                            total_steps: 0,
+                            needs_input: true,
+                            completed: false,
+                        });
+                    }
+                };
+
+                let first_step_desc = task_session.steps
+                    .get(task_session.current_step)
+                    .map(|s| s.description.as_str())
+                    .unwrap_or("开始");
 
                 Ok(TaskResponse {
                     task_id: task_id.clone(),
                     response_type: ResponseType::TaskStarted,
                     message: format!("我理解你想创建一个自动化任务。让我们一步步来完成。\n\n第 {} 步: {}",
                         task_session.current_step + 1,
-                        task_session.steps.get(task_session.current_step).map(|s| s.description.as_str()).unwrap_or("开始")
+                        first_step_desc
                     ),
                     current_step: task_session.steps.get(task_session.current_step).cloned(),
                     total_steps: task_session.steps.len(),
@@ -151,7 +170,23 @@ impl TaskOrchestrator {
             }
 
             // Return next step
-            let next_step = session.steps.get(session.current_step).unwrap();
+            let next_step = match session.steps.get(session.current_step) {
+                Some(step) => step,
+                None => {
+                    // Should not happen after the bounds check, but handle gracefully
+                    session.status = TaskStatus::Completed;
+                    return Ok(TaskResponse {
+                        task_id: task_id.to_string(),
+                        response_type: ResponseType::Completed,
+                        message: "任务已完成。".to_string(),
+                        current_step: None,
+                        total_steps: session.steps.len(),
+                        needs_input: false,
+                        completed: true,
+                    });
+                }
+            };
+
             return Ok(TaskResponse {
                 task_id: task_id.to_string(),
                 response_type: ResponseType::NextStep,

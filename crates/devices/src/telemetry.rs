@@ -210,7 +210,7 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<Vec<DataPoint>, DeviceError> {
-        tracing::debug!("TimeSeriesStorage::query: device_id={}, metric={}, start={}, end={}",
+        tracing::info!("TimeSeriesStorage::query: device_id={}, metric={}, start={}, end={}",
             device_id, metric, start_timestamp, end_timestamp);
 
         let result = self

@@ -163,9 +163,10 @@ impl Tool for GetDeviceTypeTool {
             ToolError::NotFound(format!("Device type '{}' not found", device_type))
         })?;
 
-        Ok(ToolOutput::success(
-            serde_json::to_value(definition).unwrap(),
-        ))
+        match serde_json::to_value(definition) {
+            Ok(value) => Ok(ToolOutput::success(value)),
+            Err(e) => Err(ToolError::Execution(format!("Failed to serialize definition: {}", e))),
+        }
     }
 }
 
@@ -435,9 +436,10 @@ impl Tool for ExplainDeviceTypeTool {
 
         let explanation = self.explain(definition, language);
 
-        Ok(ToolOutput::success(
-            serde_json::to_value(explanation).unwrap(),
-        ))
+        match serde_json::to_value(explanation) {
+            Ok(value) => Ok(ToolOutput::success(value)),
+            Err(e) => Err(ToolError::Execution(format!("Failed to serialize explanation: {}", e))),
+        }
     }
 }
 

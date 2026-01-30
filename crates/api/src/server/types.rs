@@ -640,7 +640,11 @@ impl ServerState {
             .with_real_list_devices_tool(self.device_service.clone())
             .with_real_device_analyze_tool(self.device_service.clone(), self.time_series_storage.clone())
             .with_real_create_rule_tool(self.rule_engine.clone())
-            .with_real_list_rules_tool(self.rule_engine.clone());
+            .with_real_list_rules_tool(self.rule_engine.clone())
+            // AI Agent tools for Chat integration
+            .with_real_agent_tools(self.agent_store.clone())
+            // System help tool for onboarding
+            .with_system_help_tool_named("NeoTalk");
 
         let tool_registry = Arc::new(builder.build());
         self.session_manager
