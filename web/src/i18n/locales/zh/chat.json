@@ -31,6 +31,11 @@
     "thinking": "思考中...",
     "characters": "字符"
   },
+  "progress": {
+    "thinking": "思考中",
+    "generating": "生成中",
+    "toolExecution": "执行工具"
+  },
   "toolCall": {
     "title": "工具调用",
     "status": {

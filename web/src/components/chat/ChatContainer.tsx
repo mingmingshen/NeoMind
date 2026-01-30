@@ -72,6 +72,9 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     remainingTime: 300
   })
 
+  // Current execution plan step from Plan events
+  const [currentPlanStep, setCurrentPlanStep] = useState<string>("")
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -155,6 +158,16 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             warnings: streamProgress.warnings,
             remainingTime: data.remainingTime ?? 300
           })
+          // Update plan step from progress message if available
+          if (data.message) {
+            setCurrentPlanStep(data.message)
+          }
+          break
+        }
+
+        // Handle Plan events - shows execution step
+        case "Plan": {
+          setCurrentPlanStep(data.step)
           break
         }
 
@@ -198,6 +211,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             warnings: [],
             remainingTime: 300
           })
+          setCurrentPlanStep("")
           break
 
         case "Error":
@@ -393,13 +407,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             streamingToolCalls={streamingToolCalls}
           />
 
-          {/* Stream progress indicator (P0.1) */}
-          {isStreaming && streamProgress.elapsed > 5 && (
+          {/* Stream progress indicator - always show during streaming */}
+          {isStreaming && (
             <StreamProgress
               elapsed={streamProgress.elapsed}
               totalDuration={300}
               stage={streamProgress.stage}
               warning={streamProgress.warnings[streamProgress.warnings.length - 1]}
+              currentStep={currentPlanStep}
             />
           )}
 
