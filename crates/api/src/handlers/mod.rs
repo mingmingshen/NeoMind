@@ -64,6 +64,8 @@ pub use sessions::{
     chat_handler, cleanup_sessions_handler, create_session_handler, delete_session_handler,
     get_session_handler, get_session_history_handler, list_sessions_handler,
     update_session_handler, ws_chat_handler,
+    // P0.3: Pending stream state handlers
+    get_pending_stream_handler, clear_pending_stream_handler,
 };
 pub use settings::llm_generate_handler;
 // Commands API

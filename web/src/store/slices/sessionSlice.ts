@@ -166,7 +166,31 @@ export const createSessionSlice: StateCreator<
       }
 
       // Otherwise append new message
-      return { messages: [...state.messages, message] }
+      const newMessages = [...state.messages, message]
+
+      // Update current session in sessions list
+      // This ensures the session list shows updated preview and message count
+      const updatedSessions = state.sessions.map(s => {
+        if (s.sessionId === state.sessionId) {
+          // For user messages, use as preview; for assistant, keep existing or use first 50 chars
+          const preview = message.role === 'user'
+            ? message.content
+            : (s.preview || (message.content ? message.content.slice(0, 50) + '...' : ''))
+
+          return {
+            ...s,
+            preview,
+            messageCount: (s.messageCount || 0) + 1,
+            updatedAt: Date.now(),
+          }
+        }
+        return s
+      })
+
+      return {
+        messages: newMessages,
+        sessions: updatedSessions,
+      }
     })
   },
 

@@ -22,21 +22,41 @@ use crate::error::{AgentError, Result};
 use crate::llm::LlmInterface;
 
 /// Configuration for stream processing safeguards
+///
+/// These safeguards prevent infinite loops and excessive resource usage
+/// during LLM streaming operations.
+///
+/// The default values are synchronized with `edge_ai_core::llm::backend::StreamConfig`
+/// to ensure consistent behavior across the system.
 pub struct StreamSafeguards {
-    /// Maximum time allowed for entire stream processing (default: 60s)
+    /// Maximum time allowed for entire stream processing (default: 300s)
+    ///
+    /// This matches `StreamConfig::max_stream_duration_secs` and provides
+    /// adequate time for complex reasoning tasks, especially with thinking models.
     pub max_stream_duration: Duration,
+
     /// Maximum thinking content length in characters (default: unlimited)
+    ///
+    /// Note: The actual thinking limit is enforced by the LLM backend's
+    /// `StreamConfig::max_thinking_chars`. This field is retained for
+    /// additional safety if needed.
     pub max_thinking_length: usize,
+
     /// Maximum content length in characters (default: unlimited)
     pub max_content_length: usize,
-    /// Maximum tool call iterations per request (default: 5)
+
+    /// Maximum tool call iterations per request (default: 3)
     pub max_tool_iterations: usize,
+
     /// Maximum consecutive similar chunks to detect loops (default: 3)
     pub max_repetition_count: usize,
+
     /// Heartbeat interval to keep connection alive (default: 10s)
     pub heartbeat_interval: Duration,
+
     /// Progress update interval during long operations (default: 5s)
     pub progress_interval: Duration,
+
     /// Optional interrupt signal - when set, stream should stop gracefully
     /// This allows users to interrupt long thinking processes
     pub interrupt_signal: Option<tokio::sync::watch::Receiver<bool>>,
@@ -45,20 +65,28 @@ pub struct StreamSafeguards {
 impl Default for StreamSafeguards {
     fn default() -> Self {
         Self {
-            // Increased timeout to 120 seconds for thinking models
-            // qwen3-vl:2b can take a long time thinking before generating content
-            max_stream_duration: Duration::from_secs(120),
-            // No limit on thinking content - let the model think as much as needed
+            // Synchronized with StreamConfig::max_stream_duration_secs (300s)
+            // This provides adequate time for thinking models like qwen3-vl:2b
+            // to complete extended reasoning before generating content.
+            max_stream_duration: Duration::from_secs(300),
+
+            // No limit on thinking content - let the LLM backend enforce limits
             max_thinking_length: usize::MAX,
+
             max_content_length: usize::MAX,
+
             // Tool iterations limit - 3 is sufficient for most multi-step queries
             max_tool_iterations: 3,
+
             // Repetition detection threshold
             max_repetition_count: 3,
+
             // Heartbeat every 10 seconds to prevent WebSocket timeout
             heartbeat_interval: Duration::from_secs(10),
+
             // Progress update every 5 seconds during long operations
             progress_interval: Duration::from_secs(5),
+
             // No interrupt signal by default
             interrupt_signal: None,
         }
@@ -69,6 +97,32 @@ impl StreamSafeguards {
     /// Create a new StreamSafeguards with default values
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a StreamSafeguards optimized for fast models.
+    ///
+    /// This reduces timeouts and limits for models that respond quickly
+    /// and don't need extended thinking time.
+    pub fn fast_model() -> Self {
+        Self {
+            max_stream_duration: Duration::from_secs(120),
+            max_thinking_length: 10_000,
+            max_tool_iterations: 3,
+            ..Self::default()
+        }
+    }
+
+    /// Create a StreamSafeguards optimized for reasoning models.
+    ///
+    /// This increases timeouts for models that benefit from extended
+    /// reasoning time (e.g., vision models, thinking-enabled models).
+    pub fn reasoning_model() -> Self {
+        Self {
+            max_stream_duration: Duration::from_secs(600),
+            max_thinking_length: 100_000,
+            max_tool_iterations: 5,
+            ..Self::default()
+        }
     }
 
     /// Set the interrupt signal for this stream

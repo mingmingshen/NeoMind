@@ -1,9 +1,11 @@
 /**
  * WelcomeArea - Smart welcome area shown when no active conversation
  * Contains status cards, AI suggestions, and quick actions
+ * Fully internationalized with i18n
  */
 
 import { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { fetchAPI } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -15,6 +17,7 @@ import {
   Settings,
   ArrowRight,
   Lightbulb,
+  Bot,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Link } from "react-router-dom"
@@ -38,23 +41,8 @@ interface AISuggestion {
   priority: "high" | "medium" | "low"
 }
 
-// Quick action buttons
-const quickActions = [
-  { id: "devices", label: "查看设备", icon: Cpu, path: "/devices" },
-  { id: "automation", label: "自动化规则", icon: Workflow, path: "/automation" },
-  { id: "events", label: "事件中心", icon: Bell, path: "/events" },
-  { id: "settings", label: "系统设置", icon: Settings, path: "/settings" },
-]
-
-// Prompt suggestions
-const promptSuggestions = [
-  "查看当前在线的设备状态",
-  "帮我创建一个温度监控规则",
-  "有哪些告警需要处理?",
-  "显示今天的设备活动日志",
-]
-
 export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
+  const { t } = useTranslation("common")
   const user = useStore((state) => state.user)
 
   const [stats, setStats] = useState<SystemStats | null>(null)
@@ -93,7 +81,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         if (pendingAlerts > 0) {
           newSuggestions.push({
             id: "alerts",
-            text: `有 ${pendingAlerts} 条告警待处理`,
+            text: t("welcome.suggestions.pendingAlerts", { count: pendingAlerts }),
             prompt: "显示所有未处理的告警",
             priority: "high",
           })
@@ -103,7 +91,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         if (offlineDevices > 0) {
           newSuggestions.push({
             id: "offline",
-            text: `${offlineDevices} 个设备离线`,
+            text: t("welcome.suggestions.offlineDevices", { count: offlineDevices }),
             prompt: "显示所有离线设备的详情",
             priority: offlineDevices > 3 ? "high" : "medium",
           })
@@ -112,7 +100,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         if (activeRules === 0 && devices.length > 0) {
           newSuggestions.push({
             id: "rules",
-            text: "还没有启用自动化规则",
+            text: t("welcome.suggestions.noRules"),
             prompt: "帮我创建第一个自动化规则",
             priority: "low",
           })
@@ -127,16 +115,33 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
     }
 
     fetchStats()
-  }, [])
+  }, [t])
 
   // Get greeting based on time
-  const getGreeting = () => {
+  const getGreetingKey = () => {
     const hour = new Date().getHours()
-    if (hour < 6) return "夜深了"
-    if (hour < 12) return "早上好"
-    if (hour < 18) return "下午好"
-    return "晚上好"
+    if (hour < 6) return "welcome.greeting.earlyMorning"
+    if (hour < 12) return "welcome.greeting.morning"
+    if (hour < 18) return "welcome.greeting.afternoon"
+    return "welcome.greeting.evening"
   }
+
+  // Quick action buttons
+  const quickActions = [
+    { id: "devices", label: t("welcome.quickActions.devices"), icon: Cpu, path: "/devices" },
+    { id: "automation", label: t("welcome.quickActions.automation"), icon: Workflow, path: "/automation" },
+    { id: "agents", label: t("nav.agents"), icon: Bot, path: "/agents" },
+    { id: "events", label: t("welcome.quickActions.events"), icon: Bell, path: "/events" },
+    { id: "settings", label: t("welcome.quickActions.settings"), icon: Settings, path: "/settings" },
+  ]
+
+  // Prompt suggestions
+  const promptSuggestions = [
+    t("welcome.suggestionPrompts.checkDevices"),
+    t("welcome.suggestionPrompts.createRule"),
+    t("welcome.suggestionPrompts.checkAlerts"),
+    t("welcome.suggestionPrompts.showLogs"),
+  ]
 
   return (
     <div className={cn("flex-1 flex flex-col items-center justify-center p-6", className)}>
@@ -147,10 +152,10 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
             <Sparkles className="h-8 w-8 text-background" />
           </div>
           <h1 className="text-2xl font-semibold text-foreground mb-2">
-            {getGreeting()}，{user?.username || "用户"}
+            {t(getGreetingKey())}, {user?.username || t("common.user", { defaultValue: "User" })}
           </h1>
           <p className="text-muted-foreground">
-            NeoTalk 智能物联网助手，随时为你服务
+            {t("welcome.tagline")}
           </p>
         </div>
 
@@ -169,7 +174,12 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
                 {stats.devicesOnline}
                 <span className="text-sm font-normal text-muted-foreground">/{stats.devicesTotal}</span>
               </div>
-              <div className="text-xs text-muted-foreground">设备在线</div>
+              <div className="text-xs text-muted-foreground">
+                {t("welcome.stats.devicesOnline", {
+                  online: stats.devicesOnline,
+                  total: stats.devicesTotal
+                }).split(" ").slice(1).join(" ")}
+              </div>
             </Link>
 
             <Link
@@ -181,7 +191,9 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
                 <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <div className="text-2xl font-semibold text-foreground">{stats.activeRules}</div>
-              <div className="text-xs text-muted-foreground">活跃规则</div>
+              <div className="text-xs text-muted-foreground">
+                {t("common.active", { defaultValue: "Active" })}
+              </div>
             </Link>
 
             <Link
@@ -193,7 +205,9 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
                 <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <div className="text-2xl font-semibold text-foreground">{stats.pendingAlerts}</div>
-              <div className="text-xs text-muted-foreground">待处理告警</div>
+              <div className="text-xs text-muted-foreground">
+                {t("welcome.stats.pendingAlerts", { count: stats.pendingAlerts }).split(" ").slice(1).join(" ")}
+              </div>
             </Link>
           </div>
         )}
@@ -216,7 +230,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
           <div className="space-y-2 animate-fade-in-up" style={{ animationDelay: "200ms" }}>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Lightbulb className="h-4 w-4" />
-              <span>AI 建议</span>
+              <span>{t("welcome.aiSuggestion")}</span>
             </div>
             <div className="space-y-2">
               {suggestions.map((suggestion) => (
@@ -241,7 +255,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         {/* Prompt suggestions */}
         <div className="space-y-3 animate-fade-in-up" style={{ animationDelay: "300ms" }}>
           <p className="text-sm text-muted-foreground text-center">
-            试试这些问题：
+            {t("welcome.suggestionPrompts.title")}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
             {promptSuggestions.map((prompt) => (

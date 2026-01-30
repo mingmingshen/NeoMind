@@ -124,5 +124,71 @@
   },
   "info": "Info",
   "createdAt": "Created",
-  "updatedAt": "Updated"
+  "updatedAt": "Updated",
+  "welcome": {
+    "greeting": {
+      "earlyMorning": "Good early morning",
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Good night"
+    },
+    "tagline": "NeoTalk Smart IoT Assistant, at your service",
+    "stats": {
+      "devicesOnline": "{{online}}/{{total}} Devices Online",
+      "activeRules": "{{count}} Active Rules",
+      "pendingAlerts": "{{count}} Pending Alerts"
+    },
+    "aiSuggestion": "AI Suggestions",
+    "suggestions": {
+      "pendingAlerts": "{{count}} alert(s) pending",
+      "offlineDevices": "{{count}} device(s) offline",
+      "noRules": "No automation rules enabled yet"
+    },
+    "suggestionPrompts": {
+      "title": "Try these questions:",
+      "checkDevices": "Check current online device status",
+      "createRule": "Help me create a temperature monitoring rule",
+      "checkAlerts": "What alerts need attention?",
+      "showLogs": "Show today's device activity log"
+    },
+    "quickActions": {
+      "devices": "Devices",
+      "automation": "Automation",
+      "events": "Events",
+      "settings": "Settings"
+    }
+  },
+  "inputSuggestions": {
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Late night"
+    },
+    "devices": "{{count}} devices",
+    "loading": "Loading...",
+    "recommended": "Recommended",
+    "moreOptions": "More options",
+    "keyboardHint": "Press ↑↓ to navigate, Enter to select",
+    "timeContext": {
+      "morning": "Morning routine",
+      "evening": "Energy saving",
+      "night": "Night security"
+    },
+    "context": {
+      "devices": "{{count}} devices",
+      "current": "Currently {{count}} devices",
+      "online": "{{online}}/{{total}} online"
+    },
+    "categories": {
+      "device": "Device",
+      "automation": "Automation",
+      "alert": "Alert",
+      "analytics": "Analytics",
+      "agent": "Agent",
+      "settings": "Settings",
+      "general": "General"
+    }
+  }
 }

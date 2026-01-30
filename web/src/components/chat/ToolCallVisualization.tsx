@@ -1,6 +1,11 @@
-// ToolCallVisualization component - displays AI tool calls with execution details
+/**
+ * ToolCallVisualization - Displays AI tool/function calls
+ * Clean, modern design
+ */
+
 import { useState } from "react"
-import { Wrench, ChevronDown, ChevronUp, Clock, CheckCircle2, Loader2, AlertCircle, Code } from "lucide-react"
+import { useTranslation } from "react-i18next"
+import { Wrench, ChevronDown, Clock, CheckCircle2, Loader2, Code } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ToolCall } from "@/types"
 
@@ -9,19 +14,16 @@ interface ToolCallVisualizationProps {
   isStreaming?: boolean
 }
 
-// Extended type for tool calls with optional duration
 interface ToolCallWithDuration extends ToolCall {
   duration_ms?: number
 }
 
-function getToolStatusIcon(hasResult: boolean, isStreaming: boolean) {
-  if (isStreaming && !hasResult) {
-    return <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-  }
-  if (hasResult) {
-    return <CheckCircle2 className="h-3 w-3 text-muted-foreground" />
-  }
-  return <AlertCircle className="h-3 w-3 text-muted-foreground" />
+type ToolStatus = "pending" | "running" | "completed"
+
+function getToolStatus(hasResult: boolean, isStreaming: boolean): ToolStatus {
+  if (hasResult) return "completed"
+  if (isStreaming) return "running"
+  return "pending"
 }
 
 function formatDuration(ms?: number): string {
@@ -30,191 +32,179 @@ function formatDuration(ms?: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function formatArguments(args: unknown): string {
-  if (typeof args === "string") {
+function formatJson(data: unknown): string {
+  if (typeof data === "string") {
     try {
-      const parsed = JSON.parse(args)
+      const parsed = JSON.parse(data)
       return JSON.stringify(parsed, null, 2)
     } catch {
-      return args
+      return data
     }
   }
-  return JSON.stringify(args, null, 2)
+  return JSON.stringify(data, null, 2)
 }
 
-function formatResult(result: unknown): string {
-  if (typeof result === "string") {
-    try {
-      const parsed = JSON.parse(result)
-      return JSON.stringify(parsed, null, 2)
-    } catch {
-      return result
-    }
+function ToolCallItem({
+  toolCall,
+  isExpanded,
+  isStreaming,
+  onToggle,
+  t
+}: {
+  toolCall: ToolCallWithDuration
+  isExpanded: boolean
+  isStreaming: boolean
+  onToggle: () => void
+  t: (key: string) => string
+}) {
+  const status = getToolStatus(
+    toolCall.result !== undefined && toolCall.result !== null,
+    isStreaming
+  )
+  const hasArguments = toolCall.arguments !== undefined && toolCall.arguments !== null
+  const hasResult = toolCall.result !== undefined && toolCall.result !== null
+
+  const statusLabels = {
+    pending: t("toolCall.status.pending"),
+    running: t("toolCall.status.running"),
+    completed: t("toolCall.status.completed"),
   }
-  return JSON.stringify(result, null, 2)
+
+  return (
+    <div className="border-b border-border/40 last:border-b-0">
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        {/* Status icon */}
+        <div className={cn(
+          "h-5 w-5 rounded flex items-center justify-center shrink-0",
+          status === "completed" && "bg-emerald-500/10 text-emerald-600",
+          status === "running" && "bg-amber-500/10 text-amber-600",
+          status === "pending" && "bg-muted text-muted-foreground"
+        )}>
+          {status === "running" ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : status === "completed" ? (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          ) : (
+            <Wrench className="h-3 w-3" />
+          )}
+        </div>
+
+        {/* Tool name */}
+        <span className="font-mono text-sm">{toolCall.name}</span>
+
+        {/* Status badge */}
+        <span className={cn(
+          "text-[10px] px-1.5 py-0.5 rounded shrink-0",
+          status === "completed" && "bg-emerald-500/10 text-emerald-600",
+          status === "running" && "bg-amber-500/10 text-amber-600",
+          status === "pending" && "bg-muted text-muted-foreground"
+        )}>
+          {statusLabels[status]}
+        </span>
+
+        {/* Duration */}
+        {toolCall.duration_ms && (
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {formatDuration(toolCall.duration_ms)}
+          </span>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Expand button */}
+        {(hasArguments || hasResult) && (
+          <button
+            onClick={onToggle}
+            className="p-1 rounded hover:bg-muted/50 text-muted-foreground"
+          >
+            <ChevronDown className={cn(
+              "h-4 w-4 transition-transform",
+              isExpanded && "rotate-180"
+            )} />
+          </button>
+        )}
+      </div>
+
+      {/* Expandable content */}
+      {isExpanded && (
+        <div className="px-4 pb-3 space-y-2">
+          {hasArguments && (
+            <div className="rounded-lg bg-muted/50 p-2">
+              <div className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1">
+                <Code className="h-3 w-3" />
+                {t("toolCall.arguments")}
+              </div>
+              <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words">
+                {formatJson(toolCall.arguments)}
+              </pre>
+            </div>
+          )}
+          {hasResult && (
+            <div className="rounded-lg bg-muted/50 p-2">
+              <div className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" />
+                {t("toolCall.result")}
+              </div>
+              <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                {formatJson(toolCall.result)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function ToolCallVisualization({
   toolCalls,
   isStreaming = false
 }: ToolCallVisualizationProps) {
-  const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set())
-  const [expandedArguments, setExpandedArguments] = useState<Set<string>>(new Set())
+  const { t } = useTranslation("chat")
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set())
 
   if (!toolCalls || toolCalls.length === 0) return null
 
-  const toggleResult = (key: string) => {
-    setExpandedResults(prev => {
+  const toggleItem = (index: number) => {
+    setExpandedItems(prev => {
       const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
+      if (next.has(index)) {
+        next.delete(index)
       } else {
-        next.add(key)
+        next.add(index)
       }
       return next
     })
   }
 
-  const toggleArguments = (key: string) => {
-    setExpandedArguments(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
-  }
-
-  const completedCount = toolCalls.filter(tc => tc.result !== undefined && tc.result !== null).length
+  const completedCount = toolCalls.filter(
+    tc => tc.result !== undefined && tc.result !== null
+  ).length
 
   return (
-    <div className="tool-call-visualization rounded-md border border-border/50 bg-muted/30 overflow-hidden text-sm">
-      {/* Header - minimal style */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/30">
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          <Wrench className="h-3.5 w-3.5" />
-          <span className="text-xs">
-            工具调用 · {completedCount}/{toolCalls.length}
-          </span>
-        </div>
+    <div className="my-3 rounded-xl border border-border/60 bg-muted/30 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/40">
+        <Wrench className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">{t("toolCall.title")}</span>
+        <span className="text-xs text-muted-foreground">
+          {completedCount}/{toolCalls.length}
+        </span>
       </div>
 
-      {/* Tool List - compact */}
-      <div className="divide-y divide-border/30">
-        {toolCalls.map((tc, i) => {
-          const resultKey = `result-${i}`
-          const argsKey = `args-${i}`
-          const isResultExpanded = expandedResults.has(resultKey)
-          const isArgsExpanded = expandedArguments.has(argsKey)
-          const hasResult = tc.result !== undefined && tc.result !== null
-          const hasArguments = tc.arguments !== undefined && tc.arguments !== null
-
-          return (
-            <div key={i} className="px-3 py-2 hover:bg-muted/50 transition-colors">
-              {/* Tool Name Row */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {/* Status icon */}
-                  <div className={cn(
-                    "h-5 w-5 rounded flex items-center justify-center shrink-0",
-                    hasResult ? "bg-muted" : "bg-muted/50"
-                  )}>
-                    {getToolStatusIcon(hasResult, isStreaming)}
-                  </div>
-
-                  {/* Tool name */}
-                  <span className="font-mono text-xs text-foreground/80 truncate">
-                    {tc.name}
-                  </span>
-
-                  {/* Status badge */}
-                  <span className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded shrink-0",
-                    hasResult
-                      ? "bg-muted text-muted-foreground"
-                      : isStreaming
-                        ? "bg-muted text-muted-foreground"
-                        : "bg-muted/50 text-muted-foreground/70"
-                  )}>
-                    {hasResult ? '完成' : isStreaming ? '执行中' : '等待'}
-                  </span>
-
-                  {/* Duration */}
-                  {(tc as ToolCallWithDuration).duration_ms && (
-                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 shrink-0">
-                      <Clock className="h-2.5 w-2.5" />
-                      {formatDuration((tc as ToolCallWithDuration).duration_ms)}
-                    </span>
-                  )}
-                </div>
-
-                {/* Expand buttons */}
-                <div className="flex items-center gap-0.5 shrink-0">
-                  {hasArguments && (
-                    <button
-                      onClick={() => toggleArguments(argsKey)}
-                      className={cn(
-                        "p-1 rounded transition-colors",
-                        isArgsExpanded 
-                          ? "bg-muted text-foreground" 
-                          : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                      )}
-                      title="查看参数"
-                    >
-                      <Code className="h-3 w-3" />
-                    </button>
-                  )}
-                  {hasResult && (
-                    <button
-                      onClick={() => toggleResult(resultKey)}
-                      className={cn(
-                        "p-1 rounded transition-colors",
-                        isResultExpanded 
-                          ? "bg-muted text-foreground" 
-                          : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
-                      )}
-                      title="查看结果"
-                    >
-                      {isResultExpanded ? (
-                        <ChevronUp className="h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Expandable Arguments */}
-              {isArgsExpanded && hasArguments && (
-                <div className="mt-2 ml-7 p-2 bg-background/50 rounded border border-border/30">
-                  <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                    <Code className="h-2.5 w-2.5" />
-                    参数
-                  </div>
-                  <pre className="text-[11px] font-mono text-foreground/70 overflow-x-auto whitespace-pre-wrap break-words">
-                    {formatArguments(tc.arguments)}
-                  </pre>
-                </div>
-              )}
-
-              {/* Expandable Result */}
-              {isResultExpanded && hasResult && (
-                <div className="mt-2 ml-7 p-2 bg-background/50 rounded border border-border/30">
-                  <div className="text-[10px] font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                    <CheckCircle2 className="h-2.5 w-2.5" />
-                    结果
-                  </div>
-                  <pre className="text-[11px] font-mono text-foreground/70 overflow-x-auto whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
-                    {formatResult(tc.result)}
-                  </pre>
-                </div>
-              )}
-            </div>
-          )
-        })}
+      {/* Tool list */}
+      <div>
+        {toolCalls.map((tc, i) => (
+          <ToolCallItem
+            key={i}
+            toolCall={tc}
+            isExpanded={expandedItems.has(i)}
+            isStreaming={isStreaming}
+            onToggle={() => toggleItem(i)}
+            t={t}
+          />
+        ))}
       </div>
     </div>
   )

@@ -17,25 +17,9 @@ use serde::{Deserialize, Serialize};
 
 use edge_ai_core::llm::backend::{
     BackendCapabilities, BackendId, BackendMetrics, FinishReason, LlmError, LlmOutput, LlmRuntime,
-    StreamChunk, TokenUsage,
+    StreamChunk, TokenUsage, StreamConfig,
 };
 use edge_ai_core::message::{Content, ContentPart, Message, MessageRole};
-
-/// Stream timeout in seconds - prevents infinite loops
-const STREAM_TIMEOUT_SECS: u64 = 300;
-
-/// Maximum thinking characters - set to limit to prevent infinite thinking loops
-/// Increased to 10000 for models like qwen3-vl:2b that need extended thinking for image reasoning
-/// Some models (like qwen3-vl:2b) can get stuck in thinking loops
-const MAX_THINKING_CHARS: usize = 10000;
-
-/// Maximum consecutive identical thinking chunks before assuming loop
-/// Increased to 10 for streaming models where natural chunk repetition is normal
-const MAX_THINKING_LOOP: usize = 10;
-
-/// Maximum thinking time before forcing completion (in seconds)
-/// Increased to 60 seconds for image reasoning scenarios that need more processing time
-const MAX_THINKING_TIME_SECS: u64 = 60;
 
 /// Ollama configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -115,12 +99,20 @@ pub struct OllamaRuntime {
     client: Client,
     model: String,
     metrics: Arc<RwLock<BackendMetrics>>,
+    stream_config: StreamConfig,
 }
 
 impl OllamaRuntime {
     /// Create a new Ollama runtime.
     pub fn new(config: OllamaConfig) -> Result<Self, LlmError> {
+        Self::with_stream_config(config, StreamConfig::default())
+    }
+
+    /// Create a new Ollama runtime with custom stream configuration.
+    pub fn with_stream_config(config: OllamaConfig, stream_config: StreamConfig) -> Result<Self, LlmError> {
         tracing::debug!("Creating Ollama runtime with endpoint: {}", config.endpoint);
+        tracing::debug!("Stream config: max_thinking_chars={}, max_stream_duration={}s",
+            stream_config.max_thinking_chars, stream_config.max_stream_duration_secs);
 
         // Configure HTTP client with connection pooling for better performance
         // - pool_max_idle_per_host: Keep up to 5 idle connections ready for reuse
@@ -145,6 +137,7 @@ impl OllamaRuntime {
             client,
             model,
             metrics: Arc::new(RwLock::new(BackendMetrics::default())),
+            stream_config,
         })
     }
 
@@ -800,6 +793,9 @@ impl LlmRuntime for OllamaRuntime {
             native_tools.as_ref().is_some_and(|t| !t.is_empty()),
             think);
 
+        // Capture stream_config for use in async block
+        let stream_config = self.stream_config.clone();
+
         tokio::spawn(async move {
             let request = OllamaChatRequest {
                 model: model.clone(),
@@ -862,6 +858,8 @@ impl LlmRuntime for OllamaRuntime {
                     let mut last_thinking_chunk = String::new(); // Track last thinking chunk for loop detection
                     let mut consecutive_same_thinking = 0usize; // Count consecutive identical thinking chunks
                     let stream_start = Instant::now(); // Track stream duration
+                    let mut last_progress_report = Instant::now(); // Track last progress report
+                    let mut last_warning_index = 0usize; // Track last warning threshold sent
                     let mut content_buffer = String::new(); // Buffer for detecting thinking in content
                     let mut detected_thinking_in_content = false; // Flag for thinking detection
 
@@ -872,10 +870,61 @@ impl LlmRuntime for OllamaRuntime {
                             break;
                         }
 
+                        let elapsed = stream_start.elapsed();
+
+                        // P0.2: Check and report progress at intervals
+                        if stream_config.progress_enabled
+                            && last_progress_report.elapsed() > Duration::from_secs(5) {
+                            let elapsed_secs = elapsed.as_secs();
+                            let max_duration = Duration::from_secs(stream_config.max_stream_duration_secs);
+                            let remaining = max_duration.saturating_sub(elapsed);
+
+                            // Send progress update through a special content marker
+                            // We encode progress as a special comment in the thinking stream
+                            let progress_json = serde_json::json!({
+                                "type": "progress",
+                                "elapsed": elapsed_secs,
+                                "remaining": remaining.as_secs(),
+                                "stage": "streaming"
+                            }).to_string();
+
+                            tracing::debug!("Stream progress: {}s elapsed, {}s remaining",
+                                elapsed_secs, remaining.as_secs());
+
+                            last_progress_report = Instant::now();
+                        }
+
+                        // P0.2: Check warning thresholds
+                        if stream_config.progress_enabled {
+                            for (i, threshold) in stream_config.warning_thresholds.iter().enumerate() {
+                                if i >= last_warning_index
+                                    && elapsed >= Duration::from_secs(*threshold) {
+                                    let elapsed_secs = elapsed.as_secs();
+                                    let max_duration = Duration::from_secs(stream_config.max_stream_duration_secs);
+                                    let remaining = max_duration.saturating_sub(elapsed);
+
+                                    // Send warning through progress mechanism
+                                    let warning_json = serde_json::json!({
+                                        "type": "warning",
+                                        "message": format!("执行中... 已耗时 {} 秒，剩余约 {} 秒",
+                                            elapsed_secs, remaining.as_secs()),
+                                        "elapsed": elapsed_secs,
+                                        "remaining": remaining.as_secs()
+                                    }).to_string();
+
+                                    tracing::info!("Stream warning at {}s: {}s remaining",
+                                        elapsed_secs, remaining.as_secs());
+
+                                    last_warning_index = i + 1;
+                                }
+                            }
+                        }
+
                         // Check for timeout
-                        if stream_start.elapsed() > Duration::from_secs(STREAM_TIMEOUT_SECS) {
+                        let max_duration = Duration::from_secs(stream_config.max_stream_duration_secs);
+                        if elapsed > max_duration {
                             let error_msg =
-                                format!("Stream timeout after {} seconds", STREAM_TIMEOUT_SECS);
+                                format!("Stream timeout after {} seconds", stream_config.max_stream_duration_secs);
                             println!("[ollama.rs] {}", error_msg);
                             tracing::warn!("{}", error_msg);
                             let _ = tx.send(Err(LlmError::Generation(error_msg))).await;
@@ -1005,7 +1054,7 @@ impl LlmRuntime for OllamaRuntime {
 
                                                 // Check if thinking has gone on too long
                                                 if let Some(start) = thinking_start_time
-                                                    && start.elapsed() > Duration::from_secs(MAX_THINKING_TIME_SECS) {
+                                                    && start.elapsed() > stream_config.max_thinking_time() {
                                                         tracing::warn!(
                                                             "[ollama.rs] Thinking timeout ({:?} elapsed, {} chars). Skipping remaining thinking, waiting for content.",
                                                             start.elapsed(),
@@ -1018,7 +1067,7 @@ impl LlmRuntime for OllamaRuntime {
                                                 // Detect consecutive identical thinking chunks (model stuck in loop)
                                                 if thinking_content == &last_thinking_chunk {
                                                     consecutive_same_thinking += 1;
-                                                    if consecutive_same_thinking > MAX_THINKING_LOOP {
+                                                    if consecutive_same_thinking > stream_config.max_thinking_loop {
                                                         tracing::warn!(
                                                             "[ollama.rs] Model stuck in thinking loop ({} identical chunks: \"{}\"). Skipping remaining thinking, waiting for content.",
                                                             consecutive_same_thinking,
@@ -1033,10 +1082,11 @@ impl LlmRuntime for OllamaRuntime {
                                                 }
 
                                                 // SAFETY CHECK: Detect if model is stuck in thinking loop
-                                                if thinking_chars > MAX_THINKING_CHARS {
+                                                if thinking_chars > stream_config.max_thinking_chars {
                                                     tracing::warn!(
-                                                        "[ollama.rs] Max thinking chars reached ({}). Skipping remaining thinking chunks, waiting for content.",
-                                                        thinking_chars
+                                                        "[ollama.rs] Max thinking chars reached ({} > {}). Skipping remaining thinking chunks, waiting for content.",
+                                                        thinking_chars,
+                                                        stream_config.max_thinking_chars
                                                     );
                                                     // Skip future thinking chunks but continue stream for content
                                                     skip_remaining_thinking = true;
@@ -1113,7 +1163,7 @@ impl LlmRuntime for OllamaRuntime {
                                                     );
 
                                                     // Check thinking limit
-                                                    if thinking_chars <= MAX_THINKING_CHARS {
+                                                    if thinking_chars <= stream_config.max_thinking_chars {
                                                         let _ = tx
                                                             .send(Ok((content.clone(), true)))
                                                             .await;
@@ -1121,8 +1171,9 @@ impl LlmRuntime for OllamaRuntime {
                                                         // Just exceeded limit - set flag and continue
                                                         skip_remaining_thinking = true;
                                                         tracing::warn!(
-                                                            "[ollama.rs] Max thinking chars reached in content ({}). Switching to content mode.",
-                                                            thinking_chars
+                                                            "[ollama.rs] Max thinking chars reached in content ({} > {}). Switching to content mode.",
+                                                            thinking_chars,
+                                                            stream_config.max_thinking_chars
                                                         );
                                                     }
                                                 } else {

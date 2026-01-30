@@ -17,6 +17,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { useTranslation } from "react-i18next"
 
 interface SessionTabsProps {
   className?: string
@@ -24,6 +33,7 @@ interface SessionTabsProps {
 }
 
 export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
+  const { t } = useTranslation("common")
   const navigate = useNavigate()
   const {
     sessions,
@@ -37,6 +47,8 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
   const [showLeftScroll, setShowLeftScroll] = useState(false)
   const [showRightScroll, setShowRightScroll] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null)
 
   // Check scroll buttons visibility
   const checkScroll = () => {
@@ -91,10 +103,19 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
     onSessionChange?.(sessionId)
   }
 
-  // Handle delete session - allow deleting all sessions
-  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+  // Handle delete session - show confirmation first
+  const handleDeleteSession = (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation()
-    await deleteSession(sessionId)
+    setSessionToDelete(sessionId)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (sessionToDelete) {
+      await deleteSession(sessionToDelete)
+      setDeleteDialogOpen(false)
+      setSessionToDelete(null)
+    }
   }
 
   // Format session title
@@ -253,6 +274,26 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteSessionTitle', { ns: 'session' }) || '删除会话'}</DialogTitle>
+            <DialogDescription>
+              {t('deleteDesc', { ns: 'session' }) || '确定要删除这个会话吗？此操作无法撤销。'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm}>
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

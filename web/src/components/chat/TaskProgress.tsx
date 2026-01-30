@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, Loader2, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
+import { useTranslation } from "react-i18next"
 
 export type TaskStepType = "gather_info" | "confirm" | "execute"
 export type TaskStatus = "in_progress" | "completed" | "cancelled" | "failed"
@@ -28,30 +29,30 @@ interface TaskProgressProps {
   className?: string
 }
 
-// Step type configuration
-const STEP_TYPE_CONFIG: Record<TaskStepType, {
-  label: string
-  icon: string
-  color: string
-}> = {
-  gather_info: {
-    label: "收集信息",
-    icon: "📝",
-    color: "text-blue-500"
-  },
-  confirm: {
-    label: "确认",
-    icon: "✓",
-    color: "text-amber-500"
-  },
-  execute: {
-    label: "执行",
-    icon: "⚡",
-    color: "text-green-500"
+// Helper function to get step type config
+function getStepTypeConfig(stepType: TaskStepType, t: (key: string) => string) {
+  const configs: Record<TaskStepType, { label: string; icon: string; color: string }> = {
+    gather_info: {
+      label: t("taskProgress.steps.collecting"),
+      icon: "📝",
+      color: "text-blue-500"
+    },
+    confirm: {
+      label: t("taskProgress.steps.confirming"),
+      icon: "✓",
+      color: "text-amber-500"
+    },
+    execute: {
+      label: t("taskProgress.steps.executing"),
+      icon: "⚡",
+      color: "text-green-500"
+    }
   }
+  return configs[stepType]
 }
 
 export function TaskProgress({ task, className }: TaskProgressProps) {
+  const { t } = useTranslation("chat")
   const progressPercent = task.total_steps > 0
     ? (task.current_step / task.total_steps) * 100
     : 0
@@ -78,24 +79,24 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">任务进度</span>
+          <span className="text-sm font-medium">{t("taskProgress.title")}</span>
           <Badge variant="outline" className="text-xs">
             {task.current_step}/{task.total_steps}
           </Badge>
         </div>
         {task.status === "completed" && (
           <Badge className="bg-green-500 hover:bg-green-600 text-xs">
-            已完成
+            {t("taskProgress.status.completed")}
           </Badge>
         )}
         {task.status === "failed" && (
           <Badge variant="destructive" className="text-xs">
-            失败
+            {t("taskProgress.status.failed")}
           </Badge>
         )}
         {task.status === "cancelled" && (
           <Badge variant="secondary" className="text-xs">
-            已取消
+            {t("taskProgress.status.cancelled")}
           </Badge>
         )}
       </div>
@@ -104,7 +105,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
       <div className="space-y-1">
         <Progress value={progressPercent} className="h-2" />
         <div className="text-xs text-muted-foreground text-right">
-          {Math.round(progressPercent)}% 完成
+          {t("taskProgress.percentComplete", { percent: Math.round(progressPercent) })}
         </div>
       </div>
 
@@ -112,7 +113,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
       <div className="space-y-2">
         {task.steps.map((step, index) => {
           const status = getStepStatus(index)
-          const config = STEP_TYPE_CONFIG[step.step_type]
+          const config = getStepTypeConfig(step.step_type, t)
 
           return (
             <div
@@ -173,7 +174,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
         <div className="flex items-center gap-2 p-3 rounded-md bg-blue-50 border border-blue-200">
           <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
           <p className="text-sm text-blue-700">
-            正在处理第 {task.current_step + 1} 步...
+            {t("taskProgress.currentStep", { step: task.current_step + 1 })}
           </p>
         </div>
       )}
@@ -182,7 +183,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
         <div className="flex items-center gap-2 p-3 rounded-md bg-green-50 border border-green-200">
           <CheckCircle2 className="h-4 w-4 text-green-500" />
           <p className="text-sm text-green-700">
-            任务已成功完成！
+            {t("taskProgress.success")}
           </p>
         </div>
       )}
@@ -191,7 +192,7 @@ export function TaskProgress({ task, className }: TaskProgressProps) {
         <div className="flex items-center gap-2 p-3 rounded-md bg-red-50 border border-red-200">
           <AlertCircle className="h-4 w-4 text-red-500" />
           <p className="text-sm text-red-700">
-            任务执行失败，请重试
+            {t("taskProgress.failed")}
           </p>
         </div>
       )}
@@ -250,13 +251,14 @@ export function CompactTaskProgress({ task, className }: TaskProgressProps) {
 
 // Step-by-step wizard view
 export function TaskWizard({ task, className }: TaskProgressProps) {
+  const { t } = useTranslation("chat")
   const currentStepData = task.steps[task.current_step]
 
   return (
     <div className={cn("task-wizard space-y-4", className)}>
       {/* Progress Header */}
       <div className="flex items-center justify-between">
-        <h3 className="font-medium">创建自动化</h3>
+        <h3 className="font-medium">{t("taskProgress.createAutomation")}</h3>
         <CompactTaskProgress task={task} />
       </div>
 
@@ -264,9 +266,11 @@ export function TaskWizard({ task, className }: TaskProgressProps) {
       {task.status === "in_progress" && currentStepData && (
         <div className="p-4 rounded-md border bg-card">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs text-muted-foreground">第 {task.current_step + 1} 步</span>
+            <span className="text-xs text-muted-foreground">
+              {t("taskProgress.stepLabel", { step: task.current_step + 1 })}
+            </span>
             <Badge variant="outline" className="text-xs">
-              {STEP_TYPE_CONFIG[currentStepData.step_type].label}
+              {getStepTypeConfig(currentStepData.step_type, t).label}
             </Badge>
           </div>
 
@@ -290,9 +294,9 @@ export function TaskWizard({ task, className }: TaskProgressProps) {
       {task.status === "completed" && (
         <div className="p-6 rounded-md border bg-green-50 text-center">
           <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-3" />
-          <h3 className="font-medium text-green-900 mb-1">任务完成</h3>
+          <h3 className="font-medium text-green-900 mb-1">{t("taskProgress.status.completed")}</h3>
           <p className="text-sm text-green-700">
-            自动化已成功创建！
+            {t("taskProgress.automationCreated")}
           </p>
         </div>
       )}

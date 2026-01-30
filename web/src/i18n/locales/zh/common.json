@@ -124,5 +124,71 @@
   },
   "info": "信息",
   "createdAt": "创建时间",
-  "updatedAt": "更新时间"
+  "updatedAt": "更新时间",
+  "welcome": {
+    "greeting": {
+      "earlyMorning": "夜深了",
+      "morning": "早上好",
+      "afternoon": "下午好",
+      "evening": "晚上好",
+      "night": "夜深了"
+    },
+    "tagline": "NeoTalk 智能物联网助手，随时为你服务",
+    "stats": {
+      "devicesOnline": "{{online}}/{{total}} 设备在线",
+      "activeRules": "{{count}} 活跃规则",
+      "pendingAlerts": "{{count}} 待处理告警"
+    },
+    "aiSuggestion": "AI 建议",
+    "suggestions": {
+      "pendingAlerts": "有 {{count}} 条告警待处理",
+      "offlineDevices": "{{count}} 个设备离线",
+      "noRules": "还没有启用自动化规则"
+    },
+    "suggestionPrompts": {
+      "title": "试试这些问题：",
+      "checkDevices": "查看当前在线的设备状态",
+      "createRule": "帮我创建一个温度监控规则",
+      "checkAlerts": "有哪些告警需要处理?",
+      "showLogs": "显示今天的设备活动日志"
+    },
+    "quickActions": {
+      "devices": "查看设备",
+      "automation": "自动化规则",
+      "events": "事件中心",
+      "settings": "系统设置"
+    }
+  },
+  "inputSuggestions": {
+    "greeting": {
+      "morning": "早上好",
+      "afternoon": "下午好",
+      "evening": "晚上好",
+      "night": "夜深了"
+    },
+    "devices": "{{count}} 个设备",
+    "loading": "加载中...",
+    "recommended": "推荐",
+    "moreOptions": "更多选项",
+    "keyboardHint": "按 ↑↓ 导航，Enter 选择",
+    "timeContext": {
+      "morning": "早上例行检查",
+      "evening": "节能模式",
+      "night": "夜间安全"
+    },
+    "context": {
+      "devices": "{{count}} 个设备",
+      "current": "当前有 {{count}} 个设备",
+      "online": "{{online}}/{{total}} 在线"
+    },
+    "categories": {
+      "device": "设备",
+      "automation": "自动化",
+      "alert": "告警",
+      "analytics": "分析",
+      "agent": "智能体",
+      "settings": "设置",
+      "general": "通用"
+    }
+  }
 }

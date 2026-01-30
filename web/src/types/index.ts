@@ -348,6 +348,10 @@ export type ServerMessage =
   | { type: 'ToolCallStart'; tool: string; arguments: Record<string, unknown>; sessionId: string }
   // Tool call completed - result is a string (JSON or plain text)
   | { type: 'ToolCallEnd'; tool: string; result: string; sessionId: string; success?: boolean }
+  // Progress event during long-running operations
+  | { type: 'Progress'; elapsed: number; stage: 'thinking' | 'generating' | 'tool_execution'; message?: string; remainingTime?: number; sessionId: string }
+  // Warning event when approaching timeout
+  | { type: 'Warning'; message: string; elapsed?: number; remainingTime?: number; sessionId: string }
   // Error occurred - sessionId is always included when sent from backend
   | { type: 'Error'; message: string; sessionId: string }
   // Stream ended
@@ -356,6 +360,24 @@ export type ServerMessage =
   | { type: 'response'; content: string; sessionId: string; toolsUsed?: string[]; processingTimeMs?: number }
   // Device status update
   | { type: 'device_update'; updateType: string; deviceId: string; status?: string; lastSeen?: number }
+
+// Stream configuration types (matching backend StreamConfig)
+export interface StreamConfig {
+  maxThinkingChars: number
+  maxThinkingTimeSecs: number
+  maxStreamDurationSecs: number
+  warningThresholds: number[]
+  maxThinkingLoop: number
+  progressEnabled: boolean
+}
+
+// Stream progress state for UI
+export interface StreamProgress {
+  elapsed: number
+  stage: 'thinking' | 'generating' | 'tool_execution'
+  warnings: string[]
+  remainingTime: number
+}
 
 // Image data for multimodal messages
 export interface ChatImage {

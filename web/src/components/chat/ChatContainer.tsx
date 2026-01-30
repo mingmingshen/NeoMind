@@ -5,12 +5,15 @@
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { ws } from "@/lib/websocket"
 import type { Message, ServerMessage } from "@/types"
+import type { StreamProgress as StreamProgressType } from "@/types"
 import { SessionDrawer } from "../session/SessionDrawer"
 import { InputSuggestions } from "./InputSuggestions"
 import { MergedMessageList } from "./MergedMessageList"
+import { StreamProgress } from "./StreamProgress"
 import {
   Menu,
   Send,
@@ -37,6 +40,7 @@ interface ChatContainerProps {
 }
 
 export function ChatContainer({ className = "" }: ChatContainerProps) {
+  const { t } = useTranslation("chat")
   const navigate = useNavigate()
   // Store state
   const {
@@ -60,6 +64,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
 
+  // Stream progress state (P0.1: Progress tracking)
+  const [streamProgress, setStreamProgress] = useState<StreamProgressType>({
+    elapsed: 0,
+    stage: 'thinking',
+    warnings: [],
+    remainingTime: 300
+  })
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -67,6 +79,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
   const streamingToolCallsRef = useRef<any[]>([])
+  const streamStartRef = useRef<number>(Date.now())
 
   // Auto-scroll to bottom when messages change
   const scrollToBottom = useCallback(() => {
@@ -85,12 +98,24 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           setIsStreaming(true)
           streamingThinkingRef.current += (data.content || "")
           setStreamingThinking(streamingThinkingRef.current)
+          // Update progress stage
+          setStreamProgress(prev => ({
+            ...prev,
+            stage: 'thinking',
+            elapsed: Math.floor((Date.now() - streamStartRef.current) / 1000)
+          }))
           break
 
         case "Content":
           setIsStreaming(true)
           streamingContentRef.current += (data.content || "")
           setStreamingContent(streamingContentRef.current)
+          // Update progress stage
+          setStreamProgress(prev => ({
+            ...prev,
+            stage: 'generating',
+            elapsed: Math.floor((Date.now() - streamStartRef.current) / 1000)
+          }))
           break
 
         case "ToolCallStart": {
@@ -102,6 +127,12 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           }
           streamingToolCallsRef.current.push(toolCall)
           setStreamingToolCalls([...streamingToolCallsRef.current])
+          // Update progress stage
+          setStreamProgress(prev => ({
+            ...prev,
+            stage: 'tool_execution',
+            elapsed: Math.floor((Date.now() - streamStartRef.current) / 1000)
+          }))
           break
         }
 
@@ -113,6 +144,28 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 : tc
             )
           )
+          break
+        }
+
+        // P0.1: Handle progress events from backend
+        case "Progress": {
+          setStreamProgress({
+            elapsed: data.elapsed,
+            stage: data.stage,
+            warnings: streamProgress.warnings,
+            remainingTime: data.remainingTime ?? 300
+          })
+          break
+        }
+
+        // P0.1: Handle warning events
+        case "Warning": {
+          setStreamProgress(prev => ({
+            ...prev,
+            warnings: [...prev.warnings, data.message],
+            elapsed: data.elapsed ?? prev.elapsed,
+            remainingTime: data.remainingTime ?? prev.remainingTime
+          }))
           break
         }
 
@@ -138,6 +191,13 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           streamingThinkingRef.current = ""
           streamingToolCallsRef.current = []
           streamingMessageIdRef.current = null
+          // Reset progress state
+          setStreamProgress({
+            elapsed: 0,
+            stage: 'thinking',
+            warnings: [],
+            remainingTime: 300
+          })
           break
 
         case "Error":
@@ -203,6 +263,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     // Start streaming
     setIsStreaming(true)
     streamingMessageIdRef.current = crypto.randomUUID()
+    streamStartRef.current = Date.now()  // Reset stream start time
+    // Reset progress state
+    setStreamProgress({
+      elapsed: 0,
+      stage: 'thinking',
+      warnings: [],
+      remainingTime: 300
+    })
 
     // Send via WebSocket (now using the correct session)
     ws.sendMessage(trimmedInput)
@@ -268,7 +336,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-[var(--foreground)]">NeoTalk</h1>
-              <p className="text-xs text-muted-foreground">智能物联网助手</p>
+              <p className="text-xs text-muted-foreground">{t("title")}</p>
             </div>
           </div>
         </div>
@@ -293,13 +361,17 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 <Sparkles className="h-8 w-8 text-white" />
               </div>
               <h2 className="text-2xl font-semibold mb-2 text-[var(--foreground)]">
-                你好！我是 NeoTalk
+                {t("welcome.greeting")}
               </h2>
               <p className="text-muted-foreground mb-8">
-                智能物联网助手，帮你管理设备和自动化
+                {t("welcome.description")}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
-                {["查看设备状态", "创建自动化规则", "查看告警"].map((suggestion) => (
+                {[
+                  t("welcome.suggestions.checkDevices"),
+                  t("welcome.suggestions.createRule"),
+                  t("welcome.suggestions.viewAlerts")
+                ].map((suggestion) => (
                   <button
                     key={suggestion}
                     onClick={() => setInput(suggestion)}
@@ -320,6 +392,16 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             streamingThinking={streamingThinking}
             streamingToolCalls={streamingToolCalls}
           />
+
+          {/* Stream progress indicator (P0.1) */}
+          {isStreaming && streamProgress.elapsed > 5 && (
+            <StreamProgress
+              elapsed={streamProgress.elapsed}
+              totalDuration={300}
+              stage={streamProgress.stage}
+              warning={streamProgress.warnings[streamProgress.warnings.length - 1]}
+            />
+          )}
 
           {/* Scroll anchor */}
           <div ref={messagesEndRef} />
@@ -354,14 +436,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                       <span className="truncate">
                         {llmBackends.find(b => b.id === activeBackendId)?.name ||
                          llmBackends.find(b => b.id === activeBackendId)?.model ||
-                         '选择模型'}
+                         t("input.selectModel")}
                       </span>
                       <ChevronDown className="h-3 w-3 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-56">
                     <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      选择 LLM 模型
+                      {t("input.selectLLMModel")}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {llmBackends.map((backend) => (
@@ -399,9 +481,10 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
-              <span className="text-xs text-muted-foreground">
-                按 <kbd className="px-1 py-0.5 rounded bg-[var(--muted)]">/</kbd> 显示建议
-              </span>
+              <span
+                className="text-xs text-muted-foreground"
+                dangerouslySetInnerHTML={{ __html: t("input.sendHint") }}
+              />
               <div className="flex-1" />
               <Button
                 variant="ghost"
@@ -420,7 +503,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="输入消息... (Shift+Enter 换行)"
+                  placeholder={t("input.placeholder")}
                   rows={1}
                   className={cn(
                     "w-full px-4 py-3 rounded-2xl resize-none",
@@ -459,7 +542,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
 
             {/* Footer hint */}
             <p className="text-xs text-muted-foreground text-center mt-2">
-              NeoTalk 使用 AI 提供智能物联网管理 • 回复可能不准确
+              {t("footer.disclaimer")}
             </p>
           </div>
         </div>

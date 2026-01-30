@@ -143,6 +143,15 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             delete(sessions::delete_session_handler),
         )
         .route("/api/sessions/:id/chat", post(sessions::chat_handler))
+        // P0.3: Pending stream state management (for recovery after disconnection)
+        .route(
+            "/api/sessions/:id/pending",
+            get(sessions::get_pending_stream_handler),
+        )
+        .route(
+            "/api/sessions/:id/pending",
+            delete(sessions::clear_pending_stream_handler),
+        )
         // Devices API
         .route("/api/devices", get(devices::list_devices_handler))
         .route("/api/devices", post(devices::add_device_handler))

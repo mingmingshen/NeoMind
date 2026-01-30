@@ -5,9 +5,11 @@
 
 use async_trait::async_trait;
 use futures::Stream;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use super::modality::{ImageContent, ModalityContent};
 use crate::message::{Message, MessageRole};
@@ -251,6 +253,147 @@ impl TokenUsage {
 /// Contains the text content and a boolean indicating if it's from a "thinking" field
 /// (e.g., qwen3-vl's thinking field vs actual content).
 pub type StreamChunk = Result<(String, bool), LlmError>;
+
+/// Stream configuration for LLM backends.
+///
+/// This configuration controls timeouts, thinking limits, and progress reporting
+/// for streaming responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamConfig {
+    /// Maximum thinking characters before cutoff.
+    ///
+    /// When the model generates more than this many characters in the "thinking" field,
+    /// the remaining thinking content will be skipped and the system will wait for
+    /// the actual content to begin. This prevents models from getting stuck in
+    /// infinite thinking loops.
+    ///
+    /// Default: 50,000 characters
+    #[serde(default = "StreamConfig::default_max_thinking_chars")]
+    pub max_thinking_chars: usize,
+
+    /// Maximum thinking time in seconds.
+    ///
+    /// If the model spends more than this time generating thinking content,
+    /// the system will skip remaining thinking and wait for content.
+    ///
+    /// Default: 120 seconds
+    #[serde(default = "StreamConfig::default_max_thinking_time_secs")]
+    pub max_thinking_time_secs: u64,
+
+    /// Total stream timeout in seconds.
+    ///
+    /// The entire streaming operation (thinking + content generation) must
+    /// complete within this time limit.
+    ///
+    /// Default: 300 seconds (5 minutes)
+    #[serde(default = "StreamConfig::default_max_stream_duration_secs")]
+    pub max_stream_duration_secs: u64,
+
+    /// Progressive warning thresholds in seconds.
+    ///
+    /// The system will send progress warnings at these elapsed times.
+    /// This helps users understand long-running operations.
+    ///
+    /// Default: [60, 120, 180, 240] seconds
+    #[serde(default = "StreamConfig::default_warning_thresholds")]
+    pub warning_thresholds: Vec<u64>,
+
+    /// Maximum consecutive identical thinking chunks before assuming loop.
+    ///
+    /// This detects when a model is stuck repeating the same thinking content.
+    ///
+    /// Default: 10
+    #[serde(default = "StreamConfig::default_max_thinking_loop")]
+    pub max_thinking_loop: usize,
+
+    /// Enable progressive progress reporting.
+    ///
+    /// When enabled, the backend will send progress events at regular intervals
+    /// and at warning thresholds.
+    ///
+    /// Default: true
+    #[serde(default = "StreamConfig::default_progress_enabled")]
+    pub progress_enabled: bool,
+}
+
+impl StreamConfig {
+    fn default_max_thinking_chars() -> usize {
+        50_000
+    }
+
+    fn default_max_thinking_time_secs() -> u64 {
+        120
+    }
+
+    fn default_max_stream_duration_secs() -> u64 {
+        300
+    }
+
+    fn default_warning_thresholds() -> Vec<u64> {
+        vec![60, 120, 180, 240]
+    }
+
+    fn default_max_thinking_loop() -> usize {
+        10
+    }
+
+    fn default_progress_enabled() -> bool {
+        true
+    }
+
+    /// Get the max stream duration as a Duration.
+    pub fn max_stream_duration(&self) -> Duration {
+        Duration::from_secs(self.max_stream_duration_secs)
+    }
+
+    /// Get the max thinking time as a Duration.
+    pub fn max_thinking_time(&self) -> Duration {
+        Duration::from_secs(self.max_thinking_time_secs)
+    }
+
+    /// Create a config for models with limited thinking capability.
+    ///
+    /// This reduces the thinking limits for smaller/faster models that
+    /// don't need extended thinking time.
+    pub fn fast_model() -> Self {
+        Self {
+            max_thinking_chars: 10_000,
+            max_thinking_time_secs: 30,
+            max_stream_duration_secs: 120,
+            warning_thresholds: vec![30, 60, 90],
+            max_thinking_loop: 5,
+            progress_enabled: true,
+        }
+    }
+
+    /// Create a config for models with extended thinking capability.
+    ///
+    /// This increases the limits for models that benefit from extended
+    /// reasoning time (e.g., vision models, reasoning models).
+    pub fn reasoning_model() -> Self {
+        Self {
+            max_thinking_chars: 100_000,
+            max_thinking_time_secs: 180,
+            max_stream_duration_secs: 600,
+            warning_thresholds: vec![60, 120, 180, 240, 300, 420, 540],
+            max_thinking_loop: 15,
+            progress_enabled: true,
+        }
+    }
+}
+
+impl Default for StreamConfig {
+    fn default() -> Self {
+        Self {
+            max_thinking_chars: Self::default_max_thinking_chars(),
+            max_thinking_time_secs: Self::default_max_thinking_time_secs(),
+            max_stream_duration_secs: Self::default_max_stream_duration_secs(),
+            warning_thresholds: Self::default_warning_thresholds(),
+            max_thinking_loop: Self::default_max_thinking_loop(),
+            progress_enabled: Self::default_progress_enabled(),
+        }
+    }
+}
 
 /// LLM runtime error.
 #[derive(Debug, thiserror::Error)]

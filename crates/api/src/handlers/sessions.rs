@@ -14,6 +14,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use edge_ai_agent::AgentEvent;
+use edge_ai_storage::{PendingStreamState, StreamStage};
 
 /// Stream event sent from the LLM processing task to the WebSocket handler.
 #[derive(Debug, Clone)]
@@ -30,15 +31,27 @@ struct StreamEvent {
 async fn process_stream_to_channel(
     mut stream: Pin<Box<dyn Stream<Item = AgentEvent> + Send>>,
     session_id: String,
+    user_message: String,
     tx: mpsc::UnboundedSender<StreamEvent>,
     state: super::ServerState,
 ) {
     let mut end_event_sent = false;
     let mut event_count = 0u32;
-    // Stream timeout: 120 seconds to support thinking models
-    // QWEN3 with thinking can take 60-90 seconds for complex queries
-    // Increased from 30s to prevent premature timeout during thinking phase
-    let stream_timeout = Duration::from_secs(120);
+
+    // P0.3: Create pending stream state for recovery
+    let session_store = state.session_manager.session_store();
+    let mut pending_state = PendingStreamState::new(session_id.clone(), user_message);
+    let _ = session_store.save_pending_stream(&pending_state);
+
+    // Track stream start time for progress reporting
+    let stream_start = std::time::Instant::now();
+
+    // Stream timeout: 300 seconds (5 minutes) to support thinking models
+    // This is synchronized with StreamConfig::max_stream_duration_secs
+    // qwen3-vl:2b with extended thinking can take significant time for complex queries
+    // with image analysis or multi-step reasoning.
+    let stream_timeout = Duration::from_secs(300);
+    let max_duration_secs = 300u64;
 
     loop {
         let next_event = tokio::time::timeout(stream_timeout, StreamExt::next(&mut stream)).await;
@@ -48,6 +61,10 @@ async fn process_stream_to_channel(
                 event_count += 1;
                 let event_json = match &event {
                     AgentEvent::Thinking { content } => {
+                        // P0.3: Update pending state with thinking content
+                        pending_state.update_thinking(content);
+                        let _ = session_store.save_pending_stream(&pending_state);
+
                         tracing::debug!(
                             "Sending Thinking event: {} chars",
                             content.chars().count()
@@ -59,6 +76,11 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::Content { content } => {
+                        // P0.3: Update pending state with content
+                        pending_state.update_content(content);
+                        pending_state.set_stage(StreamStage::Generating);
+                        let _ = session_store.save_pending_stream(&pending_state);
+
                         tracing::debug!(
                             "Sending Content event: {} chars (event #{})",
                             content.chars().count(),
@@ -135,6 +157,9 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::End => {
+                        // P0.3: Delete pending state on successful completion
+                        let _ = session_store.delete_pending_stream(&session_id);
+
                         tracing::info!("*** Sending End event (total events: {}) ***", event_count);
                         end_event_sent = true;
                         json!({
@@ -148,12 +173,15 @@ async fn process_stream_to_channel(
                         elapsed_ms,
                         ..
                     } => {
+                        let elapsed = elapsed_ms.unwrap_or_else(|| stream_start.elapsed().as_millis() as u64) / 1000;
+                        let remaining = max_duration_secs.saturating_sub(elapsed);
                         tracing::debug!("Sending Progress event: {} ({})", message, stage.as_deref().unwrap_or("unknown"));
                         json!({
                             "type": "Progress",
                             "message": message,
                             "stage": stage,
-                            "elapsedMs": elapsed_ms,
+                            "elapsed": elapsed,
+                            "remainingTime": remaining,
                             "sessionId": session_id,
                         })
                     }
@@ -165,10 +193,14 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::Warning { message } => {
+                        let elapsed = stream_start.elapsed().as_secs();
+                        let remaining = max_duration_secs.saturating_sub(elapsed);
                         tracing::debug!("Sending Warning event: {}", message);
                         json!({
                             "type": "Warning",
                             "message": message,
+                            "elapsed": elapsed,
+                            "remainingTime": remaining,
                             "sessionId": session_id,
                         })
                     }
@@ -372,6 +404,55 @@ pub async fn delete_session_handler(
 
     Ok(Json(ApiResponse::success(json!({
         "deleted": true,
+        "sessionId": id,
+    }))))
+}
+
+/// P0.3: Get pending stream state for a session (for recovery after disconnection).
+pub async fn get_pending_stream_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
+    let session_store = state.session_manager.session_store();
+
+    match session_store.get_pending_stream(&id) {
+        Ok(Some(pending)) => {
+            Ok(Json(ApiResponse::success(json!({
+                "hasPending": true,
+                "sessionId": id,
+                "userMessage": pending.user_message,
+                "content": pending.content,
+                "thinking": pending.thinking,
+                "stage": pending.stage,
+                "elapsed": pending.elapsed_secs(),
+                "startedAt": pending.started_at,
+            }))))
+        }
+        Ok(None) => {
+            Ok(Json(ApiResponse::success(json!({
+                "hasPending": false,
+                "sessionId": id,
+            }))))
+        }
+        Err(e) => {
+            Err(ErrorResponse::with_message(format!("Failed to check pending stream: {}", e)))
+        }
+    }
+}
+
+/// P0.3: Clear pending stream state for a session (user chose to discard).
+pub async fn clear_pending_stream_handler(
+    State(state): State<ServerState>,
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, ErrorResponse> {
+    let session_store = state.session_manager.session_store();
+
+    session_store
+        .delete_pending_stream(&id)
+        .map_err(|e| ErrorResponse::with_message(format!("Failed to clear pending stream: {}", e)))?;
+
+    Ok(Json(ApiResponse::success(json!({
+        "cleared": true,
         "sessionId": id,
     }))))
 }
@@ -659,7 +740,7 @@ async fn handle_ws_socket(
 
                                                 // Spawn a task to process the LLM stream and send events through the channel
                                                 tokio::spawn(async move {
-                                                    process_stream_to_channel(stream, task_session_id, task_tx, task_state).await;
+                                                    process_stream_to_channel(stream, task_session_id, chat_req.message.clone(), task_tx, task_state).await;
                                                 });
                                             }
                                             Err(_e) => {
@@ -699,7 +780,7 @@ async fn handle_ws_socket(
 
                                                 // Spawn a task to process the LLM stream and send events through the channel
                                                 tokio::spawn(async move {
-                                                    process_stream_to_channel(stream, task_session_id, task_tx, task_state).await;
+                                                    process_stream_to_channel(stream, task_session_id, chat_req.message.clone(), task_tx, task_state).await;
                                                 });
                                             }
                                             Err(_e) => {

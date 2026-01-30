@@ -24,6 +24,10 @@ const SESSIONS_META_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new
 // History table: key = (session_id, message_index), value = Message (serialized)
 const HISTORY_TABLE: TableDefinition<(&str, u64), Vec<u8>> = TableDefinition::new("history");
 
+// Pending stream states: key = session_id, value = PendingStreamState (serialized)
+// P0.3: Track in-progress streaming responses for recovery after disconnection
+const PENDING_STREAM_TABLE: TableDefinition<&str, Vec<u8>> = TableDefinition::new("pending_streams");
+
 /// Session metadata (title, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[derive(Default)]
@@ -152,6 +156,119 @@ impl SessionMessage {
     pub fn with_timestamp(mut self, timestamp: i64) -> Self {
         self.timestamp = timestamp;
         self
+    }
+}
+
+/// P0.3: Pending stream state for tracking in-progress streaming responses.
+///
+/// This is used to recover from disconnections or page refreshes during
+/// long-running LLM responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingStreamState {
+    /// Session ID
+    pub session_id: String,
+    /// User message that triggered the stream
+    pub user_message: String,
+    /// Accumulated content so far
+    pub content: String,
+    /// Accumulated thinking content so far
+    pub thinking: String,
+    /// Current processing stage
+    pub stage: StreamStage,
+    /// When the stream started
+    pub started_at: i64,
+    /// Last update timestamp
+    pub updated_at: i64,
+    /// Tool calls detected so far (if any)
+    pub tool_calls: Option<Vec<serde_json::Value>>,
+    /// Whether the stream was intentionally interrupted
+    pub interrupted: bool,
+}
+
+/// Current stage of stream processing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum StreamStage {
+    /// Initial stage - waiting for response
+    #[serde(rename = "waiting")]
+    Waiting,
+    /// Model is thinking/reasoning
+    #[serde(rename = "thinking")]
+    Thinking,
+    /// Generating actual response content
+    #[serde(rename = "generating")]
+    Generating,
+    /// Executing tools
+    #[serde(rename = "tool_execution")]
+    ToolExecution,
+    /// Stream complete
+    #[serde(rename = "complete")]
+    Complete,
+}
+
+impl Default for StreamStage {
+    fn default() -> Self {
+        Self::Waiting
+    }
+}
+
+impl PendingStreamState {
+    /// Create a new pending stream state.
+    pub fn new(session_id: String, user_message: String) -> Self {
+        let now = chrono::Utc::now().timestamp();
+        Self {
+            session_id,
+            user_message,
+            content: String::new(),
+            thinking: String::new(),
+            stage: StreamStage::Waiting,
+            started_at: now,
+            updated_at: now,
+            tool_calls: None,
+            interrupted: false,
+        }
+    }
+
+    /// Update the content and timestamp.
+    pub fn update_content(&mut self, content: impl Into<String>) {
+        self.content = content.into();
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Update the thinking content and timestamp.
+    pub fn update_thinking(&mut self, thinking: impl Into<String>) {
+        self.thinking = thinking.into();
+        self.stage = StreamStage::Thinking;
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Update the processing stage.
+    pub fn set_stage(&mut self, stage: StreamStage) {
+        self.stage = stage;
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Add tool calls.
+    pub fn set_tool_calls(&mut self, tool_calls: Vec<serde_json::Value>) {
+        self.tool_calls = Some(tool_calls);
+        self.stage = StreamStage::ToolExecution;
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Mark as interrupted.
+    pub fn mark_interrupted(&mut self) {
+        self.interrupted = true;
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Check if the state is stale (older than 10 minutes).
+    pub fn is_stale(&self) -> bool {
+        let now = chrono::Utc::now().timestamp();
+        now - self.updated_at > 600  // 10 minutes
+    }
+
+    /// Get elapsed time in seconds.
+    pub fn elapsed_secs(&self) -> i64 {
+        chrono::Utc::now().timestamp() - self.started_at
     }
 }
 
@@ -589,6 +706,113 @@ impl SessionStore {
         }
         write_txn.commit()?;
         Ok(())
+    }
+
+    // ========== P0.3: Pending Stream State Management ==========
+
+    /// Save or update a pending stream state for a session.
+    pub fn save_pending_stream(&self, state: &PendingStreamState) -> Result<(), Error> {
+        let serialized = serde_json::to_vec(state)
+            .map_err(|e| Error::Storage(format!("Failed to serialize pending stream state: {}", e)))?;
+
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(PENDING_STREAM_TABLE)?;
+            table.insert(state.session_id.as_str(), serialized)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Get the pending stream state for a session (if any).
+    pub fn get_pending_stream(&self, session_id: &str) -> Result<Option<PendingStreamState>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(PENDING_STREAM_TABLE)?;
+
+        match table.get(session_id)? {
+            Some(value) => {
+                let value_vec = value.value();
+                let state = serde_json::from_slice::<PendingStreamState>(value_vec.as_slice())
+                    .map_err(|e| Error::Storage(format!("Failed to deserialize pending stream state: {}", e)))?;
+                Ok(Some(state))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Delete the pending stream state for a session.
+    pub fn delete_pending_stream(&self, session_id: &str) -> Result<(), Error> {
+        let write_txn = self.db.begin_write()?;
+        {
+            let mut table = write_txn.open_table(PENDING_STREAM_TABLE)?;
+            table.remove(session_id)?;
+        }
+        write_txn.commit()?;
+        Ok(())
+    }
+
+    /// Get all pending stream states (e.g., for recovery after server restart).
+    pub fn get_all_pending_streams(&self) -> Result<Vec<PendingStreamState>, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(PENDING_STREAM_TABLE)?;
+
+        let mut states = Vec::new();
+        for result in table.iter()? {
+            let (_key, value) = result?;
+            let value_vec = value.value();
+            match serde_json::from_slice::<PendingStreamState>(value_vec.as_slice()) {
+                Ok(state) => {
+                    // Skip stale states
+                    if !state.is_stale() {
+                        states.push(state);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to deserialize pending stream state: {}", e);
+                }
+            }
+        }
+        Ok(states)
+    }
+
+    /// Clean up stale pending stream states (older than 10 minutes).
+    pub fn cleanup_stale_pending_streams(&self) -> Result<usize, Error> {
+        let read_txn = self.db.begin_read()?;
+        let table = read_txn.open_table(PENDING_STREAM_TABLE)?;
+
+        let mut stale_session_ids = Vec::new();
+        for result in table.iter()? {
+            let (key, value) = result?;
+            let key_str = key.value().to_string();
+            let value_vec = value.value();
+            match serde_json::from_slice::<PendingStreamState>(value_vec.as_slice()) {
+                Ok(state) => {
+                    if state.is_stale() {
+                        stale_session_ids.push(key_str);
+                    }
+                }
+                Err(_) => {
+                    // Corrupted state, mark for cleanup
+                    stale_session_ids.push(key_str);
+                }
+            }
+        }
+        drop(read_txn);
+
+        // Delete stale states
+        let count = stale_session_ids.len();
+        if !stale_session_ids.is_empty() {
+            let write_txn = self.db.begin_write()?;
+            {
+                let mut table = write_txn.open_table(PENDING_STREAM_TABLE)?;
+                for session_id in stale_session_ids {
+                    let _ = table.remove(session_id.as_str());
+                }
+            }
+            write_txn.commit()?;
+        }
+
+        Ok(count)
     }
 }
 

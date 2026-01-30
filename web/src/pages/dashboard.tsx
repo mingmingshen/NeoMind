@@ -138,7 +138,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function DashboardPage() {
-  const { t } = useTranslation(['common', 'dashboard'])
+  const { t } = useTranslation(['common', 'dashboard', 'chat'])
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
   const navigate = useNavigate()
   const llmBackends = useStore((state) => state.llmBackends)
@@ -166,7 +166,6 @@ export function DashboardPage() {
   const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [showSessionRequired, setShowSessionRequired] = useState(false)
 
   // Image upload state
   const [attachedImages, setAttachedImages] = useState<ChatImage[]>([])
@@ -193,7 +192,10 @@ export function DashboardPage() {
     }
   }, [loadBackends, loadSessions])
 
-  // Load session from URL parameter
+  // Get sessions from store for navigation logic
+  const sessions = useStore((state) => state.sessions)
+
+  // Load session from URL parameter (only when on /chat/:sessionId)
   useEffect(() => {
     if (urlSessionId && urlSessionId !== sessionId) {
       // Only switch if it's a different session
@@ -203,22 +205,44 @@ export function DashboardPage() {
     }
   }, [urlSessionId, sessionId, switchSession])
 
-  // Sync URL with sessionId - ensure we're always on /chat or /chat/:sessionId
+  // Auto-navigate to latest session when on /chat without sessionId
+  // Also redirect to /chat when current session is deleted or no sessions exist
   useEffect(() => {
+    // Only run this after sessions are loaded
+    if (!hasLoadedBackends.current) return
+
     const currentPath = window.location.pathname
-    // If on root path without sessionId, redirect to /chat
-    if (currentPath === '/' && !urlSessionId) {
-      if (sessionId) {
-        navigate(`/chat/${sessionId}`, { replace: true })
-      } else {
-        navigate('/chat', { replace: true })
+
+    // If current sessionId in URL is not in sessions list (session was deleted)
+    // redirect to /chat
+    if (urlSessionId && sessions.length > 0 && !sessions.find(s => s.sessionId === urlSessionId)) {
+      navigate('/chat', { replace: true })
+      return
+    }
+
+    // If sessions become empty, redirect to /chat
+    if (urlSessionId && sessions.length === 0) {
+      navigate('/chat', { replace: true })
+      return
+    }
+
+    const isOnChatPath = currentPath === '/chat' || currentPath === '/'
+
+    // If on /chat or / with no sessionId in URL, and we have sessions
+    if (isOnChatPath && !urlSessionId && sessions.length > 0) {
+      // Navigate to the most recent session
+      const latestSession = sessions[0] // sessions are sorted by updatedAt desc
+      if (latestSession?.sessionId) {
+        navigate(`/chat/${latestSession.sessionId}`, { replace: true })
+        return
       }
     }
-    // If sessionId changes but we're still on /chat (no sessionId in URL), update it
-    if (currentPath === '/chat' && sessionId && !urlSessionId) {
-      navigate(`/chat/${sessionId}`, { replace: true })
+
+    // Redirect root path to /chat
+    if (currentPath === '/') {
+      navigate('/chat', { replace: true })
     }
-  }, [sessionId, urlSessionId, navigate])
+  }, [urlSessionId, sessions, navigate])
 
   // Sync WebSocket sessionId when store sessionId changes
   useEffect(() => {
@@ -226,6 +250,9 @@ export function DashboardPage() {
       ws.setSessionId(sessionId)
     }
   }, [sessionId])
+
+  // Determine mode: welcome mode (no sessionId in URL) or chat mode (has sessionId in URL)
+  const isWelcomeMode = !urlSessionId
 
   // Auto-scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -314,28 +341,24 @@ export function DashboardPage() {
     return () => { void unsubscribe() }
   }, [addMessage, switchSession])
 
-  // Send message - auto-create session only if no sessions exist at all
+  // Send message - in welcome mode, create session and navigate
   const handleSend = async () => {
     const trimmedInput = input.trim()
     if ((!trimmedInput && attachedImages.length === 0) || isStreaming) return
 
     // Check if images are attached but current model doesn't support vision
     if (attachedImages.length > 0 && !supportsMultimodal) {
-      alert('当前模型不支持图像输入。\n\n请选择一个支持视觉的模型（如 qwen3-vl），或者移除图片后重试。\n\n支持视觉的模型会显示 👁️ 图标。')
+      alert(t('chat:model.visionError'))
       return
     }
 
-    // Get current sessionId from store (not from closure)
-    let currentSessionId = useStore.getState().sessionId
-
-    // If no session exists, auto-create a new one
-    if (!currentSessionId) {
+    // In welcome mode, create session first, then navigate
+    if (isWelcomeMode) {
       const newSessionId = await createSession()
       if (!newSessionId) {
         console.error('Failed to create session')
         return
       }
-      currentSessionId = newSessionId
       // Navigate to the new session URL
       navigate(`/chat/${newSessionId}`)
     }
@@ -442,9 +465,9 @@ export function DashboardPage() {
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-xl bg-muted">
             <Settings className="h-8 w-8 text-muted-foreground" />
           </div>
-          <h2 className="mb-3 text-lg font-semibold">{t('dashboard:llmNotConfigured') || 'LLM 未配置'}</h2>
+          <h2 className="mb-3 text-lg font-semibold">{t('chat:notConfigured.title')}</h2>
           <p className="text-sm text-muted-foreground mb-6">
-            {t('dashboard:llmNotConfiguredDesc') || '请先配置 LLM 后端以使用聊天功能'}
+            {t('chat:notConfigured.description')}
           </p>
           <Button
             onClick={() => navigate('/plugins')}
@@ -452,7 +475,7 @@ export function DashboardPage() {
             size="default"
           >
             <Settings className="h-4 w-4" />
-            {t('dashboard:goToSettings') || '前往设置'}
+            {t('chat:notConfigured.goToSettings')}
           </Button>
         </div>
       </div>
@@ -461,8 +484,8 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full">
-      {/* Desktop Sidebar - fixed on left */}
-      {isDesktop && (
+      {/* Desktop Sidebar - always show when there are sessions or in chat mode */}
+      {isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
         <SessionSidebar
           open={true}
           onClose={() => {}}
@@ -473,9 +496,9 @@ export function DashboardPage() {
       )}
 
       {/* Mobile Sidebar - drawer */}
-      {!isDesktop && (
-        <SessionSidebar 
-          open={sidebarOpen} 
+      {!isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
+        <SessionSidebar
+          open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           isDesktop={false}
         />
@@ -483,8 +506,8 @@ export function DashboardPage() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Mobile Header - only show on mobile */}
-        {!isDesktop && (
+        {/* Mobile Header - show when there are sessions or in chat mode */}
+        {!isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
           <div className="h-11 flex items-center px-3 gap-2 bg-background/50 backdrop-blur-sm border-b border-border/30">
             {/* Menu button */}
             <Button
@@ -511,15 +534,18 @@ export function DashboardPage() {
               className="h-8 gap-1.5 rounded-lg text-muted-foreground hover:text-foreground"
             >
               <Plus className="h-4 w-4" />
-              <span className="text-xs">新对话</span>
+              <span className="text-xs">{t('chat:input.newChat')}</span>
             </Button>
           </div>
         )}
 
         {/* Chat Content Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {hasMessages ? (
-          /* Chat Messages */
+        {isWelcomeMode ? (
+          /* Welcome Area - shown on /chat (no sessionId) */
+          <WelcomeArea onQuickAction={handleQuickAction} />
+        ) : hasMessages ? (
+          /* Chat Messages - shown on /chat/:sessionId with messages */
           <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-4 sm:py-6">
             <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
               {displayMessages.map((message) => (
@@ -609,56 +635,20 @@ export function DashboardPage() {
             </div>
           </div>
         ) : (
-          /* Welcome Area */
-          <>
-            {showSessionRequired ? (
-              /* Session required prompt */
-              <div className="flex-1 flex items-center justify-center px-4">
-                <div className="text-center space-y-4 max-w-md">
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto">
-                    <PanelLeft className="h-6 w-6 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold">请先选择或创建会话</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      您已有会话记录，请从左侧选择现有会话，或创建新会话
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setShowSessionRequired(false)
-                        setSidebarOpen(true)
-                      }}
-                      className="gap-1.5"
-                    >
-                      <PanelLeft className="h-4 w-4" />
-                      选择会话
-                    </Button>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={async () => {
-                        setShowSessionRequired(false)
-                        const newSessionId = await createSession()
-                        if (newSessionId) {
-                          navigate(`/chat/${newSessionId}`)
-                        }
-                      }}
-                      className="gap-1.5"
-                    >
-                      <Plus className="h-4 w-4" />
-                      新建会话
-                    </Button>
-                  </div>
-                </div>
+          /* Empty chat - shown on /chat/:sessionId with no messages yet */
+          <div className="flex-1 flex items-center justify-center px-4">
+            <div className="text-center space-y-4 max-w-md">
+              <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">
+                <Sparkles className="h-8 w-8 text-muted-foreground" />
               </div>
-            ) : (
-              <WelcomeArea onQuickAction={handleQuickAction} />
-            )}
-          </>
+              <div>
+                <h3 className="text-lg font-semibold">{t('chat:input.newChat')}</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {t('chat:input.startNewConversation')}
+                </p>
+              </div>
+            </div>
+          </div>
         )}
         </div>
 
@@ -680,14 +670,14 @@ export function DashboardPage() {
                       <span className="truncate">
                         {llmBackends.find(b => b.id === activeBackendId)?.name ||
                          llmBackends.find(b => b.id === activeBackendId)?.model ||
-                         '选择模型'}
+                         t('chat:input.selectModel')}
                       </span>
                       <ChevronDown className="h-3 w-3 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-64">
                     <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      选择 LLM 模型
+                      {t('chat:input.selectLLMModel')}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     {llmBackends.map((backend) => (
@@ -708,12 +698,12 @@ export function DashboardPage() {
                             <p className="text-sm truncate">{backend.name || backend.model}</p>
                             {/* Capability badges */}
                             {backend.capabilities?.supports_multimodal && (
-                              <span className="text-[10px] px-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center" title="支持图像">
+                              <span className="text-[10px] px-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center" title={t('chat:model.supportsVision')}>
                                 <Eye className="h-3 w-3" />
                               </span>
                             )}
                             {backend.capabilities?.supports_thinking && (
-                              <span className="text-[10px] px-1 rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 flex items-center" title="支持思考">
+                              <span className="text-[10px] px-1 rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 flex items-center" title={t('chat:model.supportsThinking')}>
                                 <Brain className="h-3 w-3" />
                               </span>
                             )}
@@ -779,7 +769,7 @@ export function DashboardPage() {
                   "transition-all disabled:opacity-50 disabled:cursor-not-allowed",
                   !supportsMultimodal && "opacity-50"
                 )}
-                title={supportsMultimodal ? "添加图片" : "当前模型不支持图片"}
+                title={supportsMultimodal ? t('chat:model.addImage') : t('chat:model.notSupportImage')}
               >
                 {isUploadingImage ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -800,7 +790,7 @@ export function DashboardPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="输入消息..."
+                placeholder={t('chat:input.placeholder')}
                 rows={1}
                 className={cn(
                   "flex-1 px-4 py-2.5 rounded-2xl resize-none text-sm",

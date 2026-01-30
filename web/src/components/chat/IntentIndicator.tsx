@@ -12,6 +12,7 @@ import {
   CheckCircle2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useTranslation } from "react-i18next"
 
 // Intent types matching Rust backend
 export type IntentCategory =
@@ -62,85 +63,63 @@ interface IntentIndicatorProps {
   showDetails?: boolean
 }
 
-// Intent display configurations
-const INTENT_CONFIG: Record<IntentCategory, {
-  label: string
-  icon: typeof Target
-  color: string
-  description: string
-}> = {
-  query_data: {
-    label: "查询数据",
-    icon: Target,
-    color: "text-blue-500",
-    description: "查询设备状态或历史数据"
-  },
-  analyze_data: {
-    label: "分析数据",
-    icon: Brain,
-    color: "text-purple-500",
-    description: "分析趋势、异常或统计"
-  },
-  control_device: {
-    label: "控制设备",
-    icon: Settings,
-    color: "text-green-500",
-    description: "控制设备开关或调节参数"
-  },
-  create_automation: {
-    label: "创建自动化",
-    icon: Zap,
-    color: "text-amber-500",
-    description: "创建规则或工作流"
-  },
-  send_message: {
-    label: "发送消息",
-    icon: Send,
-    color: "text-cyan-500",
-    description: "发送通知或报告"
-  },
-  summarize_info: {
-    label: "汇总信息",
-    icon: FileText,
-    color: "text-indigo-500",
-    description: "汇总或总结信息"
-  },
-  clarify: {
-    label: "需要澄清",
-    icon: HelpCircle,
-    color: "text-orange-500",
-    description: "需要更多信息"
-  },
-  out_of_scope: {
-    label: "超出范围",
-    icon: AlertTriangle,
-    color: "text-red-500",
-    description: "超出系统能力范围"
+// Helper function to get intent config
+function getIntentConfig(intent: IntentCategory, t: (key: string) => string) {
+  const configs: Record<IntentCategory, {
+    key: string
+    icon: typeof Target
+    color: string
+  }> = {
+    query_data: { key: "intent.queryData", icon: Target, color: "text-blue-500" },
+    analyze_data: { key: "intent.analyzeData", icon: Brain, color: "text-purple-500" },
+    control_device: { key: "intent.controlDevice", icon: Settings, color: "text-green-500" },
+    create_automation: { key: "intent.createAutomation", icon: Zap, color: "text-amber-500" },
+    send_message: { key: "intent.sendMessage", icon: Send, color: "text-cyan-500" },
+    summarize_info: { key: "intent.summarize", icon: FileText, color: "text-indigo-500" },
+    clarify: { key: "intent.clarify", icon: HelpCircle, color: "text-orange-500" },
+    out_of_scope: { key: "intent.outOfScope", icon: AlertTriangle, color: "text-red-500" }
+  }
+  const config = configs[intent]
+  return {
+    label: t(`${config.key}.label`),
+    icon: config.icon,
+    color: config.color,
+    description: t(`${config.key}.description`)
   }
 }
 
-const STRATEGY_CONFIG: Record<ProcessingStrategy, {
-  label: string
-  color: string
-}> = {
-  fast_path: { label: "快速路径", color: "text-green-600 bg-green-50" },
-  standard: { label: "标准", color: "text-blue-600 bg-blue-50" },
-  quality: { label: "高质量", color: "text-purple-600 bg-purple-50" },
-  multi_turn: { label: "多轮对话", color: "text-amber-600 bg-amber-50" },
-  fallback: { label: "降级", color: "text-gray-600 bg-gray-50" }
+// Helper function to get strategy config
+function getStrategyConfig(strategy: ProcessingStrategy, t: (key: string) => string) {
+  const configs: Record<ProcessingStrategy, { key: string; color: string }> = {
+    fast_path: { key: "intent.path.fast", color: "text-green-600 bg-green-50" },
+    standard: { key: "intent.path.standard", color: "text-blue-600 bg-blue-50" },
+    quality: { key: "intent.path.quality", color: "text-purple-600 bg-purple-50" },
+    multi_turn: { key: "intent.path.multiTurn", color: "text-amber-600 bg-amber-50" },
+    fallback: { key: "intent.path.fallback", color: "text-gray-600 bg-gray-50" }
+  }
+  const config = configs[strategy]
+  return {
+    label: t(config.key),
+    color: config.color
+  }
 }
 
-const ENTITY_CONFIG: Record<EntityType, {
-  label: string
-  icon: string
-  color: string
-}> = {
-  device: { label: "设备", icon: "🔌", color: "bg-blue-100 text-blue-700" },
-  location: { label: "位置", icon: "📍", color: "bg-green-100 text-green-700" },
-  value: { label: "数值", icon: "🔢", color: "bg-purple-100 text-purple-700" },
-  time_range: { label: "时间", icon: "⏰", color: "bg-orange-100 text-orange-700" },
-  action: { label: "动作", icon: "▶️", color: "bg-red-100 text-red-700" },
-  unknown: { label: "未知", icon: "❓", color: "bg-gray-100 text-gray-700" }
+// Helper function to get entity config
+function getEntityConfig(entityType: EntityType, t: (key: string) => string) {
+  const configs: Record<EntityType, { key: string; icon: string; color: string }> = {
+    device: { key: "intent.entity.device", icon: "🔌", color: "bg-blue-100 text-blue-700" },
+    location: { key: "intent.entity.location", icon: "📍", color: "bg-green-100 text-green-700" },
+    value: { key: "intent.entity.value", icon: "🔢", color: "bg-purple-100 text-purple-700" },
+    time_range: { key: "intent.entity.time", icon: "⏰", color: "bg-orange-100 text-orange-700" },
+    action: { key: "intent.entity.action", icon: "▶️", color: "bg-red-100 text-red-700" },
+    unknown: { key: "intent.entity.unknown", icon: "❓", color: "bg-gray-100 text-gray-700" }
+  }
+  const config = configs[entityType]
+  return {
+    label: t(config.key),
+    icon: config.icon,
+    color: config.color
+  }
 }
 
 export function IntentIndicator({
@@ -148,9 +127,10 @@ export function IntentIndicator({
   isStreaming = false,
   showDetails = false
 }: IntentIndicatorProps) {
-  const config = INTENT_CONFIG[classification.intent]
+  const { t } = useTranslation("chat")
+  const config = getIntentConfig(classification.intent, t)
   const Icon = config.icon
-  const strategyConfig = STRATEGY_CONFIG[classification.strategy]
+  const strategyConfig = getStrategyConfig(classification.strategy, t)
 
   // Confidence percentage
   const confidencePercent = Math.round(classification.confidence * 100)
@@ -188,7 +168,7 @@ export function IntentIndicator({
 
         {/* Confidence */}
         <div
-          title={`置信度: ${confidencePercent}%`}
+          title={`${t("intent.confidence")}: ${confidencePercent}%`}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-secondary"
         >
           <div className={cn(
@@ -220,24 +200,27 @@ export function IntentIndicator({
       {/* Extracted Entities */}
       {showDetails && classification.entities.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {classification.entities.map((entity, index) => (
-            <Badge
-              key={index}
-              variant="secondary"
-              className={cn("text-xs", ENTITY_CONFIG[entity.entity_type]?.color)}
-              title={`${ENTITY_CONFIG[entity.entity_type]?.label}: ${entity.value} (${Math.round(entity.confidence * 100)}%)`}
-            >
-              <span className="mr-1">{ENTITY_CONFIG[entity.entity_type]?.icon}</span>
-              {entity.value}
-            </Badge>
-          ))}
+          {classification.entities.map((entity, index) => {
+            const entityConfig = getEntityConfig(entity.entity_type, t)
+            return (
+              <Badge
+                key={index}
+                variant="secondary"
+                className={cn("text-xs", entityConfig.color)}
+                title={`${entityConfig.label}: ${entity.value} (${Math.round(entity.confidence * 100)}%)`}
+              >
+                <span className="mr-1">{entityConfig.icon}</span>
+                {entity.value}
+              </Badge>
+            )
+          })}
         </div>
       )}
 
       {/* Sub-type indicator */}
       {showDetails && classification.sub_type && classification.sub_type !== "Unknown" && (
         <div className="text-xs text-muted-foreground">
-          类型: {classification.sub_type}
+          {t("intent.type")}: {classification.sub_type}
         </div>
       )}
     </div>
@@ -250,7 +233,8 @@ export function CompactIntentBadge({
 }: {
   classification: IntentClassification
 }) {
-  const config = INTENT_CONFIG[classification.intent]
+  const { t } = useTranslation("chat")
+  const config = getIntentConfig(classification.intent, t)
 
   return (
     <div
@@ -277,10 +261,12 @@ interface IntentFlowProps {
 }
 
 export function IntentFlow({ steps, currentStep = 0 }: IntentFlowProps) {
+  const { t } = useTranslation("chat")
+
   return (
     <div className="intent-flow flex items-center gap-1">
       {steps.map((step, index) => {
-        const config = INTENT_CONFIG[step.intent]
+        const config = getIntentConfig(step.intent, t)
         const isCompleted = index < currentStep
         const isCurrent = index === currentStep
 
@@ -337,6 +323,7 @@ export function IntentConfidenceBar({
   showLabel = false,
   size = "md"
 }: IntentConfidenceBarProps) {
+  const { t } = useTranslation("chat")
   const percent = Math.round(confidence * 100)
 
   const height = {
@@ -356,7 +343,7 @@ export function IntentConfidenceBar({
     <div className="flex items-center gap-2">
       {showLabel && (
         <span className="text-xs text-muted-foreground">
-          {label || "置信度"}
+          {label || t("intent.confidence")}
         </span>
       )}
       <div className="flex-1 flex items-center gap-2">

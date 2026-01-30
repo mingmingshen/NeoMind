@@ -434,6 +434,11 @@ impl SessionManager {
         *self.tool_registry.write().await = Some(registry);
     }
 
+    /// P0.3: Get the session store for direct access (for pending stream state management).
+    pub fn session_store(&self) -> Arc<SessionStore> {
+        self.store.clone()
+    }
+
     /// Create a new session.
     pub async fn create_session(&self) -> Result<String> {
         let session_id = Uuid::new_v4().to_string();
