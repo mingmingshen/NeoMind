@@ -616,12 +616,26 @@ impl TimeSeriesStore {
         let start_key = (device_id, metric, start);
         let end_key = (device_id, metric, end);
 
+        tracing::debug!(
+            "query_range: device_id={}, metric={}, start={}, end={}, start_key={:?}, end_key={:?}",
+            device_id, metric, start, end, start_key, end_key
+        );
+
         let mut points = Vec::new();
+        let mut count = 0u32;
         for result in table.range(start_key..=end_key)? {
-            let (_key, value) = result?;
+            count += 1;
+            let (key, value) = result?;
+            let (did, met, ts) = key.value();
+            tracing::trace!("query_range: found key=({},{},{}), value_len={}", did, met, ts, value.value().len());
             let point: DataPoint = serde_json::from_slice(value.value())?;
             points.push(point);
         }
+
+        tracing::debug!(
+            "query_range: device_id={}, metric={}, start={}, end={}, found {} points",
+            device_id, metric, start, end, count
+        );
 
         Ok(TimeSeriesResult {
             device_id: device_id.to_string(),

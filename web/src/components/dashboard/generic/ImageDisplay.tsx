@@ -323,21 +323,33 @@ function getFormatInfo(normalized: ReturnType<typeof normalizeImageUrl>) {
 /**
  * Normalize data source for image display
  * Ensures raw points are included for telemetry sources
+ * Uses a larger time range (24 hours) to find the latest image even if sent infrequently
  */
 function normalizeDataSourceForImage(
   ds: DataSource | undefined
 ): DataSource | undefined {
   if (!ds) return undefined
 
-  // If it's telemetry, ensure raw points are included
+  // If it's telemetry, ensure raw points are included and use larger time range
   if (ds.type === 'telemetry') {
     return {
       ...ds,
+      // Use 24 hours time range to find latest image (images may be sent infrequently)
+      // Only override if not already set to a larger value
+      timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : 24,
       params: {
         ...ds.params,
         includeRawPoints: true,
       },
       transform: 'raw',
+    }
+  }
+
+  // For device/metric sources, also set a larger time range
+  if (ds.type === 'device' || ds.type === 'metric') {
+    return {
+      ...ds,
+      timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : 24,
     }
   }
 

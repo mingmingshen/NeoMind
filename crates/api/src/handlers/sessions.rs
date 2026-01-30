@@ -38,6 +38,9 @@ async fn process_stream_to_channel(
     let mut end_event_sent = false;
     let mut event_count = 0u32;
 
+    // Clone user_message for later use in memory consolidation
+    let user_message_for_memory = user_message.clone();
+
     // P0.3: Create pending stream state for recovery
     let session_store = state.session_manager.session_store();
     let mut pending_state = PendingStreamState::new(session_id.clone(), user_message);
@@ -81,11 +84,6 @@ async fn process_stream_to_channel(
                         pending_state.set_stage(StreamStage::Generating);
                         let _ = session_store.save_pending_stream(&pending_state);
 
-                        tracing::debug!(
-                            "Sending Content event: {} chars (event #{})",
-                            content.chars().count(),
-                            event_count
-                        );
                         json!({
                             "type": "Content",
                             "content": content,
@@ -93,7 +91,6 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::ToolCallStart { tool, arguments } => {
-                        tracing::debug!("Sending ToolCallStart event: {}", tool);
                         json!({
                             "type": "ToolCallStart",
                             "tool": tool,
@@ -106,11 +103,6 @@ async fn process_stream_to_channel(
                         result,
                         success,
                     } => {
-                        tracing::debug!(
-                            "Sending ToolCallEnd event: {}, success: {}",
-                            tool,
-                            success
-                        );
                         json!({
                             "type": "ToolCallEnd",
                             "tool": tool,
@@ -120,7 +112,6 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::Error { message } => {
-                        tracing::debug!("Sending Error event: {}", message);
                         json!({
                             "type": "Error",
                             "message": message,
@@ -133,11 +124,6 @@ async fn process_stream_to_channel(
                         confidence,
                         keywords,
                     } => {
-                        tracing::debug!(
-                            "Sending Intent event: {} (confidence: {:.2})",
-                            display_name,
-                            confidence.unwrap_or(0.0)
-                        );
                         json!({
                             "type": "Intent",
                             "category": category,
@@ -148,7 +134,6 @@ async fn process_stream_to_channel(
                         })
                     }
                     AgentEvent::Plan { step, stage } => {
-                        tracing::debug!("Sending Plan event: {} ({})", step, stage);
                         json!({
                             "type": "Plan",
                             "step": step,
@@ -159,6 +144,47 @@ async fn process_stream_to_channel(
                     AgentEvent::End => {
                         // P0.3: Delete pending state on successful completion
                         let _ = session_store.delete_pending_stream(&session_id);
+
+                        // Auto-consolidate conversation to tiered memory
+                        // This stores the conversation in mid-term memory for future retrieval
+                        let assistant_response = pending_state.content.clone();
+                        let thinking = if !pending_state.thinking.is_empty() {
+                            Some(pending_state.thinking.clone())
+                        } else {
+                            None
+                        };
+
+                        // Spawn a background task to consolidate to memory
+                        let session_id_clone = session_id.clone();
+                        let user_message_clone = user_message_for_memory.clone();
+                        let state_clone = state.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = state_clone.memory.write().await.consolidate(
+                                &session_id_clone,
+                            ).await {
+                                tracing::warn!("Failed to consolidate short-term to mid-term memory: {}", e);
+                            } else {
+                                // Also directly add to mid-term memory for immediate retrieval
+                                let response_with_thinking = if let Some(thinking_content) = thinking {
+                                    if !thinking_content.is_empty() {
+                                        format!("{}\n\nThinking: {}", assistant_response, thinking_content)
+                                    } else {
+                                        assistant_response.clone()
+                                    }
+                                } else {
+                                    assistant_response.clone()
+                                };
+                                if let Err(e) = state_clone.memory.write().await.add_conversation(
+                                    &session_id_clone,
+                                    &user_message_clone,
+                                    &response_with_thinking,
+                                ).await {
+                                    tracing::warn!("Failed to add conversation to mid-term memory: {}", e);
+                                } else {
+                                    tracing::debug!("Conversation consolidated to memory: session={}", session_id_clone);
+                                }
+                            }
+                        });
 
                         tracing::info!("*** Sending End event (total events: {}) ***", event_count);
                         end_event_sent = true;
@@ -849,17 +875,15 @@ async fn handle_ws_socket(
             stream_event = stream_rx.recv() => {
                 match stream_event {
                     Some(event) => {
-                        tracing::debug!("WS sending event: {}", event.json.chars().take(100).collect::<String>());
+                        // Normal operation - no need to log every message
                         if socket.send(AxumMessage::Text(event.json)).await.is_err() {
                             // Client disconnected, stop processing stream events
-                            tracing::warn!("WS send failed, client disconnected");
                             break;
                         }
                     }
                     None => {
                         // Channel closed (all tasks dropped their senders)
                         // This is normal - continue waiting for new messages
-                        tracing::debug!("WS channel closed (task completed)");
                     }
                 }
             }

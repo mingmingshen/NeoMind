@@ -37,7 +37,7 @@ interface DeviceDetailProps {
   selectedMetric: string | null
   onBack: () => void
   onRefresh: () => void
-  onMetricClick: (metricName: string) => void
+  onMetricClick: (metricName: string) => Promise<void>
   onMetricBack: () => void
   onSendCommand: (commandName: string, params: string) => void
 }
@@ -192,8 +192,10 @@ export function DeviceDetail({
     })
   }
 
-  const handleMetricCardClick = (key: string) => {
-    onMetricClick(key)
+  const handleMetricCardClick = async (key: string) => {
+    // Fetch the latest data first, then open the dialog
+    // This ensures the dialog shows fresh data, not stale cached data
+    await onMetricClick(key)
     setMetricHistoryOpen(true)
   }
 
@@ -221,8 +223,10 @@ export function DeviceDetail({
 
   if (!device) return null
 
+  // Don't reverse - keep newest first for table display
+  // Charts will handle their own ordering
   const currentMetricData = selectedMetric && telemetryData?.data[selectedMetric]
-    ? telemetryData.data[selectedMetric].slice().reverse().slice(0, 100)
+    ? telemetryData.data[selectedMetric].slice(0, 100)
     : []
 
   return (

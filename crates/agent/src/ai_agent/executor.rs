@@ -2024,8 +2024,8 @@ Respond in JSON format:
         _include_baseline: bool,  // Reserved for future use
         timestamp: i64,
     ) -> Result<Option<DataCollected>, AgentError> {
-        let end_time = chrono::Utc::now().timestamp_millis();
-        let start_time = end_time - ((time_range_minutes * 60) as i64 * 1000);
+        let end_time = chrono::Utc::now().timestamp();
+        let start_time = end_time - ((time_range_minutes * 60) as i64);
 
         let result = storage.query_range(device_id, metric_name, start_time, end_time).await
             .map_err(|e| AgentError::Storage(format!("Query failed: {}", e)))?;
@@ -2177,8 +2177,8 @@ Respond in JSON format:
             });
 
             // Try to get image metrics
-            let end_time = chrono::Utc::now().timestamp_millis();
-            let start_time = end_time - (300 * 1000); // Last 5 minutes
+            let end_time = chrono::Utc::now().timestamp();
+            let start_time = end_time - (300); // Last 5 minutes
 
             let potential_metrics = vec![
                 "values.image", "image", "snapshot", "values.snapshot",
@@ -2428,9 +2428,15 @@ Respond in JSON format:
     ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
         use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
 
+        let current_time = chrono::Utc::now();
+        let time_str = current_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+        let timestamp = current_time.timestamp();
+
         tracing::info!(
             agent_id = %agent.id,
             data_count = data.len(),
+            execution_id,
+            current_time = %time_str,
             "Calling LLM for situation analysis..."
         );
 
@@ -2643,54 +2649,63 @@ Respond in JSON format:
                 {}\n\
                 \n\
                 ## 图像分析能力\n\
-                你具备视觉分析能力。用户消息中可能包含图像数据。请仔细观察图像：\n\
-                - 描述图像中的关键内容\n\
-                - 识别异常、危险或需要注意的情况\n\
+                你具备视觉分析能力。用户消息中可能包含图像数据。请客观描述图像内容：\n\
+                - 描述图像中的主要对象、场景和状态\n\
+                - 识别任何异常、变化或需要注意的情况\n\
                 - 结合图像和其他传感器数据做出判断\n\
+                - 根据用户指令关注特定目标（如果有指定）\n\
                 \n\
                 ## 分析步骤\n\
-                1. 理解当前数据和用户指令\n\
-                2. 如果有图像，仔细分析图像内容\n\
-                3. 检查是否有异常或需要响应的情况\n\
-                4. 基于历史数据判断趋势\n\
-                5. 决定需要采取的行动\n\
+                1. 理解用户指令和关注点\n\
+                2. 客观描述图像内容\n\
+                3. 结合传感器数据分析\n\
+                4. 根据指令判断是否需要响应\n\
+                5. 决定采取的行动\n\
                 \n\
                 ## 响应格式\n\
-                请以JSON格式回复:\n\
+                请严格以JSON格式回复，注意step必须是数字:\n\
                 {{\n\
-                  \"situation_analysis\": \"Description of the current situation\",\n\
+                  \"situation_analysis\": \"当前情况描述\",\n\
                   \"reasoning_steps\": [\n\
-                    {{\"step\": 1, \"description\": \"Step description\", \"confidence\": 0.9}}\n\
+                    {{\"step\": 1, \"description\": \"第一步描述\", \"confidence\": 0.9}},\n\
+                    {{\"step\": 2, \"description\": \"第二步描述\", \"confidence\": 0.8}}\n\
                   ],\n\
                   \"decisions\": [\n\
                     {{\n\
                       \"decision_type\": \"alert\",\n\
-                      \"description\": \"Person detected in image, triggering alert\",\n\
+                      \"description\": \"检测到目标事件，触发告警\",\n\
                       \"action\": \"send_alert\",\n\
-                      \"rationale\": \"Person presence detected, meeting alert criteria\",\n\
+                      \"rationale\": \"符合告警触发条件\",\n\
                       \"confidence\": 0.95\n\
                     }},\n\
                     {{\n\
                       \"decision_type\": \"command\",\n\
-                      \"description\": \"Temperature exceeds threshold, execute command: turn_on_fan\",\n\
+                      \"description\": \"响应事件，执行指令: control_action\",\n\
                       \"action\": \"execute_command\",\n\
-                      \"rationale\": \"Automatic device control required. Specify command name in description\",\n\
+                      \"rationale\": \"需要执行控制操作\",\n\
                       \"confidence\": 0.90\n\
                     }}\n\
                   ],\n\
-                  \"conclusion\": \"Summary conclusion\"\n\
+                  \"conclusion\": \"总结结论\"\n\
                 }}\n\
+                \n\
+                ## JSON格式要求\n\
+                - **step字段必须是数字**(1, 2, 3...)，不能是字符串\n\
+                - description字段才是步骤的描述文字\n\
+                - confidence是0到1之间的数字\n\
                 \n\
                 ## 重要说明\n\
                 - decision_type 使用 \"alert\" 表示需要发送告警\n\
                 - decision_type 使用 \"command\" 表示需要执行控制指令\n\
+                - decision_type 使用 \"info\" 表示仅记录观察结果\n\
                 - action 使用 \"send_alert\" 会触发告警通知\n\
                 - action 使用 \"execute_command\" 会执行已配置的设备指令\n\
+                - action 使用 \"log\" 仅记录日志\n\
                 - **要指定执行特定指令**，在description中使用格式: \"command: 指令名称\"\n\
                 -   例如: \"execute command: turn_on_fan\" 只执行turn_on_fan指令\n\
                 -   例如: \"execute command on device: thermostat\" 只执行thermostat设备的指令\n\
                 -   不指定则执行所有已配置的指令\n\
-                - 如果图像中检测到用户关注的对象（如人员），decision_type 应设为 \"alert\"",
+                - 根据用户指令和图像内容客观分析，不要预设检测目标",
                 role_prompt,
                 agent.user_prompt,
                 intent_context,
@@ -2710,30 +2725,36 @@ Respond in JSON format:
                 4. 决定需要采取的行动\n\
                 \n\
                 ## 响应格式\n\
-                请以JSON格式回复:\n\
+                请严格以JSON格式回复，注意step必须是数字:\n\
                 {{\n\
-                  \"situation_analysis\": \"Description of the current situation\",\n\
+                  \"situation_analysis\": \"当前情况描述\",\n\
                   \"reasoning_steps\": [\n\
-                    {{\"step\": 1, \"description\": \"Step description\", \"confidence\": 0.9}}\n\
+                    {{\"step\": 1, \"description\": \"第一步描述\", \"confidence\": 0.9}},\n\
+                    {{\"step\": 2, \"description\": \"第二步描述\", \"confidence\": 0.8}}\n\
                   ],\n\
                   \"decisions\": [\n\
                     {{\n\
                       \"decision_type\": \"alert\",\n\
-                      \"description\": \"Abnormal condition detected, triggering alert\",\n\
+                      \"description\": \"检测到异常，触发告警\",\n\
                       \"action\": \"send_alert\",\n\
-                      \"rationale\": \"Data exceeds normal range\",\n\
+                      \"rationale\": \"数据超出正常范围\",\n\
                       \"confidence\": 0.85\n\
                     }},\n\
                     {{\n\
                       \"decision_type\": \"command\",\n\
-                      \"description\": \"Temperature too high, execute command: turn_on_fan\",\n\
+                      \"description\": \"温度过高，执行指令: turn_on_fan\",\n\
                       \"action\": \"execute_command\",\n\
-                      \"rationale\": \"Automatic device control required. Specify command name in description\",\n\
+                      \"rationale\": \"需要自动控制设备。在description中指定指令名称\",\n\
                       \"confidence\": 0.90\n\
                     }}\n\
                   ],\n\
-                  \"conclusion\": \"Summary conclusion\"\n\
+                  \"conclusion\": \"总结结论\"\n\
                 }}\n\
+                \n\
+                ## JSON格式要求\n\
+                - **step字段必须是数字**(1, 2, 3...)，不能是字符串\n\
+                - description字段才是步骤的描述文字\n\
+                - confidence是0到1之间的数字\n\
                 \n\
                 ## 重要说明\n\
                 - decision_type 使用 \"alert\" 表示需要发送告警\n\
@@ -2755,7 +2776,10 @@ Respond in JSON format:
         let messages = if has_images {
             // Build multimodal message with text and images
             let mut parts = vec![ContentPart::text(format!(
-                "## 当前数据\n\n{}\n\n请分析上述数据和图像，然后做出决策。",
+                "## 执行信息\n- 执行ID: {}\n- 当前时间: {} (时间戳: {})\n\n## 当前数据\n\n{}\n\n请分析上述数据和图像，然后做出决策。",
+                execution_id,
+                time_str,
+                timestamp,
                 if text_data_summary.is_empty() {
                     "仅有图像数据".to_string()
                 } else {
@@ -2795,7 +2819,10 @@ Respond in JSON format:
             vec![
                 Message::new(MessageRole::System, Content::text(system_prompt)),
                 Message::new(MessageRole::User, Content::text(format!(
-                    "## 当前数据\n\n{}\n\n请分析上述数据并做出决策。",
+                    "## 执行信息\n- 执行ID: {}\n- 当前时间: {} (时间戳: {})\n\n## 当前数据\n\n{}\n\n请分析上述数据并做出决策。",
+                    execution_id,
+                    time_str,
+                    timestamp,
                     data_summary
                 ))),
             ]
@@ -2804,7 +2831,7 @@ Respond in JSON format:
         let input = LlmInput {
             messages,
             params: GenerationParams {
-                temperature: Some(0.6),
+                temperature: Some(0.7), // Slightly increased for more variety
                 max_tokens: Some(8000), // Increased for image analysis with detailed descriptions
                 ..Default::default()
             },
@@ -2850,25 +2877,44 @@ Respond in JSON format:
                 // Parse the LLM response
                 #[derive(serde::Deserialize)]
                 struct LlmResponse {
+                    #[serde(default)]
                     situation_analysis: String,
+                    #[serde(default)]
                     reasoning_steps: Vec<ReasoningFromLlm>,
+                    #[serde(default)]
                     decisions: Vec<DecisionFromLlm>,
+                    #[serde(default)]
                     conclusion: String,
                 }
 
                 #[derive(serde::Deserialize)]
                 struct ReasoningFromLlm {
-                    step: u32,
+                    #[serde(alias = "step_number", default)]
+                    step: serde_json::Value,
+                    #[serde(alias = "output", default)]
                     description: String,
                     #[serde(default)]
                     confidence: f32,
                 }
 
+                // Helper to extract step number from either string or number
+                fn extract_step_number(value: &serde_json::Value, default: u32) -> u32 {
+                    match value {
+                        serde_json::Value::Number(n) => n.as_u64().unwrap_or(default as u64) as u32,
+                        serde_json::Value::String(s) => s.parse().unwrap_or(default),
+                        _ => default,
+                    }
+                }
+
                 #[derive(serde::Deserialize)]
                 struct DecisionFromLlm {
+                    #[serde(default)]
                     decision_type: String,
+                    #[serde(default)]
                     description: String,
+                    #[serde(default)]
                     action: String,
+                    #[serde(default)]
                     rationale: String,
                     #[serde(default)]
                     confidence: f32,
@@ -2880,7 +2926,7 @@ Respond in JSON format:
                             .into_iter()
                             .enumerate()
                             .map(|(_i, step)| edge_ai_storage::ReasoningStep {
-                                step_number: step.step as u32,
+                                step_number: extract_step_number(&step.step, (_i + 1) as u32),
                                 description: step.description,
                                 step_type: "llm_analysis".to_string(),
                                 input: Some(text_data_summary.join("\n")),
@@ -2959,7 +3005,7 @@ Respond in JSON format:
                                         .into_iter()
                                         .enumerate()
                                         .map(|(_i, step)| edge_ai_storage::ReasoningStep {
-                                            step_number: step.step as u32,
+                                            step_number: extract_step_number(&step.step, (_i + 1) as u32),
                                             description: step.description,
                                             step_type: "llm_analysis".to_string(),
                                             input: Some(text_data_summary.join("\n")),
@@ -2991,15 +3037,114 @@ Respond in JSON format:
                                     ));
                                 }
                                 Err(e) => {
-                                    tracing::debug!(error = %e, "Recovered JSON still failed to parse, using raw text fallback");
+                                    tracing::debug!(error = %e, "Recovered JSON still failed to parse, trying lenient extraction");
                                 }
                             }
                         }
 
-                        // Final fallback: use raw text - use character-safe truncation
+                        // Lenient extraction: parse as Value and extract fields (handles different LLM JSON shapes)
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            if let Some(obj) = value.as_object() {
+                                let situation_analysis: String = obj
+                                    .get("situation_analysis")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let conclusion: String = obj
+                                    .get("conclusion")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let mut reasoning_steps = Vec::new();
+                                if let Some(arr) = obj.get("reasoning_steps").and_then(|v| v.as_array()) {
+                                    for (i, item) in arr.iter().enumerate() {
+                                        let step_num = (i + 1) as u32;
+                                        let description: String = item
+                                            .get("description")
+                                            .and_then(|v| v.as_str())
+                                            .or_else(|| item.get("output").and_then(|v| v.as_str()))
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if description.is_empty() {
+                                            continue;
+                                        }
+                                        let confidence = item
+                                            .get("confidence")
+                                            .and_then(|v| v.as_f64())
+                                            .unwrap_or(0.8) as f32;
+                                        reasoning_steps.push(edge_ai_storage::ReasoningStep {
+                                            step_number: step_num,
+                                            description,
+                                            step_type: "llm_analysis".to_string(),
+                                            input: Some(text_data_summary.join("\n")),
+                                            output: situation_analysis.clone(),
+                                            confidence,
+                                        });
+                                    }
+                                }
+                                let mut decisions = Vec::new();
+                                if let Some(arr) = obj.get("decisions").and_then(|v| v.as_array()) {
+                                    for item in arr {
+                                        let decision_type = item.get("decision_type").and_then(|v| v.as_str()).unwrap_or("analysis").to_string();
+                                        let description = item.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        let action = item.get("action").and_then(|v| v.as_str()).unwrap_or("review").to_string();
+                                        let rationale = item.get("rationale").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                        decisions.push(edge_ai_storage::Decision {
+                                            decision_type,
+                                            description,
+                                            action,
+                                            rationale,
+                                            expected_outcome: conclusion.clone(),
+                                        });
+                                    }
+                                }
+                                if !situation_analysis.is_empty() || !conclusion.is_empty() {
+                                    tracing::info!(
+                                        agent_id = %agent.id,
+                                        "Extracted decision process from JSON via lenient parsing"
+                                    );
+                                    return Ok((
+                                        if situation_analysis.is_empty() { conclusion.chars().take(500).collect::<String>() } else { situation_analysis.clone() },
+                                        if reasoning_steps.is_empty() {
+                                            vec![edge_ai_storage::ReasoningStep {
+                                                step_number: 1,
+                                                description: "LLM analysis completed".to_string(),
+                                                step_type: "llm_analysis".to_string(),
+                                                input: Some(format!("{} data sources", data.len())),
+                                                output: situation_analysis.clone(),
+                                                confidence: 0.7,
+                                            }]
+                                        } else {
+                                            reasoning_steps
+                                        },
+                                        if decisions.is_empty() {
+                                            vec![edge_ai_storage::Decision {
+                                                decision_type: "analysis".to_string(),
+                                                description: "See situation analysis for details".to_string(),
+                                                action: "review".to_string(),
+                                                rationale: "LLM provided structured analysis".to_string(),
+                                                expected_outcome: conclusion.clone(),
+                                            }]
+                                        } else {
+                                            decisions
+                                        },
+                                        if conclusion.is_empty() { "分析完成。".to_string() } else { conclusion },
+                                    ));
+                                }
+                            }
+                        }
+
+                        // Final fallback: use raw text - show actual content, not placeholder
                         let raw_text = output.text.trim();
                         let situation_analysis = if raw_text.chars().count() > 1000 {
                             raw_text.chars().take(1000).collect::<String>() + "..."
+                        } else {
+                            raw_text.to_string()
+                        };
+                        let char_count = raw_text.chars().count();
+                        let conclusion = if char_count > 500 {
+                            raw_text.chars().skip(char_count.saturating_sub(500)).collect::<String>()
+                                + "..."
                         } else {
                             raw_text.to_string()
                         };
@@ -3007,7 +3152,11 @@ Respond in JSON format:
                         let reasoning_steps = vec![
                             edge_ai_storage::ReasoningStep {
                                 step_number: 1,
-                                description: "LLM analysis completed".to_string(),
+                                description: if situation_analysis.chars().count() > 200 {
+                                    situation_analysis.chars().take(200).collect::<String>() + "..."
+                                } else {
+                                    situation_analysis.clone()
+                                },
                                 step_type: "llm_analysis".to_string(),
                                 input: Some(format!("{} data sources", data.len())),
                                 output: situation_analysis.clone(),
@@ -3025,12 +3174,10 @@ Respond in JSON format:
                             }
                         ];
 
-                        let conclusion = format!("LLM analysis completed. Raw response length: {} chars", raw_text.len());
-
                         tracing::info!(
                             agent_id = %agent.id,
                             raw_response_length = raw_text.len(),
-                            "Using raw LLM response as fallback"
+                            "Using raw LLM response as fallback (content preserved)"
                         );
 
                         Ok((

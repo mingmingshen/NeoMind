@@ -136,7 +136,13 @@ function transformTelemetryToChartData(
     }
 
     // Use DataMapper to map to time series
-    const timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
+    let timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
+
+    // Sort by timestamp ascending (oldest first) for proper time series display
+    // API returns data descending (newest first), so we need to reverse it
+    if (timeSeriesPoints.length > 0) {
+      timeSeriesPoints = timeSeriesPoints.reverse()
+    }
 
     // Extract values and format labels from timestamps
     const values = timeSeriesPoints.map(p => p.value)

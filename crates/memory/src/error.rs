@@ -37,6 +37,14 @@ pub enum MemoryError {
     /// Serialization error
     #[error("Serialization error: {0}")]
     Serialization(String),
+
+    /// Embedding error
+    #[error("Embedding error: {0}")]
+    Embedding(String),
+
+    /// Configuration error
+    #[error("Configuration error: {0}")]
+    Config(String),
 }
 
 /// Result type for memory operations.
@@ -54,6 +62,8 @@ impl From<MemoryError> for NeoTalkError {
             MemoryError::InvalidFormat(s) => NeoTalkError::Validation(s),
             MemoryError::Storage(s) => NeoTalkError::Storage(s),
             MemoryError::Serialization(s) => NeoTalkError::Serialization(s),
+            MemoryError::Embedding(s) => NeoTalkError::Memory(s),
+            MemoryError::Config(s) => NeoTalkError::Validation(s),
         }
     }
 }

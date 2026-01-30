@@ -160,7 +160,13 @@ function transformTelemetryToBarData(
   // Handle raw telemetry points format: [{ timestamp, value }, ...]
   // Only has 'value' but not 'name' → this is telemetry data
   if (data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'value' in data[0]) {
-    const telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
+    let telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
+
+    // Sort by timestamp ascending (oldest first) for proper time series display
+    // API returns data descending (newest first), so we need to reverse it
+    if (telemetryPoints.length > 1 && telemetryPoints[0].timestamp && telemetryPoints[telemetryPoints.length - 1].timestamp) {
+      telemetryPoints = [...telemetryPoints].reverse()
+    }
 
     // Check if values are categorical (strings) OR if aggregate is 'count' - group and count for distribution
     const firstValue = telemetryPoints[0]?.value

@@ -286,6 +286,7 @@ function formatTimestamp(timestamp: string | number | undefined): string {
 
 /**
  * Convert device data source to telemetry for historical data
+ * Uses a larger time range (24 hours) for image data since images are sent infrequently
  */
 function normalizeDataSourceForImages(
   ds: DataSource | undefined,
@@ -294,12 +295,16 @@ function normalizeDataSourceForImages(
 ): DataSource | undefined {
   if (!ds) return undefined
 
+  // Use 24 hours as the default time range for images (override if explicitly set larger)
+  const imageTimeRange = timeRange > 1 ? timeRange : 24
+
   // If it's already telemetry, return as-is with raw transform and custom limits
   if (ds.type === 'telemetry') {
     return {
       ...ds,
       limit: ds.limit ?? limit,
-      timeRange: ds.timeRange ?? timeRange,
+      // Use image-specific time range (24 hours) unless data source has larger value
+      timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : imageTimeRange,
       params: {
         ...ds.params,
         includeRawPoints: true,
@@ -314,7 +319,7 @@ function normalizeDataSourceForImages(
       type: 'telemetry',
       deviceId: ds.deviceId,
       metricId: ds.property || 'image',
-      timeRange: timeRange,
+      timeRange: imageTimeRange,
       limit: limit,
       aggregate: 'raw',
       params: {

@@ -930,6 +930,10 @@ impl TransformEventService {
             while running.load(Ordering::Relaxed) {
                 match rx.recv().await {
                     Some((event, metadata)) => {
+                        // Log event type for debugging
+                        if matches!(event, NeoTalkEvent::DeviceMetric { .. }) {
+                            tracing::info!("TransformEventService: Received DeviceMetric event");
+                        }
                         if let NeoTalkEvent::DeviceMetric {
                             device_id,
                             metric,
@@ -978,8 +982,6 @@ impl TransformEventService {
 
                             // IMPORTANT: Write raw metrics to time series storage for dashboard/query
                             // This stores the actual device data so it can be retrieved later
-                            tracing::debug!("Writing to time series storage: device_id={}, metric={}, timestamp={}",
-                                device_id, metric, timestamp);
 
                             let ts_value = match &value {
                                 edge_ai_core::MetricValue::Float(v) => edge_ai_devices::MetricValue::Float(*v),
@@ -1003,11 +1005,11 @@ impl TransformEventService {
                                     metric,
                                     e
                                 );
-                            } else {
-                                tracing::debug!("Wrote raw metric {}/{} to time series storage", device_id, metric);
                             }
+                            // Success is expected - only log failures above
 
                             // Add metric to device's data buffer
+                            // Keep accumulating in buffer - only remove when timer actually fires
                             let device_data = device_metrics.entry(device_id.clone()).or_insert_with(|| {
                                 serde_json::json!({})
                             });
@@ -1043,8 +1045,8 @@ impl TransformEventService {
                                 timer.abort();
                             }
 
-                            // Take the current device data out of the buffer (this clears it)
-                            // This prevents accumulation and re-processing of old metrics
+                            // Take the current device data out of the buffer for processing
+                            // Then re-initialize the buffer for the next batch of metrics
                             let device_data_for_processing = device_metrics.remove(&device_id)
                                 .unwrap_or_else(|| serde_json::json!({}));
 
@@ -1080,17 +1082,19 @@ impl TransformEventService {
                                 if !generated_metrics.is_empty() {
                                     // STEP 1: Mark all metrics as virtual FIRST (before publishing)
                                     // This prevents race conditions where events arrive before HashSet is updated
+                                    let metric_keys: Vec<String> = generated_metrics.iter()
+                                        .map(|(k, _)| k.clone()).collect();
                                     {
                                         let mut vm = virtual_metrics_clone.lock().await;
-                                        for (metric_key, _) in &generated_metrics {
-                                            vm.insert(metric_key.clone());
+                                        for key in &metric_keys {
+                                            vm.insert(key.clone());
                                         }
                                     }
 
                                     // STEP 2: NOW publish to EventBus (events will be skipped due to HashSet)
-                                    // STEP 3: Store in time_series_storage
+                                    // STEP 3: Store in time_series_storage directly
                                     for (metric_key, metric) in generated_metrics {
-                                        // Publish to EventBus
+                                        // Publish to EventBus - will be skipped because key is in HashSet
                                         event_bus_clone
                                             .publish(NeoTalkEvent::DeviceMetric {
                                                 device_id: metric.device_id.clone(),
@@ -1101,7 +1105,7 @@ impl TransformEventService {
                                             })
                                             .await;
 
-                                        // Store in telemetry
+                                        // Store in telemetry directly (don't rely on event loop)
                                         let data_point = edge_ai_devices::telemetry::DataPoint {
                                             timestamp: metric.timestamp,
                                             value: edge_ai_devices::mdl::MetricValue::Float(metric.value),
@@ -1118,6 +1122,17 @@ impl TransformEventService {
 
                                         tracing::trace!("Published and stored virtual metric: {}", metric_key);
                                     }
+
+                                    // STEP 4: Clean up HashSet keys after a short delay
+                                    // This ensures events are skipped even if they arrive late
+                                    let vm_for_cleanup = virtual_metrics_clone.clone();
+                                    tokio::spawn(async move {
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                        let mut vm = vm_for_cleanup.lock().await;
+                                        for key in &metric_keys {
+                                            vm.remove(key);
+                                        }
+                                    });
                                 }
                             });
 

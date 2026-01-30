@@ -43,6 +43,21 @@ interface MergedMessageListProps {
 }
 
 /**
+ * Combine two content strings without duplicating when backend sent the same content twice.
+ */
+function dedupeContentConcat(a: string, b: string): string {
+  const x = (a || '').trim()
+  const y = (b || '').trim()
+  if (!y) return a || ''
+  if (!x) return b || ''
+  if (x === y) return a
+  if (x.endsWith(y)) return a
+  if (y.startsWith(x)) return b
+  if (x.includes(y)) return a
+  return (a || '') + (b || '')
+}
+
+/**
  * Check if two assistant messages should be merged.
  *
  * They should be merged if:
@@ -120,7 +135,7 @@ function mergeMessagesForDisplay(messages: Message[]): Message[] {
         break
       }
 
-      // Collect content
+      // Collect content (will dedupe when joining)
       if (nextMsg.content) {
         contentParts.push(nextMsg.content)
       }
@@ -138,8 +153,11 @@ function mergeMessagesForDisplay(messages: Message[]): Message[] {
       j++
     }
 
-    // Set merged content
-    mergedAssistant.content = contentParts.join("")
+    // Set merged content, deduplicating so the same text is not shown twice
+    mergedAssistant.content = contentParts.reduce(
+      (acc, part) => dedupeContentConcat(acc, part),
+      ""
+    )
 
     // Only add if there's something to show
     if (mergedAssistant.content || mergedAssistant.thinking || mergedAssistant.tool_calls) {

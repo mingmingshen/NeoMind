@@ -467,18 +467,33 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
+        // Determine context size: use max_context from params, or compute from model capabilities
+        // CRITICAL: Qwen3 requires >= 16k context to avoid infinite repetition loops
+        let num_ctx = input.params.max_context.or_else(|| {
+            // Use a safe default of 16k for models that support it
+            if caps.max_context >= 16384 {
+                Some(16384)
+            } else if caps.max_context >= 8192 {
+                Some(caps.max_context)
+            } else {
+                None  // Let Ollama use its default
+            }
+        });
+
         let options = if input.params.temperature.is_some()
             || num_predict.is_some()
             || input.params.top_p.is_some()
             || input.params.top_k.is_some()
             || stop_sequences.is_some()
+            || num_ctx.is_some()
         {
             Some(OllamaOptions {
                 temperature: input.params.temperature,
                 num_predict,
                 top_p: input.params.top_p,
                 top_k: input.params.top_k,
-                repeat_penalty: None,
+                num_ctx,
+                repeat_penalty: Some(1.1),  // Prevent content repetition
                 stop: stop_sequences,
             })
         } else {
@@ -732,18 +747,33 @@ impl LlmRuntime for OllamaRuntime {
             None
         };
 
+        // Determine context size: use max_context from params, or compute from model capabilities
+        // CRITICAL: Qwen3 requires >= 16k context to avoid infinite repetition loops
+        let num_ctx = input.params.max_context.or_else(|| {
+            // Use a safe default of 16k for models that support it
+            if caps.max_context >= 16384 {
+                Some(16384)
+            } else if caps.max_context >= 8192 {
+                Some(caps.max_context)
+            } else {
+                None  // Let Ollama use its default
+            }
+        });
+
         let options = if input.params.temperature.is_some()
             || num_predict.is_some()
             || input.params.top_p.is_some()
             || input.params.top_k.is_some()
             || stop_sequences.is_some()
+            || num_ctx.is_some()
         {
             Some(OllamaOptions {
                 temperature: input.params.temperature,
                 num_predict,
                 top_p: input.params.top_p,
                 top_k: input.params.top_k,
-                repeat_penalty: None,
+                num_ctx,
+                repeat_penalty: Some(1.1),  // Prevent content repetition
                 stop: stop_sequences,
             })
         } else {
@@ -1349,6 +1379,10 @@ struct OllamaOptions {
     top_p: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     top_k: Option<u32>,
+    /// Context window size - CRITICAL for Qwen3 to prevent repetition loops
+    /// Qwen3 requires >= 16k context to avoid infinite repetition (Ollama 0.6.7+ fix)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_ctx: Option<usize>,
     /// Repeat penalty to prevent model from repeating itself (1.0 = disabled, higher = more penalty)
     #[serde(skip_serializing_if = "Option::is_none")]
     repeat_penalty: Option<f32>,

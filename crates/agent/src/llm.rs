@@ -658,8 +658,10 @@ impl LlmInterface {
         prompt.push_str("\n\n");
 
         // Add tool calling instruction and format
-        prompt.push_str("## 重要：你必须调用工具来回答问题\n");
-        prompt.push_str("不要只说你将要做什么，直接输出工具调用的JSON！\n\n");
+        prompt.push_str("## 重要：你必须调用工具来执行操作\n");
+        prompt.push_str("1. 不要只说你将要做什么，直接输出工具调用的JSON！\n");
+        prompt.push_str("2. 严禁在没有调用工具的情况下声称操作成功！\n");
+        prompt.push_str("3. 只有在工具真正执行并返回成功结果后，才能使用「✓」标记。\n\n");
         prompt.push_str("## 工具调用格式\n");
         prompt.push_str("在回复中输出: [{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n\n");
 
@@ -991,6 +993,7 @@ impl LlmInterface {
             frequency_penalty: None,
             presence_penalty: None,
             thinking_enabled,
+            max_context: None,
         };
 
         let system_msg = Message::system(&system_prompt);
@@ -1132,9 +1135,19 @@ impl LlmInterface {
             frequency_penalty: None,
             presence_penalty: None,
             thinking_enabled,
+            max_context: None,
         };
 
         let system_msg = Message::system(&system_prompt);
+
+        // Helper function to check if a message has empty content
+        fn is_message_empty(msg: &Message) -> bool {
+            use edge_ai_core::Content;
+            match &msg.content {
+                Content::Text(s) => s.is_empty(),
+                Content::Parts(parts) => parts.is_empty(),
+            }
+        }
 
         // Build messages with history if provided
         let messages = if let Some(hist) = history {
@@ -1145,7 +1158,10 @@ impl LlmInterface {
                     msgs.push(msg.clone());
                 }
             }
-            msgs.push(user_message);
+            // Only add user message if it's not empty (Phase 2 may use empty string)
+            if !is_message_empty(&user_message) {
+                msgs.push(user_message);
+            }
             msgs
         } else {
             vec![system_msg, user_message]
@@ -1320,11 +1336,45 @@ impl LlmInterface {
         } else {
             // Phase 2 system prompt - NO tool calling, just generate response based on tool results
             // Tool execution is already complete, this phase is for summarizing results
-            "你是NeoTalk物联网助手。工具已经执行完成，结果在对话历史中。
-请直接根据工具执行结果回答用户问题，不要再调用任何工具。
--- 简洁直接地回答
--- 如果工具返回了数据，简要总结要点
--- 如果工具执行失败，解释原因并提供建议".to_string()
+            "你是NeoTalk物联网助手。
+
+## 当前阶段：工具执行完成，需要生成最终回复
+
+对话历史包含：
+1. 用户的原始问题
+2. 助手的思考过程（如果有）
+3. 工具调用信息（调用了哪些工具、传入了什么参数）
+4. 工具执行结果（每个工具返回的数据）
+
+## 你的任务
+
+根据**工具执行结果**和**用户的原始问题**，给出一个完整、有用的回复。
+
+## 回复要求
+
+1. **直接回答用户的问题** - 不要说「工具已执行」这类废话
+2. **总结关键信息** - 提取工具结果中的关键数据
+3. **结构清晰** - 如果有多个设备/规则，用列表或分组展示
+4. **友好的语气** - 自然对话，不要机械
+5. **内容不要重复** - 每条信息只说一次，不要把相同的内容说两遍
+
+## 示例
+
+用户: \"列出所有设备\"
+工具返回: {\"devices\": [{\"id\": \"1\", \"name\": \"温度传感器\", ...}]}
+你的回复: \"共找到 5 个设备：\\n1. 温度传感器 (ID: 1)\\n2. 湿度传感器 (ID: 2)\\n...\"
+
+用户: \"查看 ne101 详情\"
+工具返回: {\"device\": {\"name\": \"ne101\", \"temperature\": 25, ...}}
+你的回复: \"ne101 设备详情：\\n- 名称: ne101\\n- 当前温度: 25°C\\n- 状态: 在线\\n...\"
+
+## 注意事项
+
+- 不要调用工具（此阶段禁用工具调用）
+- 不要重复显示原始 JSON 数据
+- **关键：每条信息只说一次，不要重复相同的内容**
+- 如果工具执行失败，解释原因并提供替代方案
+- 如果工具返回的数据不完整，诚实地说明".to_string()
         };
 
         // Build input outside the lock
@@ -1384,9 +1434,19 @@ impl LlmInterface {
             frequency_penalty: None,
             presence_penalty: None,
             thinking_enabled,
+            max_context: None,
         };
 
         let system_msg = Message::system(&system_prompt);
+
+        // Helper function to check if a message has empty content
+        fn is_message_empty(msg: &Message) -> bool {
+            use edge_ai_core::Content;
+            match &msg.content {
+                Content::Text(s) => s.is_empty(),
+                Content::Parts(parts) => parts.is_empty(),
+            }
+        }
 
         // Build messages with history if provided
         let messages = if let Some(hist) = history {
@@ -1397,7 +1457,10 @@ impl LlmInterface {
                     msgs.push(msg.clone());
                 }
             }
-            msgs.push(user_message);
+            // Only add user message if it's not empty (Phase 2 may use empty string)
+            if !is_message_empty(&user_message) {
+                msgs.push(user_message);
+            }
             msgs
         } else {
             vec![system_msg, user_message]
@@ -1463,11 +1526,45 @@ impl LlmInterface {
         } else {
             // Phase 2 system prompt - NO tool calling, just generate response based on tool results
             // Tool execution is already complete, this phase is for summarizing results
-            "你是NeoTalk物联网助手。工具已经执行完成，结果在对话历史中。
-请直接根据工具执行结果回答用户问题，不要再调用任何工具。
-- 简洁直接地回答
-- 如果工具返回了数据，简要总结要点
-- 如果工具执行失败，解释原因并提供建议".to_string()
+            "你是NeoTalk物联网助手。
+
+## 当前阶段：工具执行完成，需要生成最终回复
+
+对话历史包含：
+1. 用户的原始问题
+2. 助手的思考过程（如果有）
+3. 工具调用信息（调用了哪些工具、传入了什么参数）
+4. 工具执行结果（每个工具返回的数据）
+
+## 你的任务
+
+根据**工具执行结果**和**用户的原始问题**，给出一个完整、有用的回复。
+
+## 回复要求
+
+1. **直接回答用户的问题** - 不要说「工具已执行」这类废话
+2. **总结关键信息** - 提取工具结果中的关键数据
+3. **结构清晰** - 如果有多个设备/规则，用列表或分组展示
+4. **友好的语气** - 自然对话，不要机械
+5. **内容不要重复** - 每条信息只说一次，不要把相同的内容说两遍
+
+## 示例
+
+用户: \"列出所有设备\"
+工具返回: {\"devices\": [{\"id\": \"1\", \"name\": \"温度传感器\", ...}]}
+你的回复: \"共找到 5 个设备：\\n1. 温度传感器 (ID: 1)\\n2. 湿度传感器 (ID: 2)\\n...\"
+
+用户: \"查看 ne101 详情\"
+工具返回: {\"device\": {\"name\": \"ne101\", \"temperature\": 25, ...}}
+你的回复: \"ne101 设备详情：\\n- 名称: ne101\\n- 当前温度: 25°C\\n- 状态: 在线\\n...\"
+
+## 注意事项
+
+- 不要调用工具（此阶段禁用工具调用）
+- 不要重复显示原始 JSON 数据
+- **关键：每条信息只说一次，不要重复相同的内容**
+- 如果工具执行失败，解释原因并提供替代方案
+- 如果工具返回的数据不完整，诚实地说明".to_string()
         };
 
         // Build input outside the lock
@@ -1527,6 +1624,7 @@ impl LlmInterface {
             frequency_penalty: None,
             presence_penalty: None,
             thinking_enabled,
+            max_context: None,
         };
 
         let system_msg = Message::system(&system_prompt);

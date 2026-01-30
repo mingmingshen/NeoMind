@@ -63,6 +63,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([])
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  // Track the ID of the last assistant message for tool call result updates
+  const [lastAssistantMessageId, setLastAssistantMessageId] = useState<string | null>(null)
 
   // Stream progress state (P0.1: Progress tracking)
   const [streamProgress, setStreamProgress] = useState<StreamProgressType>({
@@ -83,6 +85,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const streamingThinkingRef = useRef("")
   const streamingToolCallsRef = useRef<any[]>([])
   const streamStartRef = useRef<number>(Date.now())
+  const isStreamingRef = useRef(false)
 
   // Auto-scroll to bottom when messages change
   const scrollToBottom = useCallback(() => {
@@ -92,6 +95,11 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   useEffect(() => {
     scrollToBottom()
   }, [messages, streamingContent, scrollToBottom])
+
+  // Sync isStreaming ref with state
+  useEffect(() => {
+    isStreamingRef.current = isStreaming
+  }, [isStreaming])
 
   // Handle WebSocket events
   useEffect(() => {
@@ -140,13 +148,35 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
         }
 
         case "ToolCallEnd": {
-          setStreamingToolCalls(prev =>
-            prev.map(tc =>
+          setStreamingToolCalls(prev => {
+            const updated = prev.map(tc =>
               tc.name === data.tool
                 ? { ...tc, result: data.result }
                 : tc
             )
-          )
+            // Also update the ref for consistency
+            streamingToolCallsRef.current = updated
+
+            // If not streaming (stream ended before tool execution),
+            // update the saved assistant message's tool_calls
+            if (!isStreamingRef.current && lastAssistantMessageId) {
+              const lastMessage = messages.find(m => m.id === lastAssistantMessageId)
+              if (lastMessage && lastMessage.role === "assistant" && lastMessage.tool_calls) {
+                const updatedToolCalls = lastMessage.tool_calls.map(tc =>
+                  tc.name === data.tool
+                    ? { ...tc, result: data.result }
+                    : tc
+                )
+                // Update the message in store
+                addMessage({
+                  ...lastMessage,
+                  tool_calls: updatedToolCalls
+                })
+              }
+            }
+
+            return updated
+          })
           break
         }
 
@@ -185,8 +215,9 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
         case "end":
           // Save the complete message
           if (streamingContentRef.current || streamingThinkingRef.current || streamingToolCallsRef.current.length > 0) {
+            const messageId = streamingMessageIdRef.current || crypto.randomUUID()
             const completeMessage: Message = {
-              id: streamingMessageIdRef.current || crypto.randomUUID(),
+              id: messageId,
               role: "assistant",
               content: streamingContentRef.current,
               timestamp: Math.floor(Date.now() / 1000), // Use seconds (matches backend)
@@ -194,6 +225,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               tool_calls: streamingToolCallsRef.current.length > 0 ? streamingToolCallsRef.current : undefined,
             }
             addMessage(completeMessage)
+            // Track this message for potential tool call result updates
+            setLastAssistantMessageId(messageId)
           }
           // Reset streaming state
           setIsStreaming(false)
@@ -230,7 +263,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     // ws.onMessage returns an unsubscribe function - we MUST call it in cleanup
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, switchSession])
+  }, [addMessage, switchSession, lastAssistantMessageId, messages])
 
   // Initialize session if none exists
   useEffect(() => {
@@ -248,20 +281,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     const trimmedInput = input.trim()
     if (!trimmedInput || isStreaming) return
 
-    // Check if we're viewing a historical session with existing messages
-    // If so, create a new session first to avoid adding message to old session
-    const hasExistingMessages = messages.length > 0
-
-    if (hasExistingMessages) {
-      // Create new session first - this will clear messages and update sessionId
-      const newSessionId = await createSession()
-      if (newSessionId) {
-        // Navigate to the new session URL
-        navigate(`/chat/${newSessionId}`)
-      }
-    }
-
-    // Add user message to the (now empty or current) session
+    // Add user message directly to current session
+    // Backend handles session continuity - no need to create new session
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -285,8 +306,10 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
       warnings: [],
       remainingTime: 300
     })
+    // Reset last assistant message ID (new response incoming)
+    setLastAssistantMessageId(null)
 
-    // Send via WebSocket (now using the correct session)
+    // Send via WebSocket
     ws.sendMessage(trimmedInput)
 
     // Focus input after sending

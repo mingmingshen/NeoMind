@@ -1437,6 +1437,7 @@ END"#)
             // It should keep its name as it's registered as "rule.from_context" in core_tools
             // Note: "rule.create" is an alias for create_rule
             "rule.create" => "create_rule".to_string(),
+            "rule.delete" => "delete_rule".to_string(),
             // These tools are registered with their simplified names
             "rule.from_context" => "rule.from_context".to_string(),
             "rule.enable" => "enable_rule".to_string(),

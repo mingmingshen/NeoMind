@@ -125,6 +125,7 @@ pub use agent_tools::{
 #[cfg(feature = "real")]
 pub use real::{
     ControlDeviceTool as RealControlDeviceTool, CreateRuleTool as RealCreateRuleTool,
+    DeleteRuleTool as RealDeleteRuleTool,
     GetDeviceDataTool as RealGetDeviceDataTool,
     ListDevicesTool as RealListDevicesTool, ListRulesTool as RealListRulesTool,
     QueryDataTool as RealQueryDataTool, QueryRuleHistoryTool,

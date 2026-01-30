@@ -18,6 +18,7 @@ use edge_ai_storage::decisions::DecisionStore;
 use edge_ai_storage::llm_backends::LlmBackendStore;
 
 use edge_ai_automation::{AutoOnboardManager, store::SharedAutomationStore, intent::IntentAnalyzer, transform::TransformEngine};
+use edge_ai_memory::TieredMemory;
 
 use crate::auth::AuthState;
 use crate::auth_users::AuthUserState;
@@ -98,6 +99,8 @@ pub struct ServerState {
     pub rule_history_store: Option<Arc<edge_ai_storage::business::RuleHistoryStore>>,
     /// Alert store for statistics.
     pub alert_store: Option<Arc<edge_ai_storage::business::AlertStore>>,
+    /// Tiered memory system for conversation history and knowledge.
+    pub memory: Arc<tokio::sync::RwLock<TieredMemory>>,
     /// AI Agent store for user-defined automation agents.
     pub agent_store: Arc<edge_ai_storage::AgentStore>,
     /// AI Agent manager for executing user-defined agents (lazy-initialized).
@@ -389,6 +392,11 @@ impl ServerState {
                     }
                 }
             },
+            // Initialize tiered memory with configuration from config.toml
+            memory: {
+                let memory_config = crate::config::get_memory_config();
+                Arc::new(tokio::sync::RwLock::new(TieredMemory::with_config(memory_config)))
+            },
             agent_store,
             // AI Agent manager - lazy initialized, will be started when server is fully ready
             agent_manager: Arc::new(tokio::sync::RwLock::new(None)),
@@ -641,6 +649,7 @@ impl ServerState {
             .with_real_device_analyze_tool(self.device_service.clone(), self.time_series_storage.clone())
             .with_real_create_rule_tool(self.rule_engine.clone())
             .with_real_list_rules_tool(self.rule_engine.clone())
+            .with_real_delete_rule_tool(self.rule_engine.clone())
             // AI Agent tools for Chat integration
             .with_real_agent_tools(self.agent_store.clone())
             // System help tool for onboarding

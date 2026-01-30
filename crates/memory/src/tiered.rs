@@ -7,6 +7,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::error::Result;
+use super::embeddings::EmbeddingConfig;
 use super::long_term::{KnowledgeCategory, KnowledgeEntry, TroubleshootingCase};
 use super::mid_term::{ConversationEntry, SearchResult};
 use super::short_term::{MemoryMessage, ShortTermMemory};
@@ -20,10 +21,34 @@ pub struct TieredMemoryConfig {
     pub max_short_term_tokens: usize,
     /// Maximum entries in mid-term memory
     pub max_mid_term_entries: usize,
-    /// Embedding dimension for mid-term memory
+    /// Embedding dimension for mid-term memory (only used with Simple embedding)
     pub embedding_dim: usize,
     /// Maximum knowledge entries in long-term memory
     pub max_long_term_knowledge: usize,
+    /// Embedding model configuration
+    #[serde(default)]
+    pub embedding_config: Option<EmbeddingConfig>,
+    /// Whether to use hybrid search (semantic + BM25) for mid-term memory
+    #[serde(default = "default_use_hybrid_search")]
+    pub use_hybrid_search: bool,
+    /// Semantic weight for hybrid search (0.0 - 1.0)
+    #[serde(default = "default_semantic_weight")]
+    pub semantic_weight: f32,
+    /// BM25 weight for hybrid search (0.0 - 1.0)
+    #[serde(default = "default_bm25_weight")]
+    pub bm25_weight: f32,
+}
+
+fn default_use_hybrid_search() -> bool {
+    true
+}
+
+fn default_semantic_weight() -> f32 {
+    0.7
+}
+
+fn default_bm25_weight() -> f32 {
+    0.3
 }
 
 impl Default for TieredMemoryConfig {
@@ -34,6 +59,10 @@ impl Default for TieredMemoryConfig {
             max_mid_term_entries: 1000,
             embedding_dim: 64,
             max_long_term_knowledge: 10000,
+            embedding_config: None,
+            use_hybrid_search: true,
+            semantic_weight: 0.7,
+            bm25_weight: 0.3,
         }
     }
 }
@@ -58,7 +87,7 @@ pub struct TieredMemory {
     /// Long-term memory
     long_term: Arc<super::long_term::LongTermMemory>,
     /// Configuration
-    _config: TieredMemoryConfig,
+    config: TieredMemoryConfig,
 }
 
 impl TieredMemory {
@@ -69,21 +98,34 @@ impl TieredMemory {
 
     /// Create a new tiered memory with custom config.
     pub fn with_config(config: TieredMemoryConfig) -> Self {
+        // Create mid-term memory with embedding config
+        let mid_term = if let Some(embed_config) = &config.embedding_config {
+            super::mid_term::MidTermMemory::with_embedding_config(embed_config.clone())
+                .with_max_entries(config.max_mid_term_entries)
+        } else {
+            super::mid_term::MidTermMemory::new()
+                .with_max_entries(config.max_mid_term_entries)
+                .with_embedding_dim(config.embedding_dim)
+        };
+
         Self {
             short_term: ShortTermMemory::new()
                 .with_max_messages(config.max_short_term_messages)
                 .with_max_tokens(config.max_short_term_tokens),
-            mid_term: Arc::new(
-                super::mid_term::MidTermMemory::new()
-                    .with_max_entries(config.max_mid_term_entries)
-                    .with_embedding_dim(config.embedding_dim),
-            ),
+            mid_term: Arc::new(mid_term),
             long_term: Arc::new(
                 super::long_term::LongTermMemory::new()
                     .with_max_knowledge(config.max_long_term_knowledge),
             ),
-            _config: config,
+            config,
         }
+    }
+
+    /// Create a new tiered memory with embedding configuration.
+    pub fn with_embedding_config(embed_config: EmbeddingConfig) -> Self {
+        let mut config = TieredMemoryConfig::default();
+        config.embedding_config = Some(embed_config);
+        Self::with_config(config)
     }
 
     // ===== Short-term memory operations =====
@@ -133,7 +175,33 @@ impl TieredMemory {
 
     /// Search mid-term memory for similar conversations.
     pub async fn search_mid_term(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
+        if self.config.use_hybrid_search {
+            self.search_mid_term_hybrid(query, top_k).await
+        } else {
+            self.mid_term.search(query, top_k).await
+        }
+    }
+
+    /// Search mid-term memory using hybrid search (semantic + BM25).
+    pub async fn search_mid_term_hybrid(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
+        self.mid_term
+            .search_hybrid(
+                query,
+                top_k,
+                self.config.semantic_weight,
+                self.config.bm25_weight,
+            )
+            .await
+    }
+
+    /// Search mid-term memory using only semantic search.
+    pub async fn search_mid_term_semantic(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
         self.mid_term.search(query, top_k).await
+    }
+
+    /// Search mid-term memory using only BM25 full-text search.
+    pub async fn search_mid_term_bm25(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
+        self.mid_term.search_bm25(query, top_k).await
     }
 
     /// Get conversations by session ID.
@@ -203,8 +271,44 @@ impl TieredMemory {
             .filter(|m| m.content.to_lowercase().contains(&query.to_lowercase()))
             .collect();
 
-        // Mid-term: semantic search
-        let mid_term = self.mid_term.search(query, top_k).await;
+        // Mid-term: use configured search method (hybrid or semantic)
+        let mid_term = if self.config.use_hybrid_search {
+            self.search_mid_term_hybrid(query, top_k).await
+        } else {
+            self.search_mid_term_semantic(query, top_k).await
+        };
+
+        // Long-term: keyword search
+        let long_term = self.long_term.search(query).await;
+
+        MemoryQueryResult {
+            short_term,
+            mid_term,
+            long_term,
+        }
+    }
+
+    /// Query all memory layers with search method selection.
+    pub async fn query_all_with_method(
+        &self,
+        query: &str,
+        top_k: usize,
+        search_method: SearchMethod,
+    ) -> MemoryQueryResult {
+        // Short-term: filter by keyword match
+        let short_term: Vec<MemoryMessage> = self
+            .short_term
+            .get_messages()
+            .into_iter()
+            .filter(|m| m.content.to_lowercase().contains(&query.to_lowercase()))
+            .collect();
+
+        // Mid-term: use specified search method
+        let mid_term = match search_method {
+            SearchMethod::Hybrid => self.search_mid_term_hybrid(query, top_k).await,
+            SearchMethod::Semantic => self.search_mid_term_semantic(query, top_k).await,
+            SearchMethod::BM25 => self.search_mid_term_bm25(query, top_k).await,
+        };
 
         // Long-term: keyword search
         let long_term = self.long_term.search(query).await;
@@ -270,12 +374,33 @@ impl TieredMemory {
     pub fn long_term_ref(&self) -> &Arc<super::long_term::LongTermMemory> {
         &self.long_term
     }
+
+    /// Get the configuration.
+    pub fn config(&self) -> &TieredMemoryConfig {
+        &self.config
+    }
+
+    /// Check if hybrid search is enabled.
+    pub fn is_hybrid_search_enabled(&self) -> bool {
+        self.config.use_hybrid_search
+    }
 }
 
 impl Default for TieredMemory {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Search method for mid-term memory queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SearchMethod {
+    /// Hybrid search combining semantic and BM25
+    Hybrid,
+    /// Semantic search only (vector similarity)
+    Semantic,
+    /// BM25 full-text search only
+    BM25,
 }
 
 /// Memory statistics.
@@ -464,6 +589,10 @@ mod tests {
             max_mid_term_entries: 500,
             embedding_dim: 128,
             max_long_term_knowledge: 5000,
+            embedding_config: None,
+            use_hybrid_search: true,
+            semantic_weight: 0.7,
+            bm25_weight: 0.3,
         };
 
         let mut memory = TieredMemory::with_config(config.clone());
@@ -475,5 +604,130 @@ mod tests {
 
         // Should be limited by token count
         assert!(memory.short_term_ref().token_count() <= 2000);
+    }
+
+    #[tokio::test]
+    async fn test_search_methods() {
+        let mut memory = TieredMemory::new();
+
+        // Add some conversations
+        memory
+            .add_conversation("session1", "What is temperature?", "Temperature is a measure of heat.")
+            .await
+            .unwrap();
+        memory
+            .add_conversation("session1", "How about humidity?", "Humidity measures water vapor in air.")
+            .await
+            .unwrap();
+        memory
+            .add_conversation("session2", "temperature sensor", "The temperature sensor reads 25 degrees.")
+            .await
+            .unwrap();
+
+        // Test semantic search
+        let semantic_results = memory.search_mid_term_semantic("heat", 5).await;
+        assert!(!semantic_results.is_empty());
+
+        // Test BM25 search
+        let bm25_results = memory.search_mid_term_bm25("temperature", 5).await;
+        assert!(!bm25_results.is_empty());
+
+        // Test hybrid search
+        let hybrid_results = memory.search_mid_term_hybrid("temperature", 5).await;
+        assert!(!hybrid_results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_enabled_by_default() {
+        let memory = TieredMemory::new();
+        assert!(memory.is_hybrid_search_enabled());
+
+        let config = memory.config();
+        assert!(config.use_hybrid_search);
+        assert_eq!(config.semantic_weight, 0.7);
+        assert_eq!(config.bm25_weight, 0.3);
+    }
+
+    #[tokio::test]
+    async fn test_query_all_with_methods() {
+        let mut memory = TieredMemory::new();
+
+        // Add to short-term
+        memory.add_message("user", "temperature question").unwrap();
+        memory.add_message("assistant", "Temperature is 25 degrees").unwrap();
+
+        // Add to mid-term
+        memory
+            .add_conversation("session1", "humidity query", "Humidity is 60%")
+            .await
+            .unwrap();
+
+        // Test with different search methods
+        let hybrid_results = memory.query_all_with_method("temperature", 5, SearchMethod::Hybrid).await;
+        let semantic_results = memory.query_all_with_method("temperature", 5, SearchMethod::Semantic).await;
+        let bm25_results = memory.query_all_with_method("temperature", 5, SearchMethod::BM25).await;
+
+        // All should return some results
+        let total_hybrid = hybrid_results.short_term.len() + hybrid_results.mid_term.len();
+        let total_semantic = semantic_results.short_term.len() + semantic_results.mid_term.len();
+        let total_bm25 = bm25_results.short_term.len() + bm25_results.mid_term.len();
+
+        assert!(total_hybrid > 0 || total_semantic > 0 || total_bm25 > 0);
+    }
+
+    #[tokio::test]
+    async fn test_embedding_config() {
+        use super::super::embeddings::EmbeddingConfig;
+
+        // Test with simple embedding config (default)
+        let memory_simple = TieredMemory::new();
+        assert!(memory_simple.is_hybrid_search_enabled());
+
+        // Test with custom embedding config
+        let config = TieredMemoryConfig {
+            max_short_term_messages: 50,
+            max_short_term_tokens: 2000,
+            max_mid_term_entries: 500,
+            embedding_dim: 128,
+            max_long_term_knowledge: 5000,
+            embedding_config: Some(EmbeddingConfig::simple()),
+            use_hybrid_search: false,
+            semantic_weight: 0.5,
+            bm25_weight: 0.5,
+        };
+
+        let memory_custom = TieredMemory::with_config(config);
+        assert!(!memory_custom.is_hybrid_search_enabled());
+        assert_eq!(memory_custom.config().semantic_weight, 0.5);
+        assert_eq!(memory_custom.config().bm25_weight, 0.5);
+    }
+
+    #[tokio::test]
+    async fn test_memory_retrieval_accuracy() {
+        let mut memory = TieredMemory::new();
+
+        // Add conversations with specific topics
+        memory
+            .add_conversation("s1", "What is the temperature?", "The temperature is 25 degrees Celsius.")
+            .await
+            .unwrap();
+        memory
+            .add_conversation("s1", "How about humidity?", "Humidity is at 60 percent.")
+            .await
+            .unwrap();
+        memory
+            .add_conversation("s2", "temp sensor reading", "Temperature sensor shows 30 degrees.")
+            .await
+            .unwrap();
+
+        // Search for temperature-related content
+        let results = memory.search_mid_term("temperature", 3).await;
+
+        // Should find at least one result about temperature
+        assert!(!results.is_empty());
+        // Results should be sorted by relevance
+        for i in 0..results.len().saturating_sub(1) {
+            assert!(results[i].score >= results.get(i + 1).map(|r| r.score).unwrap_or(0.0));
+        }
     }
 }

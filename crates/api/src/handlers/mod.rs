@@ -44,6 +44,7 @@ pub use alert_channels::{
 pub use basic::health_handler;
 pub use devices::{
     add_device_handler, aggregate_metric_handler,
+    analyze_metric_timestamps_handler,
     delete_device_handler, delete_device_type_handler, discover_devices_handler,
     discovery_info_handler, generate_mdl_handler,
     get_device_command_history_handler, get_device_handler, get_device_telemetry_handler,

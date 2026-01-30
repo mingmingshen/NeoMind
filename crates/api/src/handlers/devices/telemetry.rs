@@ -143,7 +143,8 @@ pub async fn get_device_telemetry_handler(
                 }
             }
             None => {
-                // Raw query - use DeviceService
+                // Raw query - use DeviceService first; fallback to time_series_storage when
+                // device is not in registry (e.g. auto-discovered) or query_telemetry fails
                 match state
                     .device_service
                     .query_telemetry(&device_id, metric_name, Some(start), Some(end))
@@ -160,12 +161,37 @@ pub async fn get_device_telemetry_handler(
                                 })
                             })
                             .collect::<Vec<_>>();
-                        // Sort by timestamp descending
                         result
                             .sort_by(|a, b| b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64()));
                         result
                     }
-                    Err(_) => vec![],
+                    Err(_) => {
+                        // Fallback: query time_series_storage directly so historical data
+                        // is available even when device is not in registry
+                        match state
+                            .time_series_storage
+                            .query(&device_id, metric_name, start, end)
+                            .await
+                        {
+                            Ok(points) => {
+                                let mut result = points
+                                    .into_iter()
+                                    .take(limit)
+                                    .map(|p| {
+                                        json!({
+                                            "timestamp": p.timestamp,
+                                            "value": metric_value_to_json(&p.value),
+                                        })
+                                    })
+                                    .collect::<Vec<_>>();
+                                result.sort_by(|a, b| {
+                                    b["timestamp"].as_i64().cmp(&a["timestamp"].as_i64())
+                                });
+                                result
+                            }
+                            Err(_) => vec![],
+                        }
+                    }
                 }
             }
         };
@@ -517,5 +543,127 @@ pub async fn list_device_metrics_debug_handler(
         "metrics_count": metrics.len(),
         "metrics": metrics,
         "latest_values": metric_info,
+    }))
+}
+
+/// Debug endpoint: Analyze time series data timestamps for a device/metric.
+///
+/// GET /api/devices/:id/metrics/analyze?metric=values.battery
+///
+/// This endpoint directly queries the time series storage to analyze
+/// the actual timestamps stored in the database, helping identify data gaps.
+pub async fn analyze_metric_timestamps_handler(
+    State(state): State<ServerState>,
+    Path(device_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> HandlerResult<serde_json::Value> {
+    let metric = if let Some(m) = params.get("metric") {
+        m.clone()
+    } else {
+        // Try to guess the metric name
+        match state.time_series_storage.list_metrics(&device_id).await {
+            Ok(m) if !m.is_empty() => m[0].clone(),
+            _ => "_raw".to_string(),
+        }
+    };
+
+    // Get current time for comparison
+    let now = chrono::Utc::now().timestamp();
+
+    // Query all data for this metric (wide time range)
+    let start = now - 86400 * 2; // 2 days
+    let end = now + 60; // 1 minute in future
+
+    let points = state
+        .time_series_storage
+        .query(&device_id, &metric, start, end)
+        .await
+        .unwrap_or_default();
+
+    if points.is_empty() {
+        return ok(json!({
+            "device_id": device_id,
+            "metric": metric,
+            "error": "No data points found",
+        }));
+    }
+
+    // Extract and sort timestamps
+    let mut timestamps: Vec<i64> = points.iter().map(|p| p.timestamp).collect();
+    timestamps.sort();
+
+    let oldest = timestamps.first().unwrap();
+    let newest = timestamps.last().unwrap();
+    let count = timestamps.len();
+
+    // Calculate gaps
+    let mut gaps = Vec::new();
+    let mut largest_gap_seconds = 0i64;
+    for i in 1..timestamps.len() {
+        let gap = timestamps[i] - timestamps[i - 1];
+        if gap > largest_gap_seconds {
+            largest_gap_seconds = gap;
+        }
+        // If gap > 30 minutes, consider it significant
+        if gap > 1800 {
+            gaps.push((
+                timestamps[i - 1],
+                timestamps[i],
+                gap,
+            ));
+        }
+    }
+
+    // Convert timestamps to readable format
+    let oldest_readable = chrono::DateTime::<chrono::Utc>::from_timestamp(*oldest, 0)
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| "?".to_string());
+    let newest_readable = chrono::DateTime::<chrono::Utc>::from_timestamp(*newest, 0)
+        .map(|d| d.to_rfc3339())
+        .unwrap_or_else(|| "?".to_string());
+
+    let gap_from_now = now - newest;
+
+    ok(json!({
+        "device_id": device_id,
+        "metric": metric,
+        "analysis": {
+            "total_points": count,
+            "oldest_timestamp": oldest,
+            "oldest_readable": oldest_readable,
+            "newest_timestamp": newest,
+            "newest_readable": newest_readable,
+            "current_timestamp": now,
+            "current_readable": chrono::Utc::now().to_rfc3339(),
+            "gap_from_now_seconds": gap_from_now,
+            "gap_from_now_hours": format!("{:.2}", gap_from_now as f64 / 3600.0),
+            "largest_gap_seconds": largest_gap_seconds,
+            "largest_gap_hours": format!("{:.2}", largest_gap_seconds as f64 / 3600.0),
+        },
+        "significant_gaps": {
+            "count": gaps.len(),
+            "gaps": gaps.iter().take(10).map(|(start, end, gap)| {
+                json!({
+                    "start": start,
+                    "start_readable": chrono::DateTime::<chrono::Utc>::from_timestamp(*start, 0).map(|d| d.to_rfc3339()).unwrap_or("?".to_string()),
+                    "end": end,
+                    "end_readable": chrono::DateTime::<chrono::Utc>::from_timestamp(*end, 0).map(|d| d.to_rfc3339()).unwrap_or("?".to_string()),
+                    "gap_seconds": gap,
+                    "gap_minutes": gap / 60,
+                })
+            }).collect::<Vec<_>>(),
+        },
+        "sample_points": {
+            "first_5": points.iter().take(5).map(|p| json!({
+                "timestamp": p.timestamp,
+                "readable": chrono::DateTime::<chrono::Utc>::from_timestamp(p.timestamp, 0).map(|d| d.to_rfc3339()).unwrap_or("?".to_string()),
+                "value": p.value,
+            })).collect::<Vec<_>>(),
+            "last_5": points.iter().skip(points.len().saturating_sub(5)).map(|p| json!({
+                "timestamp": p.timestamp,
+                "readable": chrono::DateTime::<chrono::Utc>::from_timestamp(p.timestamp, 0).map(|d| d.to_rfc3339()).unwrap_or("?".to_string()),
+                "value": p.value,
+            })).collect::<Vec<_>>(),
+        },
     }))
 }

@@ -44,6 +44,8 @@
 //! }
 //! ```
 
+pub mod bm25;
+pub mod embeddings;
 pub mod error;
 pub mod long_term;
 pub mod mid_term;
@@ -51,13 +53,19 @@ pub mod short_term;
 pub mod tiered;
 
 // Re-export commonly used types
+pub use bm25::{BM25Index, BM25Result, DEFAULT_B, DEFAULT_K1, DocumentStats, extract_text_for_bm25};
+pub use embeddings::{
+    create_embedding_model, cosine_similarity, dot_similarity,
+    CachedEmbeddingModel, EmbeddingConfig, EmbeddingModel, EmbeddingProvider,
+    OllamaEmbedding, OpenAIEmbedding, SimpleEmbedding,
+};
 pub use error::{MemoryError, NeoTalkError, Result};
 pub use long_term::{
     KnowledgeCategory, KnowledgeEntry, LongTermMemory, SolutionStep, TroubleshootingCase,
 };
-pub use mid_term::{ConversationEntry, MidTermMemory, SearchResult, SimpleEmbedding};
+pub use mid_term::{ConversationEntry, MidTermMemory, SearchResult};
 pub use short_term::{DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS, MemoryMessage, ShortTermMemory};
-pub use tiered::{MemoryQueryResult, MemoryStats, TieredMemory, TieredMemoryConfig};
+pub use tiered::{MemoryQueryResult, MemoryStats, SearchMethod, TieredMemory, TieredMemoryConfig};
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

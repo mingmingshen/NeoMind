@@ -75,6 +75,7 @@ pub async fn llm_generate_handler(
             frequency_penalty: None,
             presence_penalty: None,
             thinking_enabled: None,
+            max_context: None,
         },
         model: Some(model_name),
         stream: false,

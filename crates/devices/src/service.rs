@@ -356,17 +356,14 @@ impl DeviceService {
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.update(ConnectionStatus::Connected);
-                        tracing::debug!("Device {} marked as online", device_id);
                     }
                     edge_ai_core::NeoTalkEvent::DeviceOffline { device_id, .. } => {
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.update(ConnectionStatus::Disconnected);
-                        tracing::debug!("Device {} marked as offline", device_id);
                     }
                     edge_ai_core::NeoTalkEvent::DeviceMetric { device_id, metric, value, timestamp: _, quality: _ } => {
                         // Update last_seen when receiving metrics
-                        tracing::debug!("Received metric event: device_id={}, metric={}", device_id, metric);
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.last_seen = chrono::Utc::now().timestamp();
@@ -421,8 +418,6 @@ impl DeviceService {
 
                             if let Err(e) = storage.write(&device_id, &metric, data_point).await {
                                 tracing::warn!("Failed to write telemetry to storage: {}", e);
-                            } else {
-                                tracing::debug!("DeviceService wrote metric {} for device {}", metric, device_id);
                             }
                         } else {
                             tracing::warn!("DeviceService telemetry_storage is None, cannot write metric {} for device {}", metric, device_id);
@@ -1164,7 +1159,7 @@ impl DeviceService {
         }
 
         if is_virtual_metric {
-            tracing::debug!("Querying virtual metric {} for device {}", metric_name, device_id);
+            tracing::trace!("Querying virtual metric {} for device {}", metric_name, device_id);
         }
 
         // Query from telemetry storage
@@ -1173,8 +1168,6 @@ impl DeviceService {
             let start = start_time.unwrap_or(i64::MIN);
             let end = end_time.unwrap_or(i64::MAX);
 
-            tracing::debug!("Querying telemetry for {}/{} from {} to {}", device_id, metric_name, start, end);
-
             let points = storage
                 .query(device_id, metric_name, start, end)
                 .await
@@ -1182,8 +1175,6 @@ impl DeviceService {
                     tracing::error!("Telemetry query failed for {}/{}: {}", device_id, metric_name, e);
                     DeviceError::Communication(format!("Telemetry query failed: {}", e))
                 })?;
-
-            tracing::debug!("Query returned {} points for {}/{}", points.len(), device_id, metric_name);
 
             Ok(points.into_iter().map(|p| (p.timestamp, p.value)).collect())
         } else {

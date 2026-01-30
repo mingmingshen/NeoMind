@@ -104,7 +104,12 @@ function ExecutionItem({ execution, isLatest, isRunning, onClick }: ExecutionIte
 
   return (
     <button
-      onClick={onClick}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        onClick()
+      }}
       className={cn(
         "w-full flex items-center gap-2 py-1.5 px-2 rounded transition-all text-left",
         isLatest ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/50 border border-transparent"
@@ -158,6 +163,56 @@ function formatTimestamp(timestamp: string | number): string {
   return `${days}d ago`
 }
 
+// Normalize decision_process: API may return it as JSON string or with situation_analysis as JSON string
+function normalizeDecisionProcess(raw: unknown): {
+  situation_analysis: string
+  reasoning_steps: Array<{ description: string; step_number?: number; output?: string }>
+  conclusion: string
+} | null {
+  if (raw == null) return null
+  let dp = raw
+  if (typeof dp === 'string') {
+    try {
+      dp = JSON.parse(dp) as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+  if (typeof dp !== 'object' || dp === null) return null
+  const obj = dp as Record<string, unknown>
+  let situation_analysis = (obj.situation_analysis as string) ?? ''
+  let conclusion = (obj.conclusion as string) ?? ''
+  let reasoning_steps = Array.isArray(obj.reasoning_steps) ? obj.reasoning_steps : []
+
+  // If situation_analysis looks like JSON (backend sent whole object as one field), parse and extract
+  if (typeof situation_analysis === 'string' && situation_analysis.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(situation_analysis) as Record<string, unknown>
+      situation_analysis = (parsed.situation_analysis as string) ?? situation_analysis
+      conclusion = (parsed.conclusion as string) ?? conclusion
+      if (Array.isArray(parsed.reasoning_steps)) reasoning_steps = parsed.reasoning_steps
+    } catch {
+      // keep as-is
+    }
+  }
+
+  const steps = reasoning_steps.map((s: unknown, i: number) => {
+    if (s && typeof s === 'object' && 'description' in s) {
+      return { description: (s as Record<string, unknown>).description as string, step_number: i + 1 }
+    }
+    if (s && typeof s === 'object' && 'output' in s) {
+      return { description: (s as Record<string, unknown>).output as string, step_number: i + 1 }
+    }
+    return { description: String(s), step_number: i + 1 }
+  })
+
+  return {
+    situation_analysis: situation_analysis || '',
+    reasoning_steps: steps,
+    conclusion: conclusion || '',
+  }
+}
+
 // Execution Detail Dialog
 interface ExecutionDetailDialogProps {
   execution: AgentExecution | null
@@ -180,9 +235,30 @@ function ExecutionDetailDialog({ execution, open, onClose }: ExecutionDetailDial
     }
   }, [open, execution])
 
+  const decisionProcess = detail?.decision_process != null ? normalizeDecisionProcess(detail.decision_process) : null
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] z-[1000]">
+      <DialogContent
+        className="max-w-2xl max-h-[80vh] z-[1000]"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+        }}
+        onPointerDownOutside={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        }}
+        onInteractOutside={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+        }}
+        onPointerDown={(e) => {
+          e.stopPropagation()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5" />
@@ -227,35 +303,39 @@ function ExecutionDetailDialog({ execution, open, onClose }: ExecutionDetailDial
               </div>
             )}
 
-            {/* Decision Process */}
-            {detail?.decision_process && (
+            {/* Decision Process - use normalized shape so JSON-string responses display correctly */}
+            {decisionProcess && (decisionProcess.situation_analysis || decisionProcess.conclusion || decisionProcess.reasoning_steps.length > 0) && (
               <div className="space-y-3">
                 <h4 className="text-sm font-medium flex items-center gap-2">
                   <Brain className="h-4 w-4" />
                   Decision Process
                 </h4>
                 <div className="space-y-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Situation Analysis</span>
-                    <p className="mt-1">{detail.decision_process.situation_analysis}</p>
-                  </div>
-                  {detail.decision_process.reasoning_steps?.length > 0 && (
+                  {decisionProcess.situation_analysis && (
+                    <div>
+                      <span className="text-muted-foreground">Situation Analysis</span>
+                      <p className="mt-1 whitespace-pre-wrap">{decisionProcess.situation_analysis}</p>
+                    </div>
+                  )}
+                  {decisionProcess.reasoning_steps.length > 0 && (
                     <div>
                       <span className="text-muted-foreground">Reasoning Steps</span>
                       <div className="mt-2 space-y-2">
-                        {detail.decision_process.reasoning_steps.map((step: any, i: number) => (
+                        {decisionProcess.reasoning_steps.map((step, i) => (
                           <div key={i} className="p-2 bg-muted/50 rounded">
-                            <span className="text-muted-foreground">Step {i + 1}:</span>
-                            <p className="mt-1">{step.description}</p>
+                            <span className="text-muted-foreground">Step {step.step_number ?? i + 1}:</span>
+                            <p className="mt-1 whitespace-pre-wrap">{step.description}</p>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
-                  <div>
-                    <span className="text-muted-foreground">Conclusion</span>
-                    <p className="mt-1">{detail.decision_process.conclusion}</p>
-                  </div>
+                  {decisionProcess.conclusion && (
+                    <div>
+                      <span className="text-muted-foreground">Conclusion</span>
+                      <p className="mt-1 whitespace-pre-wrap">{decisionProcess.conclusion}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -406,9 +486,11 @@ export function AgentMonitorWidget({
     setStageDetails(null)
     setCurrentThinking(null)
     setThinkingSteps([])
+    setAgent(null)  // Reset agent state when agentId changes
+    setExecutions([])  // Reset executions when agentId changes
     loadAgent()
     loadExecutions()
-  }, [loadAgent, loadExecutions])
+  }, [agentId])  // Depend on agentId directly, not callback functions
 
   // WebSocket for real-time updates
   useEvents({
@@ -507,54 +589,11 @@ export function AgentMonitorWidget({
     setDetailOpen(true)
   }
 
-  // Mock data for preview/edit mode when no agent is configured
-  const mockAgent: AiAgent = {
-    id: 'mock-agent-id',
-    name: editMode ? t('dashboardComponents:agentMonitorWidget.selectAgent') : 'Sample Agent',
-    status: 'Active',
-    description: 'Sample agent for preview',
-    created_at: String(Math.floor(Date.now() / 1000)),
-    last_execution_at: String(Math.floor(Date.now() / 1000) - 300),
-    execution_count: 12,
-    success_count: 10,
-    error_count: 2,
-    avg_duration_ms: 1500,
-  }
+  // Display agent and executions - show empty state when no data
+  const displayAgent = agent
+  const displayExecutions = executions
 
-  const mockExecutions: AgentExecution[] = [
-    {
-      id: 'mock-exec-1',
-      agent_id: agentId || 'mock-agent-id',
-      status: 'Completed',
-      trigger_type: 'manual',
-      timestamp: String(Math.floor(Date.now() / 1000) - 60),
-      duration_ms: 1250,
-    },
-    {
-      id: 'mock-exec-2',
-      agent_id: agentId || 'mock-agent-id',
-      status: 'Completed',
-      trigger_type: 'scheduled',
-      timestamp: String(Math.floor(Date.now() / 1000) - 420),
-      duration_ms: 1800,
-    },
-    {
-      id: 'mock-exec-3',
-      agent_id: agentId || 'mock-agent-id',
-      status: 'Failed',
-      trigger_type: 'manual',
-      timestamp: String(Math.floor(Date.now() / 1000) - 900),
-      duration_ms: 500,
-      error: 'Connection timeout',
-    },
-  ]
-
-  // In edit mode, always use mock data for preview
-  // In normal mode, use real agent data
-  const displayAgent = editMode ? mockAgent : agent
-  const displayExecutions = editMode ? mockExecutions : executions
-
-  // Calculate stats - from displayAgent or fallback to displayExecutions
+  // Calculate stats - from agent or executions
   const statsFromExecutions = displayExecutions.length > 0 ? {
     total: displayExecutions.length,
     success: displayExecutions.filter(e => e.status === 'Completed').length,
@@ -628,9 +667,9 @@ export function AgentMonitorWidget({
 
   return (
     <>
-      <div className={cn("bg-card rounded-lg border-0 shadow-sm overflow-hidden flex flex-col w-full h-full bg-background", className)}>
-        {/* Compact Header - Agent Info */}
-        <div className="px-3 py-2 border-b border-border/50 bg-muted/30 shrink-0">
+      <div className={cn("bg-card/50 backdrop-blur rounded-lg border-0 shadow-sm overflow-hidden flex flex-col w-full h-full", className)}>
+        {/* Compact Header - Agent Info (glass) */}
+        <div className="px-3 py-2 border-b border-border/50 bg-muted/30 backdrop-blur-sm shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className={cn(
@@ -676,10 +715,10 @@ export function AgentMonitorWidget({
           </div>
         </div>
 
-        {/* Compact Tabs List */}
-        <div className="px-2 pt-1.5 pb-0 shrink-0">
+        {/* Compact Tabs List (glass, same as header) */}
+        <div className="px-2 pt-1.5 pb-0 shrink-0 bg-muted/30 backdrop-blur-sm -mb-px">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as WidgetTab)} className="w-full">
-            <TabsList className="w-full justify-start bg-muted/30 h-7 px-0">
+            <TabsList className="w-full justify-start bg-transparent border-0 shadow-none h-7 px-0">
               <TabsTrigger value="overview" className="h-6 px-2 text-[10px] data-[state=active]:bg-background">
                 <Sparkles className="h-2.5 w-2.5 mr-1" />
                 Overview
@@ -705,14 +744,14 @@ export function AgentMonitorWidget({
           </Tabs>
         </div>
 
-        {/* Tab Content - minimal padding for full container fill */}
-        <div className="w-full flex-1 min-h-0 overflow-hidden px-2">
+        {/* Tab Content - glass background aligned with header/tabs */}
+        <div className="w-full flex-1 min-h-0 overflow-hidden px-2 pt-2 bg-muted/30 backdrop-blur-sm rounded-b-lg">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as WidgetTab)} className="w-full h-full flex flex-col">
             {/* Overview Tab Content */}
             <TabsContent value="overview" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              <div className="w-full flex flex-col h-full gap-2 overflow-hidden">
+              <div className="w-full flex flex-col h-full gap-2 overflow-hidden p-2">
                 {/* Compact Stats Bar */}
-                <div className="w-full flex items-center divide-x divide-border/50 border border-border/50 rounded bg-muted/20 shrink-0">
+                <div className="w-full flex items-center divide-x divide-border/50 border border-border/50 rounded bg-muted/30 shrink-0">
                   <div className="flex-1 px-2 py-1.5 text-center">
                     <div className="text-sm font-semibold tabular-nums">{executionCount}</div>
                     <div className="text-[8px] text-muted-foreground uppercase tracking-wide">Runs</div>
@@ -735,8 +774,8 @@ export function AgentMonitorWidget({
                 </div>
 
                 {/* Recent Executions */}
-                <div className="w-full flex-1 min-h-0 flex flex-col">
-                  <div className="w-full px-2 py-1 border-b border-border/30 flex items-center justify-between bg-muted/10 rounded-t shrink-0">
+                <div className="w-full flex-1 min-h-0 flex flex-col bg-background/50 rounded overflow-hidden">
+                  <div className="w-full px-2 py-1 border-b border-border/30 flex items-center justify-between rounded-t shrink-0">
                     <span className="text-[10px] font-medium">Recent</span>
                     <span className="text-[8px] text-muted-foreground">
                       {displayExecutions.slice(0, 5).length}
@@ -790,11 +829,13 @@ export function AgentMonitorWidget({
                     </div>
                   )}
 
-                  <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
+                  <ScrollArea className="flex-1 w-full">
                     {displayExecutions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <MoreHorizontal className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
-                        <p className="text-[10px] text-muted-foreground">No history</p>
+                      <div className="flex items-center justify-center h-full min-h-[120px] text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <MoreHorizontal className="h-6 w-6 text-muted-foreground opacity-50" />
+                          <p className="text-[10px] text-muted-foreground">No history</p>
+                        </div>
                       </div>
                     ) : (
                       <div className="w-full p-1 space-y-0.5">
@@ -816,19 +857,21 @@ export function AgentMonitorWidget({
 
             {/* History Tab Content */}
             <TabsContent value="history" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              <div className="w-full flex flex-col h-full overflow-hidden">
-                <div className="px-2 py-1 border-b border-border/30 flex items-center justify-between bg-muted/10 rounded-t shrink-0">
+              <div className="w-full flex flex-col h-full rounded overflow-hidden p-2">
+                <div className="px-2 py-1 border-b border-border/30 flex items-center justify-between rounded-t shrink-0">
                   <span className="text-[10px] font-medium">History</span>
                   <span className="text-[8px] text-muted-foreground">
                     {displayExecutions.length}
                   </span>
                 </div>
 
-                <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
+                <ScrollArea className="flex-1 w-full">
                   {displayExecutions.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-center">
-                      <MoreHorizontal className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
-                      <p className="text-[10px] text-muted-foreground">No history</p>
+                    <div className="flex items-center justify-center h-full min-h-[120px] text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <MoreHorizontal className="h-6 w-6 text-muted-foreground opacity-50" />
+                        <p className="text-[10px] text-muted-foreground">No history</p>
+                      </div>
                     </div>
                   ) : (
                     <div className="w-full p-1 space-y-0.5">
@@ -849,12 +892,12 @@ export function AgentMonitorWidget({
 
             {/* Memory Tab Content */}
             <TabsContent value="memory" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              <div className="w-full flex flex-col h-full overflow-hidden">
-                <div className="px-2 py-1 border-b border-border/30 flex items-center bg-muted/10 rounded-t shrink-0">
+              <div className="w-full flex flex-col h-full rounded overflow-hidden p-2">
+                <div className="px-2 py-1 border-b border-border/30 flex items-center rounded-t shrink-0">
                   <span className="text-[10px] font-medium">Memory</span>
                 </div>
 
-                <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
+                <ScrollArea className="flex-1 w-full">
                   {memoryLoading ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -927,9 +970,11 @@ export function AgentMonitorWidget({
                       {(!memory.state_variables || Object.keys(memory.state_variables).length === 0) &&
                        (!memory.learned_patterns || memory.learned_patterns.length === 0) &&
                        (!memory.trend_data || memory.trend_data.length === 0) && (
-                        <div className="flex flex-col items-center justify-center py-8 text-center">
-                          <Brain className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
-                          <p className="text-[10px] text-muted-foreground">No memory data</p>
+                        <div className="flex items-center justify-center h-full min-h-[120px] text-center">
+                          <div className="flex flex-col items-center gap-2">
+                            <Brain className="h-6 w-6 text-muted-foreground opacity-50" />
+                            <p className="text-[10px] text-muted-foreground">No memory data</p>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -945,9 +990,9 @@ export function AgentMonitorWidget({
 
             {/* Messages Tab Content */}
             <TabsContent value="messages" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              <div className="w-full flex flex-col h-full gap-1.5 overflow-hidden">
+              <div className="w-full flex flex-col h-full rounded overflow-hidden p-2">
                 {/* Header */}
-                <div className="w-full px-2 py-1 border flex items-center bg-muted/10 rounded shrink-0">
+                <div className="w-full px-2 py-1 border-b border-border/30 flex items-center rounded-t shrink-0">
                   <span className="text-[10px] font-medium">Messages</span>
                   {userMessages.length > 0 && (
                     <span className="text-[8px] text-muted-foreground ml-auto">
@@ -957,11 +1002,13 @@ export function AgentMonitorWidget({
                 </div>
 
                 {/* Messages list - scrollable */}
-                <ScrollArea className="flex-1 w-full border border-border/30 rounded">
+                <ScrollArea className="flex-1 w-full">
                   {userMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-center">
-                      <MessageSquare className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
-                      <p className="text-[10px] text-muted-foreground">No messages</p>
+                    <div className="flex items-center justify-center h-full min-h-[120px] text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <MessageSquare className="h-6 w-6 text-muted-foreground opacity-50" />
+                        <p className="text-[10px] text-muted-foreground">No messages</p>
+                      </div>
                     </div>
                   ) : (
                     <div className="w-full p-1.5 space-y-1">
@@ -980,7 +1027,7 @@ export function AgentMonitorWidget({
                 </ScrollArea>
 
                 {/* Send message input - compact */}
-                <div className="w-full border border-border/30 rounded p-1.5 shrink-0">
+                <div className="w-full border border-border/30 bg-muted/20 rounded p-1.5 shrink-0 mt-1.5">
                   <div className="flex gap-1.5">
                     <Textarea
                       placeholder="Send message..."

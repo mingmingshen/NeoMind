@@ -406,6 +406,27 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             use_when: vec!["用户要创建规则".to_string()],
         },
 
+        // delete_rule - actual tool name in registry
+        LlmToolDefinition {
+            name: "delete_rule".to_string(),
+            description: "删除指定的规则".to_string(),
+            aliases: vec![
+                "删除规则".to_string(),
+                "移除规则".to_string(),
+                "删除自动化".to_string(),
+            ],
+            required: vec!["rule_id".to_string()],
+            optional: HashMap::new(),
+            examples: vec![
+                Example {
+                    user_query: "删除规则123".to_string(),
+                    tool_call: "delete_rule(rule_id='123')".to_string(),
+                    explanation: "删除规则".to_string(),
+                },
+            ],
+            use_when: vec!["用户要删除规则".to_string()],
+        },
+
         // === Agent Tools ===
 
         // list_agents - actual tool name in registry

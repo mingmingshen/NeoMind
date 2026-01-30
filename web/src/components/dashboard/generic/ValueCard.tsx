@@ -198,17 +198,18 @@ export function ValueCard({
   const hasDataSource = dataSource !== undefined
 
   // Format the value with unit and prefix - uses raw data
-  // For arrays, use the last value (latest telemetry data)
+  // For arrays, use the first value (API returns data DESCENDING, so first is latest)
   // For objects, extract the 'value' property (handles both {value} and {time, value} formats)
   const formattedValue = useMemo(() => {
     if (error || data === null || data === undefined) {
       return '-'
     }
 
-    // If data is an array, get the last value (latest)
+    // If data is an array, get the first value (latest)
+    // Backend returns telemetry data sorted DESCENDING (newest first)
     let rawValue: unknown = data
     if (Array.isArray(data) && data.length > 0) {
-      rawValue = data[data.length - 1]
+      rawValue = data[0]
     }
 
     // If rawValue is an object, extract the value from various possible formats

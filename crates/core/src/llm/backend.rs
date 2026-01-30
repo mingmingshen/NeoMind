@@ -85,6 +85,10 @@ pub struct GenerationParams {
 
     /// Enable thinking/reasoning mode (for models that support it like qwen3-vl)
     pub thinking_enabled: Option<bool>,
+
+    /// Maximum context window size in tokens
+    /// CRITICAL for Qwen3: must be >= 16384 to avoid infinite repetition loops
+    pub max_context: Option<usize>,
 }
 
 impl Default for GenerationParams {
@@ -98,6 +102,7 @@ impl Default for GenerationParams {
             frequency_penalty: Some(0.0),
             presence_penalty: Some(0.0),
             thinking_enabled: None, // Let backend decide based on model capabilities
+            max_context: None,       // Let backend decide based on model capabilities
         }
     }
 }

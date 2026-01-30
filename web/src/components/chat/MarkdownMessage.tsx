@@ -10,6 +10,20 @@ interface MarkdownMessageProps {
 }
 
 /**
+ * Remove duplicated content when the same text appears twice in one message
+ * (e.g. model repetition or backend sending same chunk twice).
+ */
+function dedupeRepeatedContent(content: string): string {
+  const s = (content || '').trim()
+  if (s.length < 2) return content
+  const half = Math.floor(s.length / 2)
+  const first = s.slice(0, half)
+  const second = s.slice(half)
+  if (first === second) return first
+  return content
+}
+
+/**
  * Markdown message renderer with support for:
  * - GitHub Flavored Markdown (GFM) via remark-gfm
  * - Code blocks with syntax highlighting
@@ -17,6 +31,7 @@ interface MarkdownMessageProps {
  * - Styled for chat interface
  */
 export function MarkdownMessage({ content, className, variant = 'assistant' }: MarkdownMessageProps) {
+  const displayContent = dedupeRepeatedContent(content)
   const components: Components = {
     // Custom code block rendering
     pre: ({ node, className, children, ...props }) => (
@@ -81,7 +96,7 @@ export function MarkdownMessage({ content, className, variant = 'assistant' }: M
       data-variant={variant}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content}
+        {displayContent}
       </ReactMarkdown>
     </div>
   )

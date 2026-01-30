@@ -34,8 +34,8 @@ pub use dsl::{
 };
 
 pub use rule_gen::{
-    CreateResult, CreateRuleTool, DeviceInfo, GenerateRuleDslTool, RuleSummary as RuleGenSummary,
-    ValidateRuleDslTool, ValidationResult,
+    CreateResult, CreateRuleTool, DeleteResult, DeleteRuleTool, DeviceInfo, GenerateRuleDslTool,
+    RuleSummary as RuleGenSummary, ValidateRuleDslTool, ValidationResult,
 };
 
 pub use tool_search::{ToolSearchResult, ToolSearchTool};

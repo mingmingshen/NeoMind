@@ -21,3 +21,35 @@ model = "qwen3-vl:2b"
 [mqtt]
 mode = "embedded"
 port = 1883
+
+# ============================================================
+# 记忆系统配置 (可选)
+# ============================================================
+# 配置对话历史的存储和检索方式
+
+[memory]
+# 短期记忆：当前对话上下文
+max_short_term_messages = 100      # 最大消息数量
+max_short_term_tokens = 4000        # 最大token数
+
+# 中期记忆：最近对话历史，支持语义搜索
+max_mid_term_entries = 1000         # 最大对话条目数
+
+# 长期记忆：知识库和故障案例
+max_long_term_knowledge = 10000     # 最大知识条目数
+
+# 嵌入模型配置 (用于语义搜索)
+# 可选值: "simple" (默认/假嵌入), "ollama" (本地), "openai" (云服务)
+embedding_provider = "simple"
+# embedding_provider = "ollama"     # 使用Ollama嵌入模型
+# embedding_endpoint = "http://localhost:11434"
+# embedding_model = "nomic-embed-text"
+# embedding_api_key = "sk-xxx"     # OpenAI API密钥
+
+# 混合搜索配置 (结合语义搜索和BM25全文搜索)
+use_hybrid_search = true            # 启用混合搜索
+semantic_weight = 0.7               # 语义搜索权重 (0.0 - 1.0)
+bm25_weight = 0.3                   # BM25全文搜索权重 (0.0 - 1.0)
+
+# 嵌入维度 (仅simple嵌入有效)
+embedding_dim = 64

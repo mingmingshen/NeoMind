@@ -44,11 +44,11 @@ function mergeAssistantMessages(messages: Message[]): Message[] {
       if (nextMsg.role === 'assistant') {
         // Merge logic: if they should be merged based on content structure
         if (shouldMergeMessages(msg, nextMsg)) {
-          // Merge the two messages - combine all content
-          const mergedContent = (msg.content || '') + (nextMsg.content || '')
+          // Merge the two messages - combine content without duplicating when backend sent same content twice
+          const mergedContent = dedupeContentConcat(msg.content || '', nextMsg.content || '') || ''
           result.push({
             ...msg,
-            content: mergedContent || '', // Ensure content is at least empty string
+            content: mergedContent,
             // Keep tool_calls, thinking from the first message (it usually has them)
             tool_calls: msg.tool_calls || nextMsg.tool_calls,
             thinking: msg.thinking || nextMsg.thinking,
@@ -63,9 +63,10 @@ function mergeAssistantMessages(messages: Message[]): Message[] {
           // Special case: first message is plain content without tools/thinking
           // If next message has tools/thinking, this is a split response - merge them
           if (nextMsg.tool_calls || nextMsg.thinking) {
+            const mergedContent = dedupeContentConcat(msg.content || '', nextMsg.content || '') || ''
             result.push({
               ...msg,
-              content: msg.content + (nextMsg.content || ''),
+              content: mergedContent,
               tool_calls: nextMsg.tool_calls,
               thinking: nextMsg.thinking,
               timestamp: msg.timestamp,
@@ -82,6 +83,22 @@ function mergeAssistantMessages(messages: Message[]): Message[] {
   }
 
   return result
+}
+
+/**
+ * Combine two content strings without duplicating when backend sent the same content twice
+ * (e.g. thinking+tools+content in first message and content-only in second with same text).
+ */
+function dedupeContentConcat(a: string, b: string): string {
+  const x = (a || '').trim()
+  const y = (b || '').trim()
+  if (!y) return a || ''
+  if (!x) return b || ''
+  if (x === y) return a
+  if (x.endsWith(y)) return a
+  if (y.startsWith(x)) return b
+  if (x.includes(y)) return a
+  return (a || '') + (b || '')
 }
 
 /**
@@ -141,7 +158,7 @@ export const createSessionSlice: StateCreator<
   [],
   [],
   SessionSlice
-> = (set) => ({
+> = (set, get) => ({
   // Initial state
   sessionId: null,
   messages: [],
@@ -234,6 +251,13 @@ export const createSessionSlice: StateCreator<
   },
 
   switchSession: async (sessionId: string) => {
+    // Check if we're already on this session to avoid unnecessary API calls
+    const currentSessionId = get().sessionId
+    if (sessionId === currentSessionId) {
+      console.log(`[session] Already on session ${sessionId}, skipping switch`)
+      return
+    }
+
     // IMPORTANT: Update WebSocket FIRST before any API calls
     // This ensures any subsequent messages go to the correct session
     const { ws } = await import('@/lib/websocket')

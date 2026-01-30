@@ -210,7 +210,8 @@ impl TimeSeriesStorage {
         start_timestamp: i64,
         end_timestamp: i64,
     ) -> Result<Vec<DataPoint>, DeviceError> {
-        tracing::info!("TimeSeriesStorage::query: device_id={}, metric={}, start={}, end={}",
+        // Debug log for troubleshooting, not needed in production
+        tracing::debug!("TimeSeriesStorage::query: device_id={}, metric={}, start={}, end={}",
             device_id, metric, start_timestamp, end_timestamp);
 
         let result = self
@@ -224,7 +225,11 @@ impl TimeSeriesStorage {
                 ))
             })?;
 
-        tracing::debug!("query_range returned {} raw points for {}/{}", result.points.len(), device_id, metric);
+        // Only log if no points found (might indicate missing data)
+        if result.points.is_empty() {
+            tracing::debug!("No points found for {}/{} (timestamp range {} to {})",
+                device_id, metric, start_timestamp, end_timestamp);
+        }
 
         let filtered: Vec<DataPoint> = result
             .points
@@ -232,7 +237,7 @@ impl TimeSeriesStorage {
             .filter_map(DataPoint::from_storage)
             .collect();
 
-        tracing::debug!("After filter_map, {} points remain for {}/{}", filtered.len(), device_id, metric);
+        tracing::debug!("query result: {} points for {}/{}", filtered.len(), device_id, metric);
 
         Ok(filtered)
     }

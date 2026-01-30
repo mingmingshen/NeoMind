@@ -11,7 +11,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use edge_ai_rules::{
-    RuleEngine,
+    RuleEngine, RuleId,
     dsl::{ParsedRule, RuleCondition, RuleDslParser, RuleError},
 };
 use edge_ai_tools::{
@@ -545,6 +545,112 @@ impl Tool for CreateRuleTool {
             },
         }
     }
+}
+
+/// DeleteRule tool - deletes a rule by ID.
+pub struct DeleteRuleTool {
+    /// Rule engine
+    engine: Arc<RwLock<Option<Arc<RuleEngine>>>>,
+}
+
+impl DeleteRuleTool {
+    /// Create a new DeleteRule tool.
+    pub fn new() -> Self {
+        Self {
+            engine: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Set the rule engine.
+    pub async fn set_engine(&self, engine: Arc<RuleEngine>) {
+        let mut guard = self.engine.write().await;
+        *guard = Some(engine);
+    }
+
+    /// Delete a rule by ID.
+    async fn delete(&self, rule_id: &str) -> Result<DeleteResult, RuleError> {
+        let guard = self.engine.read().await;
+        let engine = guard
+            .as_ref()
+            .ok_or_else(|| RuleError::Validation("Rule engine not initialized".to_string()))?;
+
+        // First, get the rule name for the response message
+        let id = RuleId::from_string(rule_id)
+            .map_err(|_| RuleError::Validation(format!("Invalid rule ID: {}", rule_id)))?;
+
+        let rule_name = engine.get_rule(&id).await.map(|r| r.name.clone());
+
+        // Remove the rule
+        let removed = engine.remove_rule(&id).await?;
+
+        if removed {
+            Ok(DeleteResult {
+                success: true,
+                rule_id: rule_id.to_string(),
+                message: format!(
+                    "Rule '{}' deleted successfully",
+                    rule_name.as_deref().unwrap_or("Unknown")
+                ),
+            })
+        } else {
+            Ok(DeleteResult {
+                success: false,
+                rule_id: rule_id.to_string(),
+                message: format!("Rule '{}' not found", rule_id),
+            })
+        }
+    }
+}
+
+impl Default for DeleteRuleTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for DeleteRuleTool {
+    fn name(&self) -> &str {
+        "delete_rule"
+    }
+
+    fn description(&self) -> &str {
+        "Delete a rule by its ID. Use list_rules first to find the rule ID."
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "rule_id": string_property("The ID of the rule to delete (UUID format)")
+            }),
+            vec!["rule_id".to_string()],
+        )
+    }
+
+    async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
+        let rule_id = args["rule_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("rule_id must be a string".to_string()))?;
+
+        match self.delete(rule_id).await {
+            Ok(result) => match serde_json::to_value(result) {
+                Ok(value) => Ok(ToolOutput::success(value)),
+                Err(e) => Err(ToolError::Execution(format!("Failed to serialize delete result: {}", e))),
+            },
+            Err(e) => Err(ToolError::Execution(format!("Failed to delete rule: {}", e))),
+        }
+    }
+}
+
+/// Result of rule deletion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteResult {
+    /// Whether deletion succeeded
+    pub success: bool,
+    /// Deleted rule ID
+    pub rule_id: String,
+    /// Result message
+    pub message: String,
 }
 
 /// Validation result for DSL.

@@ -21,6 +21,12 @@ use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageIma
 use crate::error::{AgentError, Result};
 use crate::llm::LlmInterface;
 
+// Re-export compaction types for use in other modules
+pub use edge_ai_core::llm::compaction::{
+    CompactionConfig, MessagePriority,
+    // Note: estimate_tokens is defined locally below to use the tokenizer module
+};
+
 /// Configuration for stream processing safeguards
 ///
 /// These safeguards prevent infinite loops and excessive resource usage
@@ -478,6 +484,30 @@ fn should_return_directly(tool_results: &[(String, String)]) -> bool {
         .all(|(name, _)| SIMPLE_QUERY_TOOLS.contains(&name.as_str()))
 }
 
+/// Max length of tool result text to inject into Phase 2 prompt (avoid context overflow).
+const PHASE2_TOOL_RESULT_MAX_LEN: usize = 8000;
+
+/// Build Phase 2 user prompt with tool results explicitly included so the second LLM always sees them.
+fn build_phase2_prompt_with_tool_results(
+    original_question: Option<String>,
+    tool_call_results: &[(String, String)],
+) -> String {
+    let question = original_question.unwrap_or_else(|| "请总结以上工具执行结果，给出完整的回复。".to_string());
+    if tool_call_results.is_empty() {
+        return question;
+    }
+    let mut block = String::from("\n\n[工具执行结果]\n");
+    for (name, result) in tool_call_results {
+        let r = if result.len() > PHASE2_TOOL_RESULT_MAX_LEN {
+            format!("{}... (结果已截断，共{}字)", &result[..PHASE2_TOOL_RESULT_MAX_LEN], result.len())
+        } else {
+            result.clone()
+        };
+        block.push_str(&format!("{}: {}\n", name, r));
+    }
+    question + &block
+}
+
 /// Format tool results into a user-friendly response
 /// This avoids calling the LLM again after tool execution, preventing excessive thinking
 pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
@@ -777,42 +807,180 @@ fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
     result
 }
 
-/// === ANTHROPIC-STYLE IMPROVEMENT: Context Window with Tool Result Clearing ===
+/// === IMPROVED: Context Window with CompactionConfig ===
 ///
-/// Builds conversation context with:
-/// 1. Tool result clearing for old messages
-/// 2. Token-based windowing
-/// 3. Always keep recent messages for context continuity
+/// Builds conversation context using CompactionConfig for intelligent compaction:
+/// 1. Reserve tokens floor for generation
+/// 2. Tool result clearing for old messages
+/// 3. Token-based windowing with priority
+/// 4. Always keep recent messages for context continuity
 ///
 /// The `max_tokens` parameter allows dynamic context sizing based on the model's actual capacity.
 fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<AgentMessage> {
-    let compacted = compact_tool_results_stream(messages);
+    build_context_window_with_config(messages, max_tokens, &CompactionConfig::default())
+}
+
+/// Build context window with custom compaction configuration.
+///
+/// This function applies the compaction strategy to AgentMessage sequences,
+/// which are the primary message type used in the agent system.
+///
+/// ## Parameters
+/// - `messages`: The message history to compact
+/// - `max_tokens`: Maximum tokens available for history
+/// - `config`: Compaction configuration
+pub fn build_context_window_with_config(
+    messages: &[AgentMessage],
+    max_tokens: usize,
+    config: &CompactionConfig,
+) -> Vec<AgentMessage> {
+    // First, compact tool results
+    let compacted = compact_tool_results_stream_with_config(messages, config);
 
     let mut selected_messages = Vec::new();
     let mut current_tokens = 0;
-    const MIN_RECENT_MESSAGES: usize = 4;
 
     for msg in compacted.iter().rev() {
-        let msg_tokens = estimate_tokens(&msg.content);
+        let msg_tokens = estimate_message_tokens(&msg);
 
-        if current_tokens + msg_tokens > max_tokens {
-            let is_recent = selected_messages.len() < MIN_RECENT_MESSAGES;
-            if msg.role == "system" || msg.role == "user" || is_recent {
-                let max_len = (max_tokens - current_tokens) * 4;
-                if max_len > 100 {
-                    selected_messages.push(msg.clone());
-                    current_tokens += msg_tokens;
-                }
-            }
-            break;
+        // Calculate priority for this message
+        let priority = message_priority(&msg.role);
+        let is_recent = selected_messages.len() < config.min_recent_messages;
+
+        // Always keep system messages and recent messages
+        let should_keep = priority == MessagePriority::System || is_recent;
+
+        if !should_keep && current_tokens + msg_tokens > max_tokens {
+            // Budget exceeded, skip this message
+            continue;
         }
 
-        selected_messages.push(msg.clone());
-        current_tokens += msg_tokens;
+        // Truncate long messages if needed
+        let final_msg = if msg_tokens > config.max_message_length {
+            truncate_agent_message(msg, config.max_message_length)
+        } else {
+            msg.clone()
+        };
+
+        current_tokens += estimate_message_tokens(&final_msg);
+        selected_messages.push(final_msg);
     }
 
     selected_messages.reverse();
     selected_messages
+}
+
+/// Get the priority for an AgentMessage role.
+fn message_priority(role: &str) -> MessagePriority {
+    match role {
+        "system" => MessagePriority::System,
+        "user" => MessagePriority::User,
+        "assistant" => MessagePriority::Assistant,
+        _ => MessagePriority::Tool,
+    }
+}
+
+/// Estimate tokens for an AgentMessage including thinking and tool calls.
+fn estimate_message_tokens(msg: &AgentMessage) -> usize {
+    let mut tokens = estimate_tokens(&msg.content);
+
+    // Add tokens for thinking content
+    if let Some(thinking) = &msg.thinking {
+        tokens += estimate_tokens(thinking);
+    }
+
+    // Add tokens for tool calls
+    if let Some(tool_calls) = &msg.tool_calls {
+        for tool_call in tool_calls {
+            let args_str = tool_call.arguments.to_string();
+            tokens += 10 + estimate_tokens(&args_str);
+        }
+    }
+
+    // Add tokens for images (rough estimate)
+    if let Some(images) = &msg.images {
+        if !images.is_empty() {
+            tokens += 85 * images.len();
+        }
+    }
+
+    tokens
+}
+
+/// Truncate an AgentMessage's content to fit within max length.
+fn truncate_agent_message(msg: &AgentMessage, max_len: usize) -> AgentMessage {
+    let mut truncated = msg.clone();
+
+    if msg.content.len() > max_len {
+        // Truncate at word boundary
+        let truncated_content = if let Some(last_space) = msg.content[..max_len].rfind(' ') {
+            format!("{}...", &msg.content[..last_space])
+        } else {
+            format!("{}...", &msg.content[..max_len])
+        };
+        truncated.content = truncated_content;
+    }
+
+    // Also truncate thinking if present
+    if let Some(thinking) = &truncated.thinking {
+        if thinking.len() > max_len / 2 {
+            truncated.thinking = Some(if let Some(last_space) = thinking[..max_len / 2].rfind(' ') {
+                format!("{}...", &thinking[..last_space])
+            } else {
+                format!("{}...", &thinking[..max_len / 2])
+            });
+        }
+    }
+
+    truncated
+}
+
+/// Compact tool results with custom configuration.
+fn compact_tool_results_stream_with_config(
+    messages: &[AgentMessage],
+    config: &CompactionConfig,
+) -> Vec<AgentMessage> {
+    if !config.compact_tool_results {
+        return messages.to_vec();
+    }
+
+    let mut result = Vec::new();
+    let mut tool_result_count = 0;
+
+    for msg in messages.iter().rev() {
+        if msg.role == "user" || msg.role == "system" {
+            result.push(msg.clone());
+            continue;
+        }
+
+        // Check if this is a tool response
+        if msg.tool_call_id.is_some() && msg.role == "assistant" {
+            tool_result_count += 1;
+
+            if tool_result_count <= config.keep_recent_tool_results {
+                result.push(msg.clone());
+            } else {
+                // Summarize old tool result
+                let tool_name = msg.tool_call_name.as_deref().unwrap_or("tool");
+                let summary_msg = AgentMessage {
+                    role: "assistant".to_string(),
+                    content: format!("[Previously called tool: {}]", tool_name),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    tool_call_name: None,
+                    thinking: None,
+                    images: None,
+                    timestamp: msg.timestamp,
+                };
+                result.push(summary_msg);
+            }
+        } else {
+            result.push(msg.clone());
+        }
+    }
+
+    result.reverse();
+    result
 }
 
 /// Process a user message with streaming response.
@@ -953,17 +1121,17 @@ pub async fn process_stream_events_with_safeguards(
     };
 
     // === COMPLEX INTENT DETECTION FOR MULTI-ROUND TOOL CALLING ===
-    // Complex intents require multi-step tool calling (e.g., conditional actions)
-    // Examples: "如果温度超过30度就打开空调", "查询设备状态并记录"
-    let is_complex_intent = is_complex_multi_step_intent(&user_message);
+    // Use LLM-based detection for reliability (slower but more accurate)
+    // This helps determine if we need multiple rounds of tool calling
+    let is_complex_intent = detect_complex_intent_with_llm(&llm_interface, &user_message).await;
 
     tracing::info!(
-        "Complex intent detection: is_complex={}, message={}",
+        "Complex intent detection (LLM-based): is_complex={}, message={}",
         is_complex_intent,
         user_message.chars().take(50).collect::<String>()
     );
 
-    // === FIX 1: Get conversation history and pass to LLM ===
+    // === Get conversation history and pass to LLM ===
     // This prevents the LLM from repeating actions or calling tools again
     // Pure async - no block_in_place
     let state_guard = internal_state.read().await;
@@ -1131,9 +1299,29 @@ pub async fn process_stream_events_with_safeguards(
                     .map(|msg| msg.to_core())
                     .collect::<Vec<_>>();
 
+                // Build context for subsequent rounds - tell LLM what happened before
+                let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|s| s.as_str()).collect();
+                let context_msg = if recently_executed.is_empty() {
+                    format!(
+                        "这是处理用户请求的第 {} 轮。请继续处理，如果需要更多信息请使用工具，如果已完成请给出最终回复。",
+                        tool_iteration_count + 1
+                    )
+                } else {
+                    format!(
+                        "这是处理用户请求的第 {} 轮。之前已执行的工具有: {}。\n\
+                        请分析这些工具的结果，决定是否需要:\n\
+                        1. 继续调用其他工具（如果还需要更多信息）\n\
+                        2. 给出最终回复（如果已有足够信息完成任务）",
+                        tool_iteration_count + 1,
+                        recently_executed.join(", ")
+                    )
+                };
+
+                tracing::info!("Multi-round context: {}", context_msg);
+
                 // Use tools enabled, no thinking for subsequent rounds
                 let round_stream_result = llm_interface.chat_stream_no_thinking_with_history(
-                    "请继续处理之前的工具执行结果。如果需要更多工具调用，请使用工具。如果任务完成，请给出最终回复。",
+                    &context_msg,
                     &history_for_llm
                 ).await;
 
@@ -1607,6 +1795,25 @@ pub async fn process_stream_events_with_safeguards(
                     .collect::<Vec<_>>();
                 drop(state_guard);
 
+                // Extract the user question that triggered this round (most recent real user message).
+                // Skip tool-result messages (they are converted to User with content "[Tool: ... returned]\n...").
+                let original_user_question = history_messages.iter()
+                    .rev()
+                    .find(|msg| {
+                        if msg.role != edge_ai_core::MessageRole::User {
+                            return false;
+                        }
+                        let text = msg.content.as_text();
+                        !text.starts_with("[Tool:")
+                    })
+                    .and_then(|msg| {
+                        if let edge_ai_core::Content::Text(text) = &msg.content {
+                            Some(text.clone())
+                        } else {
+                            None
+                        }
+                    });
+
                 if history_messages.len() > 6 {
                     let keep_count = 6;
                     tracing::info!("Trimming history from {} to {} messages",
@@ -1615,37 +1822,21 @@ pub async fn process_stream_events_with_safeguards(
                     history_messages = history_messages.split_off(split_idx);
                 }
 
-                // Direct return for simple query tools
-                let simple_query_tools = ["list_devices", "list_rules", "list_workflows", "list_alerts"];
-                let is_simple_query = tool_call_results.len() == 1
-                    && simple_query_tools.contains(&tool_call_results[0].0.as_str());
-
-                if is_simple_query {
-                    let (_tool_name, result_str) = &tool_call_results[0];
-                    if let Ok(json_val) = serde_json::from_str::<Value>(result_str) {
-                        let final_text = if let Some(devices) = json_val.get("devices").and_then(|d| d.as_array()) {
-                            format!("已找到 {} 个设备。", devices.len())
-                        } else if let Some(rules) = json_val.get("rules").and_then(|r| r.as_array()) {
-                            format!("已找到 {} 条规则。", rules.len())
-                        } else if let Some(workflows) = json_val.get("workflows").and_then(|w| w.as_array()) {
-                            format!("已找到 {} 个工作流。", workflows.len())
-                        } else {
-                            "查询完成。".to_string()
-                        };
-
-                        yield AgentEvent::content(final_text.clone());
-                        let final_msg = AgentMessage::assistant(&final_text);
-                        internal_state.write().await.push_message(final_msg);
-                        yield AgentEvent::end();
-                        return;
-                    }
-                }
-
-                // Phase 2 LLM call for follow-up
+                // === PHASE 2: Generate follow-up response ===
+                // Always use Phase 2 for proper summarization, even for simple queries
+                // This ensures consistent, high-quality responses
                 tracing::info!("Phase 2: Generating follow-up response");
 
+                // Build Phase 2 prompt with tool results explicitly included so the second LLM
+                // always receives them (history alone can be dropped or mishandled by backends).
+                let phase2_prompt = build_phase2_prompt_with_tool_results(
+                    original_user_question.clone(),
+                    &tool_call_results,
+                );
+                tracing::info!("Phase 2 prompt length: {} chars (with tool results)", phase2_prompt.len());
+
                 let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
-                    "请根据工具执行结果生成简洁的回复。", &history_messages
+                    &phase2_prompt, &history_messages
                 ).await;
 
                 let followup_stream = match followup_stream_result {
@@ -1680,6 +1871,16 @@ pub async fn process_stream_events_with_safeguards(
                                 continue;
                             }
                             if !is_thinking {
+                                // Skip duplicate chunks (model repetition: same error/text sent twice)
+                                let ct = chunk.trim();
+                                if !ct.is_empty() {
+                                    if final_response_content.ends_with(ct) {
+                                        continue;
+                                    }
+                                    if ct.len() > 30 && final_response_content.contains(ct) {
+                                        continue;
+                                    }
+                                }
                                 yield AgentEvent::content(chunk.clone());
                                 final_response_content.push_str(&chunk);
                             }
@@ -2085,6 +2286,39 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                 .collect::<Vec<_>>();
             drop(state_guard);
 
+            // Extract the user question that triggered this round (most recent real user message).
+            // Skip tool-result messages (they are converted to User with content "[Tool: ... returned]\n...").
+            let original_user_question = history_messages.iter()
+                .rev()
+                .find(|msg| {
+                    if msg.role != edge_ai_core::MessageRole::User {
+                        return false;
+                    }
+                    let text = msg.content.as_text();
+                    !text.starts_with("[Tool:")
+                })
+                .and_then(|msg| {
+                    if let edge_ai_core::Content::Text(text) = &msg.content {
+                        Some(text.clone())
+                    } else if let edge_ai_core::Content::Parts(parts) = &msg.content {
+                        // For multimodal messages, extract the text part
+                        let text_parts: Vec<String> = parts.iter().filter_map(|p| {
+                            if let edge_ai_core::ContentPart::Text { text: t } = p {
+                                Some(t.clone())
+                            } else {
+                                None
+                            }
+                        }).collect();
+                        if text_parts.is_empty() {
+                            None
+                        } else {
+                            Some(text_parts.join(" "))
+                        }
+                    } else {
+                        None
+                    }
+                });
+
             if history_messages.len() > 6 {
                 let keep_count = 6;
                 tracing::info!("Trimming history from {} to {} messages", history_messages.len(), keep_count);
@@ -2093,10 +2327,16 @@ pub async fn process_multimodal_stream_events_with_safeguards(
             // Phase 2: Generate follow-up response (no tools, no thinking)
             tracing::info!("Phase 2: Generating follow-up response (multimodal)");
 
-            // Note: The history includes the user's image (if provided), so the model
-            // can see and analyze it in this follow-up response.
+            // Build Phase 2 prompt with tool results explicitly included so the second LLM
+            // always receives them (history alone can be dropped or mishandled by backends).
+            let phase2_prompt = build_phase2_prompt_with_tool_results(
+                original_user_question.clone(),
+                &tool_call_results,
+            );
+            tracing::info!("Phase 2 prompt (multimodal) length: {} chars (with tool results)", phase2_prompt.len());
+
             let followup_stream_result = llm_interface.chat_stream_no_tools_no_thinking_with_history(
-                "用户可能上传了图片。请结合工具执行结果和图片内容（如有）生成简洁、有用的回复。", &history_messages
+                &phase2_prompt, &history_messages
             ).await;
 
             let followup_stream = match followup_stream_result {
@@ -2131,6 +2371,16 @@ pub async fn process_multimodal_stream_events_with_safeguards(
                             continue;
                         }
                         if !is_thinking {
+                            // Skip duplicate chunks (model repetition: same error/text sent twice)
+                            let ct = chunk.trim();
+                            if !ct.is_empty() {
+                                if final_response_content.ends_with(ct) {
+                                    continue;
+                                }
+                                if ct.len() > 30 && final_response_content.contains(ct) {
+                                    continue;
+                                }
+                            }
                             yield AgentEvent::content(chunk.clone());
                             final_response_content.push_str(&chunk);
                         }
@@ -2192,9 +2442,52 @@ pub async fn process_multimodal_stream_events_with_safeguards(
     }))
 }
 
-/// Detect if the user's intent requires multi-step tool calling.
-/// Complex intents include conditional logic, chained operations, etc.
-fn is_complex_multi_step_intent(message: &str) -> bool {
+/// Detect if the user's intent requires multi-step tool calling using LLM analysis.
+/// This is more reliable than keyword matching and can understand nuanced requests.
+async fn detect_complex_intent_with_llm(
+    llm_interface: &LlmInterface,
+    user_message: &str,
+) -> bool {
+    let detection_prompt = format!(
+        "分析以下用户请求是否需要**多步操作**才能完成。
+
+用户请求: {}
+
+判断标准（满足任一即返回 true）:
+1. 条件判断: 如 \"如果A则B\"，\"当温度超过X时做Y\"
+2. 链式操作: 如 \"先查询A，然后基于结果做B\"
+3. 多个独立操作: 如 \"同时检查A和B\"
+4. 需要分析后决定: 如 \"看看设备状态，如果有问题就告警\"
+
+**只需要回答\"true\"或\"false\"，小写，不要其他内容。**",
+        user_message
+    );
+
+    match llm_interface.chat_without_tools(&detection_prompt).await {
+        Ok(response) => {
+            let response_text = &response.text;
+            let response_lower = response_text.to_lowercase();
+            let is_complex = response_lower.contains("true")
+                || response_lower.contains("是")
+                || response_lower.contains("yes")
+                || response_lower.contains("多步")
+                || response_lower.contains("需要多次");
+            tracing::info!("LLM complex intent detection: message='{}' => response='{}' => is_complex={}",
+                user_message.chars().take(50).collect::<String>(),
+                response_text.chars().take(50).collect::<String>(),
+                is_complex);
+            is_complex
+        }
+        Err(e) => {
+            tracing::warn!("LLM complex intent detection failed: {}, falling back to keyword matching", e);
+            // Fallback to keyword-based detection if LLM call fails
+            is_complex_multi_step_intent_fallback(user_message)
+        }
+    }
+}
+
+/// Fallback keyword-based complex intent detection (used when LLM detection fails).
+fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
     let complex_patterns = [
         // Conditional patterns
         ("如果", "就"),
@@ -2204,10 +2497,10 @@ fn is_complex_multi_step_intent(message: &str) -> bool {
         // Chained operation patterns
         ("查询", "然后"),
         ("检查", "之后"),
+        ("根据", "然后"),
         // Multiple operation indicators
         ("并且", ""),
         ("同时", ""),
-        ("和", ""),
     ];
 
     let lower = message.to_lowercase();
@@ -2218,14 +2511,7 @@ fn is_complex_multi_step_intent(message: &str) -> bool {
                 return true;
             }
         } else if lower.contains(first) {
-            // Check if message has multiple verbs indicating multiple steps
-            let verb_count = ["查询", "检查", "执行", "打开", "关闭", "启动", "停止"]
-                .iter()
-                .filter(|v| lower.contains(*v))
-                .count();
-            if verb_count > 1 {
-                return true;
-            }
+            return true;
         }
     }
 
@@ -2289,6 +2575,7 @@ fn resolve_tool_name(simplified_name: &str) -> String {
         // It should keep its name as it's registered as "rule.from_context" in core_tools
         // Note: "rule.create" is an alias for create_rule
         "rule.create" => "create_rule".to_string(),
+        "rule.delete" => "delete_rule".to_string(),
         // These tools are registered with their simplified names
         "rule.from_context" => "rule.from_context".to_string(),
         "rule.enable" => "enable_rule".to_string(),

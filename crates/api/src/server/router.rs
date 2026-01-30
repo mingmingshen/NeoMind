@@ -210,6 +210,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/devices/:id/metrics/list",
             get(devices::list_device_metrics_debug_handler),
         )
+        .route(
+            "/api/devices/:id/metrics/analyze",
+            get(devices::analyze_metric_timestamps_handler),
+        )
         // Device Types API
         .route("/api/device-types", get(devices::list_device_types_handler))
         .route(

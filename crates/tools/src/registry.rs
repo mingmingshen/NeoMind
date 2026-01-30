@@ -359,6 +359,11 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::real::ListRulesTool::new(engine)))
     }
 
+    /// Add the delete rule tool with real rule engine.
+    pub fn with_real_delete_rule_tool(self, engine: Arc<edge_ai_rules::RuleEngine>) -> Self {
+        self.with_tool(Arc::new(super::real::DeleteRuleTool::new(engine)))
+    }
+
     /// Add the device analyze tool with real device service and storage.
     pub fn with_real_device_analyze_tool(
         self,

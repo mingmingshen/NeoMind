@@ -179,22 +179,20 @@ fn default_category() -> String {
     "best_practice".to_string()
 }
 
-/// Global memory instance shared across all handlers.
-fn get_global_memory() -> Arc<tokio::sync::RwLock<TieredMemory>> {
-    use std::sync::OnceLock;
-    static MEMORY: OnceLock<Arc<tokio::sync::RwLock<TieredMemory>>> = OnceLock::new();
-    MEMORY
-        .get_or_init(|| Arc::new(tokio::sync::RwLock::new(TieredMemory::new())))
-        .clone()
+/// Get memory from server state.
+/// Note: This function is kept for backwards compatibility but handlers
+/// should prefer using State(state).memory directly for proper configuration.
+fn get_global_memory(state: &ServerState) -> Arc<tokio::sync::RwLock<TieredMemory>> {
+    state.memory.clone()
 }
 
 /// Get memory statistics.
 ///
 /// GET /api/memory/stats
 pub async fn get_memory_stats_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let stats = mem.get_stats().await;
 
@@ -212,10 +210,10 @@ pub async fn get_memory_stats_handler(
 ///
 /// GET /api/memory/query?q=temperature&top_k=5
 pub async fn query_memory_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Query(params): Query<MemoryQueryParams>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let results = mem.query_all(&params.q, params.top_k).await;
 
@@ -233,10 +231,10 @@ pub async fn query_memory_handler(
 ///
 /// POST /api/memory/consolidate/:session_id
 pub async fn consolidate_memory_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Path(session_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     mem.consolidate(&session_id)
         .await
@@ -254,9 +252,9 @@ pub async fn consolidate_memory_handler(
 ///
 /// GET /api/memory/short-term
 pub async fn get_short_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let messages = mem.get_short_term();
 
@@ -270,10 +268,10 @@ pub async fn get_short_term_handler(
 ///
 /// POST /api/memory/short-term
 pub async fn add_short_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Json(req): Json<AddShortTermMemoryRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mut mem = memory.write().await;
     mem.add_message(&req.role, &req.content)
         .map_err(|e| ErrorResponse::internal(format!("Failed to add message: {}", e)))?;
@@ -290,9 +288,9 @@ pub async fn add_short_term_handler(
 ///
 /// DELETE /api/memory/short-term
 pub async fn clear_short_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mut mem = memory.write().await;
     mem.clear_short_term();
 
@@ -307,10 +305,10 @@ pub async fn clear_short_term_handler(
 ///
 /// GET /api/memory/mid-term/:session_id
 pub async fn get_session_history_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Path(session_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let entries = mem.get_session_history(&session_id).await;
 
@@ -325,10 +323,10 @@ pub async fn get_session_history_handler(
 ///
 /// POST /api/memory/mid-term
 pub async fn add_mid_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Json(req): Json<AddMidTermMemoryRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     mem.add_conversation(&req.session_id, &req.user_input, &req.assistant_response)
         .await
@@ -344,10 +342,10 @@ pub async fn add_mid_term_handler(
 ///
 /// GET /api/memory/mid-term/search?q=query&top_k=5
 pub async fn search_mid_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Query(params): Query<MemoryQueryParams>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let results = mem.search_mid_term(&params.q, params.top_k).await;
 
@@ -362,9 +360,9 @@ pub async fn search_mid_term_handler(
 ///
 /// DELETE /api/memory/mid-term
 pub async fn clear_mid_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     mem.clear_mid_term().await;
 
@@ -379,10 +377,10 @@ pub async fn clear_mid_term_handler(
 ///
 /// GET /api/memory/long-term/search?q=query
 pub async fn search_knowledge_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Query(params): Query<MemoryQueryParams>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let results = mem.search_knowledge(&params.q).await;
 
@@ -397,10 +395,10 @@ pub async fn search_knowledge_handler(
 ///
 /// GET /api/memory/long-term/category/:category
 pub async fn get_knowledge_by_category_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Path(category): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let cat = KnowledgeCategory::from_str(&category);
     let results = mem.get_knowledge_by_category(&cat).await;
@@ -416,10 +414,10 @@ pub async fn get_knowledge_by_category_handler(
 ///
 /// GET /api/memory/long-term/device/:device_id
 pub async fn get_device_knowledge_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Path(device_id): Path<String>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let results = mem.get_device_knowledge(&device_id).await;
 
@@ -434,11 +432,11 @@ pub async fn get_device_knowledge_handler(
 ///
 /// GET /api/memory/long-term/popular?n=10
 pub async fn get_popular_knowledge_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Query(params): Query<serde_json::Value>,
 ) -> HandlerResult<serde_json::Value> {
     let n = params.get("n").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let results = mem.get_popular_knowledge(n).await;
 
@@ -452,10 +450,10 @@ pub async fn get_popular_knowledge_handler(
 ///
 /// POST /api/memory/long-term
 pub async fn add_knowledge_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
     Json(req): Json<AddKnowledgeRequest>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     let category = KnowledgeCategory::from_str(&req.category);
 
@@ -476,9 +474,9 @@ pub async fn add_knowledge_handler(
 ///
 /// DELETE /api/memory/long-term
 pub async fn clear_long_term_handler(
-    State(_state): State<ServerState>,
+    State(state): State<ServerState>,
 ) -> HandlerResult<serde_json::Value> {
-    let memory = get_global_memory();
+    let memory = get_global_memory(&state);
     let mem = memory.read().await;
     mem.clear_long_term().await;
 

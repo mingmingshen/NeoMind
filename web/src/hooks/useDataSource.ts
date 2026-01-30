@@ -127,6 +127,30 @@ async function fetchHistoricalTelemetry(
       const metricData = response.data[metricId]
 
       if (Array.isArray(metricData) && metricData.length > 0) {
+        // Debug: log the first and last items with timestamps
+        const getTimestamp = (point: unknown): number => {
+          if (typeof point === 'object' && point !== null) {
+            const p = point as unknown as Record<string, unknown>
+            const timestamp = p.timestamp ?? p.time ?? p.t
+            if (typeof timestamp === 'number') return timestamp
+          }
+          return Date.now() / 1000
+        }
+
+        const firstTimestamp = getTimestamp(metricData[0])
+        const lastTimestamp = getTimestamp(metricData[metricData.length - 1])
+
+        console.log('[fetchHistoricalTelemetry]', {
+          deviceId,
+          metricId,
+          itemCount: metricData.length,
+          firstTimestamp,
+          firstTime: new Date(firstTimestamp * 1000).toISOString(),
+          lastTimestamp,
+          lastTime: new Date(lastTimestamp * 1000).toISOString(),
+          queryEnd: new Date(now).toISOString(),
+        })
+
         // Helper to extract value from a point
         const extractValue = (point: unknown): number => {
           if (typeof point === 'number') return point
@@ -158,36 +182,37 @@ async function fetchHistoricalTelemetry(
         const allValues = metricData.map(extractValue).filter((v: number) => typeof v === 'number' && !isNaN(v))
 
         // Apply aggregation
+        // NOTE: API returns data in DESCENDING order (newest first: index 0 = newest)
         let values: number[]
         let rawPoints: any[] | undefined
 
         if (aggregate === 'latest') {
-          // Return only the last value
-          const lastValue = allValues[allValues.length - 1] ?? 0
-          values = [lastValue]
+          // Return only the newest value (index 0 in descending order)
+          const newValue = allValues[0] ?? 0
+          values = [newValue]
           // Create a single raw point with the original value (could be string, number, etc.)
           if (includeRawPoints) {
-            const lastPoint = metricData[metricData.length - 1]
+            const newPoint = metricData[0]
             // Extract the raw value preserving its type
-            const rawValue = typeof lastPoint === 'object' && lastPoint !== null
-              ? (lastPoint as unknown as Record<string, unknown>).value ?? (lastPoint as unknown as Record<string, unknown>).v ?? lastPoint
-              : lastPoint
+            const rawValue = typeof newPoint === 'object' && newPoint !== null
+              ? (newPoint as unknown as Record<string, unknown>).value ?? (newPoint as unknown as Record<string, unknown>).v ?? newPoint
+              : newPoint
             rawPoints = [{
-              timestamp: extractTimestamp(lastPoint),
+              timestamp: extractTimestamp(newPoint),
               value: rawValue,
             }]
           }
         } else if (aggregate === 'first') {
-          // Return only the first value
-          const firstValue = allValues[0] ?? 0
-          values = [firstValue]
+          // Return only the oldest value (last index in descending order)
+          const oldValue = allValues[allValues.length - 1] ?? 0
+          values = [oldValue]
           if (includeRawPoints) {
-            const firstPoint = metricData[0]
-            const rawValue = typeof firstPoint === 'object' && firstPoint !== null
-              ? (firstPoint as unknown as Record<string, unknown>).value ?? (firstPoint as unknown as Record<string, unknown>).v ?? firstPoint
-              : firstPoint
+            const oldPoint = metricData[metricData.length - 1]
+            const rawValue = typeof oldPoint === 'object' && oldPoint !== null
+              ? (oldPoint as unknown as Record<string, unknown>).value ?? (oldPoint as unknown as Record<string, unknown>).v ?? oldPoint
+              : oldPoint
             rawPoints = [{
-              timestamp: extractTimestamp(firstPoint),
+              timestamp: extractTimestamp(oldPoint),
               value: rawValue,
             }]
           }
@@ -209,10 +234,11 @@ async function fetchHistoricalTelemetry(
           const sum = allValues.reduce((a, b) => a + b, 0)
           values = [sum]
         } else if (aggregate === 'delta') {
-          // Return change (last - first)
-          const first = allValues[0] ?? 0
-          const last = allValues[allValues.length - 1] ?? 0
-          values = [last - first]
+          // Return change (newest - oldest)
+          // With descending order: allValues[0] = newest, allValues[length-1] = oldest
+          const newValue = allValues[0] ?? 0
+          const oldValue = allValues[allValues.length - 1] ?? 0
+          values = [newValue - oldValue]
         } else if (aggregate === 'count') {
           // Return count
           values = [allValues.length]
@@ -817,12 +843,16 @@ export function useDataSource<T = unknown>(
 
     let shouldUpdate = false
 
-    // Update store for device metric events
+    // Update store for device metric events: use metric name as property so
+    // current_values[metricName] = value (e.g. current_values.temperature = 23.5)
     if (isDeviceMetricEvent && hasDeviceId) {
       const deviceId = eventData.device_id as string
       const store = useStore.getState()
+      if ('metric' in eventData && 'value' in eventData) {
+        store.updateDeviceMetric(deviceId, eventData.metric as string, eventData.value)
+      }
       for (const [key, value] of Object.entries(eventData)) {
-        if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id') {
+        if (key !== 'device_id' && key !== 'timestamp' && key !== 'type' && key !== 'id' && key !== 'metric' && key !== 'value') {
           store.updateDeviceMetric(deviceId, key, value)
         }
       }
@@ -1199,12 +1229,26 @@ export function useDataSource<T = unknown>(
           return { dataSource: ds, latestValue, deviceId: ds.deviceId, metricId }
         })
 
+        console.log('[useDataSource] Store merge check:', {
+          hasStoreValues: telemetryDataSourcesWithStore.some((item) => item.latestValue !== undefined),
+          storeItems: telemetryDataSourcesWithStore.map((item) => ({
+            deviceId: item.deviceId,
+            metricId: item.metricId,
+            hasLatestValue: item.latestValue !== undefined,
+          })),
+        })
+
         // If we have latest values from store, merge them with API data
         // This ensures real-time updates even when API data is delayed
         if (telemetryDataSourcesWithStore.some((item) => item.latestValue !== undefined)) {
           // Ensure finalData is an array
           let rawDataArray = Array.isArray(finalData) ? [...finalData] : []
           const now = Math.floor(Date.now() / 1000)
+
+          console.log('[useDataSource] Before store merge:', {
+            rawDataArrayLength: rawDataArray.length,
+            firstItemTimestamp: rawDataArray[0] && typeof rawDataArray[0] === 'object' ? rawDataArray[0].timestamp : 'N/A',
+          })
 
           for (const storeItem of telemetryDataSourcesWithStore) {
             if (storeItem.latestValue === undefined) continue
@@ -1213,19 +1257,32 @@ export function useDataSource<T = unknown>(
             const maxTime = now
             const maxLimit = telemetryDataSources[0].limit ?? 100
 
-            // Always add the latest store value at the end
-            // This ensures components like ImageDisplay get the most recent value via extractImageValue
+            // Add the latest store value at the BEGINNING (index 0)
+            // API returns data in DESCENDING order (newest first), so newest goes at index 0
             const newPoint = {
-              time: maxTime,
+              timestamp: maxTime,  // Use 'timestamp' to match API data format
               value: latestValue,
             }
 
-            // Add to array and trim to limit
-            rawDataArray.push(newPoint)
+            console.log('[useDataSource] Adding store value:', {
+              deviceId: storeItem.deviceId,
+              metricId: storeItem.metricId,
+              newPointTimestamp: newPoint.timestamp,
+              newPointTime: new Date(newPoint.timestamp * 1000).toISOString(),
+            })
+
+            // Add to beginning and trim to limit
+            rawDataArray.unshift(newPoint)
             if (rawDataArray.length > maxLimit) {
-              rawDataArray = rawDataArray.slice(-maxLimit)
+              // Keep only the first maxLimit items (newest items in descending order)
+              rawDataArray = rawDataArray.slice(0, maxLimit)
             }
           }
+
+          console.log('[useDataSource] After store merge:', {
+            rawDataArrayLength: rawDataArray.length,
+            firstItemTimestamp: rawDataArray[0]?.timestamp,
+          })
 
           finalData = rawDataArray
         }

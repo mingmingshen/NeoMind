@@ -371,9 +371,18 @@ impl Tool for ControlDeviceTool {
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
         self.validate_args(&args)?;
 
-        let device_id = args["device_id"]
+        let device_id_param = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id must be a string".to_string()))?;
+
+        let device_id = resolve_device_id(self.service.as_ref(), device_id_param)
+            .await
+            .ok_or_else(|| {
+                ToolError::Execution(format!(
+                    "Device not found: \"{}\". Use list_devices to see valid device IDs and names.",
+                    device_id_param
+                ))
+            })?;
 
         let command = args["command"]
             .as_str()
@@ -381,7 +390,7 @@ impl Tool for ControlDeviceTool {
 
         // === 离线设备优雅降级处理 ===
         // 检查设备连接状态，如果设备离线则提供友好错误信息
-        let connection_status = self.service.get_device_connection_status(device_id).await;
+        let connection_status = self.service.get_device_connection_status(&device_id).await;
 
         use edge_ai_devices::adapter::ConnectionStatus;
         match connection_status {
@@ -392,9 +401,9 @@ impl Tool for ControlDeviceTool {
                 return Ok(ToolOutput::success_with_metadata(
                     serde_json::json!({
                         "status": "skipped",
-                        "device_id": device_id,
+                        "device_id": &device_id,
                         "command": command,
-                        "message": format!("设备 '{}' 当前离线，命令已跳过", device_id),
+                        "message": format!("设备 '{}' 当前离线，命令已跳过", &device_id),
                         "suggestion": "请检查设备连接或设备状态后再试"
                     }),
                     serde_json::json!({
@@ -408,9 +417,9 @@ impl Tool for ControlDeviceTool {
                 return Ok(ToolOutput::success_with_metadata(
                     serde_json::json!({
                         "status": "skipped",
-                        "device_id": device_id,
+                        "device_id": &device_id,
                         "command": command,
-                        "message": format!("设备 '{}' 正在连接中，请稍后再试", device_id),
+                        "message": format!("设备 '{}' 正在连接中，请稍后再试", &device_id),
                         "suggestion": "等待设备连接完成后重试"
                     }),
                     serde_json::json!({
@@ -424,9 +433,9 @@ impl Tool for ControlDeviceTool {
                 return Ok(ToolOutput::success_with_metadata(
                     serde_json::json!({
                         "status": "skipped",
-                        "device_id": device_id,
+                        "device_id": &device_id,
                         "command": command,
-                        "message": format!("设备 '{}' 正在重连中，请稍后再试", device_id),
+                        "message": format!("设备 '{}' 正在重连中，请稍后再试", &device_id),
                         "suggestion": "等待设备重连完成后重试"
                     }),
                     serde_json::json!({
@@ -454,10 +463,10 @@ impl Tool for ControlDeviceTool {
         }
 
         // Send command to device using DeviceService
-        match self.service.send_command(device_id, command, params).await {
+        match self.service.send_command(&device_id, command, params).await {
             Ok(_) => Ok(ToolOutput::success(serde_json::json!({
                 "status": "success",
-                "device_id": device_id,
+                "device_id": &device_id,
                 "command": command,
                 "message": "Command sent successfully"
             }))),
@@ -466,7 +475,7 @@ impl Tool for ControlDeviceTool {
                 Ok(ToolOutput::success_with_metadata(
                     serde_json::json!({
                         "status": "error",
-                        "device_id": device_id,
+                        "device_id": &device_id,
                         "command": command,
                         "message": format!("命令执行失败: {}", e),
                         "suggestion": "请检查设备状态和网络连接后重试"
@@ -851,6 +860,131 @@ impl Tool for ListRulesTool {
     }
 }
 
+/// Tool for deleting rules using real rule engine.
+pub struct DeleteRuleTool {
+    engine: Arc<RuleEngine>,
+}
+
+impl DeleteRuleTool {
+    /// Create a new delete rule tool with real engine.
+    pub fn new(engine: Arc<RuleEngine>) -> Self {
+        Self { engine }
+    }
+}
+
+#[async_trait]
+impl Tool for DeleteRuleTool {
+    fn name(&self) -> &str {
+        "delete_rule"
+    }
+
+    fn description(&self) -> &str {
+        r#"删除指定的自动化规则。
+
+## 使用场景
+- 删除不再需要的规则
+- 清理测试或临时规则
+- 规则管理维护
+
+## 重要提示
+- 删除操作不可撤销
+- 删除前建议使用 list_rules 查看规则列表
+- 需要提供规则的完整ID"#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "rule_id": string_property("要删除的规则ID（完整的UUID格式）")
+            }),
+            vec!["rule_id".to_string()],
+        )
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters(),
+            example: Some(ToolExample {
+                arguments: serde_json::json!({
+                    "rule_id": "rule_123"
+                }),
+                result: serde_json::json!({
+                    "success": true,
+                    "rule_id": "rule_123",
+                    "message": "Rule deleted successfully"
+                }),
+                description: "删除指定的自动化规则".to_string(),
+            }),
+            category: edge_ai_core::tools::ToolCategory::Rule,
+            scenarios: vec![],
+            relationships: edge_ai_core::tools::ToolRelationships::default(),
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
+            examples: vec![ToolExample {
+                arguments: serde_json::json!({
+                    "rule_id": "rule_123"
+                }),
+                result: serde_json::json!({
+                    "success": true,
+                    "rule_id": "rule_123",
+                    "message": "Rule deleted successfully"
+                }),
+                description: "删除指定的规则".to_string(),
+            }],
+            response_format: Some("concise".to_string()),
+            namespace: Some("rule".to_string()),
+        }
+    }
+
+    fn namespace(&self) -> Option<&str> {
+        Some("rule")
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        self.validate_args(&args)?;
+
+        let rule_id = args["rule_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("rule_id must be a string".to_string()))?;
+
+        // Parse the rule ID
+        let id = edge_ai_rules::RuleId::from_string(rule_id)
+            .map_err(|_| ToolError::InvalidArguments(format!("Invalid rule ID format: {}", rule_id)))?;
+
+        // Get rule name before deletion for the message
+        let rule_name = self
+            .engine
+            .get_rule(&id)
+            .await
+            .map(|r| r.name.clone())
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        // Delete the rule
+        let removed = self
+            .engine
+            .remove_rule(&id)
+            .await
+            .map_err(|e| ToolError::Execution(format!("Failed to delete rule: {}", e)))?;
+
+        if removed {
+            Ok(ToolOutput::success(serde_json::json!({
+                "success": true,
+                "rule_id": rule_id,
+                "message": format!("规则 '{}' 已删除", rule_name)
+            })))
+        } else {
+            Ok(ToolOutput::success(serde_json::json!({
+                "success": false,
+                "rule_id": rule_id,
+                "message": format!("规则 '{}' 不存在", rule_id)
+            })))
+        }
+    }
+}
+
 /// Tool for querying rule execution history.
 pub struct QueryRuleHistoryTool {
     history: Arc<edge_ai_rules::RuleHistoryStorage>,
@@ -988,6 +1122,37 @@ impl Tool for QueryRuleHistoryTool {
     }
 }
 
+/// Resolve user input (device ID, name, or nickname like "ne101") to the actual device_id.
+/// - Tries exact ID match first, then exact name match, then fuzzy (name or id contains input).
+async fn resolve_device_id(service: &DeviceService, param: &str) -> Option<String> {
+    let param = param.trim();
+    if param.is_empty() {
+        return None;
+    }
+    // 1. Exact ID match
+    if service.get_device(param).await.is_some() {
+        return Some(param.to_string());
+    }
+    // 2. Exact name match
+    if let Some(config) = service.get_device_by_name(param).await {
+        return Some(config.device_id);
+    }
+    // 3. Fuzzy: name or id contains param (e.g. "ne101" matches name "ne101 test" or id containing "ne101")
+    let param_lower = param.to_lowercase();
+    let devices = service.list_devices().await;
+    // Prefer exact name match, then name contains, then id contains
+    if let Some(d) = devices.iter().find(|d| d.name.to_lowercase() == param_lower) {
+        return Some(d.device_id.clone());
+    }
+    if let Some(d) = devices.iter().find(|d| d.name.to_lowercase().contains(&param_lower)) {
+        return Some(d.device_id.clone());
+    }
+    if let Some(d) = devices.iter().find(|d| d.device_id.to_lowercase().contains(&param_lower)) {
+        return Some(d.device_id.clone());
+    }
+    None
+}
+
 /// Tool for getting all current device data (simplified interface).
 ///
 /// This tool provides a simpler interface than query_data - it doesn't require
@@ -1034,7 +1199,7 @@ impl Tool for GetDeviceDataTool {
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
-                "device_id": string_property("设备ID，例如：sensor_1, temp_sensor_02")
+                "device_id": string_property("设备ID或设备名称/代称，例如：sensor_1、ne101、ne101 test。支持名称模糊匹配。")
             }),
             vec!["device_id".to_string()],
         )
@@ -1100,14 +1265,24 @@ impl Tool for GetDeviceDataTool {
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
         self.validate_args(&args)?;
 
-        let device_id = args["device_id"]
+        let device_id_param = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id must be a string".to_string()))?;
+
+        // Resolve device_id: user may pass ID, exact name, or nickname (e.g. "ne101" for "ne101 test")
+        let device_id = resolve_device_id(self.service.as_ref(), device_id_param)
+            .await
+            .ok_or_else(|| {
+                ToolError::Execution(format!(
+                    "Device not found: \"{}\". Use list_devices to see valid device IDs and names.",
+                    device_id_param
+                ))
+            })?;
 
         // Try to get device info first
         let (device_config, device_template) = self
             .service
-            .get_device_with_template(device_id)
+            .get_device_with_template(&device_id)
             .await
             .map_err(|e| ToolError::Execution(format!("Device not found: {}", e)))?;
 
@@ -1120,7 +1295,7 @@ impl Tool for GetDeviceDataTool {
                 let metric_name = &metric_def.name;
 
                 // Try to get the latest value from storage
-                if let Ok(Some(point)) = self.storage.latest(device_id, metric_name).await {
+                if let Ok(Some(point)) = self.storage.latest(&device_id, metric_name).await {
                     let value_json = match point.value {
                         edge_ai_devices::MetricValue::Float(v) => serde_json::json!(v),
                         edge_ai_devices::MetricValue::Integer(v) => serde_json::json!(v),
@@ -1174,10 +1349,10 @@ impl Tool for GetDeviceDataTool {
             }
         } else {
             // Template has no defined metrics - try to list actual metrics from storage
-            if let Ok(actual_metrics) = self.storage.list_metrics(device_id).await {
+            if let Ok(actual_metrics) = self.storage.list_metrics(&device_id).await {
                 if !actual_metrics.is_empty() {
                     for metric_name in actual_metrics {
-                        if let Ok(Some(point)) = self.storage.latest(device_id, &metric_name).await {
+                        if let Ok(Some(point)) = self.storage.latest(&device_id, &metric_name).await {
                             let value_json = match point.value {
                                 edge_ai_devices::MetricValue::Float(v) => serde_json::json!(v),
                                 edge_ai_devices::MetricValue::Integer(v) => serde_json::json!(v),
@@ -1220,19 +1395,19 @@ impl Tool for GetDeviceDataTool {
                 } else {
                     return Err(ToolError::Execution(format!(
                         "No data available for device '{}'. The device may not be reporting data.",
-                        device_id
+                        &device_id
                     )));
                 }
             } else {
                 return Err(ToolError::Execution(format!(
                     "Cannot retrieve data for device '{}'. Device may be offline or not configured.",
-                    device_id
+                    &device_id
                 )));
             }
         }
 
         Ok(ToolOutput::success(serde_json::json!({
-            "device_id": device_id,
+            "device_id": &device_id,
             "device_name": device_config.name,
             "device_type": device_config.device_type,
             "metrics": metrics_data,

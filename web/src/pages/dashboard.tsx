@@ -166,6 +166,8 @@ export function DashboardPage() {
   const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  // Track the ID of the last assistant message for tool call result updates
+  const [lastAssistantMessageId, setLastAssistantMessageId] = useState<string | null>(null)
 
   // Image upload state
   const [attachedImages, setAttachedImages] = useState<ChatImage[]>([])
@@ -182,6 +184,7 @@ export function DashboardPage() {
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
   const streamingToolCallsRef = useRef<any[]>([])
+  const isStreamingRef = useRef(false)
 
   // Load LLM backends and sessions on mount
   useEffect(() => {
@@ -263,6 +266,11 @@ export function DashboardPage() {
     scrollToBottom()
   }, [messages, streamingContent, scrollToBottom])
 
+  // Sync isStreaming ref with state
+  useEffect(() => {
+    isStreamingRef.current = isStreaming
+  }, [isStreaming])
+
   // Handle WebSocket events
   useEffect(() => {
     const handleMessage = (data: ServerMessage) => {
@@ -292,20 +300,43 @@ export function DashboardPage() {
         }
 
         case "ToolCallEnd": {
-          setStreamingToolCalls(prev =>
-            prev.map(tc =>
+          setStreamingToolCalls(prev => {
+            const updated = prev.map(tc =>
               tc.name === data.tool
                 ? { ...tc, result: data.result }
                 : tc
             )
-          )
+            // Also update the ref for consistency
+            streamingToolCallsRef.current = updated
+
+            // If not streaming (stream ended before tool execution),
+            // update the saved assistant message's tool_calls
+            if (!isStreamingRef.current && lastAssistantMessageId) {
+              const lastMessage = messages.find(m => m.id === lastAssistantMessageId)
+              if (lastMessage && lastMessage.role === "assistant" && lastMessage.tool_calls) {
+                const updatedToolCalls = lastMessage.tool_calls.map(tc =>
+                  tc.name === data.tool
+                    ? { ...tc, result: data.result }
+                    : tc
+                )
+                // Update the message in store
+                addMessage({
+                  ...lastMessage,
+                  tool_calls: updatedToolCalls
+                })
+              }
+            }
+
+            return updated
+          })
           break
         }
 
         case "end":
           if (streamingContentRef.current || streamingThinkingRef.current || streamingToolCallsRef.current.length > 0) {
+            const messageId = streamingMessageIdRef.current || crypto.randomUUID()
             const completeMessage: Message = {
-              id: streamingMessageIdRef.current || crypto.randomUUID(),
+              id: messageId,
               role: "assistant",
               content: streamingContentRef.current,
               timestamp: Date.now(),
@@ -313,6 +344,8 @@ export function DashboardPage() {
               tool_calls: streamingToolCallsRef.current.length > 0 ? streamingToolCallsRef.current : undefined,
             }
             addMessage(completeMessage)
+            // Track this message for potential tool call result updates
+            setLastAssistantMessageId(messageId)
           }
           setIsStreaming(false)
           setStreamingContent("")
@@ -330,7 +363,8 @@ export function DashboardPage() {
 
         case "session_created":
         case "session_switched":
-          if (data.sessionId) {
+          // Only switch if it's a different session to avoid unnecessary API calls
+          if (data.sessionId && data.sessionId !== sessionId) {
             switchSession(data.sessionId)
           }
           break
@@ -339,7 +373,7 @@ export function DashboardPage() {
 
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, switchSession])
+  }, [addMessage, switchSession, lastAssistantMessageId, messages, sessionId])
 
   // Send message - in welcome mode, create session and navigate
   const handleSend = async () => {
@@ -376,6 +410,8 @@ export function DashboardPage() {
     setAttachedImages([])
     setIsStreaming(true)
     streamingMessageIdRef.current = crypto.randomUUID()
+    // Reset last assistant message ID (new response incoming)
+    setLastAssistantMessageId(null)
 
     ws.sendMessage(trimmedInput, attachedImages.length > 0 ? attachedImages : undefined)
 
