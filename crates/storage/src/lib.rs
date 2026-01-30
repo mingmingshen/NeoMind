@@ -114,6 +114,8 @@ pub use agents::{
     // Conversation types
     ConversationTurn, TurnInput, TurnOutput,
     UserMessage,
+    // Hierarchical memory types
+    WorkingMemory, ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory,
 };
 
 pub use decisions::{

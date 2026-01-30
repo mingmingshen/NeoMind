@@ -208,30 +208,395 @@ impl Default for AgentStats {
     }
 }
 
-/// Persistent memory for an agent across executions.
+/// Hierarchical memory for an agent across executions.
+///
+/// Based on MemGPT/Letta architecture with three tiers:
+/// - Working Memory: Current execution context (ephemeral)
+/// - Short-Term Memory: Recent compressed summaries (time-bounded)
+/// - Long-Term Memory: Important patterns and knowledge (retrieval-based)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentMemory {
-    /// State variables
+    /// Working memory - current execution context
+    #[serde(default)]
+    pub working: WorkingMemory,
+    /// Short-term memory - recent compressed summaries
+    #[serde(default)]
+    pub short_term: ShortTermMemory,
+    /// Long-term memory - important patterns and knowledge
+    #[serde(default)]
+    pub long_term: LongTermMemory,
+    /// Legacy state variables (for backward compatibility)
+    #[serde(default)]
     pub state_variables: HashMap<String, serde_json::Value>,
-    /// Learned patterns
+    /// Legacy learned patterns (migrated to long_term)
+    #[serde(default)]
     pub learned_patterns: Vec<LearnedPattern>,
     /// Historical baselines
+    #[serde(default)]
     pub baselines: HashMap<String, f64>,
     /// Trend data points (for analysis)
+    #[serde(default)]
     pub trend_data: Vec<TrendPoint>,
     /// Last memory update
     pub updated_at: i64,
 }
 
+/// Working memory - current execution context.
+///
+/// Stores ephemeral data for the current execution only.
+/// Automatically cleared after each execution.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WorkingMemory {
+    /// Current analysis results (this execution only)
+    #[serde(default)]
+    pub current_analysis: Option<String>,
+    /// Current conclusion (this execution only)
+    #[serde(default)]
+    pub current_conclusion: Option<String>,
+    /// Current decisions being considered
+    #[serde(default)]
+    pub pending_decisions: Vec<serde_json::Value>,
+    /// Temporary data collection for this execution
+    #[serde(default)]
+    pub temp_data: HashMap<String, serde_json::Value>,
+    /// Timestamp when this working memory was created
+    #[serde(default)]
+    pub created_at: i64,
+}
+
+/// Short-term memory - recent compressed summaries.
+///
+/// Stores the last N executions in compressed form.
+/// Automatically archived to long-term memory when full.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ShortTermMemory {
+    /// Compressed summaries of recent executions
+    #[serde(default)]
+    pub summaries: Vec<MemorySummary>,
+    /// Maximum number of summaries to keep
+    #[serde(default = "default_short_term_limit")]
+    pub max_summaries: usize,
+    /// Timestamp of last archival
+    #[serde(default)]
+    pub last_archived_at: Option<i64>,
+}
+
+/// Long-term memory - important patterns and knowledge.
+///
+/// Stores high-value memories with importance scoring.
+/// Retrieved using RAG-style semantic matching.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LongTermMemory {
+    /// Important memories with importance scores
+    #[serde(default)]
+    pub memories: Vec<ImportantMemory>,
+    /// Learned patterns (high-confidence, reusable)
+    #[serde(default)]
+    pub patterns: Vec<LearnedPattern>,
+    /// Maximum number of memories to keep
+    #[serde(default = "default_long_term_limit")]
+    pub max_memories: usize,
+    /// Minimum importance score for retention
+    #[serde(default = "default_min_importance")]
+    pub min_importance: f32,
+}
+
+/// A compressed memory summary for short-term storage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySummary {
+    /// Timestamp of this summary
+    pub timestamp: i64,
+    /// Execution ID this summarizes
+    pub execution_id: String,
+    /// Compressed situation analysis
+    pub situation: String,
+    /// Compressed conclusion
+    pub conclusion: String,
+    /// Key decisions made
+    pub decisions: Vec<String>,
+    /// Success flag
+    pub success: bool,
+}
+
+/// An important memory for long-term storage with importance scoring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportantMemory {
+    /// Unique memory ID
+    pub id: String,
+    /// Memory type (pattern, anomaly, decision, knowledge)
+    pub memory_type: String,
+    /// Memory content (compressed)
+    pub content: String,
+    /// Importance score (0-1), higher is more important
+    pub importance: f32,
+    /// Creation timestamp
+    pub created_at: i64,
+    /// Last access timestamp (for LRU eviction)
+    pub last_accessed_at: i64,
+    /// Access count (for importance boost)
+    pub access_count: u64,
+    /// Associated metadata
+    pub metadata: HashMap<String, String>,
+}
+
+/// Default short-term memory limit (number of summaries).
+fn default_short_term_limit() -> usize { 10 }
+
+/// Default long-term memory limit (number of important memories).
+fn default_long_term_limit() -> usize { 50 }
+
+/// Default minimum importance score for long-term retention.
+fn default_min_importance() -> f32 { 0.3 }
+
 impl Default for AgentMemory {
     fn default() -> Self {
         Self {
+            working: WorkingMemory::default(),
+            short_term: ShortTermMemory::default(),
+            long_term: LongTermMemory::default(),
             state_variables: HashMap::new(),
             learned_patterns: Vec::new(),
             baselines: HashMap::new(),
             trend_data: Vec::new(),
             updated_at: chrono::Utc::now().timestamp(),
         }
+    }
+}
+
+// ========== Hierarchical Memory Methods ==========
+
+impl AgentMemory {
+    /// Add a memory summary to short-term memory.
+    /// Automatically archives to long-term if capacity exceeded.
+    pub fn add_to_short_term(
+        &mut self,
+        execution_id: String,
+        situation: String,
+        conclusion: String,
+        decisions: Vec<String>,
+        success: bool,
+    ) {
+        let summary = MemorySummary {
+            timestamp: chrono::Utc::now().timestamp(),
+            execution_id,
+            situation,
+            conclusion,
+            decisions,
+            success,
+        };
+
+        self.short_term.summaries.push(summary);
+
+        // Check if we need to archive
+        if self.short_term.summaries.len() > self.short_term.max_summaries {
+            self.archive_to_long_term();
+        }
+
+        self.updated_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Archive old short-term memories to long-term memory.
+    /// Keeps only the most recent summaries in short-term.
+    pub fn archive_to_long_term(&mut self) {
+        let now = chrono::Utc::now().timestamp();
+        self.short_term.last_archived_at = Some(now);
+
+        // Keep only the most recent half in short-term
+        let keep_count = self.short_term.max_summaries / 2;
+        let drain_count = self.short_term.summaries.len().saturating_sub(keep_count);
+        let to_archive: Vec<_> = self.short_term.summaries
+            .drain(..drain_count)
+            .collect();
+
+        // Convert archived summaries to important memories
+        for summary in to_archive {
+            // Calculate importance based on multiple factors
+            let importance = self.calculate_importance(&summary);
+
+            // Only keep memories above threshold
+            if importance >= self.long_term.min_importance {
+                let memory = ImportantMemory {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    memory_type: if summary.success { "successful_execution" } else { "failed_execution" }.to_string(),
+                    content: format!("{} -> {}", summary.situation, summary.conclusion),
+                    importance,
+                    created_at: summary.timestamp,
+                    last_accessed_at: now,
+                    access_count: 0,
+                    metadata: {
+                        let mut meta = HashMap::new();
+                        meta.insert("execution_id".to_string(), summary.execution_id.clone());
+                        meta.insert("success".to_string(), summary.success.to_string());
+                        if !summary.decisions.is_empty() {
+                            meta.insert("decisions".to_string(), summary.decisions.join("; "));
+                        }
+                        meta
+                    },
+                };
+                self.long_term.memories.push(memory);
+            }
+        }
+
+        // Prune long-term memory if needed
+        self.prune_long_term_memory();
+
+        tracing::debug!(
+            short_term_count = self.short_term.summaries.len(),
+            long_term_count = self.long_term.memories.len(),
+            "Archived short-term memories to long-term"
+        );
+    }
+
+    /// Calculate importance score for a memory summary.
+    /// Factors in: recency, success/failure, decision significance.
+    fn calculate_importance(&self, summary: &MemorySummary) -> f32 {
+        let mut importance = 0.5; // Base importance
+
+        // Boost for failed executions (learning opportunities)
+        if !summary.success {
+            importance += 0.2;
+        }
+
+        // Boost for summaries with decisions (actionable)
+        if !summary.decisions.is_empty() {
+            importance += 0.15;
+        }
+
+        // Time decay (older memories are less important unless accessed)
+        let age_hours = (chrono::Utc::now().timestamp() - summary.timestamp) as f32 / 3600.0;
+        let decay_factor = 1.0 / (1.0 + age_hours / 24.0); // Half-life of 24 hours
+        importance *= decay_factor;
+
+        // Clamp to [0, 1]
+        importance.clamp(0.0, 1.0)
+    }
+
+    /// Prune long-term memory to stay within capacity.
+    /// Removes low-importance and stale memories.
+    pub fn prune_long_term_memory(&mut self) {
+        if self.long_term.memories.len() <= self.long_term.max_memories {
+            return;
+        }
+
+        // Sort by: (1) low importance first, (2) old last_accessed_at
+        self.long_term.memories.sort_by(|a, b| {
+            // Prioritize keeping high-importance memories
+            match a.importance.partial_cmp(&b.importance) {
+                Some(std::cmp::Ordering::Equal) => {}
+                Some(ord) => return ord,
+                None => return std::cmp::Ordering::Equal,
+            }
+            // If equal importance, keep recently accessed ones
+            b.last_accessed_at.cmp(&a.last_accessed_at)
+        });
+
+        // Keep only the top memories
+        let keep_count = self.long_term.max_memories;
+        let removed_count = self.long_term.memories.len() - keep_count;
+        self.long_term.memories.truncate(keep_count);
+
+        tracing::debug!(
+            removed_count = removed_count,
+            remaining_count = self.long_term.memories.len(),
+            "Pruned long-term memory"
+        );
+    }
+
+    /// Retrieve relevant long-term memories based on keyword matching.
+    /// Simple RAG-like retrieval without vector embeddings.
+    /// Returns a vector of (memory_id, content) tuples for easy access.
+    pub fn retrieve_memories(&mut self, query: &str, limit: usize) -> Vec<(String, String)> {
+        let now = chrono::Utc::now().timestamp();
+        let query_lower = query.to_lowercase();
+
+        // First pass: Update access stats and compute scores
+        let mut scores: Vec<(usize, f32)> = self.long_term.memories
+            .iter()
+            .enumerate()
+            .map(|(idx, mem)| {
+                let mut score = mem.importance;
+                if mem.content.to_lowercase().contains(&query_lower)
+                    || mem.memory_type.to_lowercase().contains(&query_lower) {
+                    // Relevance boost
+                    score += 0.1;
+                }
+                (idx, score)
+            })
+            .collect();
+
+        // Sort by score (descending)
+        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Second pass: Update access stats for relevant memories and collect results
+        let results: Vec<(String, String)> = scores
+            .into_iter()
+            .take(limit)
+            .filter_map(|(idx, _)| {
+                let mem = &mut self.long_term.memories[idx];
+                if mem.content.to_lowercase().contains(&query_lower)
+                    || mem.memory_type.to_lowercase().contains(&query_lower) {
+                    mem.last_accessed_at = now;
+                    mem.access_count += 1;
+
+                    // Boost importance based on access frequency
+                    let access_boost = (mem.access_count as f32).log10() * 0.05;
+                    mem.importance = (mem.importance + access_boost).min(1.0);
+
+                    Some((mem.id.clone(), mem.content.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        results
+    }
+
+    /// Clear working memory (called after each execution).
+    pub fn clear_working(&mut self) {
+        self.working = WorkingMemory::default();
+    }
+
+    /// Store current analysis in working memory.
+    pub fn set_working_analysis(&mut self, analysis: String, conclusion: String) {
+        self.working.current_analysis = Some(analysis);
+        self.working.current_conclusion = Some(conclusion);
+        self.working.created_at = chrono::Utc::now().timestamp();
+    }
+
+    /// Add a pattern directly to long-term memory.
+    pub fn add_pattern(&mut self, pattern: LearnedPattern) {
+        // Check if similar pattern exists
+        let exists = self.long_term.patterns.iter().any(|p| {
+            p.pattern_type == pattern.pattern_type && p.description == pattern.description
+        });
+
+        if !exists && pattern.confidence >= 0.7 {
+            self.long_term.patterns.push(pattern);
+
+            // Prune patterns if needed
+            if self.long_term.patterns.len() > 15 {
+                self.long_term.patterns.sort_by(|a, b| {
+                    b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                self.long_term.patterns.truncate(15);
+            }
+        }
+    }
+
+    /// Get a summary of memory usage for debugging.
+    pub fn memory_usage_summary(&self) -> String {
+        format!(
+            "Working: {}, Short-term: {}/{}, Long-term: {}/{}, Patterns: {}, Trend points: {}, Baselines: {}",
+            if self.working.current_analysis.is_some() { "active" } else { "empty" },
+            self.short_term.summaries.len(),
+            self.short_term.max_summaries,
+            self.long_term.memories.len(),
+            self.long_term.max_memories,
+            self.long_term.patterns.len(),
+            self.trend_data.len(),
+            self.baselines.len()
+        )
     }
 }
 

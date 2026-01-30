@@ -119,10 +119,72 @@ struct ParsedIntentDto {
 /// Agent memory for API responses.
 #[derive(Debug, serde::Serialize)]
 struct AgentMemoryDto {
+    // Hierarchical memory structure
+    working: WorkingMemoryDto,
+    short_term: ShortTermMemoryDto,
+    long_term: LongTermMemoryDto,
+    // Legacy fields (backward compatibility)
     state_variables: serde_json::Value,
-    learned_patterns: Vec<String>,
+    learned_patterns: Vec<LearnedPatternDto>,
     trend_data: Vec<TrendPointDto>,
     updated_at: String,
+}
+
+/// Working memory for API responses.
+#[derive(Debug, serde::Serialize)]
+struct WorkingMemoryDto {
+    current_analysis: Option<String>,
+    current_conclusion: Option<String>,
+    created_at: String,
+}
+
+/// Short-term memory for API responses.
+#[derive(Debug, serde::Serialize)]
+struct ShortTermMemoryDto {
+    summaries: Vec<MemorySummaryDto>,
+    max_summaries: usize,
+    last_archived_at: Option<String>,
+}
+
+/// Long-term memory for API responses.
+#[derive(Debug, serde::Serialize)]
+struct LongTermMemoryDto {
+    memories: Vec<ImportantMemoryDto>,
+    patterns: Vec<LearnedPatternDto>,
+    max_memories: usize,
+    min_importance: f32,
+}
+
+/// Memory summary for API responses.
+#[derive(Debug, serde::Serialize)]
+struct MemorySummaryDto {
+    timestamp: String,
+    execution_id: String,
+    situation: String,
+    conclusion: String,
+    decisions: Vec<String>,
+    success: bool,
+}
+
+/// Important memory for API responses.
+#[derive(Debug, serde::Serialize)]
+struct ImportantMemoryDto {
+    id: String,
+    memory_type: String,
+    content: String,
+    importance: f32,
+    created_at: String,
+    access_count: u64,
+}
+
+/// Learned pattern for API responses.
+#[derive(Debug, serde::Serialize)]
+struct LearnedPatternDto {
+    id: String,
+    pattern_type: String,
+    description: String,
+    confidence: f32,
+    learned_at: String,
 }
 
 /// Trend point for API responses.
@@ -384,8 +446,50 @@ impl From<&AiAgent> for AgentDetailDto {
                 confidence: i.confidence,
             }),
             memory: Some(AgentMemoryDto {
+                working: WorkingMemoryDto {
+                    current_analysis: agent.memory.working.current_analysis.clone(),
+                    current_conclusion: agent.memory.working.current_conclusion.clone(),
+                    created_at: format_datetime(agent.memory.working.created_at),
+                },
+                short_term: ShortTermMemoryDto {
+                    summaries: agent.memory.short_term.summaries.iter().map(|s| MemorySummaryDto {
+                        timestamp: format_datetime(s.timestamp),
+                        execution_id: s.execution_id.clone(),
+                        situation: s.situation.clone(),
+                        conclusion: s.conclusion.clone(),
+                        decisions: s.decisions.clone(),
+                        success: s.success,
+                    }).collect(),
+                    max_summaries: agent.memory.short_term.max_summaries,
+                    last_archived_at: agent.memory.short_term.last_archived_at.map(format_datetime),
+                },
+                long_term: LongTermMemoryDto {
+                    memories: agent.memory.long_term.memories.iter().map(|m| ImportantMemoryDto {
+                        id: m.id.clone(),
+                        memory_type: m.memory_type.clone(),
+                        content: m.content.clone(),
+                        importance: m.importance,
+                        created_at: format_datetime(m.created_at),
+                        access_count: m.access_count,
+                    }).collect(),
+                    patterns: agent.memory.long_term.patterns.iter().map(|p| LearnedPatternDto {
+                        id: p.id.clone(),
+                        pattern_type: p.pattern_type.clone(),
+                        description: p.description.clone(),
+                        confidence: p.confidence,
+                        learned_at: format_datetime(p.learned_at),
+                    }).collect(),
+                    max_memories: agent.memory.long_term.max_memories,
+                    min_importance: agent.memory.long_term.min_importance,
+                },
                 state_variables: serde_json::to_value(&agent.memory.state_variables).unwrap_or(json!({})),
-                learned_patterns: agent.memory.learned_patterns.iter().map(|p| p.description.clone()).collect(),
+                learned_patterns: agent.memory.learned_patterns.iter().map(|p| LearnedPatternDto {
+                    id: p.id.clone(),
+                    pattern_type: p.pattern_type.clone(),
+                    description: p.description.clone(),
+                    confidence: p.confidence,
+                    learned_at: format_datetime(p.learned_at),
+                }).collect(),
                 trend_data: agent.memory.trend_data.iter().map(|t| TrendPointDto {
                     timestamp: t.timestamp,
                     metric: t.metric.clone(),
@@ -956,8 +1060,52 @@ pub async fn get_agent_memory(
         .ok_or_else(|| ErrorResponse::not_found(&format!("Agent not found: {}", id)))?;
 
     let memory = AgentMemoryDto {
+        // Hierarchical memory
+        working: WorkingMemoryDto {
+            current_analysis: agent.memory.working.current_analysis.clone(),
+            current_conclusion: agent.memory.working.current_conclusion.clone(),
+            created_at: format_datetime(agent.memory.working.created_at),
+        },
+        short_term: ShortTermMemoryDto {
+            summaries: agent.memory.short_term.summaries.iter().map(|s| MemorySummaryDto {
+                timestamp: format_datetime(s.timestamp),
+                execution_id: s.execution_id.clone(),
+                situation: s.situation.clone(),
+                conclusion: s.conclusion.clone(),
+                decisions: s.decisions.clone(),
+                success: s.success,
+            }).collect(),
+            max_summaries: agent.memory.short_term.max_summaries,
+            last_archived_at: agent.memory.short_term.last_archived_at.map(format_datetime),
+        },
+        long_term: LongTermMemoryDto {
+            memories: agent.memory.long_term.memories.iter().map(|m| ImportantMemoryDto {
+                id: m.id.clone(),
+                memory_type: m.memory_type.clone(),
+                content: m.content.clone(),
+                importance: m.importance,
+                created_at: format_datetime(m.created_at),
+                access_count: m.access_count,
+            }).collect(),
+            patterns: agent.memory.long_term.patterns.iter().map(|p| LearnedPatternDto {
+                id: p.id.clone(),
+                pattern_type: p.pattern_type.clone(),
+                description: p.description.clone(),
+                confidence: p.confidence,
+                learned_at: format_datetime(p.learned_at),
+            }).collect(),
+            max_memories: agent.memory.long_term.max_memories,
+            min_importance: agent.memory.long_term.min_importance,
+        },
+        // Legacy fields (backward compatibility)
         state_variables: serde_json::to_value(&agent.memory.state_variables).unwrap_or(json!({})),
-        learned_patterns: agent.memory.learned_patterns.iter().map(|p| p.description.clone()).collect(),
+        learned_patterns: agent.memory.learned_patterns.iter().map(|p| LearnedPatternDto {
+            id: p.id.clone(),
+            pattern_type: p.pattern_type.clone(),
+            description: p.description.clone(),
+            confidence: p.confidence,
+            learned_at: format_datetime(p.learned_at),
+        }).collect(),
         trend_data: agent.memory.trend_data.iter().map(|t| TrendPointDto {
             timestamp: t.timestamp,
             metric: t.metric.clone(),

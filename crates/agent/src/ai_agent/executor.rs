@@ -7,6 +7,8 @@ use edge_ai_storage::{
     GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType, LearnedPattern,
     // New conversation types
     ConversationTurn, TurnInput, TurnOutput,
+    // Hierarchical memory types
+    WorkingMemory, ShortTermMemory, LongTermMemory, MemorySummary, ImportantMemory,
     LlmBackendStore, LlmBackendInstance,
 };
 use edge_ai_devices::DeviceService;
@@ -359,6 +361,81 @@ fn should_compact_context(history_context: &str, threshold_chars: usize) -> bool
     // Rough estimation: 1 token ≈ 3 characters for Chinese/English mixed
     let estimated_tokens = history_context.chars().count() / 3;
     estimated_tokens > threshold_chars
+}
+
+/// Clean and truncate text to prevent storing repetitive/looping LLM output.
+/// - Detects and removes repetitive patterns (same phrase appearing 3+ times)
+/// - Truncates to max_chars
+/// - Removes common LLM artifacts (internal monologue, formatting codes)
+fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+
+    // First, check for obvious repetition patterns
+    // If a short phrase (10-50 chars) appears 3+ times, it's likely stuck in a loop
+    let chars: Vec<char> = text.chars().collect();
+    let char_count = chars.len();
+
+    // Quick check for extreme repetition (same char repeated > 50 times)
+    let mut streak = 1;
+    for i in 1..char_count.min(1000) {
+        if chars[i] == chars[i-1] {
+            streak += 1;
+            if streak > 50 {
+                // High repetition detected, truncate early
+                let truncated: String = chars.iter().take(i.saturating_sub(20)).collect();
+                return format!("{}...[内容过长，已截断]", truncated);
+            }
+        } else {
+            streak = 1;
+        }
+    }
+
+    // Check for phrase-level repetition using sliding window
+    let text_lower = text.to_lowercase();
+    for window_size in [10, 15, 20, 30, 50].iter() {
+        if char_count < *window_size * 3 {
+            continue;
+        }
+
+        let mut phrase_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for i in 0..=(char_count.saturating_sub(*window_size)) {
+            let phrase: String = chars.iter()
+                .skip(i)
+                .take(*window_size)
+                .collect::<String>()
+                .to_lowercase();
+
+            if !phrase.chars().all(|c| c.is_whitespace()) {
+                *phrase_counts.entry(phrase).or_insert(0) += 1;
+            }
+        }
+
+        // If any phrase appears 3+ times, truncate at first occurrence
+        for (phrase, count) in phrase_counts.iter() {
+            if *count >= 3 && phrase.len() > 10 {
+                // Find first occurrence and truncate
+                if let Some(pos) = text_lower.find(phrase) {
+                    let safe_pos = pos.saturating_sub(50);
+                    let truncated: String = chars.iter().take(safe_pos).collect();
+                    return if truncated.chars().count() > max_chars {
+                        format!("{}...", truncated.chars().take(max_chars).collect::<String>())
+                    } else {
+                        truncated
+                    };
+                }
+            }
+        }
+    }
+
+    // No repetition detected, just truncate if too long
+    if char_count > max_chars {
+        let truncated: String = chars.iter().take(max_chars).collect();
+        format!("{}...", truncated)
+    } else {
+        text.to_string()
+    }
 }
 
 /// Compact history context while preserving key information.
@@ -1654,12 +1731,16 @@ Respond in JSON format:
         let report = self.maybe_generate_report(&agent, &data_collected).await?;
 
         // Step 5: Update memory with learnings
+        // Determine success based on whether we had any major errors
+        let memory_success = true; // We got here successfully, update_memory will store the result
         let updated_memory = self.update_memory(
             &agent,
             &data_collected,
             &decisions,
             &situation_analysis,
             &conclusion,
+            &execution_id,
+            memory_success,
         ).await?;
 
         // Save updated memory
@@ -1675,12 +1756,37 @@ Respond in JSON format:
             reasoning_steps.iter().map(|s| s.confidence).sum::<f32>() / reasoning_steps.len() as f32
         };
 
+        // Truncate text fields before storing in DecisionProcess
+        // This prevents unbounded growth in storage (execution records accumulate)
+        let cleaned_situation = clean_and_truncate_text(&situation_analysis, 500);
+        let cleaned_conclusion = clean_and_truncate_text(&conclusion, 200);
+
+        // Clean reasoning step descriptions
+        let cleaned_steps: Vec<edge_ai_storage::ReasoningStep> = reasoning_steps
+            .into_iter()
+            .map(|mut step| {
+                step.description = clean_and_truncate_text(&step.description, 150);
+                step
+            })
+            .collect();
+
+        // Clean decision fields
+        let cleaned_decisions: Vec<edge_ai_storage::Decision> = decisions
+            .into_iter()
+            .map(|mut dec| {
+                dec.description = clean_and_truncate_text(&dec.description, 150);
+                dec.rationale = clean_and_truncate_text(&dec.rationale, 150);
+                dec.expected_outcome = clean_and_truncate_text(&dec.expected_outcome, 150);
+                dec
+            })
+            .collect();
+
         let decision_process = DecisionProcess {
-            situation_analysis: situation_analysis.clone(),
+            situation_analysis: cleaned_situation,
             data_collected,
-            reasoning_steps,
-            decisions,
-            conclusion: conclusion.clone(),
+            reasoning_steps: cleaned_steps,
+            decisions: cleaned_decisions,
+            conclusion: cleaned_conclusion,
             confidence,
         };
 
@@ -1814,12 +1920,16 @@ Respond in JSON format:
         let report = self.maybe_generate_report(&agent, &data_collected).await?;
 
         // Step 5: Update memory with learnings
+        // Determine success based on whether we had any major errors
+        let memory_success = true; // We got here successfully, update_memory will store the result
         let updated_memory = self.update_memory(
             &agent,
             &data_collected,
             &decisions,
             &situation_analysis,
             &conclusion,
+            &execution_id,
+            memory_success,
         ).await?;
 
         // Save updated memory
@@ -1835,12 +1945,37 @@ Respond in JSON format:
             reasoning_steps.iter().map(|s| s.confidence).sum::<f32>() / reasoning_steps.len() as f32
         };
 
+        // Truncate text fields before storing in DecisionProcess
+        // This prevents unbounded growth in storage (execution records accumulate)
+        let cleaned_situation = clean_and_truncate_text(&situation_analysis, 500);
+        let cleaned_conclusion = clean_and_truncate_text(&conclusion, 200);
+
+        // Clean reasoning step descriptions
+        let cleaned_steps: Vec<edge_ai_storage::ReasoningStep> = reasoning_steps
+            .into_iter()
+            .map(|mut step| {
+                step.description = clean_and_truncate_text(&step.description, 150);
+                step
+            })
+            .collect();
+
+        // Clean decision fields
+        let cleaned_decisions: Vec<edge_ai_storage::Decision> = decisions
+            .into_iter()
+            .map(|mut dec| {
+                dec.description = clean_and_truncate_text(&dec.description, 150);
+                dec.rationale = clean_and_truncate_text(&dec.rationale, 150);
+                dec.expected_outcome = clean_and_truncate_text(&dec.expected_outcome, 150);
+                dec
+            })
+            .collect();
+
         let decision_process = DecisionProcess {
-            situation_analysis: situation_analysis.clone(),
+            situation_analysis: cleaned_situation,
             data_collected,
-            reasoning_steps,
-            decisions,
-            conclusion: conclusion.clone(),
+            reasoning_steps: cleaned_steps,
+            decisions: cleaned_decisions,
+            conclusion: cleaned_conclusion,
             confidence,
         };
 
@@ -2447,7 +2582,7 @@ Respond in JSON format:
 
         // Build text data summary for non-image data
         // Limit to prevent token overflow - prioritize most recent/important data
-        let max_metrics = 10; // Limit to 10 metrics at once
+        let max_metrics = 6; // Reduced for small models to avoid context overload
         let text_data_summary: Vec<_> = data.iter()
             .filter(|d| !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
             .take(max_metrics)
@@ -2523,7 +2658,7 @@ Respond in JSON format:
             if let Some(analyses) = agent.memory.state_variables.get("recent_analyses").and_then(|v| v.as_array()) {
                 if !analyses.is_empty() {
                     let summary: Vec<_> = analyses.iter()
-                        .take(3) // Only show last 3 to avoid too much context
+                        .take(1) // Reduced to 1 for small models
                         .filter_map(|a| {
                             a.get("analysis").and_then(|an| an.as_str()).map(|txt| {
                                 let conclusion = a.get("conclusion")
@@ -2585,7 +2720,7 @@ Respond in JSON format:
             if !agent.memory.baselines.is_empty() {
                 let baseline_info: Vec<_> = agent.memory.baselines
                     .iter()
-                    .take(5)
+                    .take(3) // Reduced for small models
                     .map(|(metric, value)| format!("- {}: 基线值 {:.2}", metric, value))
                     .collect();
                 history_parts.push(format!(
@@ -2596,12 +2731,12 @@ Respond in JSON format:
         }
 
         // === CONVERSATION HISTORY (Short-term memory) ===
-        // Reduced to 2 entries to minimize context
+        // Reduced to 1 entry for small models
         if !agent.conversation_history.is_empty() {
             let recent: Vec<_> = agent.conversation_history
                 .iter()
                 .rev()
-                .take(2) // Keep minimal - patterns provide the long-term context
+                .take(1) // Keep minimal for small models
                 .collect();
             history_parts.push(format!(
                 "\n## 最近执行 (最近{}次)\n{}",
@@ -2626,8 +2761,8 @@ Respond in JSON format:
 
         // === INTELLIGENT COMPACTION ===
         // Use semantic-aware compaction instead of simple truncation
-        // Threshold: ~2000 characters (~650 tokens) for Chinese/English mixed content
-        let history_context = if should_compact_context(&history_context, 2000) {
+        // Threshold: ~1000 characters (~330 tokens) for small models
+        let history_context = if should_compact_context(&history_context, 1000) {
             tracing::info!(
                 history_len = history_context.chars().count(),
                 "Context exceeds threshold, applying semantic compaction"
@@ -2638,137 +2773,21 @@ Respond in JSON format:
         };
 
         // Generic system prompt for all agents
-        let role_prompt = "You are a NeoTalk IoT automation assistant. Analyze data, make decisions, and execute actions based on user instructions.";
+        // CRITICAL: Small models (qwen3:1.7b) need very direct instructions
+        let role_prompt = "You are an IoT automation assistant. Output ONLY valid JSON. No other text.";
 
-        // Enhanced system prompt for image analysis
+        // Ultra-simplified prompt for small models - JSON format first and foremost
         let system_prompt = if has_images {
             format!(
-                "{}\n\n## 你的任务\n\
-                用户指令: {}\n\
-                {}\n\
-                {}\n\
-                \n\
-                ## 图像分析能力\n\
-                你具备视觉分析能力。用户消息中可能包含图像数据。请客观描述图像内容：\n\
-                - 描述图像中的主要对象、场景和状态\n\
-                - 识别任何异常、变化或需要注意的情况\n\
-                - 结合图像和其他传感器数据做出判断\n\
-                - 根据用户指令关注特定目标（如果有指定）\n\
-                \n\
-                ## 分析步骤\n\
-                1. 理解用户指令和关注点\n\
-                2. 客观描述图像内容\n\
-                3. 结合传感器数据分析\n\
-                4. 根据指令判断是否需要响应\n\
-                5. 决定采取的行动\n\
-                \n\
-                ## 响应格式\n\
-                请严格以JSON格式回复，注意step必须是数字:\n\
-                {{\n\
-                  \"situation_analysis\": \"当前情况描述\",\n\
-                  \"reasoning_steps\": [\n\
-                    {{\"step\": 1, \"description\": \"第一步描述\", \"confidence\": 0.9}},\n\
-                    {{\"step\": 2, \"description\": \"第二步描述\", \"confidence\": 0.8}}\n\
-                  ],\n\
-                  \"decisions\": [\n\
-                    {{\n\
-                      \"decision_type\": \"alert\",\n\
-                      \"description\": \"检测到目标事件，触发告警\",\n\
-                      \"action\": \"send_alert\",\n\
-                      \"rationale\": \"符合告警触发条件\",\n\
-                      \"confidence\": 0.95\n\
-                    }},\n\
-                    {{\n\
-                      \"decision_type\": \"command\",\n\
-                      \"description\": \"响应事件，执行指令: control_action\",\n\
-                      \"action\": \"execute_command\",\n\
-                      \"rationale\": \"需要执行控制操作\",\n\
-                      \"confidence\": 0.90\n\
-                    }}\n\
-                  ],\n\
-                  \"conclusion\": \"总结结论\"\n\
-                }}\n\
-                \n\
-                ## JSON格式要求\n\
-                - **step字段必须是数字**(1, 2, 3...)，不能是字符串\n\
-                - description字段才是步骤的描述文字\n\
-                - confidence是0到1之间的数字\n\
-                \n\
-                ## 重要说明\n\
-                - decision_type 使用 \"alert\" 表示需要发送告警\n\
-                - decision_type 使用 \"command\" 表示需要执行控制指令\n\
-                - decision_type 使用 \"info\" 表示仅记录观察结果\n\
-                - action 使用 \"send_alert\" 会触发告警通知\n\
-                - action 使用 \"execute_command\" 会执行已配置的设备指令\n\
-                - action 使用 \"log\" 仅记录日志\n\
-                - **要指定执行特定指令**，在description中使用格式: \"command: 指令名称\"\n\
-                -   例如: \"execute command: turn_on_fan\" 只执行turn_on_fan指令\n\
-                -   例如: \"execute command on device: thermostat\" 只执行thermostat设备的指令\n\
-                -   不指定则执行所有已配置的指令\n\
-                - 根据用户指令和图像内容客观分析，不要预设检测目标",
+                "{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录观察\n- alert: 检测到目标，发送告警\n- command: 执行设备指令",
                 role_prompt,
-                agent.user_prompt,
-                intent_context,
-                history_context
+                agent.user_prompt
             )
         } else {
             format!(
-                "{}\n\n## 你的任务\n\
-                用户指令: {}\n\
-                {}\n\
-                {}\n\
-                \n\
-                ## 分析步骤\n\
-                1. 理解当前数据和用户指令\n\
-                2. 检查是否有异常或需要响应的情况\n\
-                3. 基于历史数据判断趋势\n\
-                4. 决定需要采取的行动\n\
-                \n\
-                ## 响应格式\n\
-                请严格以JSON格式回复，注意step必须是数字:\n\
-                {{\n\
-                  \"situation_analysis\": \"当前情况描述\",\n\
-                  \"reasoning_steps\": [\n\
-                    {{\"step\": 1, \"description\": \"第一步描述\", \"confidence\": 0.9}},\n\
-                    {{\"step\": 2, \"description\": \"第二步描述\", \"confidence\": 0.8}}\n\
-                  ],\n\
-                  \"decisions\": [\n\
-                    {{\n\
-                      \"decision_type\": \"alert\",\n\
-                      \"description\": \"检测到异常，触发告警\",\n\
-                      \"action\": \"send_alert\",\n\
-                      \"rationale\": \"数据超出正常范围\",\n\
-                      \"confidence\": 0.85\n\
-                    }},\n\
-                    {{\n\
-                      \"decision_type\": \"command\",\n\
-                      \"description\": \"温度过高，执行指令: turn_on_fan\",\n\
-                      \"action\": \"execute_command\",\n\
-                      \"rationale\": \"需要自动控制设备。在description中指定指令名称\",\n\
-                      \"confidence\": 0.90\n\
-                    }}\n\
-                  ],\n\
-                  \"conclusion\": \"总结结论\"\n\
-                }}\n\
-                \n\
-                ## JSON格式要求\n\
-                - **step字段必须是数字**(1, 2, 3...)，不能是字符串\n\
-                - description字段才是步骤的描述文字\n\
-                - confidence是0到1之间的数字\n\
-                \n\
-                ## 重要说明\n\
-                - decision_type 使用 \"alert\" 表示需要发送告警\n\
-                - decision_type 使用 \"command\" 表示需要执行控制指令\n\
-                - action 使用 \"send_alert\" 会触发告警通知\n\
-                - action 使用 \"execute_command\" 会执行已配置的设备指令\n\
-                - **要指定执行特定指令**，在description中使用格式: \"command: 指令名称\"\n\
-                -   例如: \"execute command: turn_on_fan\" 只执行turn_on_fan指令\n\
-                -   例如: \"execute command on device: thermostat\" 只执行thermostat设备的指令\n\
-                -   不指定则执行所有已配置的指令",
+                "{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录\n- alert: 发送告警\n- command: 执行指令",
                 role_prompt,
-                agent.user_prompt,
-                intent_context,
-                history_context
+                agent.user_prompt
             )
         };
 
@@ -2776,10 +2795,7 @@ Respond in JSON format:
         let messages = if has_images {
             // Build multimodal message with text and images
             let mut parts = vec![ContentPart::text(format!(
-                "## 执行信息\n- 执行ID: {}\n- 当前时间: {} (时间戳: {})\n\n## 当前数据\n\n{}\n\n请分析上述数据和图像，然后做出决策。",
-                execution_id,
-                time_str,
-                timestamp,
+                "## 当前数据\n{}\n\n重要：只输出JSON格式，不要有任何其他文字。",
                 if text_data_summary.is_empty() {
                     "仅有图像数据".to_string()
                 } else {
@@ -2809,7 +2825,7 @@ Respond in JSON format:
                 Message::from_parts(MessageRole::User, parts),
             ]
         } else {
-            // Text-only message (original behavior)
+            // Text-only message
             let data_summary = if text_data_summary.is_empty() {
                 "No data available".to_string()
             } else {
@@ -2819,10 +2835,7 @@ Respond in JSON format:
             vec![
                 Message::new(MessageRole::System, Content::text(system_prompt)),
                 Message::new(MessageRole::User, Content::text(format!(
-                    "## 执行信息\n- 执行ID: {}\n- 当前时间: {} (时间戳: {})\n\n## 当前数据\n\n{}\n\n请分析上述数据并做出决策。",
-                    execution_id,
-                    time_str,
-                    timestamp,
+                    "## 当前数据\n{}\n\n只输出JSON，不要有其他文字。",
                     data_summary
                 ))),
             ]
@@ -2831,8 +2844,8 @@ Respond in JSON format:
         let input = LlmInput {
             messages,
             params: GenerationParams {
-                temperature: Some(0.7), // Slightly increased for more variety
-                max_tokens: Some(8000), // Increased for image analysis with detailed descriptions
+                temperature: Some(0.7),
+                max_tokens: Some(5000), // Balanced for speed and completeness
                 ..Default::default()
             },
             model: None,
@@ -3684,6 +3697,10 @@ Respond in JSON format:
     }
 
     /// Update agent memory with learnings from this execution.
+    /// Uses hierarchical memory architecture (MemGPT/Letta style):
+    /// - Working Memory: Current execution (cleared after each execution)
+    /// - Short-Term Memory: Recent summaries (auto-archived when full)
+    /// - Long-Term Memory: Important patterns (retrieved by relevance)
     async fn update_memory(
         &self,
         agent: &AiAgent,
@@ -3691,26 +3708,60 @@ Respond in JSON format:
         decisions: &[Decision],
         situation_analysis: &str,
         conclusion: &str,
+        execution_id: &str,
+        success: bool,
     ) -> Result<AgentMemory, AgentError> {
         let mut memory = agent.memory.clone();
 
-        // Add trend data points for numeric metrics
-        // Note: data_type contains the metric name (e.g., "temperature", "values.image"), not "metric"
-        // We filter out non-numeric data types like "device_info", "state", "info"
+        // === HIERARCHICAL MEMORY UPDATE ===
+
+        // 1. Update Working Memory with current analysis
+        let cleaned_analysis = clean_and_truncate_text(situation_analysis, 500);
+        let cleaned_conclusion = clean_and_truncate_text(conclusion, 200);
+        memory.set_working_analysis(cleaned_analysis.clone(), cleaned_conclusion.clone());
+
+        // 2. Add execution summary to Short-Term Memory
+        let decision_summaries: Vec<String> = decisions
+            .iter()
+            .filter(|d| !d.description.is_empty())
+            .map(|d| clean_and_truncate_text(&d.description, 100))
+            .collect();
+
+        memory.add_to_short_term(
+            execution_id.to_string(),
+            cleaned_analysis,
+            cleaned_conclusion,
+            decision_summaries,
+            success,
+        );
+
+        // 3. Add patterns to Long-Term Memory
+        if !decisions.is_empty() {
+            let semantic_patterns = extract_semantic_patterns(
+                decisions,
+                situation_analysis,
+                data,
+                &memory.baselines,
+            );
+
+            for pattern in semantic_patterns {
+                memory.add_pattern(pattern);
+            }
+        }
+
+        // === TREND AND BASELINE TRACKING ===
         let is_numeric_data = |data_type: &str| {
             !matches!(data_type, "device_info" | "state" | "info")
         };
 
         for data_item in data {
-            // Skip non-numeric data types
             if !is_numeric_data(&data_item.data_type) {
                 continue;
             }
 
-            // Try to extract numeric value
             if let Some(value) = data_item.values.get("value") {
                 if let Some(num) = value.as_f64() {
-                    // Add to trend data
+                    // Add to trend data (limit to 1000 points)
                     memory.trend_data.push(TrendPoint {
                         timestamp: data_item.timestamp,
                         metric: data_item.source.clone(),
@@ -3718,7 +3769,6 @@ Respond in JSON format:
                         context: Some(serde_json::json!(data_item.data_type)),
                     });
 
-                    // Keep only last 1000 points
                     if memory.trend_data.len() > 1000 {
                         memory.trend_data = memory.trend_data.split_off(memory.trend_data.len() - 1000);
                     }
@@ -3730,173 +3780,8 @@ Respond in JSON format:
             }
         }
 
-        // Store LLM analysis results in state_variables
-        if !situation_analysis.is_empty() {
-            // Store recent analysis (keep last 5)
-            // When exceeding 5, consolidate older analyses into a summary
-            let analyses_key = "recent_analyses";
-            let analyses = memory.state_variables
-                .entry(analyses_key.to_string())
-                .or_insert(serde_json::json!([]));
-
-            if let Some(arr) = analyses.as_array_mut() {
-                // Add new analysis at the beginning
-                let new_analysis = serde_json::json!({
-                    "timestamp": chrono::Utc::now().timestamp(),
-                    "analysis": situation_analysis,
-                    "conclusion": conclusion,
-                });
-
-                let mut new_vec = vec![new_analysis];
-
-                // If we have more than 4 existing items (total would be 5+),
-                // consolidate the oldest items into a summary
-                if arr.len() >= 4 {
-                    // Take the oldest 2-3 items and create a summary
-                    let to_summarize: Vec<_> = arr.iter().skip(arr.len() - 2).cloned().collect();
-                    if !to_summarize.is_empty() {
-                        // Extract conclusions for summary
-                        let conclusions: Vec<_> = to_summarize.iter()
-                            .filter_map(|a| a.get("conclusion").and_then(|c| c.as_str()))
-                            .collect();
-
-                        let summary_text = if conclusions.len() > 1 {
-                            format!("之前{}次分析的结论: {}", conclusions.len(), conclusions.join("; "))
-                        } else if conclusions.len() == 1 {
-                            format!("之前分析结论: {}", conclusions[0])
-                        } else {
-                            "之前的分析未见异常".to_string()
-                        };
-
-                        // Create consolidated summary entry
-                        let consolidated = serde_json::json!({
-                            "timestamp": to_summarize[0].get("timestamp").unwrap_or(&serde_json::json!(0)),
-                            "analysis": format!("[历史总结] {}", summary_text),
-                            "conclusion": "",
-                            "is_summary": true,
-                            "count": to_summarize.len(),
-                        });
-                        new_vec.push(consolidated);
-                    }
-
-                    // Keep the middle items (excluding newest and oldest)
-                    let middle_start = if arr.len() > 3 { arr.len() - 4 } else { 0 };
-                    let middle_end = if arr.len() > 2 { arr.len() - 2 } else { arr.len() };
-                    if middle_end > middle_start {
-                        new_vec.extend(arr.iter().skip(middle_start).take(middle_end - middle_start).cloned());
-                    }
-                } else {
-                    // Just keep existing items (no consolidation needed)
-                    new_vec.extend(arr.iter().cloned());
-                }
-
-                *analyses = serde_json::Value::Array(new_vec.into_iter().collect());
-            }
-        }
-
-        // === SEMANTIC PATTERN STORAGE ===
-        // Based on Claude Code's approach: store abstract patterns, not raw history
-        // Pattern structure: {symptom, cause, solution, confidence} instead of {type, description, timestamp}
-
-        if !decisions.is_empty() {
-            // 1. Extract semantic patterns from decisions
-            let semantic_patterns = extract_semantic_patterns(
-                decisions,
-                &situation_analysis,
-                data,
-                &memory.baselines,
-            );
-
-            // 2. Update learned_patterns (long-term memory)
-            // Only add high-confidence patterns that are repeatable
-            for pattern in semantic_patterns {
-                // Check if similar pattern already exists
-                let exists = memory.learned_patterns.iter().any(|p| {
-                    p.pattern_type == pattern.pattern_type
-                        && p.description == pattern.description
-                });
-
-                if !exists && pattern.confidence >= 0.7 {
-                    memory.learned_patterns.push(pattern);
-                }
-            }
-
-            // Limit learned patterns to most valuable ones
-            if memory.learned_patterns.len() > 15 {
-                // Keep only high-confidence patterns
-                memory.learned_patterns.sort_by(|a, b| {
-                    b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
-                });
-                memory.learned_patterns.truncate(15);
-            }
-
-            // 3. Keep short-term raw history (last 3 only) in state_variables
-            // This is for immediate context, not long-term memory
-            let patterns_key = "recent_decisions";
-            let recent = memory.state_variables
-                .entry(patterns_key.to_string())
-                .or_insert(serde_json::json!([]));
-
-            if let Some(arr) = recent.as_array_mut() {
-                // Add only significant decisions (alerts, commands)
-                for decision in decisions.iter().filter(|d| {
-                    !d.decision_type.is_empty()
-                        && (d.decision_type == "alert" || d.decision_type == "command")
-                }) {
-                    arr.push(serde_json::json!({
-                        "type": decision.decision_type,
-                        "description": decision.description,
-                        "action": decision.action,
-                        "timestamp": chrono::Utc::now().timestamp(),
-                    }));
-                }
-
-                // Keep only last 3 recent decisions
-                if arr.len() > 3 {
-                    let trimmed: Vec<_> = arr.iter().skip(arr.len() - 3).cloned().collect();
-                    memory.state_variables.insert(patterns_key.to_string(), serde_json::json!(trimmed));
-                }
-            }
-        }
-
-        // 4. Maintain medium-term summary (24h compressed context)
-        let now = chrono::Utc::now().timestamp();
-        let last_summary = memory.state_variables
-            .get("medium_term_summary")
-            .and_then(|v| v.as_object())
-            .cloned();
-
-        if let Some(summary) = last_summary {
-            let summary_ts = summary.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
-            let age_hours = (now - summary_ts) / 3600;
-
-            if age_hours >= 24 {
-                // Time to refresh the medium-term summary
-                let summary_data = build_medium_term_summary(&memory, situation_analysis, conclusion);
-                memory.state_variables.insert(
-                    "medium_term_summary".to_string(),
-                    serde_json::json!({
-                        "timestamp": now,
-                        "summary": summary_data,
-                    })
-                );
-
-                // Clear old recent_analyses to free up space
-                memory.state_variables.remove("recent_analyses");
-            }
-        } else {
-            // Create initial summary
-            let summary_data = build_medium_term_summary(&memory, situation_analysis, conclusion);
-            memory.state_variables.insert(
-                "medium_term_summary".to_string(),
-                serde_json::json!({
-                    "timestamp": now,
-                    "summary": summary_data,
-                })
-            );
-        }
-
-        // Also track execution count in state_variables
+        // === LEGACY STATE_VARIABLES (for backward compatibility) ===
+        // Track execution count
         let execution_count = memory.state_variables
             .get("total_executions")
             .and_then(|v| v.as_i64())
@@ -3904,18 +3789,6 @@ Respond in JSON format:
         memory.state_variables.insert(
             "total_executions".to_string(),
             serde_json::json!(execution_count),
-        );
-        memory.state_variables.insert(
-            "last_execution".to_string(),
-            serde_json::json!(chrono::Utc::now().timestamp()),
-        );
-        memory.state_variables.insert(
-            "last_situation_analysis".to_string(),
-            serde_json::json!(situation_analysis),
-        );
-        memory.state_variables.insert(
-            "last_conclusion".to_string(),
-            serde_json::json!(conclusion),
         );
 
         // Store metrics we've seen
@@ -3936,11 +3809,10 @@ Respond in JSON format:
         memory.updated_at = chrono::Utc::now().timestamp();
 
         tracing::debug!(
-            trend_data_count = memory.trend_data.len(),
-            baselines_count = memory.baselines.len(),
-            state_variables_count = memory.state_variables.len(),
-            has_analysis = !situation_analysis.is_empty(),
-            "Agent memory updated"
+            memory_usage = %memory.memory_usage_summary(),
+            execution_id = %execution_id,
+            success = success,
+            "Agent memory updated (hierarchical)"
         );
 
         Ok(memory)
@@ -4072,6 +3944,7 @@ Respond in JSON format:
     }
 
     /// Create a conversation turn from execution results.
+    /// Truncates long text to prevent unbounded memory growth.
     pub fn create_conversation_turn(
         &self,
         execution_id: String,
@@ -4082,6 +3955,31 @@ Respond in JSON format:
         duration_ms: u64,
         success: bool,
     ) -> ConversationTurn {
+        // Clean and truncate before storing in conversation history
+        // Conversation history can have up to 20 entries, so we need to be conservative
+        let clean_situation = clean_and_truncate_text(&decision_process.situation_analysis, 300);
+        let clean_conclusion = clean_and_truncate_text(&decision_process.conclusion, 150);
+
+        // Also truncate reasoning step descriptions
+        let cleaned_steps: Vec<edge_ai_storage::ReasoningStep> = decision_process.reasoning_steps
+            .iter()
+            .map(|step| edge_ai_storage::ReasoningStep {
+                description: clean_and_truncate_text(&step.description, 100),
+                ..step.clone()
+            })
+            .collect();
+
+        // Truncate decision descriptions
+        let cleaned_decisions: Vec<edge_ai_storage::Decision> = decision_process.decisions
+            .iter()
+            .map(|dec| edge_ai_storage::Decision {
+                description: clean_and_truncate_text(&dec.description, 100),
+                rationale: clean_and_truncate_text(&dec.rationale, 100),
+                expected_outcome: clean_and_truncate_text(&dec.expected_outcome, 100),
+                ..dec.clone()
+            })
+            .collect();
+
         ConversationTurn {
             execution_id,
             timestamp: chrono::Utc::now().timestamp(),
@@ -4091,10 +3989,10 @@ Respond in JSON format:
                 event_data,
             },
             output: TurnOutput {
-                situation_analysis: decision_process.situation_analysis.clone(),
-                reasoning_steps: decision_process.reasoning_steps.clone(),
-                decisions: decision_process.decisions.clone(),
-                conclusion: decision_process.conclusion.clone(),
+                situation_analysis: clean_situation,
+                reasoning_steps: cleaned_steps,
+                decisions: cleaned_decisions,
+                conclusion: clean_conclusion,
             },
             duration_ms,
             success,
