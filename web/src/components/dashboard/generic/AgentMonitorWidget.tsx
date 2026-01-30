@@ -705,43 +705,6 @@ export function AgentMonitorWidget({
           </Tabs>
         </div>
 
-        {/* Real-time Progress - full-width, minimal style */}
-        {currentlyExecuting && (
-          <div className="w-full bg-primary/5 border-b border-primary/10 relative overflow-hidden shrink-0">
-            {/* Progress bar - full width */}
-            <div className="w-full h-1 bg-muted/30 relative overflow-hidden">
-              <div className={cn(
-                "absolute inset-y-0 left-0 transition-all duration-500 ease-out",
-                "bg-gradient-to-r from-blue-500 via-purple-500 to-green-500",
-                "animate-[shimmer_2s_infinite]"
-              )} style={{
-                width: currentStage === 'collecting' ? '33%' : currentStage === 'analyzing' ? '66%' : '90%'
-              }} />
-            </div>
-
-            {/* Stage info - compact inline */}
-            <div className="flex items-center justify-between px-2 py-1.5">
-              <div className="flex items-center gap-1.5">
-                <div className={cn(
-                  "w-1.5 h-1.5 rounded-full animate-pulse",
-                  currentStage === 'collecting' ? "bg-blue-500" :
-                  currentStage === 'analyzing' ? "bg-purple-500" : "bg-green-500"
-                )} />
-                <span className="text-[9px] font-medium text-foreground/80">
-                  {stageLabel || 'Processing'}
-                </span>
-              </div>
-
-              {/* Current thinking step - single line, truncates */}
-              {thinkingSteps.length > 0 && (
-                <span className="text-[8px] text-muted-foreground truncate max-w-[60%] font-mono">
-                  {thinkingSteps[thinkingSteps.length - 1]?.description}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Tab Content - minimal padding for full container fill */}
         <div className="w-full flex-1 min-h-0 overflow-hidden px-2">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as WidgetTab)} className="w-full h-full flex flex-col">
@@ -779,6 +742,53 @@ export function AgentMonitorWidget({
                       {displayExecutions.slice(0, 5).length}
                     </span>
                   </div>
+
+                  {/* Real-time Progress - shown inside Recent section during execution */}
+                  {currentlyExecuting && (
+                    <div className="px-1">
+                      <div className="w-full flex items-center gap-2 py-1.5 px-2 rounded bg-primary/5 border border-primary/20">
+                        {/* Status icon - animated */}
+                        <div className={cn(
+                          "w-1.5 h-1.5 rounded-full animate-pulse shrink-0",
+                          currentStage === 'collecting' ? "bg-blue-500" :
+                          currentStage === 'analyzing' ? "bg-purple-500" : "bg-green-500"
+                        )} />
+
+                        {/* Content area */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-medium text-foreground/80">
+                              {stageLabel || 'Processing'}
+                            </span>
+                            {/* Progress bar - inline */}
+                            <div className="flex-1 h-1 bg-muted/30 rounded-full overflow-hidden max-w-[80px]">
+                              <div className={cn(
+                                "h-full transition-all duration-500 ease-out",
+                                "bg-gradient-to-r from-blue-500 via-purple-500 to-green-500",
+                                "animate-[shimmer_2s_infinite]"
+                              )} style={{
+                                width: currentStage === 'collecting' ? '33%' : currentStage === 'analyzing' ? '66%' : '90%'
+                              }} />
+                            </div>
+                          </div>
+                          {/* Current thinking step - single line, truncates */}
+                          {thinkingSteps.length > 0 && (
+                            <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                              {thinkingSteps[thinkingSteps.length - 1]?.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Time/elapsed indicator */}
+                        <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                          Running...
+                        </span>
+
+                        {/* Chevron indicator */}
+                        <Loader2 className="h-3 w-3 text-muted-foreground shrink-0 animate-spin" />
+                      </div>
+                    </div>
+                  )}
 
                   <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
                     {displayExecutions.length === 0 ? (
