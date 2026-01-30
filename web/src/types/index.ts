@@ -349,7 +349,8 @@ export type ServerMessage =
   // Tool call completed - result is a string (JSON or plain text)
   | { type: 'ToolCallEnd'; tool: string; result: string; sessionId: string; success?: boolean }
   // Progress event during long-running operations
-  | { type: 'Progress'; elapsed: number; stage: 'thinking' | 'generating' | 'tool_execution'; message?: string; remainingTime?: number; sessionId: string }
+  // Note: stage is optional and can be any string (collecting, analyzing, executing, etc.)
+  | { type: 'Progress'; elapsed: number; stage?: string; message?: string; remainingTime?: number; sessionId: string }
   // Warning event when approaching timeout
   | { type: 'Warning'; message: string; elapsed?: number; remainingTime?: number; sessionId: string }
   // Intent classification result (informational, not displayed in current UI)
@@ -380,7 +381,7 @@ export interface StreamConfig {
 // Stream progress state for UI
 export interface StreamProgress {
   elapsed: number
-  stage: 'thinking' | 'generating' | 'tool_execution'
+  stage?: string  // Optional stage from backend (collecting, analyzing, executing, etc.)
   warnings: string[]
   remainingTime: number
 }
