@@ -165,10 +165,12 @@ impl IntentParser {
                 .collect();
 
             if !before_numbers.is_empty() && !after_numbers.is_empty() {
+                let before_val = before_numbers.last().cloned().unwrap_or_default();
+                let after_val = after_numbers.first().cloned().unwrap_or_default();
                 conditions.push(format!(
                     "between {} and {}",
-                    before_numbers.last().unwrap(),
-                    after_numbers.first().unwrap()
+                    before_val,
+                    after_val
                 ));
             }
         }
