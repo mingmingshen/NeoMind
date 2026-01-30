@@ -184,7 +184,10 @@ export const ComponentPreview = memo(function ComponentPreview({
     type: componentType as ImplementedComponentType,
     position: { x: 0, y: 0, w: defaultW, h: defaultH },
     title: title || config.title as string || t('componentPreview.title'),
-    config,
+    config: {
+      ...config,
+      editMode: true, // Signal to components that this is a preview/edit mode
+    },
     dataSource,
   }
 

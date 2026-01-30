@@ -21,7 +21,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         alert_channels, alerts, agents, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
         dashboards, decisions, devices, events, extensions, llm_backends, memory, mqtt, plugins, rules,
-        search, sessions, settings, stats, test_data, tools,
+        search, sessions, settings, stats, suggestions, test_data, tools,
     };
 
     // Public routes (no authentication required)
@@ -76,6 +76,9 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/test-data/alerts", post(test_data::generate_test_alerts_handler))
         .route("/api/test-data/events", post(test_data::generate_test_events_handler))
         .route("/api/test-data/all", post(test_data::generate_test_data_handler))
+        // Suggestions API (public - provides intelligent input suggestions)
+        .route("/api/suggestions", get(suggestions::get_suggestions_handler))
+        .route("/api/suggestions/categories", get(suggestions::get_suggestions_categories_handler))
         // API documentation (public)
         .merge(crate::openapi::swagger_ui());
 

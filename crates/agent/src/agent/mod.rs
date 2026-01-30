@@ -434,7 +434,7 @@ impl Agent {
         self.llm_interface.set_tool_definitions(core_defs).await;
 
         // Dynamically update system prompt with tool descriptions
-        let dynamic_prompt = self.generate_dynamic_system_prompt(&simplified_tools);
+        let dynamic_prompt = self.generate_dynamic_system_prompt(&simplified_tools).await;
         self.llm_interface.set_system_prompt(&dynamic_prompt).await;
 
         tracing::debug!("Updated {} simplified tool definitions for LLM", tool_count);
@@ -442,8 +442,17 @@ impl Agent {
 
     /// Generate a dynamic system prompt with tool descriptions.
     /// This ensures the prompt always reflects the currently available tools.
-    fn generate_dynamic_system_prompt(&self, simplified_tools: &[edge_ai_tools::simplified::LlmToolDefinition]) -> String {
+    async fn generate_dynamic_system_prompt(&self, simplified_tools: &[edge_ai_tools::simplified::LlmToolDefinition]) -> String {
         let mut prompt = String::from(self.config.system_prompt.trim());
+
+        // === 动态注入系统资源上下文 ===
+        // 这确保 LLM 能够感知当前系统中的实际设备、规则和工作流
+        let resource_context = self.semantic_mapper.get_semantic_context().await;
+        if !resource_context.is_empty() {
+            prompt.push_str("\n\n");
+            prompt.push_str(&resource_context);
+        }
+
         prompt.push_str("\n\n## 可用工具\n\n");
 
         // Group tools by category for better organization

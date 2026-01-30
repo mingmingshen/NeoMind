@@ -175,10 +175,14 @@ export default function ComponentRenderer({
   const dataSource = (component as any).dataSource
   const display = (component as any).display
 
+  // Extract editMode from config (for preview mode) but don't spread it with other config props
+  const { editMode, ...restConfig } = config
+
   // Build props for the component (NOT including key - key must be passed directly)
   const props = {
     dataSource,
-    ...config,
+    editMode, // Pass editMode as a separate prop for components that need it
+    ...restConfig,
     ...display,
     title: component.title || config.title,
     className: cn(

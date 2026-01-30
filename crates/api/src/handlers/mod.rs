@@ -25,6 +25,7 @@ pub mod search;
 pub mod sessions;
 pub mod settings;
 pub mod stats;
+pub mod suggestions;
 pub mod test_data;
 pub mod tools;
 
@@ -103,4 +104,8 @@ pub use llm_backends::{
 pub use auth_users::{
     change_password_handler, create_user_handler, delete_user_handler, get_current_user_handler,
     list_users_handler, login_handler, logout_handler, register_handler,
+};
+// Suggestions API
+pub use suggestions::{
+    get_suggestions_handler, get_suggestions_categories_handler,
 };

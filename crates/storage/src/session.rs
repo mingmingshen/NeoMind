@@ -626,6 +626,7 @@ mod tests {
             tool_call_id: None,
             tool_call_name: None,
             thinking: None,
+            images: None,
             timestamp: chrono::Utc::now().timestamp(),
         };
         let msg2 = SessionMessage {
@@ -635,6 +636,7 @@ mod tests {
             tool_call_id: None,
             tool_call_name: None,
             thinking: None,
+            images: None,
             timestamp: chrono::Utc::now().timestamp(),
         };
         let messages = vec![msg1, msg2];
@@ -714,6 +716,7 @@ mod tests {
             tool_call_id: None,
             tool_call_name: None,
             thinking: None,
+            images: None,
             timestamp: 12345,
         };
 

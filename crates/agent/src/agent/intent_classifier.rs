@@ -1,7 +1,7 @@
 //! 意图分类模块
 //!
 //! 功能：
-//! 1. 8大核心意图分类：QueryData, AnalyzeData, ControlDevice, CreateAutomation, SendMessage, SummarizeInfo, Clarify, OutOfScope
+//! 1. 10大核心意图分类：QueryData, AnalyzeData, ControlDevice, CreateAutomation, SendMessage, SummarizeInfo, Clarify, OutOfScope, AgentMonitor, AlertChannel
 //! 2. 子类型识别
 //! 3. 置信度评分
 //! 4. 实体提取
@@ -45,6 +45,14 @@ pub enum IntentCategory {
     /// 超出范围：能力外的请求
     #[serde(rename = "out_of_scope")]
     OutOfScope = 7,
+
+    /// AI Agent监控：查看agent状态、执行历史、决策过程
+    #[serde(rename = "agent_monitor")]
+    AgentMonitor = 8,
+
+    /// 告警通道管理：通知渠道配置、渠道测试
+    #[serde(rename = "alert_channel")]
+    AlertChannel = 9,
 }
 
 impl IntentCategory {
@@ -59,6 +67,8 @@ impl IntentCategory {
             Self::SummarizeInfo => "汇总信息",
             Self::Clarify => "需要澄清",
             Self::OutOfScope => "超出范围",
+            Self::AgentMonitor => "Agent监控",
+            Self::AlertChannel => "告警通道",
         }
     }
 
@@ -73,6 +83,8 @@ impl IntentCategory {
             Self::SummarizeInfo => "summarize_info",
             Self::Clarify => "clarify",
             Self::OutOfScope => "out_of_scope",
+            Self::AgentMonitor => "agent_monitor",
+            Self::AlertChannel => "alert_channel",
         }
     }
 
@@ -87,6 +99,8 @@ impl IntentCategory {
             "summarize_info" => Some(Self::SummarizeInfo),
             "clarify" => Some(Self::Clarify),
             "out_of_scope" => Some(Self::OutOfScope),
+            "agent_monitor" => Some(Self::AgentMonitor),
+            "alert_channel" => Some(Self::AlertChannel),
             _ => None,
         }
     }
@@ -138,6 +152,18 @@ pub enum IntentSubType {
     ExternalService,
     HardwareModification,
     SystemConfiguration,
+
+    // AgentMonitor 子类型
+    AgentStatus,
+    ExecutionHistory,
+    DecisionProcess,
+    PerformanceStats,
+
+    // AlertChannel 子类型
+    ChannelList,
+    ChannelConfig,
+    ChannelTest,
+    ChannelEnable,
 
     // 未知
     Unknown,
@@ -237,6 +263,8 @@ impl Default for IntentClassifier {
                 IntentCategory::SummarizeInfo,
                 IntentCategory::Clarify,
                 IntentCategory::OutOfScope,
+                IntentCategory::AgentMonitor,
+                IntentCategory::AlertChannel,
             ],
             confidence_threshold: 0.3,
         }
@@ -285,6 +313,8 @@ impl IntentClassifier {
         scores.insert(IntentCategory::CreateAutomation, self.score_create_automation(&input_lower));
         scores.insert(IntentCategory::SendMessage, self.score_send_message(&input_lower));
         scores.insert(IntentCategory::SummarizeInfo, self.score_summarize_info(&input_lower));
+        scores.insert(IntentCategory::AgentMonitor, self.score_agent_monitor(&input_lower));
+        scores.insert(IntentCategory::AlertChannel, self.score_alert_channel(&input_lower));
 
         // 4. 选择最高分的意图
         let (&intent, &confidence) = scores
@@ -607,6 +637,114 @@ impl IntentClassifier {
         (score as f32).min(1.0).max(0.0)
     }
 
+    /// Agent监控意图评分
+    fn score_agent_monitor(&self, input: &str) -> f32 {
+        let mut score = 0.0f32;
+
+        // Agent/智能体相关关键词
+        let agent_keywords = [
+            "agent", "agents", "智能体", "ai代理", "ai代理",
+            "agent状态", "agent执行", "agent历史",
+            "监控agent", "查看agent", "agent统计",
+        ];
+
+        // 执行历史/决策过程相关
+        let execution_keywords = [
+            "执行历史", "决策过程", "决策记录", "推理过程",
+            "execution history", "decision process", "reasoning",
+            "执行记录", "操作记录",
+        ];
+
+        // 性能统计相关
+        let stats_keywords = [
+            "性能统计", "运行状态", "agent性能",
+            "性能指标", "执行统计",
+            "performance stats", "performance metrics",
+        ];
+
+        for keyword in &agent_keywords {
+            if input.contains(keyword) {
+                score += 0.35;
+            }
+        }
+
+        for keyword in &execution_keywords {
+            if input.contains(keyword) {
+                score += 0.3;
+            }
+        }
+
+        for keyword in &stats_keywords {
+            if input.contains(keyword) {
+                score += 0.3;
+            }
+        }
+
+        // 检测是否提到具体agent名称
+        if input.contains("monitor") || input.contains("executor") || input.contains("analyzer") {
+            score += 0.25;
+        }
+
+        (score as f32).min(1.0).max(0.0)
+    }
+
+    /// 告警通道意图评分
+    fn score_alert_channel(&self, input: &str) -> f32 {
+        let mut score = 0.0f32;
+
+        // 通道/渠道相关关键词
+        let channel_keywords = [
+            "通道", "渠道", "channel", "通知渠道", "告警通道",
+            "notification channel", "alert channel",
+            "邮件通知", "短信通知", "webhook",
+        ];
+
+        // 配置相关
+        let config_keywords = [
+            "配置通道", "设置通道", "添加通道", "删除通道",
+            "configure channel", "setup channel", "add channel",
+            "通道配置", "渠道设置",
+        ];
+
+        // 测试相关
+        let test_keywords = [
+            "测试通道", "测试通知", "发送测试",
+            "test channel", "test notification", "send test",
+        ];
+
+        // 启用/禁用相关
+        let enable_keywords = [
+            "启用通道", "禁用通道", "开启通道", "关闭通道",
+            "enable channel", "disable channel",
+        ];
+
+        for keyword in &channel_keywords {
+            if input.contains(keyword) {
+                score += 0.25;
+            }
+        }
+
+        for keyword in &config_keywords {
+            if input.contains(keyword) {
+                score += 0.35;
+            }
+        }
+
+        for keyword in &test_keywords {
+            if input.contains(keyword) {
+                score += 0.3;
+            }
+        }
+
+        for keyword in &enable_keywords {
+            if input.contains(keyword) {
+                score += 0.25;
+            }
+        }
+
+        (score as f32).min(1.0).max(0.0)
+    }
+
     /// 构建澄清结果
     fn build_clarification_result(&self, input: &str) -> IntentClassification {
         let followup_prompt = if input.len() < 3 {
@@ -675,6 +813,32 @@ impl IntentClassifier {
                 false,
                 None,
             ),
+            IntentCategory::AgentMonitor => {
+                // 检测具体子类型
+                if input.contains("历史") || input_lower.contains("history") {
+                    (IntentSubType::ExecutionHistory, ProcessingStrategy::FastPath, false, None)
+                } else if input.contains("决策") || input_lower.contains("decision") || input_lower.contains("reasoning") {
+                    (IntentSubType::DecisionProcess, ProcessingStrategy::Quality, false, None)
+                } else if input.contains("性能") || input_lower.contains("performance") || input_lower.contains("stats") {
+                    (IntentSubType::PerformanceStats, ProcessingStrategy::FastPath, false, None)
+                } else {
+                    (IntentSubType::AgentStatus, ProcessingStrategy::FastPath, false, None)
+                }
+            }
+            IntentCategory::AlertChannel => {
+                // 检测具体子类型
+                if input.contains("测试") || input_lower.contains("test") {
+                    (IntentSubType::ChannelTest, ProcessingStrategy::Standard, false, None)
+                } else if input.contains("配置") || input_lower.contains("config") || input_lower.contains("设置") {
+                    (IntentSubType::ChannelConfig, ProcessingStrategy::MultiTurn, true, Some("我来帮你配置告警通道。".to_string()))
+                } else if input.contains("启用") || input.contains("禁用") || input_lower.contains("enable") || input_lower.contains("disable") {
+                    (IntentSubType::ChannelEnable, ProcessingStrategy::Standard, false, None)
+                } else if input.contains("列表") || input.contains("所有") || input_lower.contains("list") {
+                    (IntentSubType::ChannelList, ProcessingStrategy::FastPath, false, None)
+                } else {
+                    (IntentSubType::ChannelList, ProcessingStrategy::FastPath, false, None)
+                }
+            }
             _ => (
                 IntentSubType::Unknown,
                 ProcessingStrategy::Standard,

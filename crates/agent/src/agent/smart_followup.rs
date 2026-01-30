@@ -5,9 +5,13 @@
 //! 2. 动态追问生成 - 基于可用设备列表生成更自然的追问
 //! 3. 多意图检测 - 检测一句话中的多个意图
 //! 4. 追问优先级 - 只追问最关键的信息
+//! 5. 资源索引集成 - 自动从 ResourceIndex 获取设备信息
 
 use super::conversation_context::{ConversationContext, ConversationTopic};
+use crate::context::ResourceIndex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// 追问优先级
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -92,7 +96,9 @@ pub struct AvailableDevice {
 
 /// 智能追问管理器
 pub struct SmartFollowUpManager {
-    /// 可用设备列表
+    /// 资源索引（用于动态获取设备信息）
+    resource_index: Arc<RwLock<ResourceIndex>>,
+    /// 可用设备列表（缓存）
     available_devices: Vec<AvailableDevice>,
     /// 追问历史（避免重复追问）
     asked_questions: Vec<String>,
@@ -101,17 +107,80 @@ pub struct SmartFollowUpManager {
 }
 
 impl SmartFollowUpManager {
-    pub fn new() -> Self {
+    /// 创建新的智能追问管理器（需要资源索引）
+    pub fn with_resource_index(resource_index: Arc<RwLock<ResourceIndex>>) -> Self {
         Self {
+            resource_index,
             available_devices: Vec::new(),
             asked_questions: Vec::new(),
             max_followups: 2,
         }
     }
 
-    /// 设置可用设备列表
+    /// 创建默认的管理器（无资源索引，使用手动设置）
+    pub fn new() -> Self {
+        Self {
+            resource_index: Arc::new(RwLock::new(ResourceIndex::new())),
+            available_devices: Vec::new(),
+            asked_questions: Vec::new(),
+            max_followups: 2,
+        }
+    }
+
+    /// 从资源索引刷新设备列表
+    pub async fn refresh_devices(&mut self) {
+        let index = self.resource_index.read().await;
+        let resources = index.list_devices().await;
+
+        self.available_devices = resources.into_iter().filter_map(|r| {
+            // 只处理设备类型的资源
+            let device_data = r.as_device()?;
+
+            Some(AvailableDevice {
+                id: r.id.id.clone(),
+                name: r.name.clone(),
+                location: device_data.location.clone().unwrap_or_default(),
+                device_type: device_data.device_type.clone(),
+                capabilities: device_data.capabilities.iter().map(|c| c.name.clone()).collect(),
+            })
+        }).collect();
+    }
+
+    /// 设置可用设备列表（保留向后兼容）
     pub fn set_available_devices(&mut self, devices: Vec<AvailableDevice>) {
         self.available_devices = devices;
+    }
+
+    /// 基于模糊搜索获取设备建议
+    /// 返回与查询相关的设备名称列表
+    pub async fn get_device_suggestions(&self, query: &str, limit: usize) -> Vec<String> {
+        let index = self.resource_index.read().await;
+        let results = index.search_string(query).await;
+
+        results.into_iter()
+            .take(limit)
+            .map(|r| r.resource.name.clone())
+            .collect()
+    }
+
+    /// 基于模糊搜索获取位置建议
+    pub async fn get_location_suggestions(&self, query: &str, limit: usize) -> Vec<String> {
+        let index = self.resource_index.read().await;
+        let results = index.search_string(query).await;
+
+        // 提取唯一的位置名称
+        let mut locations: Vec<String> = results.into_iter()
+            .filter_map(|r| {
+                r.resource.as_device()
+                    .and_then(|d| d.location.clone())
+            })
+            .collect();
+
+        // 去重并限制数量
+        locations.sort();
+        locations.dedup();
+        locations.truncate(limit);
+        locations
     }
 
     /// 分析用户输入，判断是否需要追问
@@ -463,6 +532,35 @@ impl SmartFollowUpManager {
             }
 
         None
+    }
+
+    /// 增强版分析：使用模糊搜索提供更智能的建议
+    /// 这是 analyze_input 的异步版本，能够利用 ResourceIndex 的模糊搜索能力
+    pub async fn analyze_input_with_search(
+        &mut self,
+        user_input: &str,
+        context: &ConversationContext,
+    ) -> FollowUpAnalysis {
+        let mut analysis = self.analyze_input(user_input, context);
+
+        // 如果有缺失位置的追问，使用模糊搜索增强建议
+        for followup in &mut analysis.followups {
+            if followup.followup_type == FollowUpType::MissingLocation
+                || followup.followup_type == FollowUpType::MissingDevice {
+                // 使用模糊搜索获取更相关的建议
+                let suggestions = self.get_device_suggestions(user_input, 4).await;
+                if !suggestions.is_empty() {
+                    followup.suggestions = suggestions;
+                    followup.question = format!(
+                        "{}\n相关设备：{}",
+                        followup.question.lines().next().unwrap_or(&followup.question),
+                        followup.suggestions.join("、")
+                    );
+                }
+            }
+        }
+
+        analysis
     }
 
     /// 清空追问历史

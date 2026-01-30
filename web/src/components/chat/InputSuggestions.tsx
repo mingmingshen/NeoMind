@@ -1,18 +1,50 @@
 /**
  * InputSuggestions - Context-aware suggestions while typing
  * Shows relevant prompts based on current input
+ * Fetches suggestions from backend API for dynamic, context-aware recommendations
  */
 
-import { useMemo, useEffect, useState } from "react"
+import { useMemo, useEffect, useState, useCallback } from "react"
 import {
   Lightbulb,
   Cpu,
   Zap,
   AlertTriangle,
   Settings,
-  TrendingUp
+  TrendingUp,
+  History,
+  Bot,
+  LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+// Icon mapping for backend icon names
+const ICON_MAP: Record<string, LucideIcon> = {
+  Lightbulb,
+  Cpu,
+  Zap,
+  AlertTriangle,
+  Settings,
+  TrendingUp,
+  History,
+  Bot,
+}
+
+interface BackendSuggestion {
+  id: string
+  label: string
+  prompt: string
+  icon: string
+  category: string
+}
+
+interface SuggestionsResponse {
+  suggestions: BackendSuggestion[]
+  context: {
+    timestamp: number
+    learned_patterns_count: number
+  }
+}
 
 interface Suggestion {
   id: string
@@ -22,95 +54,34 @@ interface Suggestion {
   category: string
 }
 
-// Predefined suggestions organized by category
-const SUGGESTIONS: Suggestion[] = [
-  // Device queries
+// Fallback predefined suggestions (used when API fails)
+const FALLBACK_SUGGESTIONS: BackendSuggestion[] = [
   {
     id: "device-list",
     label: "查看所有设备",
     prompt: "查看所有设备状态",
-    icon: <Cpu className="h-4 w-4" />,
+    icon: "Cpu",
     category: "device"
   },
-  {
-    id: "device-online",
-    label: "查看在线设备",
-    prompt: "哪些设备当前在线",
-    icon: <Cpu className="h-4 w-4" />,
-    category: "device"
-  },
-  {
-    id: "device-temp",
-    label: "查看温度传感器",
-    prompt: "查看所有温度传感器的读数",
-    icon: <Cpu className="h-4 w-4" />,
-    category: "device"
-  },
-  // Automation
   {
     id: "automation-list",
     label: "查看自动化规则",
     prompt: "查看所有自动化规则",
-    icon: <Zap className="h-4 w-4" />,
+    icon: "Zap",
     category: "automation"
   },
-  {
-    id: "automation-create",
-    label: "创建自动化规则",
-    prompt: "创建新的自动化规则",
-    icon: <Zap className="h-4 w-4" />,
-    category: "automation"
-  },
-  {
-    id: "workflow-list",
-    label: "查看工作流",
-    prompt: "查看所有工作流",
-    icon: <Zap className="h-4 w-4" />,
-    category: "automation"
-  },
-  // Alerts
   {
     id: "alert-list",
     label: "查看告警",
     prompt: "查看当前告警",
-    icon: <AlertTriangle className="h-4 w-4" />,
+    icon: "AlertTriangle",
     category: "alert"
-  },
-  {
-    id: "alert-create",
-    label: "创建告警规则",
-    prompt: "创建新的告警规则",
-    icon: <AlertTriangle className="h-4 w-4" />,
-    category: "alert"
-  },
-  // Analytics
-  {
-    id: "analytics-temp",
-    label: "温度数据分析",
-    prompt: "分析最近24小时的温度数据",
-    icon: <TrendingUp className="h-4 w-4" />,
-    category: "analytics"
-  },
-  {
-    id: "analytics-trend",
-    label: "查看数据趋势",
-    prompt: "查看设备数据趋势",
-    icon: <TrendingUp className="h-4 w-4" />,
-    category: "analytics"
-  },
-  // Settings
-  {
-    id: "settings-llm",
-    label: "LLM设置",
-    prompt: "查看LLM后端配置",
-    icon: <Settings className="h-4 w-4" />,
-    category: "settings"
   },
   {
     id: "help",
     label: "帮助",
     prompt: "你能做什么",
-    icon: <Lightbulb className="h-4 w-4" />,
+    icon: "Lightbulb",
     category: "general"
   }
 ]
@@ -123,22 +94,59 @@ interface InputSuggestionsProps {
 
 export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsProps) {
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [backendSuggestions, setBackendSuggestions] = useState<BackendSuggestion[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [apiError, setApiError] = useState(false)
 
-  // Filter suggestions based on input
-  const filteredSuggestions = useMemo(() => {
-    if (!input.trim()) {
-      // Show a curated list of common actions when input is empty
-      return SUGGESTIONS.filter(s =>
-        ["device-list", "automation-list", "alert-list", "help"].includes(s.id)
-      )
+  // Fetch suggestions from backend API when component mounts or visibility changes
+  const fetchSuggestions = useCallback(async () => {
+    setIsLoading(true)
+    setApiError(false)
+    try {
+      const response = await fetch(`/api/suggestions?input=${encodeURIComponent(input)}&limit=20`)
+      if (response.ok) {
+        const data: SuggestionsResponse = await response.json()
+        setBackendSuggestions(data.suggestions)
+      } else {
+        throw new Error('API request failed')
+      }
+    } catch (error) {
+      console.error('Failed to fetch suggestions:', error)
+      setApiError(true)
+      // Use fallback suggestions on error
+      setBackendSuggestions(FALLBACK_SUGGESTIONS)
+    } finally {
+      setIsLoading(false)
     }
-
-    const inputLower = input.toLowerCase()
-    return SUGGESTIONS.filter(s =>
-      s.label.toLowerCase().includes(inputLower) ||
-      s.prompt.toLowerCase().includes(inputLower)
-    )
   }, [input])
+
+  // Fetch suggestions when visible and input changes significantly
+  useEffect(() => {
+    if (visible) {
+      fetchSuggestions()
+    }
+  }, [visible, fetchSuggestions])
+
+  // Convert backend suggestions to frontend format with icon components
+  const allSuggestions: Suggestion[] = useMemo(() => {
+    return backendSuggestions.map(s => {
+      const IconComponent = ICON_MAP[s.icon] || Lightbulb
+      return {
+        id: s.id,
+        label: s.label,
+        prompt: s.prompt,
+        icon: <IconComponent className="h-4 w-4" />,
+        category: s.category
+      }
+    })
+  }, [backendSuggestions])
+
+  // Additional client-side filtering for responsiveness
+  const filteredSuggestions = useMemo(() => {
+    // Backend already filtered by input, but we can add additional client-side filtering
+    // if needed for instant responsiveness
+    return allSuggestions
+  }, [allSuggestions])
 
   // Reset selected index when filtered suggestions change
   useEffect(() => {
@@ -179,12 +187,25 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
         "shadow-lg overflow-hidden",
         "animate-in slide-in-from-bottom-2 duration-200"
       )}>
-        {/* Header */}
+        {/* Header with loading indicator */}
         {input.trim() && (
-          <div className="px-3 py-2 border-b border-[var(--border)]">
+          <div className="px-3 py-2 border-b border-[var(--border)] flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
               按 <kbd className="px-1 py-0.5 rounded bg-[var(--muted)] text-[var(--muted-foreground)]">↑↓</kbd> 导航，
               <kbd className="px-1 py-0.5 rounded bg-[var(--muted)] text-[var(--muted-foreground)] ml-1">Enter</kbd> 选择
+            </p>
+            {isLoading && (
+              <span className="text-xs text-muted-foreground">加载中...</span>
+            )}
+          </div>
+        )}
+
+        {/* Pattern suggestions indicator */}
+        {!input.trim() && backendSuggestions.some(s => s.category === "agent") && (
+          <div className="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--muted)]/30">
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <History className="h-3 w-3" />
+              基于历史操作的建议
             </p>
           </div>
         )}
@@ -218,6 +239,21 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
               </div>
             </button>
           ))}
+
+          {/* Loading skeleton */}
+          {isLoading && filteredSuggestions.length === 0 && (
+            <>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                  <div className="h-6 w-6 rounded-md bg-[var(--muted)] animate-pulse" />
+                  <div className="flex-1">
+                    <div className="h-4 w-32 bg-[var(--muted)] animate-pulse rounded mb-1" />
+                    <div className="h-3 w-24 bg-[var(--muted)] animate-pulse rounded" />
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>

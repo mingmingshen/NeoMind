@@ -4,7 +4,7 @@ use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, Conte
 use edge_ai_storage::{
     AgentMemory, AgentStats, AgentStore, AgentExecutionRecord, AiAgent, DataCollected,
     Decision, DecisionProcess, ExecutionResult as StorageExecutionResult, ExecutionStatus,
-    GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType,
+    GeneratedReport, ReasoningStep, TrendPoint, AgentResource, ResourceType, LearnedPattern,
     // New conversation types
     ConversationTurn, TurnInput, TurnOutput,
     LlmBackendStore, LlmBackendInstance,
@@ -166,6 +166,258 @@ fn try_recover_truncated_json(json_str: &str) -> Option<(String, bool)> {
 
     // Last resort: return None to signal using raw text fallback
     None
+}
+
+/// Extract semantic patterns from decisions based on Claude Code's approach.
+/// Returns abstract patterns {symptom, cause, solution} instead of raw history.
+fn extract_semantic_patterns(
+    decisions: &[Decision],
+    situation_analysis: &str,
+    _data: &[DataCollected],
+    baselines: &HashMap<String, f64>,
+) -> Vec<LearnedPattern> {
+    let mut patterns = Vec::new();
+    let now = chrono::Utc::now().timestamp();
+
+    for decision in decisions {
+        if decision.decision_type.is_empty() {
+            continue;
+        }
+
+        // Extract pattern type
+        let pattern_type = match decision.decision_type.as_str() {
+            "alert" => "anomaly_detection",
+            "command" => "automated_control",
+            "info" => "information_logging",
+            _ => "general_pattern",
+        };
+
+        // Extract symptom (what condition triggered this)
+        let symptom = extract_symptom(situation_analysis, decision);
+
+        // Extract threshold/value if applicable
+        let threshold = extract_threshold_from_data(_data, baselines);
+
+        // Build pattern data
+        let pattern_data = serde_json::json!({
+            "symptom": symptom,
+            "action": decision.action,
+            "threshold": threshold,
+            "trigger_conditions": extract_trigger_conditions(decision),
+        });
+
+        // Default confidence: higher for alerts and commands
+        let confidence = match decision.decision_type.as_str() {
+            "alert" | "command" => 0.8,
+            _ => 0.6,
+        };
+
+        let pattern = LearnedPattern {
+            id: format!("{}:{}", pattern_type, now),
+            pattern_type: pattern_type.to_string(),
+            description: extract_semantic_description(decision, &symptom),
+            confidence,
+            learned_at: now,
+            data: pattern_data,
+        };
+
+        patterns.push(pattern);
+    }
+
+    patterns
+}
+
+/// Extract the symptom (condition) that triggered a decision.
+fn extract_symptom(
+    situation_analysis: &str,
+    decision: &Decision,
+) -> String {
+    // Try to extract from situation analysis
+    if !situation_analysis.is_empty() {
+        // Look for key phrases indicating conditions
+        if situation_analysis.contains("超过") || situation_analysis.contains("高于") {
+            return "数值超过阈值".to_string();
+        }
+        if situation_analysis.contains("低于") {
+            return "数值低于阈值".to_string();
+        }
+        if situation_analysis.contains("异常") || situation_analysis.contains("不正常") {
+            return "检测到异常状态".to_string();
+        }
+        if situation_analysis.contains("正常") || situation_analysis.contains("稳定") {
+            return "状态正常".to_string();
+        }
+    }
+
+    // Fallback to decision type
+    match decision.decision_type.as_str() {
+        "alert" => "检测到需要告警的情况".to_string(),
+        "command" => "满足自动化执行条件".to_string(),
+        _ => "常规检查".to_string(),
+    }
+}
+
+/// Extract numeric threshold from data and baselines.
+fn extract_threshold_from_data(
+    data: &[DataCollected],
+    baselines: &HashMap<String, f64>,
+) -> Option<f64> {
+    // Try to extract numeric value from decision description
+    for item in data {
+        if let Some(val) = item.values.get("value") {
+            if let Some(num) = val.as_f64() {
+                // Check if baseline exists
+                if let Some(&baseline) = baselines.get(&item.source) {
+                    let deviation = ((num - baseline) / baseline * 100.0).abs();
+                    if deviation > 10.0 {
+                        return Some(deviation);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extract trigger conditions from decision.
+fn extract_trigger_conditions(decision: &Decision) -> serde_json::Value {
+    let mut conditions = Vec::new();
+
+    // Use a fixed confidence since Decision doesn't have one
+    conditions.push("verified_action".to_string());
+
+    if !decision.action.is_empty() {
+        conditions.push(format!("action:{}", decision.action));
+    }
+
+    serde_json::json!(conditions)
+}
+
+/// Extract semantic description (abstract, not specific).
+fn extract_semantic_description(decision: &Decision, symptom: &str) -> String {
+    // Convert specific descriptions to abstract patterns
+    let desc = &decision.description;
+
+    // Pattern: "温度传感器1显示25度" -> "温度异常触发告警"
+    if desc.contains("温度") || desc.contains("temp") {
+        return format!("温度{} - {}", symptom, decision.action);
+    }
+    if desc.contains("湿度") || desc.contains("humidity") {
+        return format!("湿度{} - {}", symptom, decision.action);
+    }
+    if desc.contains("压力") || desc.contains("pressure") {
+        return format!("压力{} - {}", symptom, decision.action);
+    }
+
+    // Generic abstract description
+    format!("{} - {}", symptom, decision.action)
+}
+
+/// Build medium-term summary for 24h context compression.
+fn build_medium_term_summary(
+    memory: &AgentMemory,
+    _current_analysis: &str,
+    current_conclusion: &str,
+) -> String {
+    let mut parts = Vec::new();
+
+    // Key metrics tracked
+    if !memory.baselines.is_empty() {
+        parts.push(format!(
+            "基线指标: {}",
+            memory.baselines
+                .iter()
+                .map(|(k, v)| format!("{}={:.1}", k, v))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    // Pattern summary
+    if !memory.learned_patterns.is_empty() {
+        let pattern_types: std::collections::HashSet<_> = memory
+            .learned_patterns
+            .iter()
+            .map(|p| p.pattern_type.as_str())
+            .collect();
+        parts.push(format!(
+            "已识别模式: {}",
+            pattern_types.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    // Current status
+    if !current_conclusion.is_empty() {
+        parts.push(format!("当前状态: {}", current_conclusion));
+    }
+
+    parts.join("; ")
+}
+
+/// Check if context needs compaction based on token estimation.
+fn should_compact_context(history_context: &str, threshold_chars: usize) -> bool {
+    // Rough estimation: 1 token ≈ 3 characters for Chinese/English mixed
+    let estimated_tokens = history_context.chars().count() / 3;
+    estimated_tokens > threshold_chars
+}
+
+/// Compact history context while preserving key information.
+fn compact_history_context(
+    _history_context: &str,
+    memory: &AgentMemory,
+) -> String {
+    let mut preserved = Vec::new();
+
+    // 1. Always preserve: system prompt (already separate), current data (already separate)
+
+    // 2. Preserve medium-term summary if available
+    if let Some(summary) = memory.state_variables.get("medium_term_summary") {
+        if let Some(summary_obj) = summary.as_object() {
+            if let Some(summary_text) = summary_obj.get("summary").and_then(|v| v.as_str()) {
+                preserved.push(format!("## 历史摘要\n{}", summary_text));
+            }
+        }
+    }
+
+    // 3. Preserve high-confidence learned patterns (top 3 by category)
+    let mut pattern_categories = std::collections::HashMap::new();
+    for pattern in &memory.learned_patterns {
+        pattern_categories
+            .entry(pattern.pattern_type.as_str())
+            .or_insert_with(Vec::new)
+            .push(pattern);
+    }
+
+    let mut pattern_summaries = Vec::new();
+    for (category, patterns) in pattern_categories.iter() {
+        // Take highest confidence pattern from each category
+        if let Some(best) = patterns.iter().max_by(|a, b| {
+            a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            pattern_summaries.push(format!("- [{}] {} (置信度: {:.0}%)",
+                category, best.description, best.confidence * 100.0));
+        }
+    }
+
+    if !pattern_summaries.is_empty() {
+        preserved.push(format!("## 学到的模式\n{}", pattern_summaries.join("\n")));
+    }
+
+    // 4. Recent critical decisions (last 2)
+    if let Some(recent) = memory.state_variables.get("recent_decisions").and_then(|v| v.as_array()) {
+        let recent_decisions: Vec<_> = recent.iter()
+            .rev()
+            .take(2)
+            .filter_map(|d| d.get("description").and_then(|desc| desc.as_str()))
+            .map(|d| format!("- {}", d))
+            .collect();
+
+        if !recent_decisions.is_empty() {
+            preserved.push(format!("## 最近决策\n{}", recent_decisions.join("\n")));
+        }
+    }
+
+    preserved.join("\n\n")
 }
 
 /// Event data for triggering agent execution.
@@ -2290,28 +2542,40 @@ Respond in JSON format:
                 }
             }
 
-            // Add learned patterns
-            if let Some(patterns) = agent.memory.state_variables.get("decision_patterns").and_then(|v| v.as_array()) {
-                if !patterns.is_empty() {
-                    let recent_patterns: Vec<_> = patterns.iter()
-                        .rev()
-                        .take(5)
-                        .filter_map(|p| {
-                            p.get("description").and_then(|d| d.as_str())
-                                .map(|desc| format!("- {}", desc))
-                        })
-                        .collect();
+            // === SEMANTIC PATTERNS (Long-term memory) ===
+            // Use learned_patterns instead of raw decision_patterns
+            // Organized by pattern_type for better context
+            if !agent.memory.learned_patterns.is_empty() {
+                // Group patterns by type and show only the best from each category
+                let mut pattern_groups: std::collections::HashMap<&str, Vec<&LearnedPattern>> = std::collections::HashMap::new();
+                for pattern in &agent.memory.learned_patterns {
+                    pattern_groups
+                        .entry(pattern.pattern_type.as_str())
+                        .or_insert_with(Vec::new)
+                        .push(pattern);
+                }
 
-                    if !recent_patterns.is_empty() {
-                        history_parts.push(format!(
-                            "\n## 学到的决策模式\n{}",
-                            recent_patterns.join("\n")
-                        ));
+                // Take only high-confidence patterns (>= 0.7) from each category
+                let mut semantic_patterns = Vec::new();
+                for (category, patterns) in pattern_groups.iter() {
+                    if let Some(&best) = patterns.iter()
+                        .filter(|p| p.confidence >= 0.7)
+                        .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+                    {
+                        semantic_patterns.push(format!("- [{}] {} (置信度: {:.0}%)",
+                            category, best.description, best.confidence * 100.0));
                     }
+                }
+
+                if !semantic_patterns.is_empty() {
+                    history_parts.push(format!(
+                        "\n## 已验证的决策模式\n{}",
+                        semantic_patterns.join("\n")
+                    ));
                 }
             }
 
-            // Add baselines if available
+            // === BASELINES (Reference values) ===
             if !agent.memory.baselines.is_empty() {
                 let baseline_info: Vec<_> = agent.memory.baselines
                     .iter()
@@ -2325,15 +2589,16 @@ Respond in JSON format:
             }
         }
 
-        // Add conversation history if available
+        // === CONVERSATION HISTORY (Short-term memory) ===
+        // Reduced to 2 entries to minimize context
         if !agent.conversation_history.is_empty() {
             let recent: Vec<_> = agent.conversation_history
                 .iter()
                 .rev()
-                .take(2) // Reduced since we now have memory context
+                .take(2) // Keep minimal - patterns provide the long-term context
                 .collect();
             history_parts.push(format!(
-                "\n## 历史执行记录 (最近{}次)\n{}",
+                "\n## 最近执行 (最近{}次)\n{}",
                 recent.len(),
                 recent.iter().rev().enumerate()
                     .map(|(i, turn)| format!(
@@ -2351,6 +2616,19 @@ Respond in JSON format:
             history_parts.join("\n")
         } else {
             "".to_string()
+        };
+
+        // === INTELLIGENT COMPACTION ===
+        // Use semantic-aware compaction instead of simple truncation
+        // Threshold: ~2000 characters (~650 tokens) for Chinese/English mixed content
+        let history_context = if should_compact_context(&history_context, 2000) {
+            tracing::info!(
+                history_len = history_context.chars().count(),
+                "Context exceeds threshold, applying semantic compaction"
+            );
+            compact_history_context(&history_context, &agent.memory)
+        } else {
+            history_context
         };
 
         // Generic system prompt for all agents
@@ -2526,7 +2804,7 @@ Respond in JSON format:
         let input = LlmInput {
             messages,
             params: GenerationParams {
-                temperature: Some(0.7),
+                temperature: Some(0.6),
                 max_tokens: Some(8000), // Increased for image analysis with detailed descriptions
                 ..Default::default()
             },
@@ -3369,30 +3647,106 @@ Respond in JSON format:
             }
         }
 
-        // Store decision patterns from this execution
+        // === SEMANTIC PATTERN STORAGE ===
+        // Based on Claude Code's approach: store abstract patterns, not raw history
+        // Pattern structure: {symptom, cause, solution, confidence} instead of {type, description, timestamp}
+
         if !decisions.is_empty() {
-            let patterns_key = "decision_patterns";
-            let patterns = memory.state_variables
+            // 1. Extract semantic patterns from decisions
+            let semantic_patterns = extract_semantic_patterns(
+                decisions,
+                &situation_analysis,
+                data,
+                &memory.baselines,
+            );
+
+            // 2. Update learned_patterns (long-term memory)
+            // Only add high-confidence patterns that are repeatable
+            for pattern in semantic_patterns {
+                // Check if similar pattern already exists
+                let exists = memory.learned_patterns.iter().any(|p| {
+                    p.pattern_type == pattern.pattern_type
+                        && p.description == pattern.description
+                });
+
+                if !exists && pattern.confidence >= 0.7 {
+                    memory.learned_patterns.push(pattern);
+                }
+            }
+
+            // Limit learned patterns to most valuable ones
+            if memory.learned_patterns.len() > 15 {
+                // Keep only high-confidence patterns
+                memory.learned_patterns.sort_by(|a, b| {
+                    b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                memory.learned_patterns.truncate(15);
+            }
+
+            // 3. Keep short-term raw history (last 3 only) in state_variables
+            // This is for immediate context, not long-term memory
+            let patterns_key = "recent_decisions";
+            let recent = memory.state_variables
                 .entry(patterns_key.to_string())
                 .or_insert(serde_json::json!([]));
 
-            if let Some(arr) = patterns.as_array_mut() {
-                for decision in decisions {
-                    if !decision.decision_type.is_empty() {
-                        let pattern = serde_json::json!({
-                            "type": decision.decision_type,
-                            "description": decision.description,
-                            "timestamp": chrono::Utc::now().timestamp(),
-                        });
-                        arr.push(pattern);
-                    }
+            if let Some(arr) = recent.as_array_mut() {
+                // Add only significant decisions (alerts, commands)
+                for decision in decisions.iter().filter(|d| {
+                    !d.decision_type.is_empty()
+                        && (d.decision_type == "alert" || d.decision_type == "command")
+                }) {
+                    arr.push(serde_json::json!({
+                        "type": decision.decision_type,
+                        "description": decision.description,
+                        "action": decision.action,
+                        "timestamp": chrono::Utc::now().timestamp(),
+                    }));
                 }
-                // Keep only last 20 patterns
-                if arr.len() > 20 {
-                    let trimmed: Vec<serde_json::Value> = arr.iter().skip(arr.len() - 20).cloned().collect();
+
+                // Keep only last 3 recent decisions
+                if arr.len() > 3 {
+                    let trimmed: Vec<_> = arr.iter().skip(arr.len() - 3).cloned().collect();
                     memory.state_variables.insert(patterns_key.to_string(), serde_json::json!(trimmed));
                 }
             }
+        }
+
+        // 4. Maintain medium-term summary (24h compressed context)
+        let now = chrono::Utc::now().timestamp();
+        let last_summary = memory.state_variables
+            .get("medium_term_summary")
+            .and_then(|v| v.as_object())
+            .cloned();
+
+        if let Some(summary) = last_summary {
+            let summary_ts = summary.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+            let age_hours = (now - summary_ts) / 3600;
+
+            if age_hours >= 24 {
+                // Time to refresh the medium-term summary
+                let summary_data = build_medium_term_summary(&memory, situation_analysis, conclusion);
+                memory.state_variables.insert(
+                    "medium_term_summary".to_string(),
+                    serde_json::json!({
+                        "timestamp": now,
+                        "summary": summary_data,
+                    })
+                );
+
+                // Clear old recent_analyses to free up space
+                memory.state_variables.remove("recent_analyses");
+            }
+        } else {
+            // Create initial summary
+            let summary_data = build_medium_term_summary(&memory, situation_analysis, conclusion);
+            memory.state_variables.insert(
+                "medium_term_summary".to_string(),
+                serde_json::json!({
+                    "timestamp": now,
+                    "summary": summary_data,
+                })
+            );
         }
 
         // Also track execution count in state_variables
@@ -3464,7 +3818,31 @@ Respond in JSON format:
         );
         messages.push(Message::system(system_prompt));
 
-        // 2. Add conversation summary if available
+        // 2. Add user messages as important context - these are the user's latest instructions
+        // User messages take priority over initial configuration and historical patterns
+        if !agent.user_messages.is_empty() {
+            let user_msgs_text: Vec<String> = agent.user_messages
+                .iter()
+                .enumerate()
+                .map(|(i, msg)| {
+                    let timestamp_str = chrono::DateTime::from_timestamp(msg.timestamp, 0)
+                        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    format!("{}. [{}] {}", i + 1, timestamp_str, msg.content)
+                })
+                .collect();
+
+            messages.push(Message::system(format!(
+                "## ⚠️ 用户最新指令 (必须严格遵循)\n\n\
+                用户在运行期间发送了以下消息，这些消息包含对执行策略的更新。\
+                **请务必将这些指令作为最高优先级，覆盖初始配置中的任何冲突规则：**\n\n\
+                {}\n\n\
+                请在分析当前情况时，严格按照上述用户指令进行决策。",
+                user_msgs_text.join("\n")
+            )));
+        }
+
+        // 3. Add conversation summary if available
         if let Some(ref summary) = agent.conversation_summary {
             messages.push(Message::system(format!(
                 "## 历史对话摘要\n\n{}",
@@ -3472,7 +3850,7 @@ Respond in JSON format:
             )));
         }
 
-        // 3. Add recent conversation turns as context
+        // 4. Add recent conversation turns as context
         let context_window = agent.context_window_size;
         let recent_turns: Vec<_> = agent.conversation_history
             .iter()
@@ -3524,7 +3902,7 @@ Respond in JSON format:
             ));
         }
 
-        // 4. Current execution data
+        // 5. Current execution data
         let data_text = if current_data.is_empty() {
             "无数据".to_string()
         } else {

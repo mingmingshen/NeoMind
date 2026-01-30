@@ -20,12 +20,56 @@ use edge_ai_rules::RuleEngine;
 /// Tool for querying time series data using real storage.
 pub struct QueryDataTool {
     storage: Arc<TimeSeriesStorage>,
+    /// 最大允许的数据延迟（秒），超过此时间会提示数据可能过期
+    max_data_age_seconds: i64,
 }
 
 impl QueryDataTool {
     /// Create a new query data tool with real storage.
     pub fn new(storage: Arc<TimeSeriesStorage>) -> Self {
-        Self { storage }
+        Self {
+            storage,
+            max_data_age_seconds: 300, // 默认5分钟
+        }
+    }
+
+    /// 设置最大数据延迟阈值
+    pub fn with_max_data_age(mut self, seconds: i64) -> Self {
+        self.max_data_age_seconds = seconds;
+        self
+    }
+
+    /// 检查数据新鲜度
+    /// 返回 (is_stale, latest_timestamp, age_seconds)
+    fn check_data_freshness(&self, data_points: &[edge_ai_devices::DataPoint]) -> (bool, Option<i64>, Option<i64>) {
+        if data_points.is_empty() {
+            return (false, None, None);
+        }
+
+        // 获取最新的数据点时间戳
+        let latest_timestamp = data_points.iter()
+            .map(|p| p.timestamp)
+            .max();
+
+        if let Some(latest) = latest_timestamp {
+            let now = chrono::Utc::now().timestamp();
+            let age = now - latest;
+            let is_stale = age > self.max_data_age_seconds;
+            (is_stale, Some(latest), Some(age))
+        } else {
+            (false, None, None)
+        }
+    }
+
+    /// 格式化数据延迟提示
+    fn format_freshness_warning(&self, age_seconds: i64) -> String {
+        if age_seconds < 60 {
+            format!("⚠️ 数据已过期 {} 秒", age_seconds)
+        } else if age_seconds < 3600 {
+            format!("⚠️ 数据已过期 {} 分钟", age_seconds / 60)
+        } else {
+            format!("⚠️ 数据已过期 {} 小时", age_seconds / 3600)
+        }
     }
 }
 
@@ -138,6 +182,9 @@ impl Tool for QueryDataTool {
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to query data: {}", e)))?;
 
+        // 检查数据新鲜度
+        let (is_stale, latest_ts, age_seconds) = self.check_data_freshness(&data_points);
+
         // Convert data points to the expected format
         let data: Vec<Value> = data_points
             .iter()
@@ -149,19 +196,53 @@ impl Tool for QueryDataTool {
             })
             .collect();
 
-        Ok(ToolOutput::success_with_metadata(
-            serde_json::json!({
-                "device_id": device_id,
-                "metric": metric,
-                "start_time": start_time,
-                "end_time": end_time,
-                "count": data.len(),
-                "data": data
-            }),
-            serde_json::json!({
-                "query_type": "time_series_range"
-            }),
-        ))
+        // 构建元数据，包含数据新鲜度信息
+        let mut metadata = serde_json::json!({
+            "query_type": "time_series_range",
+            "has_data": !data.is_empty(),
+        });
+
+        // 添加最新数据时间信息
+        if let Some(latest) = latest_ts {
+            metadata["latest_timestamp"] = Value::Number(latest.into());
+        }
+        if let Some(age) = age_seconds {
+            metadata["data_age_seconds"] = Value::Number(age.into());
+        }
+
+        // 如果数据过期，添加警告
+        let mut warning_message = None;
+        if is_stale {
+            if let Some(age) = age_seconds {
+                warning_message = Some(self.format_freshness_warning(age));
+                metadata["data_freshness"] = serde_json::json!({
+                    "status": "stale",
+                    "warning": warning_message.as_ref().unwrap()
+                });
+            }
+        } else if let Some(age) = age_seconds {
+            metadata["data_freshness"] = serde_json::json!({
+                "status": "fresh",
+                "age_seconds": age
+            });
+        }
+
+        // 构建响应
+        let mut result = serde_json::json!({
+            "device_id": device_id,
+            "metric": metric,
+            "start_time": start_time,
+            "end_time": end_time,
+            "count": data.len(),
+            "data": data
+        });
+
+        // 如果有警告，添加到结果中
+        if let Some(warning) = warning_message {
+            result["warning"] = Value::String(warning);
+        }
+
+        Ok(ToolOutput::success_with_metadata(result, metadata))
     }
 }
 
@@ -298,6 +379,65 @@ impl Tool for ControlDeviceTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("command must be a string".to_string()))?;
 
+        // === 离线设备优雅降级处理 ===
+        // 检查设备连接状态，如果设备离线则提供友好错误信息
+        let connection_status = self.service.get_device_connection_status(device_id).await;
+
+        use edge_ai_devices::adapter::ConnectionStatus;
+        match connection_status {
+            ConnectionStatus::Connected => {
+                // 设备在线，继续执行命令
+            }
+            ConnectionStatus::Disconnected | ConnectionStatus::Error => {
+                return Ok(ToolOutput::success_with_metadata(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "device_id": device_id,
+                        "command": command,
+                        "message": format!("设备 '{}' 当前离线，命令已跳过", device_id),
+                        "suggestion": "请检查设备连接或设备状态后再试"
+                    }),
+                    serde_json::json!({
+                        "device_status": "offline",
+                        "command_sent": false,
+                        "reason": "设备未连接"
+                    })
+                ));
+            }
+            ConnectionStatus::Connecting => {
+                return Ok(ToolOutput::success_with_metadata(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "device_id": device_id,
+                        "command": command,
+                        "message": format!("设备 '{}' 正在连接中，请稍后再试", device_id),
+                        "suggestion": "等待设备连接完成后重试"
+                    }),
+                    serde_json::json!({
+                        "device_status": "connecting",
+                        "command_sent": false,
+                        "reason": "设备正在连接"
+                    })
+                ));
+            }
+            ConnectionStatus::Reconnecting => {
+                return Ok(ToolOutput::success_with_metadata(
+                    serde_json::json!({
+                        "status": "skipped",
+                        "device_id": device_id,
+                        "command": command,
+                        "message": format!("设备 '{}' 正在重连中，请稍后再试", device_id),
+                        "suggestion": "等待设备重连完成后重试"
+                    }),
+                    serde_json::json!({
+                        "device_status": "reconnecting",
+                        "command_sent": false,
+                        "reason": "设备正在重连"
+                    })
+                ));
+            }
+        }
+
         // Extract parameters - DeviceService accepts HashMap<String, serde_json::Value>
         let mut params = std::collections::HashMap::new();
 
@@ -314,17 +454,30 @@ impl Tool for ControlDeviceTool {
         }
 
         // Send command to device using DeviceService
-        self.service
-            .send_command(device_id, command, params)
-            .await
-            .map_err(|e| ToolError::Execution(format!("Failed to send command: {}", e)))?;
-
-        Ok(ToolOutput::success(serde_json::json!({
-            "status": "success",
-            "device_id": device_id,
-            "command": command,
-            "message": "Command sent successfully"
-        })))
+        match self.service.send_command(device_id, command, params).await {
+            Ok(_) => Ok(ToolOutput::success(serde_json::json!({
+                "status": "success",
+                "device_id": device_id,
+                "command": command,
+                "message": "Command sent successfully"
+            }))),
+            Err(e) => {
+                // 命令发送失败，提供详细错误信息
+                Ok(ToolOutput::success_with_metadata(
+                    serde_json::json!({
+                        "status": "error",
+                        "device_id": device_id,
+                        "command": command,
+                        "message": format!("命令执行失败: {}", e),
+                        "suggestion": "请检查设备状态和网络连接后重试"
+                    }),
+                    serde_json::json!({
+                        "error": e.to_string(),
+                        "command_sent": false
+                    })
+                ))
+            }
+        }
     }
 }
 
@@ -1554,5 +1707,83 @@ impl DeviceAnalyzeTool {
                 "std_dev": std_dev
             })),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use edge_ai_devices::{DataPoint, MetricValue};
+
+    #[test]
+    fn test_freshness_warning_formatting() {
+        let storage = Arc::new(TimeSeriesStorage::memory().unwrap());
+        let tool = QueryDataTool::new(storage);
+
+        // Test seconds
+        assert_eq!(tool.format_freshness_warning(30), "⚠️ 数据已过期 30 秒");
+        // Test minutes
+        assert_eq!(tool.format_freshness_warning(300), "⚠️ 数据已过期 5 分钟");
+        // Test hours
+        assert_eq!(tool.format_freshness_warning(7200), "⚠️ 数据已过期 2 小时");
+    }
+
+    #[test]
+    fn test_data_freshness_check() {
+        let storage = Arc::new(TimeSeriesStorage::memory().unwrap());
+        let tool = QueryDataTool::new(storage);
+
+        let now = chrono::Utc::now().timestamp();
+
+        // Test with fresh data (1 minute old)
+        let fresh_data = vec![
+            DataPoint {
+                timestamp: now - 60,
+                value: MetricValue::Float(22.5),
+                quality: None,
+            }
+        ];
+        let (is_stale, latest_ts, age) = tool.check_data_freshness(&fresh_data);
+        assert!(!is_stale, "Fresh data should not be marked as stale");
+        assert_eq!(latest_ts, Some(now - 60));
+        assert_eq!(age, Some(60));
+
+        // Test with stale data (10 minutes old, > 5 minute threshold)
+        let stale_data = vec![
+            DataPoint {
+                timestamp: now - 600,
+                value: MetricValue::Float(22.5),
+                quality: None,
+            }
+        ];
+        let (is_stale, latest_ts, age) = tool.check_data_freshness(&stale_data);
+        assert!(is_stale, "Stale data should be marked as stale");
+        assert_eq!(age, Some(600));
+
+        // Test with empty data
+        let empty_data: Vec<DataPoint> = vec![];
+        let (is_stale, latest_ts, age) = tool.check_data_freshness(&empty_data);
+        assert!(!is_stale, "Empty data should not be marked as stale");
+        assert_eq!(latest_ts, None);
+        assert_eq!(age, None);
+    }
+
+    #[test]
+    fn test_custom_max_data_age() {
+        let storage = Arc::new(TimeSeriesStorage::memory().unwrap());
+        let tool = QueryDataTool::new(storage).with_max_data_age(60); // 1 minute threshold
+
+        let now = chrono::Utc::now().timestamp();
+
+        // Data 2 minutes old should be stale with 1 minute threshold
+        let data = vec![
+            DataPoint {
+                timestamp: now - 120,
+                value: MetricValue::Float(22.5),
+                quality: None,
+            }
+        ];
+        let (is_stale, _, _) = tool.check_data_freshness(&data);
+        assert!(is_stale, "Data older than threshold should be stale");
     }
 }

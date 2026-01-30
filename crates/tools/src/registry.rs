@@ -458,7 +458,7 @@ impl ToolRegistryBuilder {
             .with_enable_rule_tool()
             .with_disable_rule_tool()
             .with_update_rule_tool()
-            .with_trigger_workflow_tool()
+            // Note: with_trigger_workflow_tool() not yet implemented
     }
 
     /// Build the registry.

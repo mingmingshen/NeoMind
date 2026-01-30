@@ -106,35 +106,35 @@ function ExecutionItem({ execution, isLatest, isRunning, onClick }: ExecutionIte
     <button
       onClick={onClick}
       className={cn(
-        "w-full flex items-center gap-3 py-2.5 px-3 rounded-lg transition-all text-left",
-        isLatest ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/70 border border-transparent"
+        "w-full flex items-center gap-2 py-1.5 px-2 rounded transition-all text-left",
+        isLatest ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/50 border border-transparent"
       )}
     >
       {getStatusIcon()}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-mono text-muted-foreground">
             #{execution.id.slice(-6)}
           </span>
           {isLatest && (
-            <Badge variant="outline" className="text-[10px] h-4 px-1">
-              Latest
+            <Badge variant="outline" className="text-[8px] h-3.5 px-1">
+              New
             </Badge>
           )}
         </div>
         {execution.error && (
-          <p className="text-xs text-red-500 truncate mt-0.5">{execution.error}</p>
+          <p className="text-[10px] text-red-500 truncate mt-0.5">{execution.error}</p>
         )}
       </div>
-      <div className="text-xs text-muted-foreground shrink-0">
+      <div className="text-[10px] text-muted-foreground shrink-0">
         {formatTime(execution.timestamp)}
       </div>
       {execution.duration_ms > 0 && (
-        <div className="text-xs font-medium tabular-nums shrink-0 min-w-[40px] text-right">
+        <div className="text-[10px] font-medium tabular-nums shrink-0 min-w-[35px] text-right">
           {formatDuration(execution.duration_ms)}
         </div>
       )}
-      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
     </button>
   )
 }
@@ -549,9 +549,10 @@ export function AgentMonitorWidget({
     },
   ]
 
-  // Use mock data when in edit mode or preview without agentId
-  const displayAgent = agent || (editMode && !agentId ? mockAgent : null)
-  const displayExecutions = agentId && executions.length > 0 ? executions : (editMode && !agentId ? mockExecutions : executions)
+  // In edit mode, always use mock data for preview
+  // In normal mode, use real agent data
+  const displayAgent = editMode ? mockAgent : agent
+  const displayExecutions = editMode ? mockExecutions : executions
 
   // Calculate stats - from displayAgent or fallback to displayExecutions
   const statsFromExecutions = displayExecutions.length > 0 ? {
@@ -589,8 +590,8 @@ export function AgentMonitorWidget({
     )
   }
 
-  // Loading state
-  if (loading) {
+  // Loading state - skip in edit mode to show preview
+  if (loading && !editMode) {
     return (
       <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
         <div className="text-center">
@@ -601,7 +602,19 @@ export function AgentMonitorWidget({
     )
   }
 
-  // Agent not found (only show this outside edit mode)
+  // Agent not found - only show this outside edit mode
+  if (!displayAgent && !editMode) {
+    return (
+      <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
+        <div className="text-center">
+          <Bot className="h-12 w-12 opacity-20 text-muted-foreground mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">{t('dashboardComponents:agentMonitorWidget.agentNotFound')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Final fallback - should not happen since editMode always has mockAgent
   if (!displayAgent) {
     return (
       <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex items-center justify-center min-h-[200px]", className)}>
@@ -615,43 +628,43 @@ export function AgentMonitorWidget({
 
   return (
     <>
-      <div className={cn("bg-card rounded-xl border shadow-sm overflow-hidden flex flex-col w-full h-full", className)}>
-        {/* Header - Agent Info */}
-        <div className="px-4 py-3 border-b bg-gradient-to-r from-primary/5 to-transparent shrink-0">
+      <div className={cn("bg-card rounded-lg border-0 shadow-sm overflow-hidden flex flex-col w-full h-full bg-background", className)}>
+        {/* Compact Header - Agent Info */}
+        <div className="px-3 py-2 border-b border-border/50 bg-muted/30 shrink-0">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <div className={cn(
-                "h-9 w-9 rounded-lg flex items-center justify-center transition-colors",
+                "h-7 w-7 rounded-md flex items-center justify-center transition-colors",
                 currentlyExecuting ? "bg-blue-500/20" : "bg-green-500/20"
               )}>
                 <Bot className={cn(
-                  "h-4.5 w-4.5 transition-colors",
+                  "h-3.5 w-3.5 transition-colors",
                   currentlyExecuting ? "text-blue-500" : "text-green-500"
                 )} />
               </div>
               <div>
-                <h3 className="font-semibold text-sm">{displayAgent.name}</h3>
-                <div className="flex items-center gap-2 mt-0.5">
+                <h3 className="font-medium text-xs">{displayAgent.name}</h3>
+                <div className="flex items-center gap-1.5 mt-0.5">
                   {currentlyExecuting ? (
-                    <Badge variant="default" className="text-[10px] h-5 gap-1">
-                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                      Executing
+                    <Badge variant="default" className="text-[9px] h-4 gap-0.5 px-1">
+                      <Loader2 className="h-2 w-2 animate-spin" />
+                      Running
                     </Badge>
                   ) : displayAgent.status === 'Active' ? (
-                    <Badge variant="outline" className="text-[10px] h-5 text-green-600 border-green-200">
-                      <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
+                    <Badge variant="outline" className="text-[9px] h-4 text-green-600 border-green-200 px-1">
+                      <CheckCircle2 className="h-2 w-2 mr-0.5" />
                       Active
                     </Badge>
                   ) : displayAgent.status === 'Error' ? (
-                    <Badge variant="destructive" className="text-[10px] h-5">
+                    <Badge variant="destructive" className="text-[9px] h-4 px-1">
                       Error
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-[10px] h-5">
+                    <Badge variant="secondary" className="text-[9px] h-4 px-1">
                       Paused
                     </Badge>
                   )}
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-[9px] text-muted-foreground">
                     {displayAgent.last_execution_at
                       ? formatTimestamp(displayAgent.last_execution_at)
                       : 'Never'
@@ -663,27 +676,27 @@ export function AgentMonitorWidget({
           </div>
         </div>
 
-        {/* Tabs List */}
-        <div className="px-4 pt-3 pb-0 shrink-0">
+        {/* Compact Tabs List */}
+        <div className="px-2 pt-1.5 pb-0 shrink-0">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as WidgetTab)} className="w-full">
-            <TabsList className="w-full justify-start bg-muted/40 h-8 px-0">
-              <TabsTrigger value="overview" className="h-7 px-3 text-xs data-[state=active]:bg-background">
-                <Sparkles className="h-3 w-3 mr-1" />
+            <TabsList className="w-full justify-start bg-muted/30 h-7 px-0">
+              <TabsTrigger value="overview" className="h-6 px-2 text-[10px] data-[state=active]:bg-background">
+                <Sparkles className="h-2.5 w-2.5 mr-1" />
                 Overview
               </TabsTrigger>
-              <TabsTrigger value="history" className="h-7 px-3 text-xs data-[state=active]:bg-background">
-                <History className="h-3 w-3 mr-1" />
+              <TabsTrigger value="history" className="h-6 px-2 text-[10px] data-[state=active]:bg-background">
+                <History className="h-2.5 w-2.5 mr-1" />
                 History
               </TabsTrigger>
-              <TabsTrigger value="memory" className="h-7 px-3 text-xs data-[state=active]:bg-background">
-                <Brain className="h-3 w-3 mr-1" />
+              <TabsTrigger value="memory" className="h-6 px-2 text-[10px] data-[state=active]:bg-background">
+                <Brain className="h-2.5 w-2.5 mr-1" />
                 Memory
               </TabsTrigger>
-              <TabsTrigger value="messages" className="h-7 px-3 text-xs data-[state=active]:bg-background">
-                <MessageSquare className="h-3 w-3 mr-1" />
+              <TabsTrigger value="messages" className="h-6 px-2 text-[10px] data-[state=active]:bg-background">
+                <MessageSquare className="h-2.5 w-2.5 mr-1" />
                 Messages
                 {userMessages.length > 0 && (
-                  <span className="ml-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[9px] flex items-center justify-center">
+                  <span className="ml-1 h-3.5 w-3.5 rounded-full bg-primary text-primary-foreground text-[8px] flex items-center justify-center">
                     {userMessages.length}
                   </span>
                 )}
@@ -692,42 +705,41 @@ export function AgentMonitorWidget({
           </Tabs>
         </div>
 
-        {/* Real-time Progress - shown when executing, independent section */}
+        {/* Compact Real-time Progress - shown when executing */}
         {currentlyExecuting && (
-          <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-green-500/5 relative overflow-hidden shrink-0">
+          <div className="px-3 py-2 border-b border-border/50 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-green-500/10 relative overflow-hidden shrink-0">
             {/* Animated scan line */}
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-500/5 to-transparent animate-pulse pointer-events-none" />
 
-            {/* Stage indicator with glow */}
-            <div className="flex items-center gap-2 mb-3 relative">
+            {/* Stage indicator */}
+            <div className="flex items-center gap-2 mb-2 relative">
               <div className={cn(
                 "relative",
                 currentStage === 'collecting' && "animate-pulse"
               )}>
                 <Sparkles className={cn(
-                  "h-4 w-4 transition-all duration-300",
-                  currentStage === 'collecting' ? "text-blue-500 drop-shadow-[0_0_8px_rgba(59,130,246,0.8)]" :
-                  currentStage === 'analyzing' ? "text-purple-500 drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]" :
-                  "text-green-500 drop-shadow-[0_0_8px_rgba(34,197,94,0.8)]"
+                  "h-3 w-3 transition-all duration-300",
+                  currentStage === 'collecting' ? "text-blue-500 drop-shadow-[0_0_6px_rgba(59,130,246,0.8)]" :
+                  currentStage === 'analyzing' ? "text-purple-500 drop-shadow-[0_0_6px_rgba(168,85,247,0.8)]" :
+                  "text-green-500 drop-shadow-[0_0_6px_rgba(34,197,94,0.8)]"
                 )} />
               </div>
               <span className={cn(
-                "text-xs font-bold uppercase tracking-wider",
+                "text-[10px] font-bold uppercase tracking-wider",
                 currentStage === 'collecting' ? "text-blue-600 dark:text-blue-400" :
                 currentStage === 'analyzing' ? "text-purple-600 dark:text-purple-400" :
                 "text-green-600 dark:text-green-400"
               )}>
                 {stageLabel || 'PROCESSING'}
               </span>
-              {/* Blinking cursor */}
-              <span className="ml-1 w-1.5 h-3 bg-current animate-pulse opacity-70" />
+              <span className="ml-0.5 w-1 h-2 bg-current animate-pulse opacity-70" />
             </div>
 
-            {/* Progress bar with stages */}
-            <div className="flex items-center gap-1.5 mb-3 relative">
+            {/* Compact progress bar */}
+            <div className="flex items-center gap-1 relative">
               <div className={cn(
-                "h-2 flex-1 rounded-full transition-all duration-500 relative overflow-hidden",
-                currentStage === 'collecting' ? "bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.6)]" :
+                "h-1.5 flex-1 rounded-full transition-all duration-500 relative overflow-hidden",
+                currentStage === 'collecting' ? "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" :
                 currentStage && ['analyzing', 'executing'].includes(currentStage) ? "bg-blue-500" : "bg-blue-200/50 dark:bg-blue-900/30"
               )}>
                 {currentStage === 'collecting' && (
@@ -735,8 +747,8 @@ export function AgentMonitorWidget({
                 )}
               </div>
               <div className={cn(
-                "h-2 flex-1 rounded-full transition-all duration-500 relative overflow-hidden",
-                currentStage === 'analyzing' ? "bg-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.6)]" :
+                "h-1.5 flex-1 rounded-full transition-all duration-500 relative overflow-hidden",
+                currentStage === 'analyzing' ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.6)]" :
                 currentStage === 'executing' ? "bg-purple-500" : "bg-purple-200/50 dark:bg-purple-900/30"
               )}>
                 {currentStage === 'analyzing' && (
@@ -744,8 +756,8 @@ export function AgentMonitorWidget({
                 )}
               </div>
               <div className={cn(
-                "h-2 flex-1 rounded-full transition-all duration-500 relative overflow-hidden",
-                currentStage === 'executing' ? "bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)]" : "bg-green-200/50 dark:bg-green-900/30"
+                "h-1.5 flex-1 rounded-full transition-all duration-500 relative overflow-hidden",
+                currentStage === 'executing' ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]" : "bg-green-200/50 dark:bg-green-900/30"
               )}>
                 {currentStage === 'executing' && (
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-[shimmer_1s_infinite]" />
@@ -753,52 +765,27 @@ export function AgentMonitorWidget({
               </div>
             </div>
 
-            {/* Stage labels */}
-            <div className="flex items-center justify-between text-[9px] px-1 mb-2">
-              <span className={cn(
-                "transition-all duration-300",
-                currentStage === 'collecting' ? "text-blue-600 dark:text-blue-400 font-semibold tracking-wide" : "text-muted-foreground/50"
-              )}>
-                1. Collecting
-              </span>
-              <span className={cn(
-                "transition-all duration-300",
-                currentStage === 'analyzing' ? "text-purple-600 dark:text-purple-400 font-semibold tracking-wide" : "text-muted-foreground/50"
-              )}>
-                2. Analyzing
-              </span>
-              <span className={cn(
-                "transition-all duration-300",
-                currentStage === 'executing' ? "text-green-600 dark:text-green-400 font-semibold tracking-wide" : "text-muted-foreground/50"
-              )}>
-                3. Executing
-              </span>
-            </div>
-
             {/* Details */}
             {stageDetails && (
-              <div className="mb-2 text-[10px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30 px-2 py-1 rounded">
+              <div className="mt-1.5 text-[9px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/30 px-2 py-0.5 rounded">
                 {stageDetails}
               </div>
             )}
 
-            {/* Thinking steps */}
+            {/* Thinking steps - compact */}
             {thinkingSteps.length > 0 && (
-              <div className="mt-2 space-y-1 max-h-20 overflow-hidden relative">
-                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-inherit to-transparent pointer-events-none" />
-                {thinkingSteps.slice(-3).map((step, i) => (
+              <div className="mt-1.5 space-y-0.5 max-h-16 overflow-hidden relative">
+                <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-inherit to-transparent pointer-events-none" />
+                {thinkingSteps.slice(-2).map((step, i) => (
                   <div key={i} className={cn(
-                    "text-[9px] font-mono flex items-start gap-1.5 animate-[fadeIn_0.3s_ease-out]",
+                    "text-[8px] font-mono flex items-start gap-1",
                     "text-muted-foreground"
                   )}>
                     <span className={cn(
-                      "shrink-0 opacity-70 w-1 h-1 rounded-full mt-0.5",
-                      i === thinkingSteps.slice(-3).length - 1 ? "bg-green-500" : "bg-muted-foreground/50"
+                      "shrink-0 opacity-70 w-0.5 h-0.5 rounded-full mt-0.5",
+                      i === thinkingSteps.slice(-2).length - 1 ? "bg-green-500" : "bg-muted-foreground/50"
                     )} />
                     <span className="flex-1 break-words">{step.description}</span>
-                    {i === thinkingSteps.slice(-3).length - 1 && (
-                      <span className="w-1 h-3 bg-green-500 animate-pulse shrink-0" />
-                    )}
                   </div>
                 ))}
               </div>
@@ -806,55 +793,52 @@ export function AgentMonitorWidget({
           </div>
         )}
 
-        {/* Tab Content - separate from tabs list for proper flex sizing */}
-        <div className="w-full flex-1 min-h-0 overflow-hidden px-4">
+        {/* Tab Content - minimal padding for full container fill */}
+        <div className="w-full flex-1 min-h-0 overflow-hidden px-2">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as WidgetTab)} className="w-full h-full flex flex-col">
             {/* Overview Tab Content */}
             <TabsContent value="overview" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              <div className="w-full flex flex-col h-full gap-3 overflow-hidden">
-                {/* Stats Bar */}
-                <div className="w-full flex items-center divide-x border rounded-lg bg-muted/30 shrink-0">
-                  <div className="flex-1 px-3 py-2 text-center">
-                    <div className="text-base font-semibold tabular-nums">{executionCount}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Executions</div>
+              <div className="w-full flex flex-col h-full gap-2 overflow-hidden">
+                {/* Compact Stats Bar */}
+                <div className="w-full flex items-center divide-x divide-border/50 border border-border/50 rounded bg-muted/20 shrink-0">
+                  <div className="flex-1 px-2 py-1.5 text-center">
+                    <div className="text-sm font-semibold tabular-nums">{executionCount}</div>
+                    <div className="text-[8px] text-muted-foreground uppercase tracking-wide">Runs</div>
                   </div>
-                  <div className="flex-1 px-3 py-2 text-center">
+                  <div className="flex-1 px-2 py-1.5 text-center">
                     <div className={cn(
-                      "text-base font-semibold tabular-nums",
+                      "text-sm font-semibold tabular-nums",
                       successRate >= 80 ? "text-green-600" : successRate >= 50 ? "text-yellow-600" : "text-red-600"
                     )}>{successRate}%</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Success</div>
+                    <div className="text-[8px] text-muted-foreground uppercase tracking-wide">Success</div>
                   </div>
-                  <div className="flex-1 px-3 py-2 text-center">
-                    <div className="text-base font-semibold tabular-nums text-red-500">{errorCount}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Failed</div>
+                  <div className="flex-1 px-2 py-1.5 text-center">
+                    <div className="text-sm font-semibold tabular-nums text-red-500">{errorCount}</div>
+                    <div className="text-[8px] text-muted-foreground uppercase tracking-wide">Failed</div>
                   </div>
-                  <div className="flex-1 px-3 py-2 text-center">
-                    <div className="text-base font-semibold tabular-nums">{avgDuration}</div>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Time</div>
+                  <div className="flex-1 px-2 py-1.5 text-center">
+                    <div className="text-sm font-semibold tabular-nums">{avgDuration}</div>
+                    <div className="text-[8px] text-muted-foreground uppercase tracking-wide">Avg</div>
                   </div>
                 </div>
 
                 {/* Recent Executions */}
                 <div className="w-full flex-1 min-h-0 flex flex-col">
-                  <div className="w-full px-2 py-1.5 border-b flex items-center justify-between bg-muted/20 rounded-t-lg shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="text-xs font-medium">Recent Executions</span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">
-                      {displayExecutions.slice(0, 5).length} shown
+                  <div className="w-full px-2 py-1 border-b border-border/30 flex items-center justify-between bg-muted/10 rounded-t shrink-0">
+                    <span className="text-[10px] font-medium">Recent</span>
+                    <span className="text-[8px] text-muted-foreground">
+                      {displayExecutions.slice(0, 5).length}
                     </span>
                   </div>
 
-                  <ScrollArea className="flex-1 w-full border rounded-b-lg">
+                  <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
                     {displayExecutions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <MoreHorizontal className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
-                        <p className="text-xs text-muted-foreground">No execution history yet</p>
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <MoreHorizontal className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
+                        <p className="text-[10px] text-muted-foreground">No history</p>
                       </div>
                     ) : (
-                      <div className="w-full p-2 space-y-1">
+                      <div className="w-full p-1 space-y-0.5">
                         {displayExecutions.slice(0, 5).map((exec, index) => (
                           <ExecutionItem
                             key={exec.id}
@@ -874,24 +858,21 @@ export function AgentMonitorWidget({
             {/* History Tab Content */}
             <TabsContent value="history" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
               <div className="w-full flex flex-col h-full overflow-hidden">
-                <div className="px-2 py-1.5 border-b flex items-center justify-between bg-muted/20 rounded-t-lg shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">Execution History</span>
-                  </div>
-                  <span className="text-[10px] text-muted-foreground">
-                    {displayExecutions.length} total
+                <div className="px-2 py-1 border-b border-border/30 flex items-center justify-between bg-muted/10 rounded-t shrink-0">
+                  <span className="text-[10px] font-medium">History</span>
+                  <span className="text-[8px] text-muted-foreground">
+                    {displayExecutions.length}
                   </span>
                 </div>
 
-                <ScrollArea className="flex-1 w-full border rounded-b-lg">
+                <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
                   {displayExecutions.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <MoreHorizontal className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
-                      <p className="text-xs text-muted-foreground">No execution history yet</p>
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <MoreHorizontal className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
+                      <p className="text-[10px] text-muted-foreground">No history</p>
                     </div>
                   ) : (
-                    <div className="w-full p-2 space-y-1">
+                    <div className="w-full p-1 space-y-0.5">
                       {displayExecutions.map((exec, index) => (
                         <ExecutionItem
                           key={exec.id}
@@ -910,34 +891,31 @@ export function AgentMonitorWidget({
             {/* Memory Tab Content */}
             <TabsContent value="memory" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
               <div className="w-full flex flex-col h-full overflow-hidden">
-                <div className="w-full px-2 py-1.5 border-b flex items-center bg-muted/20 rounded-t-lg shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Brain className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">Agent Memory</span>
-                  </div>
+                <div className="px-2 py-1 border-b border-border/30 flex items-center bg-muted/10 rounded-t shrink-0">
+                  <span className="text-[10px] font-medium">Memory</span>
                 </div>
 
-                <ScrollArea className="flex-1 w-full border rounded-b-lg">
+                <ScrollArea className="flex-1 w-full border border-border/30 rounded-b">
                   {memoryLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                   ) : memory ? (
-                    <div className="w-full p-4 space-y-4">
+                    <div className="w-full p-2 space-y-3">
                       {/* State Variables */}
                       {memory.state_variables && Object.keys(memory.state_variables).length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                            <Database className="h-3 w-3" />
+                          <h4 className="text-[10px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Database className="h-2.5 w-2.5" />
                             State Variables
                           </h4>
-                          <div className="space-y-2">
+                          <div className="space-y-1.5">
                             {Object.entries(memory.state_variables).map(([key, value], idx) => (
-                              <div key={idx} className="text-xs p-2 rounded bg-muted/50">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-[10px] font-mono text-blue-600">{key}</span>
+                              <div key={idx} className="text-[10px] p-1.5 rounded bg-muted/30">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-[9px] font-mono text-blue-600">{key}</span>
                                 </div>
-                                <p className="text-[11px] break-all font-mono">
+                                <p className="text-[10px] break-all font-mono">
                                   {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
                                 </p>
                               </div>
@@ -949,14 +927,14 @@ export function AgentMonitorWidget({
                       {/* Learned Patterns */}
                       {memory.learned_patterns && memory.learned_patterns.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                            <Sparkles className="h-3 w-3" />
-                            Learned Patterns
+                          <h4 className="text-[10px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Sparkles className="h-2.5 w-2.5" />
+                            Patterns
                           </h4>
-                          <div className="space-y-2">
+                          <div className="space-y-1">
                             {memory.learned_patterns.map((pattern: string, idx: number) => (
-                              <div key={idx} className="text-xs p-2 rounded bg-purple-500/10 border border-purple-500/20">
-                                <p className="text-[11px]">{pattern}</p>
+                              <div key={idx} className="text-[10px] p-1.5 rounded bg-purple-500/10 border border-purple-500/20">
+                                <p className="text-[10px]">{pattern}</p>
                               </div>
                             ))}
                           </div>
@@ -966,25 +944,20 @@ export function AgentMonitorWidget({
                       {/* Trend Data */}
                       {memory.trend_data && memory.trend_data.length > 0 && (
                         <div>
-                          <h4 className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
-                            <Clock className="h-3 w-3" />
-                            Trend Data
+                          <h4 className="text-[10px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1">
+                            <Clock className="h-2.5 w-2.5" />
+                            Trends
                           </h4>
-                          <div className="space-y-2">
-                            {memory.trend_data.slice(-10).map((point: any, idx: number) => (
-                              <div key={idx} className="text-xs p-2 rounded bg-muted/50">
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="text-[10px] text-muted-foreground">
+                          <div className="space-y-1">
+                            {memory.trend_data.slice(-5).map((point: any, idx: number) => (
+                              <div key={idx} className="text-[10px] p-1.5 rounded bg-muted/30">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-[9px] text-muted-foreground">
                                     {new Date(point.timestamp * 1000).toLocaleString()}
                                   </span>
-                                  <span className="text-[10px] text-green-600">{point.metric}</span>
+                                  <span className="text-[9px] text-green-600">{point.metric}</span>
                                 </div>
-                                <p className="text-[11px] font-mono">{point.value}</p>
-                                {point.context && (
-                                  <p className="text-[10px] text-muted-foreground mt-1">
-                                    {typeof point.context === 'object' ? JSON.stringify(point.context) : String(point.context)}
-                                  </p>
-                                )}
+                                <p className="text-[10px] font-mono">{point.value}</p>
                               </div>
                             ))}
                           </div>
@@ -995,24 +968,16 @@ export function AgentMonitorWidget({
                       {(!memory.state_variables || Object.keys(memory.state_variables).length === 0) &&
                        (!memory.learned_patterns || memory.learned_patterns.length === 0) &&
                        (!memory.trend_data || memory.trend_data.length === 0) && (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                          <Brain className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
-                          <p className="text-xs text-muted-foreground">No memory data yet</p>
-                          <p className="text-[10px] text-muted-foreground mt-1">Agent will accumulate memory as it executes</p>
-                        </div>
-                      )}
-
-                      {/* Updated at */}
-                      {memory.updated_at && (
-                        <div className="text-[10px] text-muted-foreground text-center pt-2">
-                          Last updated: {new Date(memory.updated_at).toLocaleString()}
+                        <div className="flex flex-col items-center justify-center py-8 text-center">
+                          <Brain className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
+                          <p className="text-[10px] text-muted-foreground">No memory data</p>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <Brain className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
-                      <p className="text-xs text-muted-foreground">No memory data yet</p>
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <Brain className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
+                      <p className="text-[10px] text-muted-foreground">No memory data</p>
                     </div>
                   )}
                 </ScrollArea>
@@ -1021,49 +986,45 @@ export function AgentMonitorWidget({
 
             {/* Messages Tab Content */}
             <TabsContent value="messages" className="w-full flex-1 min-h-0 data-[state=active]:flex data-[state=inactive]:hidden">
-              <div className="w-full flex flex-col h-full gap-2 overflow-hidden">
+              <div className="w-full flex flex-col h-full gap-1.5 overflow-hidden">
                 {/* Header */}
-                <div className="w-full px-2 py-1.5 border flex items-center bg-muted/20 rounded-lg shrink-0">
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs font-medium">User Messages</span>
-                  </div>
+                <div className="w-full px-2 py-1 border flex items-center bg-muted/10 rounded shrink-0">
+                  <span className="text-[10px] font-medium">Messages</span>
                   {userMessages.length > 0 && (
-                    <span className="text-[10px] text-muted-foreground ml-auto">
-                      {userMessages.length} messages
+                    <span className="text-[8px] text-muted-foreground ml-auto">
+                      {userMessages.length}
                     </span>
                   )}
                 </div>
 
                 {/* Messages list - scrollable */}
-                <ScrollArea className="flex-1 w-full border rounded-lg">
+                <ScrollArea className="flex-1 w-full border border-border/30 rounded">
                   {userMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                      <MessageSquare className="h-8 w-8 text-muted-foreground opacity-50 mb-2" />
-                      <p className="text-xs text-muted-foreground">No messages yet</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">Send a message to provide context for agent decisions</p>
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <MessageSquare className="h-6 w-6 text-muted-foreground opacity-50 mb-1" />
+                      <p className="text-[10px] text-muted-foreground">No messages</p>
                     </div>
                   ) : (
-                    <div className="w-full p-2 space-y-2">
+                    <div className="w-full p-1.5 space-y-1">
                       {userMessages.map((msg) => (
-                        <div key={msg.id} className="text-xs p-2 rounded-lg bg-muted/50">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] text-muted-foreground">
+                        <div key={msg.id} className="text-[10px] p-1.5 rounded bg-muted/30">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[8px] text-muted-foreground">
                               {new Date(msg.timestamp * 1000).toLocaleString()}
                             </span>
                           </div>
-                          <p className="text-[11px]">{msg.content}</p>
+                          <p className="text-[10px]">{msg.content}</p>
                         </div>
                       ))}
                     </div>
                   )}
                 </ScrollArea>
 
-                {/* Send message input - fixed at bottom */}
-                <div className="w-full border rounded-lg p-2 shrink-0">
-                  <div className="flex gap-2">
+                {/* Send message input - compact */}
+                <div className="w-full border border-border/30 rounded p-1.5 shrink-0">
+                  <div className="flex gap-1.5">
                     <Textarea
-                      placeholder="Send a message to this agent..."
+                      placeholder="Send message..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyDown={(e) => {
@@ -1072,25 +1033,22 @@ export function AgentMonitorWidget({
                           handleSendMessage()
                         }
                       }}
-                      className="min-h-[38px] h-9 text-xs resize-none"
+                      className="min-h-[30px] h-8 text-[10px] resize-none"
                       disabled={sendingMessage}
                     />
                     <Button
                       size="sm"
                       onClick={handleSendMessage}
                       disabled={!newMessage.trim() || sendingMessage}
-                      className="h-9 px-3 shrink-0"
+                      className="h-8 px-2 shrink-0"
                     >
                       {sendingMessage ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
-                        <Send className="h-4 w-4" />
+                        <Send className="h-3 w-3" />
                       )}
                     </Button>
                   </div>
-                  <p className="text-[9px] text-muted-foreground mt-1.5">
-                    Press Enter to send, Shift+Enter for new line
-                  </p>
                 </div>
               </div>
             </TabsContent>
