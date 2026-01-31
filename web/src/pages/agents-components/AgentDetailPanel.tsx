@@ -30,6 +30,8 @@ import {
   TrendingUp,
   Database,
   MessageSquare,
+  History,
+  Sparkles,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
@@ -609,9 +611,11 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
   const learnedPatternsCount = memory.learned_patterns?.length || 0
   const baselinesCount = memory.baselines?.length || 0
   const trendDataCount = Object.keys(memory.trend_data || {}).length
+  const shortTermSummariesCount = memory.short_term?.summaries?.length || 0
+  const longTermMemoriesCount = memory.long_term?.memories?.length || 0
 
   // Check if memory is empty
-  const isEmptyMemory = stateVarCount === 0 && learnedPatternsCount === 0 && baselinesCount === 0 && trendDataCount === 0
+  const isEmptyMemory = stateVarCount === 0 && learnedPatternsCount === 0 && baselinesCount === 0 && trendDataCount === 0 && shortTermSummariesCount === 0 && longTermMemoriesCount === 0
 
   if (isEmptyMemory) {
     return (
@@ -652,9 +656,57 @@ function MemoryContent({ memory, loading }: MemoryContentProps) {
             icon={TrendingUp}
           >
             <div className="space-y-1.5">
-              {memory.learned_patterns.map((pattern: string, idx: number) => (
+              {memory.learned_patterns.map((pattern: any, idx: number) => (
                 <div key={idx} className="px-2.5 py-2 rounded bg-background border text-sm">
-                  {pattern}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium">{pattern.description || pattern.pattern_type}</span>
+                    <span className="text-xs text-muted-foreground">{Math.round((pattern.confidence || 0) * 100)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {/* Short-Term Memory - Recent Executions */}
+        {shortTermSummariesCount > 0 && (
+          <DetailSection
+            title={`${t('agents:memory.shortTerm')} (${shortTermSummariesCount})`}
+            icon={History}
+          >
+            <div className="space-y-2">
+              {memory.short_term?.summaries?.map((summary: any, idx: number) => (
+                <div key={idx} className="px-3 py-2.5 rounded bg-background border">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-mono text-muted-foreground">{summary.execution_id?.slice(0, 8)}...</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${summary.success ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
+                      {summary.success ? '✓' : '✗'}
+                    </span>
+                  </div>
+                  <div className="text-sm mb-1.5 line-clamp-2">{summary.conclusion || summary.situation}</div>
+                  {summary.decisions && summary.decisions.length > 0 && (
+                    <div className="text-xs text-muted-foreground">{summary.decisions.length} {t('agents:memory.decisions')}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        )}
+
+        {/* Long-Term Memory - Important Memories */}
+        {longTermMemoriesCount > 0 && (
+          <DetailSection
+            title={`${t('agents:memory.longTerm')} (${longTermMemoriesCount})`}
+            icon={Sparkles}
+          >
+            <div className="space-y-2">
+              {memory.long_term?.memories?.map((mem: any, idx: number) => (
+                <div key={idx} className="px-3 py-2.5 rounded bg-background border">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-muted-foreground">{mem.memory_type}</span>
+                    <span className="text-xs text-muted-foreground">{Math.round((mem.importance || 0) * 100)}%</span>
+                  </div>
+                  <div className="text-sm line-clamp-2">{mem.content}</div>
                 </div>
               ))}
             </div>

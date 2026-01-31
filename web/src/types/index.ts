@@ -1676,11 +1676,79 @@ export interface ParsedIntent {
  * Agent memory with persistent state
  */
 export interface AgentMemory {
+  // Hierarchical memory structure
+  working: WorkingMemory
+  short_term: ShortTermMemory
+  long_term: LongTermMemory
+  // Legacy fields (backward compatibility)
   state_variables: Record<string, unknown>
-  baselines?: Record<string, number>  // Historical baselines (optional - backend may not provide)
-  learned_patterns: string[]
+  baselines?: Record<string, number>
+  learned_patterns: LearnedPattern[]
   trend_data: TrendPoint[]
   updated_at: string
+}
+
+/**
+ * Working memory - current execution context
+ */
+export interface WorkingMemory {
+  current_analysis: string | null
+  current_conclusion: string | null
+  created_at: string
+}
+
+/**
+ * Short-term memory - recent summaries
+ */
+export interface ShortTermMemory {
+  summaries: MemorySummary[]
+  max_summaries: number
+  last_archived_at: string | null
+}
+
+/**
+ * Memory summary for short-term storage
+ */
+export interface MemorySummary {
+  timestamp: string
+  execution_id: string
+  situation: string
+  conclusion: string
+  decisions: string[]
+  success: boolean
+}
+
+/**
+ * Long-term memory - important patterns
+ */
+export interface LongTermMemory {
+  memories: ImportantMemory[]
+  patterns: LearnedPattern[]
+  max_memories: number
+  min_importance: number
+}
+
+/**
+ * Important memory for long-term storage
+ */
+export interface ImportantMemory {
+  id: string
+  memory_type: string
+  content: string
+  importance: number
+  created_at: string
+  access_count: number
+}
+
+/**
+ * Learned pattern
+ */
+export interface LearnedPattern {
+  id: string
+  pattern_type: string
+  description: string
+  confidence: number
+  learned_at: string
 }
 
 /**
