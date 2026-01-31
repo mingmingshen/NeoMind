@@ -6,33 +6,14 @@
  * It merges them for display without modifying the original data.
  */
 
-import { type Message, type ChatImage } from "@/types"
+import { type Message } from "@/types"
 import { ThinkingBlock } from "./ThinkingBlock"
 import { ToolCallVisualization } from "./ToolCallVisualization"
-import { QuickActions } from "./QuickActions"
 import { MarkdownMessage } from "./MarkdownMessage"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Sparkles } from "lucide-react"
 import { useStore } from "@/store"
-import { formatTimestamp } from "@/lib/utils/format"
-
-/** Image gallery component for user messages */
-function MessageImages({ images }: { images: ChatImage[] }) {
-  if (!images || images.length === 0) return null
-
-  return (
-    <div className={images.length === 1 ? "mb-2" : "mb-2 grid grid-cols-2 gap-2"}>
-      {images.map((img, idx) => (
-        <img
-          key={idx}
-          src={img.data}
-          alt={`Image ${idx + 1}`}
-          className="rounded-lg max-w-full max-h-64 object-cover"
-        />
-      ))}
-    </div>
-  )
-}
+import { MessageItem } from "./MessageItem"
+import { useMemo } from "react"
 
 interface MergedMessageListProps {
   messages: Message[]
@@ -180,29 +161,9 @@ export function MergedMessageList({
 }: MergedMessageListProps) {
   const { user } = useStore()
 
-  // Debug: log message structure
-  console.log("[MergedMessageList] Input messages:", messages.map((m, i) => ({
-    index: i,
-    id: m.id,
-    role: m.role,
-    hasThinking: !!m.thinking,
-    thinkingLen: m.thinking?.length || 0,
-    hasTools: !!m.tool_calls?.length,
-    toolsCount: m.tool_calls?.length || 0,
-    contentLen: m.content?.length || 0,
-    contentPreview: m.content?.substring(0, 50) || "(empty)",
-  })))
-
-  // Merge messages for display
-  const displayMessages = mergeMessagesForDisplay(messages)
-
-  console.log("[MergedMessageList] Output messages:", displayMessages.map((m, i) => ({
-    index: i,
-    role: m.role,
-    hasThinking: !!m.thinking,
-    hasTools: !!m.tool_calls?.length,
-    contentLen: m.content?.length || 0,
-  })))
+  // Memoize merged messages to avoid recalculation on every render
+  // Only recompute when messages array reference changes
+  const displayMessages = useMemo(() => mergeMessagesForDisplay(messages), [messages])
 
   // Get user initials
   const getUserInitials = (username: string) => {
@@ -213,70 +174,12 @@ export function MergedMessageList({
     <>
       {/* Merged messages */}
       {displayMessages.map((message) => (
-        <div
+        <MessageItem
           key={message.id}
-          className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
-        >
-          {message.role === "assistant" && (
-            <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
-          )}
-
-          <div className={`max-w-[80%] ${message.role === "user" ? "order-1" : ""}`}>
-            <div
-              className={`message-bubble-${message.role} rounded-2xl px-4 py-3 ${
-                message.role === "user"
-                  ? "bg-[var(--msg-user-bg)] text-[var(--msg-user-text)]"
-                  : "bg-[var(--msg-ai-bg)] text-[var(--msg-ai-text)]"
-              }`}
-            >
-              {/* Images for user messages */}
-              {message.role === "user" && message.images && message.images.length > 0 && (
-                <MessageImages images={message.images} />
-              )}
-
-              {/* Thinking block */}
-              {message.thinking && (
-                <ThinkingBlock thinking={message.thinking} />
-              )}
-
-              {/* Tool calls */}
-              {message.tool_calls && message.tool_calls.length > 0 && (
-                <ToolCallVisualization
-                  toolCalls={message.tool_calls}
-                  isStreaming={false}
-                />
-              )}
-
-              {/* Content */}
-              {message.content && (
-                <MarkdownMessage content={message.content} variant={message.role as 'user' | 'assistant'} />
-              )}
-            </div>
-
-            {/* Quick actions for assistant messages */}
-            {message.role === "assistant" && (
-              <QuickActions
-                message={message}
-                onActionClick={() => {}}
-              />
-            )}
-
-            {/* Timestamp */}
-            <p className="text-xs text-muted-foreground mt-1 px-1">
-              {formatTimestamp(message.timestamp, false)}
-            </p>
-          </div>
-
-          {message.role === "user" && user && (
-            <Avatar className="h-8 w-8 order-2">
-              <AvatarFallback className="bg-blue-600 text-white text-xs">
-                {getUserInitials(user.username)}
-              </AvatarFallback>
-            </Avatar>
-          )}
-        </div>
+          message={message}
+          user={user}
+          getUserInitials={getUserInitials}
+        />
       ))}
 
       {/* Streaming message */}

@@ -693,20 +693,9 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
 
     case 'map-display':
       // Convert bindings to markers format for MapDisplay
-      console.log('=== Rendering map-display ===')
-      console.log('component.id:', component.id)
-      console.log('config keys:', Object.keys(config))
-      console.log('config.bindings:', config.bindings)
-      console.log('config.bindings length:', config.bindings?.length)
-      console.log('dataSource:', dataSource)
-      console.log('==========================')
-
       // Get devices from store for metric values and names
       // Use devices from store hook instead of getState() to ensure reactivity
       const storeDevices = devices
-
-      // Log all device IDs in store for debugging
-      console.log('[Map] Available devices in store:', storeDevices.map(d => ({ id: d.id, device_id: d.device_id, name: d.name, online: d.online })))
 
       // Helper to get device name
       const getDeviceName = (deviceId: string) => {
@@ -739,22 +728,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
               metricValue = typeof rawValue === 'number'
                 ? rawValue.toFixed(1)
                 : String(rawValue)
-            } else {
-              // Value not found - log for debugging
-              console.log('[Map] Metric value not found:', {
-                deviceId: ds.deviceId,
-                metricKey,
-                availableKeys: Object.keys(device.current_values),
-                current_values: device.current_values,
-              })
             }
-          } else {
-            console.log('[Map] Device or current_values not found:', {
-            deviceId: ds.deviceId,
-            deviceFound: !!device,
-            hasCurrentValues: !!device?.current_values,
-            metricKey,
-          })
           }
         }
 
@@ -782,12 +756,8 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
         }
       }) ?? []
 
-      console.log('Generated bindingsMarkers:', bindingsMarkers)
-      console.log('config.markers:', config.markers)
-
       // Use bindings markers if available, otherwise fallback to config.markers or empty array
       const displayMarkers = bindingsMarkers.length > 0 ? bindingsMarkers : (config.markers as MapMarker[] || [])
-      console.log('Final displayMarkers:', displayMarkers)
 
       return (
         <MapDisplay
@@ -825,7 +795,6 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
     // Business Components - handled by ComponentRenderer
     case 'agent-monitor-widget': {
       const widgetAgentId = (component as any).dataSource?.agentId
-      console.log('[VisualDashboard] Rendering AgentMonitorWidget with agentId:', widgetAgentId, 'component.dataSource:', (component as any).dataSource)
       return (
         <AgentMonitorWidget
           agentId={widgetAgentId}
@@ -1057,11 +1026,8 @@ export function VisualDashboard() {
     const components = currentDashboard?.components ?? []
     const prevComponents = prevComponentsRef.current ?? []
 
-    console.log('[componentsStableKey] Calculating, configVersion:', configVersion, 'components.length:', components.length)
-
     // Quick check: if length changed, definitely different
     if (components.length !== prevComponents.length) {
-      console.log('[componentsStableKey] Length changed, returning new key')
       prevComponentsRef.current = components
       return `changed-${components.length}-${Date.now()}-${configVersion}`
     }
@@ -1072,7 +1038,6 @@ export function VisualDashboard() {
       const prev = prevComponents[i]
 
       if (!prev) {
-        console.log('[componentsStableKey] New component, returning new key:', curr.id)
         prevComponentsRef.current = components
         return `new-${curr.id}-${curr.type}-${Date.now()}-${configVersion}`
       }
@@ -1081,10 +1046,6 @@ export function VisualDashboard() {
       const currDataSource = (curr as any).dataSource
       const prevDataSource = (prev as any).dataSource
       const dataSourceChanged = JSON.stringify(currDataSource) !== JSON.stringify(prevDataSource)
-
-      if (dataSourceChanged) {
-        console.log('[componentsStableKey] dataSource changed for component:', curr.id, 'prev:', prevDataSource, 'curr:', currDataSource)
-      }
 
       if (curr.id !== prev.id ||
           curr.type !== prev.type ||
@@ -1095,14 +1056,12 @@ export function VisualDashboard() {
           curr.position.h !== prev.position.h ||
           JSON.stringify(curr.config) !== JSON.stringify(prev.config) ||
           dataSourceChanged) {
-        console.log('[componentsStableKey] Component changed, returning new key:', curr.id)
         prevComponentsRef.current = components
         return `changed-${curr.id}-${Date.now()}-${configVersion}`
       }
     }
 
     // No actual changes detected - return stable key with version
-    console.log('[componentsStableKey] No changes detected, returning stable key')
     return `stable-${components.length}-${configVersion}`
   }, [currentDashboard?.components, configVersion])
 
@@ -1567,7 +1526,6 @@ export function VisualDashboard() {
   // devices.length is included to ensure re-render when devices are initially loaded
   // IMPORTANT: Use currentDashboard from props (reactive) to ensure updates are reflected
   const gridComponents = useMemo(() => {
-    console.log('[VisualDashboard] gridComponents useMemo called, currentDashboard:', currentDashboard?.id, 'components:', currentDashboard?.components.length)
     return currentDashboard?.components.map((component) => {
       // Get dataSource from component (it should be a separate property, not in config)
       const componentDataSource = (component as any).dataSource
@@ -4069,7 +4027,7 @@ export function VisualDashboard() {
                       onClick={() => {
                         const latestDashboard = useStore.getState().currentDashboard
                         const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
-                        let latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+                        const latestBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
                         setLayerEditorBindings(latestBindings)
                         setLayerEditorOpen(true)
                       }}
@@ -4084,7 +4042,7 @@ export function VisualDashboard() {
                     {(() => {
                       const latestDashboard = useStore.getState().currentDashboard
                       const latestComponent = latestDashboard?.components.find(c => c.id === selectedComponent?.id)
-                      let displayBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
+                      const displayBindings = (latestComponent as any)?.config?.bindings as LayerBinding[] || []
 
                       // Group by type
                       const groupedBindings = {

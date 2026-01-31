@@ -681,7 +681,7 @@ export function useDataSource<T = unknown>(
             try {
               const tokens = expression.match(/(\d+\.?\d*|[+\-*/])/g)
               if (tokens) {
-                // eslint-disable-next-line no-new-func
+                 
                 result = new Function('return ' + tokens.join(' '))()
               } else {
                 result = 0

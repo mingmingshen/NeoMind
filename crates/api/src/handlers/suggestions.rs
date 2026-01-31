@@ -13,6 +13,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use chrono::Timelike;
+use futures::future;
 
 use crate::server::ServerState;
 use edge_ai_storage::AgentFilter;
@@ -276,17 +277,28 @@ async fn generate_device_based_suggestions(state: &ServerState) -> Vec<Suggestio
         }
     }
 
-    // Count online devices using device_service
-    let mut online_count = 0;
-    for device in &devices {
-        if let Ok(status) = tokio::time::timeout(
-            std::time::Duration::from_millis(100),
-            state.device_service.get_device_connection_status(&device.device_id)
-        ).await
-            && matches!(status, ConnectionStatus::Connected) {
-                online_count += 1;
-            }
-    }
+    // Count online devices in parallel to avoid N+1 query problem
+    // Use join_all for concurrent status checks instead of sequential loop
+    let online_count = {
+        let device_ids: Vec<_> = devices.iter()
+            .map(|d| d.device_id.clone())
+            .collect();
+
+        let status_futures: Vec<_> = device_ids.into_iter()
+            .map(|device_id| {
+                let service = state.device_service.clone();
+                async move {
+                    tokio::time::timeout(
+                        std::time::Duration::from_millis(100),
+                        service.get_device_connection_status(&device_id)
+                    ).await.ok().and_then(|s| if matches!(s, ConnectionStatus::Connected) { Some(1) } else { None })
+                }
+            })
+            .collect();
+
+        let results = future::join_all(status_futures).await;
+        results.into_iter().filter_map(|x| x).count()
+    };
 
     if online_count < devices.len() && !devices.is_empty() {
         suggestions.push(SuggestionItem {

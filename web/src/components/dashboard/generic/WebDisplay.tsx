@@ -131,7 +131,14 @@ export function WebDisplay({
   const handleRefresh = () => {
     setIframeLoading(true)
     if (iframeRef.current) {
-      iframeRef.current.src = iframeRef.current.src
+      // Force iframe reload by resetting src
+      const currentSrc = iframeRef.current.src
+      iframeRef.current.src = ''
+      setTimeout(() => {
+        if (iframeRef.current) {
+          iframeRef.current.src = currentSrc
+        }
+      }, 0)
     }
   }
 

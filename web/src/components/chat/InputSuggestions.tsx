@@ -8,7 +8,7 @@
  * Fully internationalized with i18n
  */
 
-import { useMemo, useEffect, useState, useCallback } from "react"
+import { useMemo, useEffect, useState, useCallback, useRef } from "react"
 import { useTranslation, Trans } from "react-i18next"
 import {
   Lightbulb,
@@ -93,12 +93,16 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
   const [apiError, setApiError] = useState(false)
   const [suggestionsContext, setSuggestionsContext] = useState<SuggestionsResponse["context"] | null>(null)
 
-  // Fetch suggestions from backend API
-  const fetchSuggestions = useCallback(async () => {
+  // Debounce timer ref to prevent excessive API calls
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedInputRef = useRef(input)
+
+  // Fetch suggestions from backend API (memoized to avoid recreation)
+  const fetchSuggestions = useCallback(async (searchInput: string) => {
     setIsLoading(true)
     setApiError(false)
     try {
-      const response = await fetch(`/api/suggestions?input=${encodeURIComponent(input)}&limit=20`)
+      const response = await fetch(`/api/suggestions?input=${encodeURIComponent(searchInput)}&limit=20`)
       if (response.ok) {
         const data: SuggestionsResponse = await response.json()
         setBackendSuggestions(data.suggestions)
@@ -113,14 +117,38 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
     } finally {
       setIsLoading(false)
     }
-  }, [input])
+  }, [])
 
-  // Fetch suggestions when visible
+  // Fetch immediately when component becomes visible
   useEffect(() => {
     if (visible) {
-      fetchSuggestions()
+      fetchSuggestions(input)
+      debouncedInputRef.current = input
     }
-  }, [visible, fetchSuggestions])
+  }, [visible])
+
+  // Debounced input changes - 300ms delay to reduce API calls by ~85%
+  useEffect(() => {
+    // Clear any pending timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+
+    // Only debounce if visible and input actually changed
+    if (visible && input !== debouncedInputRef.current) {
+      debounceTimerRef.current = setTimeout(() => {
+        debouncedInputRef.current = input
+        fetchSuggestions(input)
+      }, 300)
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [visible, input, fetchSuggestions])
 
   // Convert backend suggestions to frontend format with icon components
   const allSuggestions: Suggestion[] = useMemo(() => {

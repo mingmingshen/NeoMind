@@ -1,8 +1,19 @@
 /**
  * Store Selectors
  *
- * Computed selectors for deriving state from the store.
- * Selectors are memoized functions that compute derived state.
+ * Memoized selectors for deriving state from the store.
+ * These selectors use Zustand's optimized selector pattern to prevent unnecessary re-renders.
+ *
+ * Usage:
+ *   import { useStore } from '@/store'
+ *   import { selectOnlineDevices, selectActiveSession } from '@/store/selectors'
+ *
+ *   // For single value: direct selector
+ *   const onlineCount = useStore(selectOnlineDeviceCount)
+ *
+ *   // For arrays/objects: use shallow comparison
+ *   import { shallow } from 'zustand/shallow'
+ *   const devices = useStore(selectDevicesRaw, shallow)
  */
 
 import type { NeoTalkStore } from '..'
@@ -11,72 +22,74 @@ import type { NeoTalkStore } from '..'
 // Device Selectors
 // ============================================================================
 
-/**
- * Get all online devices
- */
-export const selectOnlineDevices = (state: NeoTalkStore) =>
-  state.devices.filter((d) => d.status === 'online')
+export {
+  selectDevicesRaw,
+  selectOnlineDevices,
+  selectOfflineDevices,
+  selectDevicesByType,
+  selectDeviceById,
+  selectDeviceMap,
+  selectOnlineDeviceCount,
+  selectOfflineDeviceCount,
+  selectTotalDeviceCount,
+  selectDevicesByStatus,
+  selectDevicesGroupedByType,
+  selectDevicesShallow,
+  selectDevicesSummary,
+} from './deviceSelectors'
 
-/**
- * Get all offline devices
- */
-export const selectOfflineDevices = (state: NeoTalkStore) =>
-  state.devices.filter((d) => d.status === 'offline')
+// ============================================================================
+// Session Selectors
+// ============================================================================
 
-/**
- * Get count of online devices
- */
-export const selectOnlineDeviceCount = (state: NeoTalkStore) =>
-  state.devices.filter((d) => d.status === 'online').length
-
-/**
- * Get count of offline devices
- */
-export const selectOfflineDeviceCount = (state: NeoTalkStore) =>
-  state.devices.filter((d) => d.status === 'offline').length
-
-/**
- * Get devices by type
- */
-export const selectDevicesByType = (state: NeoTalkStore, deviceType: string) =>
-  state.devices.filter((d) => d.device_type === deviceType)
-
-/**
- * Get device by ID
- */
-export const selectDeviceById = (state: NeoTalkStore, deviceId: string) =>
-  state.devices.find((d) => d.id === deviceId)
+export {
+  selectSessionsRaw,
+  selectActiveSession,
+  selectActiveSessionId,
+  selectSessionById,
+  selectSessionMap,
+  selectSessionsByRecent,
+  selectSessionsByNewest,
+  selectSessionsByName,
+  selectSessionCount,
+  selectSessionsGroupedByDate,
+  selectSessionsSummary,
+  selectSessionsBySearchTerm,
+  selectSessionsWithMessages,
+} from './sessionSelectors'
 
 // ============================================================================
 // Alert Selectors
 // ============================================================================
 
-/**
- * Get unacknowledged alerts
- */
-export const selectUnacknowledgedAlerts = (state: NeoTalkStore) =>
-  state.alerts.filter((a) => !a.acknowledged)
-
-/**
- * Get critical alerts
- */
-export const selectCriticalAlerts = (state: NeoTalkStore) =>
-  state.alerts.filter((a) => a.severity === 'critical')
-
-/**
- * Get alerts by severity
- */
-export const selectAlertsBySeverity = (state: NeoTalkStore, severity: string) =>
-  state.alerts.filter((a) => a.severity === severity)
-
-/**
- * Get count of unacknowledged alerts
- */
-export const selectUnacknowledgedAlertCount = (state: NeoTalkStore) =>
-  state.alerts.filter((a) => !a.acknowledged).length
+export {
+  selectAlertsRaw,
+  selectUnacknowledgedAlerts,
+  selectAcknowledgedAlerts,
+  selectActiveAlerts,
+  selectResolvedAlerts,
+  selectCriticalAlerts,
+  selectWarningAlerts,
+  selectInfoAlerts,
+  selectAlertsBySeverity,
+  selectUnacknowledgedCriticalAlerts,
+  selectUnacknowledgedBySeverity,
+  selectActiveBySeverity,
+  selectUnacknowledgedAlertCount,
+  selectCriticalAlertCount,
+  selectActiveAlertCount,
+  selectTotalAlertCount,
+  selectAlertSummaryBySeverity,
+  selectAlertFullSummary,
+  selectAlertsBySeverityPriority,
+  selectAlertsByNewest,
+  selectAlertsByOldest,
+  selectAlertMap,
+  selectAlertById,
+} from './alertSelectors'
 
 // ============================================================================
-// Decision Selectors
+// Decision Selectors (Legacy - for backward compatibility)
 // ============================================================================
 
 /**
@@ -110,18 +123,8 @@ export const selectPendingDecisionCount = (state: NeoTalkStore) =>
   state.decisions.filter((d) => d.status === 'pending').length
 
 // ============================================================================
-// Stats Selectors
+// Stats Selectors (Legacy - for backward compatibility)
 // ============================================================================
-
-/**
- * Get total device count
- */
-export const selectTotalDeviceCount = (state: NeoTalkStore) => state.devices.length
-
-/**
- * Get total alert count
- */
-export const selectTotalAlertCount = (state: NeoTalkStore) => state.alerts.length
 
 /**
  * Get connection status summary

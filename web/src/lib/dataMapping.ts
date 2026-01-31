@@ -490,7 +490,7 @@ export class DataMapper {
    */
   static mapToDataPoints(data: unknown[], config?: DataMappingConfig): MappedDataPoint[] {
     // Apply filter
-    let filtered = this.filterData(data, config)
+    const filtered = this.filterData(data, config)
 
     // Apply sort
     const sorted = this.sortData(filtered, config)

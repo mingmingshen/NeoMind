@@ -254,7 +254,6 @@ export const createSessionSlice: StateCreator<
     // Check if we're already on this session to avoid unnecessary API calls
     const currentSessionId = get().sessionId
     if (sessionId === currentSessionId) {
-      console.log(`[session] Already on session ${sessionId}, skipping switch`)
       return
     }
 
@@ -278,29 +277,7 @@ export const createSessionSlice: StateCreator<
       // Backend stores: [msg1(thinking+tools)] + [tool results] + [msg2(content only)]
       // Frontend expects: [msg1(thinking+tools+content)]
       const messages = historyResult.messages || []
-      console.log(`[session merge] Before merge: ${messages.length} messages`, messages.map((m, i) => ({
-        index: i,
-        id: m.id,
-        role: m.role,
-        hasThinking: !!m.thinking,
-        thinkingLen: m.thinking?.length || 0,
-        hasTools: !!m.tool_calls?.length,
-        toolsCount: m.tool_calls?.length || 0,
-        contentLen: m.content?.length || 0,
-        contentPreview: m.content?.substring(0, 50) || "(empty)",
-      })))
       const mergedMessages = mergeAssistantMessages(messages)
-      console.log(`[session merge] After merge: ${mergedMessages.length} messages`, mergedMessages.map((m, i) => ({
-        index: i,
-        id: m.id,
-        role: m.role,
-        hasThinking: !!m.thinking,
-        hasTools: !!m.tool_calls?.length,
-        contentLen: m.content?.length || 0,
-        contentPreview: m.content?.substring(0, 50) || "(empty)",
-      })))
-
-      console.log(`Switched to session ${sessionId}, loaded ${mergedMessages.length} messages`)
 
       set({
         sessionId,

@@ -75,7 +75,7 @@ const CODE_TEMPLATES = [
   {
     key: 'hexParse',
     name: 'Hex 解析',
-    code: '// Input: input.hex or input.data (hex string)\nconst hex = input.hex || input.data || \'\';\nconst str = hex.match(/.{1,2}/g)?.map(b => String.fromCharCode(parseInt(b, 16))).join(\"\") || \'\';\ntry {\n  return JSON.parse(str);\n} catch {\n  return { parsed: str };\n}',
+    code: '// Input: input.hex or input.data (hex string)\nconst hex = input.hex || input.data || \'\';\nconst str = hex.match(/.{1,2}/g)?.map(b => String.fromCharCode(parseInt(b, 16))).join("") || \'\';\ntry {\n  return JSON.parse(str);\n} catch {\n  return { parsed: str };\n}',
   },
   {
     key: 'dataAggregate',
@@ -308,6 +308,22 @@ export function TransformBuilder({
     return () => clearTimeout(timeoutId)
   }, [scopeType, scopeValue])
 
+  // Reset form helper
+  const resetForm = useCallback(() => {
+    setName('')
+    setDescription('')
+    setEnabled(true)
+    setScopeType('global')
+    setScopeValue('')
+    setOutputPrefix('transform')  // Default value
+    setJsCode('')
+    setTestInput('')
+    setTestOutput('')
+    setTestError('')
+    setDeviceTypeMetrics(null)
+    setFormErrors({})
+  }, [])
+
   // Reset when dialog opens or transform changes
   useEffect(() => {
     if (open) {
@@ -338,22 +354,7 @@ export function TransformBuilder({
         resetForm()
       }
     }
-  }, [open, transform])
-
-  const resetForm = useCallback(() => {
-    setName('')
-    setDescription('')
-    setEnabled(true)
-    setScopeType('global')
-    setScopeValue('')
-    setOutputPrefix('transform')  // Default value
-    setJsCode('')
-    setTestInput('')
-    setTestOutput('')
-    setTestError('')
-    setDeviceTypeMetrics(null)
-    setFormErrors({})
-  }, [])
+  }, [open, transform, resetForm])
 
   // Apply template
   const handleApplyTemplate = useCallback((templateCode: string) => {

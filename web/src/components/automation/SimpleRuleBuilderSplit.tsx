@@ -967,9 +967,10 @@ interface BasicInfoStepProps {
   errors: FormErrors
   t: (key: string) => string
   tBuilder: (key: string) => string
+  _t?: (key: string) => string
 }
 
-function BasicInfoStep({ name, onNameChange, description, onDescriptionChange, enabled, onEnabledChange, errors, _t, tBuilder }: BasicInfoStepProps) {
+function BasicInfoStep({ name, onNameChange, description, onDescriptionChange, enabled, onEnabledChange, errors, t, tBuilder, _t }: BasicInfoStepProps) {
   return (
     <div className="space-y-6 max-w-2xl mx-auto py-4">
       <div className="text-center mb-6">

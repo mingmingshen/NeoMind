@@ -7,6 +7,7 @@ pub mod config;
 pub mod error;
 pub mod event;
 pub mod eventbus;
+pub mod priority_eventbus;
 pub mod extension;
 pub mod integration;
 pub mod llm;

@@ -77,7 +77,7 @@ function parseActionsFromDSL(dsl?: string): RuleAction[] {
   const doMatch = dsl.match(/\nDO\n(.*?)\nEND/s)
   if (!doMatch) return actions
 
-  const actionLines = doMatch[1].trim().split('\n').map(l => l.trim().replace(/^    /, ''))
+  const actionLines = doMatch[1].trim().split('\n').map(l => l.trim().replace(/^ {4}/, ''))
 
   for (const line of actionLines) {
     if (!line) continue

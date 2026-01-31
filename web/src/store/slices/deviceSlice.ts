@@ -106,7 +106,6 @@ export const createDeviceSlice: StateCreator<
     set({ devicesLoading: true })
     try {
       const data = await api.getDevices()
-      console.log('[fetchDevices] API response:', data)
 
       // Sort by last_seen descending (newest first), online devices first
       const sortedDevices = (data.devices || []).sort((a, b) => {
@@ -116,12 +115,7 @@ export const createDeviceSlice: StateCreator<
         // Then by last_seen descending
         return new Date(b.last_seen).getTime() - new Date(a.last_seen).getTime()
       })
-      console.log('[fetchDevices] Sorted devices, setting to store:', sortedDevices)
       set({ devices: sortedDevices })
-
-      // Verify the set worked
-      const verify = get().devices
-      console.log('[fetchDevices] Verification - devices after set:', verify.length, verify)
     } catch (error) {
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
@@ -302,7 +296,6 @@ export const createDeviceSlice: StateCreator<
     set({ telemetryLoading: true })
     try {
       const data = await api.getDeviceCurrent(deviceId)
-      console.log('[fetchDeviceCurrentState] Got device current state:', data)
       set({ deviceCurrentState: data })
 
       // Helper function to build nested object from flat key paths
@@ -325,11 +318,6 @@ export const createDeviceSlice: StateCreator<
           }
           current[parts[parts.length - 1]] = metricData.value
         }
-        console.log('[fetchDeviceCurrentState] Built nested values:', {
-          totalMetrics: Object.keys(metrics).length,
-          nonNullMetrics: Object.keys(result).length,
-          result,
-        })
         return result
       }
 
@@ -376,7 +364,6 @@ export const createDeviceSlice: StateCreator<
 
     try {
       const data = await api.getDevicesCurrentBatch(deviceIds)
-      console.log('[fetchDevicesCurrentBatch] Got current values for', data.count, 'devices')
 
       // Helper function to build nested object from flat key paths
       const buildNestedValues = (metrics: Record<string, unknown>) => {

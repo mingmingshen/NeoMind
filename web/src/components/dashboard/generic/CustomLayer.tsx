@@ -290,6 +290,21 @@ function LayerItemComponent({
     }
   }, [isDragging, dragStartMouse, dragStartItem, item, onDrag])
 
+  // Handle click to show details (for non-text items)
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Only show details if we didn't drag (hasMoved would be true if we dragged)
+    if (hasMoved) return
+    if (!isTextOnly) {
+      // Show details popup for non-text items
+      setShowDetails(true)
+    }
+    if (item.onClick) {
+      e.stopPropagation()
+      item.onClick()
+    }
+  }, [hasMoved, isTextOnly, item.onClick])
+
+  // Helper functions (must be after all hooks)
   const getFontSizeClass = () => {
     switch (item.fontSize) {
       case 'xs': return 'text-xs'
@@ -351,20 +366,6 @@ function LayerItemComponent({
       default: return null
     }
   }
-
-  // Handle click to show details (for non-text items)
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    // Only show details if we didn't drag (hasMoved would be true if we dragged)
-    if (hasMoved) return
-    if (!isTextOnly) {
-      // Show details popup for non-text items
-      setShowDetails(true)
-    }
-    if (item.onClick) {
-      e.stopPropagation()
-      item.onClick()
-    }
-  }, [hasMoved, isTextOnly, item.onClick])
 
   return (
     <>

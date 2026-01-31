@@ -13,6 +13,7 @@
 pub mod executor;
 pub mod intent_parser;
 pub mod scheduler;
+pub mod llm_pool;
 
 use edge_ai_storage::{AiAgent, AgentExecutionRecord, AgentSchedule, AgentStatus, ExecutionStatus};
 use serde::{Deserialize, Serialize};

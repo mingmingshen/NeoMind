@@ -70,7 +70,7 @@ export function AddDeviceDialog({
     } else {
       setConnectionConfig({})
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [adapterType, selectedDeviceType, deviceId])
 
   const handleAdd = async () => {

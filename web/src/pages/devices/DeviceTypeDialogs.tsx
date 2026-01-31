@@ -2096,10 +2096,7 @@ interface ViewDeviceTypeDialogProps {
 }
 
 export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDeviceTypeDialogProps) {
-  if (!deviceType) return null
-
-  const isRawMode = deviceType.mode === 'simple'
-
+  // Hooks must be called before any early returns
   // Fetch transforms that apply to this device type
   const [virtualMetrics, setVirtualMetrics] = React.useState<Array<{
     name: string
@@ -2157,6 +2154,11 @@ export function ViewDeviceTypeDialog({ open, onOpenChange, deviceType }: ViewDev
         .finally(() => setLoadingVirtual(false))
     }
   }, [open, deviceType?.device_type])
+
+  // Early return after all hooks
+  if (!deviceType) return null
+
+  const isRawMode = deviceType.mode === 'simple'
 
   // Parse transform JS code to extract output metrics
   const parseTransformOutputs = (jsCode: string, prefix: string) => {

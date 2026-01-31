@@ -33,6 +33,7 @@ pub mod telemetry;
 // Simplified device management
 pub mod registry;
 pub mod service;
+pub mod service_types;  // Shared types for device operations
 
 // Protocol mapping layer - decouples MDL from protocol implementations
 pub mod protocol;

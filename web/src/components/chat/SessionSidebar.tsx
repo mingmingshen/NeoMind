@@ -2,7 +2,9 @@ import { useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
-import { Plus, MessageSquare, Trash2, Edit2, X, Eraser } from "lucide-react"
+import { Plus, MessageSquare, X, Eraser } from "lucide-react"
+import { SessionListItem } from "./SessionListItem"
+import { SessionListItemIcon } from "./SessionListItemIcon"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Input } from "@/components/ui/input"
@@ -16,7 +18,6 @@ import {
 } from "@/components/ui/dialog"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { formatTimestamp } from "@/lib/utils/format"
 
 interface SessionSidebarProps {
   onNewChat?: () => void
@@ -158,19 +159,13 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
           <ScrollArea className="flex-1">
             <div className="p-1.5 space-y-1 overflow-hidden">
               {sessions.map((session, index) => (
-                <button
+                <SessionListItemIcon
                   key={session.sessionId || `session-${index}`}
-                  onClick={() => session.sessionId && handleSwitchSession(session.sessionId)}
-                  className={cn(
-                    "group relative w-full flex items-center justify-center rounded-lg p-2 transition-colors",
-                    sessionId === session.sessionId
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  )}
-                  title={getDisplayName(session)}
-                >
-                  <MessageSquare className="h-4 w-4 shrink-0" />
-                </button>
+                  session={session}
+                  isActive={sessionId === session.sessionId}
+                  onSwitch={handleSwitchSession}
+                  getDisplayName={getDisplayName}
+                />
               ))}
             </div>
           </ScrollArea>
@@ -229,68 +224,15 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
                 </div>
               ) : (
                 sessions.map((session, index) => (
-                  <div
+                  <SessionListItem
                     key={session.sessionId || `session-${index}`}
-                    onClick={() => session.sessionId && handleSwitchSession(session.sessionId)}
-                    onKeyDown={(e) => {
-                      if ((e.key === 'Enter' || e.key === ' ') && session.sessionId) {
-                        e.preventDefault()
-                        handleSwitchSession(session.sessionId)
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    className={cn(
-                      "group relative w-full flex items-center gap-2 rounded-md px-2 py-2 text-sm cursor-pointer transition-colors text-left overflow-hidden",
-                      sessionId === session.sessionId
-                        ? "bg-primary text-primary-foreground"
-                        : "hover:bg-muted"
-                    )}
-                  >
-                    <MessageSquare className="h-4 w-4 shrink-0" />
-                    {/* Title with max width constraint */}
-                    <div className="min-w-0 flex-1 max-w-[150px]">
-                      <div className="truncate font-medium">
-                        {getDisplayName(session)}
-                      </div>
-                      <div className={cn(
-                        "text-xs truncate",
-                        sessionId === session.sessionId
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground"
-                      )}>
-                        {formatTimestamp(session.createdAt / 1000, false)}
-                      </div>
-                    </div>
-
-                    {/* Action buttons - always occupy space */}
-                    {session.sessionId && (
-                      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {/* Rename button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn("h-6 w-6 shrink-0",
-                            sessionId === session.sessionId ? "hover:bg-primary-foreground/20" : ""
-                          )}
-                          onClick={(e) => handleRenameClick(e, session.sessionId, session.title || session.preview || "")}
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                        {/* Delete button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn("h-6 w-6 shrink-0",
-                            sessionId === session.sessionId ? "hover:bg-primary-foreground/20" : ""
-                          )}
-                          onClick={(e) => handleDeleteClick(e, session.sessionId)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                    session={session}
+                    isActive={sessionId === session.sessionId}
+                    onSwitch={handleSwitchSession}
+                    onRename={handleRenameClick}
+                    onDelete={handleDeleteClick}
+                    getDisplayName={getDisplayName}
+                  />
                 ))
               )}
             </div>
