@@ -1097,6 +1097,7 @@ impl AgentStore {
     }
 
     /// Update agent stats after execution.
+    /// Merges with latest memory from AGENT_MEMORY_TABLE to avoid overwriting.
     pub async fn update_agent_stats(
         &self,
         id: &str,
@@ -1104,30 +1105,50 @@ impl AgentStore {
         duration_ms: u64,
     ) -> Result<(), Error> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(AGENTS_TABLE)?;
 
-        let agent = match table.get(id)? {
+        // Read agent and latest memory in the same transaction
+        let table = read_txn.open_table(AGENTS_TABLE)?;
+        let memory_table = read_txn.open_table(AGENT_MEMORY_TABLE)?;
+
+        let (mut agent, latest_memory) = match table.get(id)? {
             Some(bytes) => {
                 let mut ag: AiAgent = serde_json::from_slice(bytes.value())
                     .map_err(|e| Error::Serialization(e.to_string()))?;
+
+                // Try to get latest memory from memory table
+                let latest_mem = match memory_table.get(id)? {
+                    Some(mem_bytes) => {
+                        Some(serde_json::from_slice::<AgentMemory>(mem_bytes.value())
+                            .map_err(|e| Error::Serialization(e.to_string()))?)
+                    }
+                    None => None,
+                };
+
+                // Update stats
                 ag.stats.total_executions += 1;
                 if success {
                     ag.stats.successful_executions += 1;
                 } else {
                     ag.stats.failed_executions += 1;
                 }
-                // Update average duration
                 let total = ag.stats.total_executions as u64;
                 ag.stats.avg_duration_ms =
                     (ag.stats.avg_duration_ms * (total - 1) + duration_ms) / total;
                 ag.stats.last_duration_ms = Some(duration_ms);
                 ag.last_execution_at = Some(chrono::Utc::now().timestamp());
                 ag.updated_at = chrono::Utc::now().timestamp();
-                ag
+
+                // Use latest memory if available (preserves short_term, long_term, etc.)
+                if let Some(ref mem) = latest_mem {
+                    ag.memory = mem.clone();
+                }
+
+                (ag, latest_mem)
             }
             None => return Ok(()),
         };
         drop(table);
+        drop(memory_table);
         drop(read_txn);
 
         let write_txn = self.db.begin_write()?;
@@ -1138,6 +1159,12 @@ impl AgentStore {
                 serde_json::to_vec(&agent).map_err(|e| Error::Serialization(e.to_string()))?;
 
             table.insert(id, value.as_slice())?;
+
+            // Update memory table as well to keep in sync
+            let memory_value = serde_json::to_vec(&agent.memory)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
+            let mut mem_table = write_txn.open_table(AGENT_MEMORY_TABLE)?;
+            mem_table.insert(id, memory_value.as_slice())?;
         }
         write_txn.commit()?;
         Ok(())
