@@ -824,6 +824,7 @@ impl BackendCapabilitiesBuilder {
     /// Enable multimodal.
     pub fn multimodal(mut self) -> Self {
         self.capabilities.multimodal = true;
+        self.capabilities.supports_images = true;  // Multimodal implies image support
         self
     }
 
