@@ -2565,33 +2565,7 @@ Respond in JSON format:
             d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false)
         });
 
-        // Build text data summary for non-image data
-        // Limit to prevent token overflow - prioritize most recent/important data
-        let max_metrics = 6; // Reduced for small models to avoid context overload
-        let text_data_summary: Vec<_> = data.iter()
-            .filter(|d| !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
-            .take(max_metrics)
-            .map(|d| {
-                // Create a more compact representation of values
-                let value_str = if let Some(v) = d.values.get("value") {
-                    format!("{}", v) // Compact value representation
-                } else if let Some(v) = d.values.get("history") {
-                    format!("[历史数据: {}个点]", v.as_array().map(|a| a.len()).unwrap_or(0))
-                } else {
-                    // Fallback to compact JSON - use character-safe truncation
-                    let json_str = serde_json::to_string(&d.values).unwrap_or_default();
-                    if json_str.chars().count() > 200 {
-                        // Truncate at character boundary, not byte boundary
-                        json_str.chars().take(200).collect::<String>() + "..."
-                    } else {
-                        json_str
-                    }
-                };
-                format!("- {}: {} = {}", d.source, d.data_type, value_str)
-            })
-            .collect();
-
-        // Collect image parts
+        // Collect image parts first to check if we actually have valid image data
         let image_parts: Vec<_> = data.iter()
             .filter_map(|d| {
                 let is_image = d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -2621,6 +2595,35 @@ Respond in JSON format:
                 }
 
                 None
+            })
+            .collect();
+
+        // Use has_images flag only if we actually have valid image content
+        let has_valid_images = !image_parts.is_empty();
+
+        // Build text data summary for non-image data
+        // Limit to prevent token overflow - prioritize most recent/important data
+        let max_metrics = 6; // Reduced for small models to avoid context overload
+        let text_data_summary: Vec<_> = data.iter()
+            .filter(|d| !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
+            .take(max_metrics)
+            .map(|d| {
+                // Create a more compact representation of values
+                let value_str = if let Some(v) = d.values.get("value") {
+                    format!("{}", v) // Compact value representation
+                } else if let Some(v) = d.values.get("history") {
+                    format!("[历史数据: {}个点]", v.as_array().map(|a| a.len()).unwrap_or(0))
+                } else {
+                    // Fallback to compact JSON - use character-safe truncation
+                    let json_str = serde_json::to_string(&d.values).unwrap_or_default();
+                    if json_str.chars().count() > 200 {
+                        // Truncate at character boundary, not byte boundary
+                        json_str.chars().take(200).collect::<String>() + "..."
+                    } else {
+                        json_str
+                    }
+                };
+                format!("- {}: {} = {}", d.source, d.data_type, value_str)
             })
             .collect();
 
@@ -2761,7 +2764,7 @@ Respond in JSON format:
         let role_prompt = "You are an IoT automation assistant. Output ONLY valid JSON. No other text.";
 
         // Ultra-simplified prompt for small models - JSON format first and foremost
-        let system_prompt = if has_images {
+        let system_prompt = if has_valid_images {
             format!(
                 "{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录观察\n- alert: 检测到目标，发送告警\n- command: 执行设备指令",
                 role_prompt,
@@ -2776,7 +2779,7 @@ Respond in JSON format:
         };
 
         // Build messages - multimodal if images present
-        let messages = if has_images {
+        let messages = if has_valid_images {
             // Build multimodal message with text and images
             let mut parts = vec![ContentPart::text(format!(
                 "## 当前数据\n{}\n\n重要：只输出JSON格式，不要有任何其他文字。",
