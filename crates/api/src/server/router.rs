@@ -21,7 +21,7 @@ pub async fn create_router() -> Router {
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
         alert_channels, alerts, agents, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
-        dashboards, decisions, devices, events, extensions, llm_backends, memory, mqtt, plugins, rules,
+        dashboards, decisions, devices, events, extensions, llm_backends, memory, message_channels, messages, mqtt, plugins, rules,
         search, sessions, settings, setup, stats, suggestions, test_data, tools,
     };
 
@@ -60,6 +60,13 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/alert-channels", get(alert_channels::list_channels_handler))
         .route("/api/alert-channels/:name", get(alert_channels::get_channel_handler))
         .route("/api/alert-channels/stats", get(alert_channels::get_channel_stats_handler))
+        // Messages Channel Types API (public - read-only metadata)
+        .route("/api/messages/channels/types", get(message_channels::list_channel_types_handler))
+        .route("/api/messages/channels/types/:type/schema", get(message_channels::get_channel_type_schema_handler))
+        // Messages Channels (public - read-only for viewing)
+        .route("/api/messages/channels", get(message_channels::list_channels_handler))
+        .route("/api/messages/channels/:name", get(message_channels::get_channel_handler))
+        .route("/api/messages/channels/stats", get(message_channels::get_channel_stats_handler))
         // Extensions API (public - read-only endpoints for viewing dynamic extensions)
         .route("/api/extensions", get(extensions::list_extensions_handler))
         .route("/api/extensions/types", get(extensions::list_extension_types_handler))
@@ -312,6 +319,23 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/alert-channels", post(alert_channels::create_channel_handler))
         .route("/api/alert-channels/:name", delete(alert_channels::delete_channel_handler))
         .route("/api/alert-channels/:name/test", post(alert_channels::test_channel_handler))
+        // Messages API
+        .route("/api/messages", get(messages::list_messages_handler))
+        .route("/api/messages", post(messages::create_message_handler))
+        .route("/api/messages/stats", get(messages::message_stats_handler))
+        .route("/api/messages/cleanup", post(messages::cleanup_handler))
+        .route("/api/messages/acknowledge", post(messages::bulk_acknowledge_handler))
+        .route("/api/messages/resolve", post(messages::bulk_resolve_handler))
+        .route("/api/messages/delete", post(messages::bulk_delete_handler))
+        .route("/api/messages/:id", get(messages::get_message_handler))
+        .route("/api/messages/:id", delete(messages::delete_message_handler))
+        .route("/api/messages/:id/acknowledge", post(messages::acknowledge_message_handler))
+        .route("/api/messages/:id/resolve", post(messages::resolve_message_handler))
+        .route("/api/messages/:id/archive", post(messages::archive_message_handler))
+        // Messages Channels API (write operations - protected)
+        .route("/api/messages/channels", post(message_channels::create_channel_handler))
+        .route("/api/messages/channels/:name", delete(message_channels::delete_channel_handler))
+        .route("/api/messages/channels/:name/test", post(message_channels::test_channel_handler))
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
         // Unified Automations API

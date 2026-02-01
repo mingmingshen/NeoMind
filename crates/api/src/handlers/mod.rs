@@ -2,6 +2,8 @@
 
 pub mod alerts;
 pub mod alert_channels;
+pub mod messages;
+pub mod message_channels;
 pub mod agents;
 pub mod automations;
 pub mod dashboards;
@@ -110,3 +112,12 @@ pub use auth_users::{
 pub use suggestions::{
     get_suggestions_handler, get_suggestions_categories_handler,
 };
+// Messages API
+pub use messages::{
+    acknowledge_message_handler, archive_message_handler, bulk_acknowledge_handler,
+    bulk_delete_handler, bulk_resolve_handler, cleanup_handler, create_message_handler,
+    delete_message_handler, get_message_handler, list_messages_handler,
+    message_stats_handler, resolve_message_handler,
+};
+// Note: message_channels handlers are not re-exported here to avoid conflicts with alert_channels
+// They are used directly in the router via their full path

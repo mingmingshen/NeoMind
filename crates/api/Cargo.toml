@@ -15,6 +15,7 @@ edge-ai-llm = { path = "../llm" }
 edge-ai-devices = { path = "../devices", features = ["embedded-broker"] }
 edge-ai-rules = { path = "../rules" }
 edge-ai-alerts = { path = "../alerts", features = ["webhook", "email"] }
+edge-ai-messages = { path = "../messages", features = ["webhook", "email"] }
 edge-ai-storage = { path = "../storage" }
 edge-ai-memory = { path = "../memory" }
 edge-ai-tools = { path = "../tools" }

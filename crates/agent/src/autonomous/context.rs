@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use edge_ai_alerts::AlertManager;
+use edge_ai_messages::MessageManager;
 use edge_ai_core::event::NeoTalkEvent;
 use edge_ai_core::eventbus::EventBus;
 use edge_ai_rules::RuleHistoryStorage;
@@ -99,8 +100,8 @@ pub struct ContextCollector {
     storage: Option<Arc<TimeSeriesStore>>,
     /// Rule history storage
     rule_history: Option<Arc<RuleHistoryStorage>>,
-    /// Alert manager
-    alert_manager: Option<Arc<AlertManager>>,
+    /// Message manager (replaces AlertManager)
+    message_manager: Option<Arc<MessageManager>>,
 }
 
 impl ContextCollector {
@@ -110,7 +111,7 @@ impl ContextCollector {
             event_bus,
             storage: None,
             rule_history: None,
-            alert_manager: None,
+            message_manager: None,
         }
     }
 
@@ -119,13 +120,13 @@ impl ContextCollector {
         event_bus: Arc<EventBus>,
         storage: Arc<TimeSeriesStore>,
         rule_history: Arc<RuleHistoryStorage>,
-        alert_manager: Arc<AlertManager>,
+        message_manager: Arc<MessageManager>,
     ) -> Self {
         Self {
             event_bus,
             storage: Some(storage),
             rule_history: Some(rule_history),
-            alert_manager: Some(alert_manager),
+            message_manager: Some(message_manager),
         }
     }
 
@@ -141,9 +142,17 @@ impl ContextCollector {
         self
     }
 
-    /// Set the alert manager.
-    pub fn with_alert_manager(mut self, alert_manager: Arc<AlertManager>) -> Self {
-        self.alert_manager = Some(alert_manager);
+    /// Set the message manager (replaces AlertManager).
+    pub fn with_message_manager(mut self, message_manager: Arc<MessageManager>) -> Self {
+        self.message_manager = Some(message_manager);
+        self
+    }
+
+    /// Set the alert manager (deprecated, use with_message_manager).
+    #[deprecated(note = "Use with_message_manager instead")]
+    pub fn with_alert_manager(self, _alert_manager: Arc<AlertManager>) -> Self {
+        // This is a compatibility method - it does nothing now
+        tracing::warn!("with_alert_manager is deprecated, use with_message_manager instead");
         self
     }
 
@@ -322,37 +331,38 @@ impl ContextCollector {
 
     /// Collect alert summary.
     async fn collect_alert_summary(&self, time_range: &TimeRange) -> AlertSummary {
-        use edge_ai_alerts::{AlertSeverity, AlertStatus};
+        use edge_ai_messages::{MessageSeverity, MessageStatus};
 
-        if let Some(alert_manager) = &self.alert_manager {
-            let all_alerts = alert_manager.list_alerts().await;
+        if let Some(message_manager) = &self.message_manager {
+            let all_messages = message_manager.list_messages().await;
 
             let mut summary = AlertSummary::default();
-            summary.total_alerts = all_alerts.len();
+            summary.total_alerts = all_messages.len();
 
-            // Count alerts by status and severity
-            for alert in all_alerts {
-                // Check if alert was created within time range
+            // Count messages by status and severity
+            for msg in all_messages {
+                // Check if message was created within time range
                 let in_range =
-                    alert.timestamp >= time_range.start && alert.timestamp <= time_range.end;
+                    msg.timestamp.timestamp() >= time_range.start.timestamp() &&
+                    msg.timestamp.timestamp() <= time_range.end.timestamp();
 
-                if in_range || matches!(alert.status, AlertStatus::Active) {
-                    match alert.status {
-                        AlertStatus::Active => {
+                if in_range || msg.status == MessageStatus::Active {
+                    match msg.status {
+                        MessageStatus::Active => {
                             summary.active_alerts += 1;
                         }
-                        AlertStatus::Acknowledged | AlertStatus::Resolved => {
+                        MessageStatus::Acknowledged | MessageStatus::Resolved => {
                             summary.resolved_alerts += 1;
                         }
                         _ => {}
                     }
 
                     // Count by severity (Emergency and Critical are "critical", Warning is "warning")
-                    match alert.severity {
-                        AlertSeverity::Emergency | AlertSeverity::Critical => {
+                    match msg.severity {
+                        MessageSeverity::Emergency | MessageSeverity::Critical => {
                             summary.critical_alerts += 1
                         }
-                        AlertSeverity::Warning => summary.warning_alerts += 1,
+                        MessageSeverity::Warning => summary.warning_alerts += 1,
                         _ => {}
                     }
                 }
@@ -360,7 +370,7 @@ impl ContextCollector {
 
             summary
         } else {
-            // Fallback: try to get alert info from event bus
+            // Fallback: try to get message info from event bus
             let mut summary = AlertSummary::default();
             let mut rx = self.event_bus.subscribe();
             let timeout_duration = Duration::from_millis(500);
@@ -368,7 +378,7 @@ impl ContextCollector {
 
             while start.elapsed() < timeout_duration {
                 match tokio::time::timeout(timeout_duration - start.elapsed(), rx.recv()).await {
-                    Ok(Some((NeoTalkEvent::AlertCreated { severity, .. }, _))) => {
+                    Ok(Some((NeoTalkEvent::MessageCreated { severity, .. }, _))) => {
                         summary.total_alerts += 1;
                         match severity.as_str() {
                             "critical" | "emergency" => summary.critical_alerts += 1,

@@ -18,10 +18,10 @@ use uuid::Uuid;
 use super::dependencies::DependencyManager;
 use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 
-/// Optional alert manager for creating alerts from rule actions.
+/// Optional message manager for creating messages from rule actions.
 /// Wrapped in Option to allow RuleEngine to function without it.
-/// Double-wrapped in Arc because AlertManager doesn't implement Clone.
-type OptionAlertManager = Arc<tokio::sync::RwLock<Option<Arc<edge_ai_alerts::AlertManager>>>>;
+/// Double-wrapped in Arc because MessageManager doesn't implement Clone.
+type OptionMessageManager = Arc<tokio::sync::RwLock<Option<Arc<edge_ai_messages::MessageManager>>>>;
 
 /// Scheduler task handle for managing the rule evaluation loop.
 type SchedulerHandle = Arc<StdRwLock<Option<JoinHandle<()>>>>;
@@ -311,8 +311,8 @@ pub struct RuleEngine {
     max_history_size: usize,
     /// Dependency manager for execution ordering.
     dependency_manager: Arc<StdRwLock<DependencyManager>>,
-    /// Optional alert manager for creating alerts from rule actions.
-    alert_manager: OptionAlertManager,
+    /// Optional message manager for creating messages from rule actions.
+    message_manager: OptionMessageManager,
     /// Scheduler task handle.
     scheduler_handle: SchedulerHandle,
     /// Scheduler interval (how often to evaluate rules).
@@ -330,23 +330,36 @@ impl RuleEngine {
             history: Arc::new(RwLock::new(Vec::new())),
             max_history_size: 1000,
             dependency_manager: Arc::new(StdRwLock::new(DependencyManager::new())),
-            alert_manager: Arc::new(tokio::sync::RwLock::new(None)),
+            message_manager: Arc::new(tokio::sync::RwLock::new(None)),
             scheduler_handle: Arc::new(StdRwLock::new(None)),
             scheduler_interval: Arc::new(StdRwLock::new(Duration::from_secs(5))),
             scheduler_running: Arc::new(StdRwLock::new(false)),
         }
     }
 
-    /// Set the alert manager for creating alerts from rule actions.
+    /// Set the message manager for creating messages from rule actions.
     /// This must be called after construction as it requires async access.
-    pub async fn set_alert_manager(&self, alert_manager: Arc<edge_ai_alerts::AlertManager>) {
-        *self.alert_manager.write().await = Some(alert_manager);
+    pub async fn set_message_manager(&self, message_manager: Arc<edge_ai_messages::MessageManager>) {
+        *self.message_manager.write().await = Some(message_manager);
     }
 
-    /// Get a reference to the alert manager (if set).
-    pub async fn get_alert_manager(&self) -> Option<Arc<edge_ai_alerts::AlertManager>> {
-        let guard = self.alert_manager.read().await;
+    /// Get a reference to the message manager (if set).
+    pub async fn get_message_manager(&self) -> Option<Arc<edge_ai_messages::MessageManager>> {
+        let guard = self.message_manager.read().await;
         guard.as_ref().map(Arc::clone)
+    }
+
+    /// Set the alert manager (deprecated, use set_message_manager).
+    #[deprecated(note = "Use set_message_manager instead")]
+    pub async fn set_alert_manager(&self, _alert_manager: Arc<edge_ai_alerts::AlertManager>) {
+        tracing::warn!("set_alert_manager is deprecated, use set_message_manager instead");
+    }
+
+    /// Get the alert manager (deprecated, use get_message_manager).
+    #[deprecated(note = "Use get_message_manager instead")]
+    pub async fn get_alert_manager(&self) -> Option<Arc<edge_ai_alerts::AlertManager>> {
+        tracing::warn!("get_alert_manager is deprecated, use get_message_manager instead");
+        None
     }
 
     /// Start the automatic rule scheduler.
@@ -373,7 +386,7 @@ impl RuleEngine {
         let value_provider = self.value_provider.clone();
         let history = self.history.clone();
         let max_history_size = self.max_history_size;
-        let _alert_manager = self.alert_manager.clone();
+        let _message_manager = self.message_manager.clone();
         let scheduler_running = self.scheduler_running.clone();
 
         // Spawn the scheduler task
@@ -792,50 +805,51 @@ impl RuleEngine {
                 Ok(format!("DELAY: {:?} completed", duration))
             }
             RuleAction::CreateAlert { title, message, severity } => {
-                use edge_ai_alerts::{Alert, AlertSeverity as AlertSev};
-                
+                use edge_ai_messages::{Message, MessageSeverity as MessageSev};
+
                 let sev = match severity {
-                    AlertSeverity::Info => AlertSev::Info,
-                    AlertSeverity::Warning => AlertSev::Warning,
-                    AlertSeverity::Error => AlertSev::Warning, // Map Error to Warning
-                    AlertSeverity::Critical => AlertSev::Critical,
+                    AlertSeverity::Info => MessageSev::Info,
+                    AlertSeverity::Warning => MessageSev::Warning,
+                    AlertSeverity::Error => MessageSev::Warning, // Map Error to Warning
+                    AlertSeverity::Critical => MessageSev::Critical,
                 };
-                
-                // Try to create alert through AlertManager if available
-                let alert_manager = self.alert_manager.read().await;
-                if let Some(manager) = alert_manager.as_ref() {
-                    let alert = Alert::new(
+
+                // Try to create message through MessageManager if available
+                let message_manager = self.message_manager.read().await;
+                if let Some(manager) = message_manager.as_ref() {
+                    let msg = Message::new(
+                        "alert".to_string(),
                         sev,
                         title.clone(),
                         message.clone(),
                         "rule".to_string(),
                     );
-                    
-                    match manager.create_alert(alert).await {
+
+                    match manager.create_message(msg).await {
                         Ok(created) => {
                             tracing::info!(
-                                "Alert created from rule: {} [{}] - {}",
+                                "Message created from rule: {} [{}] - {}",
                                 title,
                                 sev,
                                 message
                             );
-                            Ok(format!("ALERT [{}]: {} (id: {})", sev, title, created.id))
+                            Ok(format!("MESSAGE [{}]: {} (id: {})", sev, title, created.id))
                         }
                         Err(e) => {
-                            tracing::error!("Failed to create alert from rule: {}", e);
-                            Err(format!("Failed to create alert: {}", e))
+                            tracing::error!("Failed to create message from rule: {}", e);
+                            Err(format!("Failed to create message: {}", e))
                         }
                     }
                 } else {
-                    // Fallback to logging if no AlertManager is set
+                    // Fallback to logging if no MessageManager is set
                     let sev_str = match severity {
                         AlertSeverity::Info => "INFO",
                         AlertSeverity::Warning => "WARNING",
                         AlertSeverity::Error => "ERROR",
                         AlertSeverity::Critical => "CRITICAL",
                     };
-                    tracing::warn!("ALERT [{}]: {} - {} (no AlertManager configured)", sev_str, title, message);
-                    Ok(format!("ALERT [{}]: {} (logged only)", sev_str, title))
+                    tracing::warn!("MESSAGE [{}]: {} - {} (no MessageManager configured)", sev_str, title, message);
+                    Ok(format!("MESSAGE [{}]: {} (logged only)", sev_str, title))
                 }
             }
             RuleAction::HttpRequest { method, url, headers, body } => {

@@ -20,6 +20,7 @@ const AgentsPage = lazy(() => import('@/pages/agents').then(m => ({ default: m.A
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })))
 const CommandsPage = lazy(() => import('@/pages/commands').then(m => ({ default: m.CommandsPage })))
 const DecisionsPage = lazy(() => import('@/pages/decisions').then(m => ({ default: m.DecisionsPage })))
+const MessagesPage = lazy(() => import('@/pages/messages').then(m => ({ default: m.default })))
 const PluginsPage = lazy(() => import('@/pages/plugins').then(m => ({ default: m.PluginsPage })))
 
 // Suppress Radix UI Portal cleanup errors during page transitions
@@ -228,6 +229,9 @@ function App() {
                     <Route path="/decisions/proposed" element={<DecisionsPage />} />
                     <Route path="/decisions/executed" element={<DecisionsPage />} />
                     <Route path="/decisions/rejected" element={<DecisionsPage />} />
+                    {/* Messages with tab routes */}
+                    <Route path="/messages" element={<MessagesPage />} />
+                    <Route path="/messages/channels" element={<MessagesPage />} />
                     {/* Plugins with tab routes */}
                     <Route path="/plugins" element={<PluginsPage />} />
                     <Route path="/plugins/connections" element={<PluginsPage />} />

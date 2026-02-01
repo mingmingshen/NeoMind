@@ -838,17 +838,27 @@ pub async fn get_resources_handler(
         });
     }
 
-    // Get alert channels from alert manager
-    let mut alert_channels = Vec::new();
-    let channel_names = state.alert_manager.list_channels().await;
-    for name in channel_names {
-        alert_channels.push(edge_ai_rules::AlertChannelInfo {
-            id: name.clone(),
-            name: name.clone(),
-            channel_type: "notification".to_string(),
+    // Message categories available for rule actions (replaces alert channels)
+    let alert_channels = vec![
+        edge_ai_rules::AlertChannelInfo {
+            id: "alert".to_string(),
+            name: "Alert".to_string(),
+            channel_type: "alert".to_string(),
             enabled: true,
-        });
-    }
+        },
+        edge_ai_rules::AlertChannelInfo {
+            id: "system".to_string(),
+            name: "System".to_string(),
+            channel_type: "system".to_string(),
+            enabled: true,
+        },
+        edge_ai_rules::AlertChannelInfo {
+            id: "business".to_string(),
+            name: "Business".to_string(),
+            channel_type: "business".to_string(),
+            enabled: true,
+        },
+    ];
 
     ok(json!({
         "devices": devices,

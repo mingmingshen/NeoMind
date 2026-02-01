@@ -125,6 +125,29 @@ pub enum NeoTalkEvent {
         timestamp: i64,
     },
 
+    // ========== Message Events ==========
+    /// Message was created
+    MessageCreated {
+        message_id: String,
+        title: String,
+        severity: String,
+        message: String,
+        timestamp: i64,
+    },
+
+    /// Message was acknowledged
+    MessageAcknowledged {
+        message_id: String,
+        acknowledged_by: String,
+        timestamp: i64,
+    },
+
+    /// Message was resolved
+    MessageResolved {
+        message_id: String,
+        timestamp: i64,
+    },
+
     // ========== Agent Events (User-defined AI Agents) ==========
     /// Agent execution started
     AgentExecutionStarted {
@@ -302,6 +325,9 @@ impl NeoTalkEvent {
             Self::WorkflowCompleted { .. } => "WorkflowCompleted",
             Self::AlertCreated { .. } => "AlertCreated",
             Self::AlertAcknowledged { .. } => "AlertAcknowledged",
+            Self::MessageCreated { .. } => "MessageCreated",
+            Self::MessageAcknowledged { .. } => "MessageAcknowledged",
+            Self::MessageResolved { .. } => "MessageResolved",
             Self::AgentExecutionStarted { .. } => "AgentExecutionStarted",
             Self::AgentThinking { .. } => "AgentThinking",
             Self::AgentDecision { .. } => "AgentDecision",
@@ -335,6 +361,9 @@ impl NeoTalkEvent {
             | Self::WorkflowCompleted { timestamp, .. }
             | Self::AlertCreated { timestamp, .. }
             | Self::AlertAcknowledged { timestamp, .. }
+            | Self::MessageCreated { timestamp, .. }
+            | Self::MessageAcknowledged { timestamp, .. }
+            | Self::MessageResolved { timestamp, .. }
             | Self::AgentExecutionStarted { timestamp, .. }
             | Self::AgentThinking { timestamp, .. }
             | Self::AgentDecision { timestamp, .. }
@@ -425,6 +454,14 @@ impl NeoTalkEvent {
         matches!(
             self,
             Self::AlertCreated { .. } | Self::AlertAcknowledged { .. }
+        )
+    }
+
+    /// Check if this is a message event.
+    pub fn is_message_event(&self) -> bool {
+        matches!(
+            self,
+            Self::MessageCreated { .. } | Self::MessageAcknowledged { .. } | Self::MessageResolved { .. }
         )
     }
 

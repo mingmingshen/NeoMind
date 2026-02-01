@@ -15,6 +15,7 @@ edge-ai-devices = { path = "../devices" }
 edge-ai-storage = { path = "../storage" }
 edge-ai-rules = { path = "../rules" }
 edge-ai-alerts = { path = "../alerts" }
+edge-ai-messages = { path = "../messages" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

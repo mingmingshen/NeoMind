@@ -572,21 +572,36 @@ impl AgentMemory {
     }
 
     /// Add a pattern directly to long-term memory.
+    /// Also updates the legacy learned_patterns field for backward compatibility.
     pub fn add_pattern(&mut self, pattern: LearnedPattern) {
-        // Check if similar pattern exists
-        let exists = self.long_term.patterns.iter().any(|p| {
+        // Check if similar pattern exists in both locations
+        let exists_in_long_term = self.long_term.patterns.iter().any(|p| {
+            p.pattern_type == pattern.pattern_type && p.description == pattern.description
+        });
+        let exists_in_legacy = self.learned_patterns.iter().any(|p| {
             p.pattern_type == pattern.pattern_type && p.description == pattern.description
         });
 
-        if !exists && pattern.confidence >= 0.7 {
-            self.long_term.patterns.push(pattern);
+        if !exists_in_long_term && !exists_in_legacy && pattern.confidence >= 0.7 {
+            // Add to both long_term.patterns and legacy learned_patterns
+            // This maintains backward compatibility while using the new structure
+            self.long_term.patterns.push(pattern.clone());
+            self.learned_patterns.push(pattern);
 
-            // Prune patterns if needed
+            // Prune long_term.patterns if needed
             if self.long_term.patterns.len() > 15 {
                 self.long_term.patterns.sort_by(|a, b| {
                     b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
                 });
                 self.long_term.patterns.truncate(15);
+            }
+
+            // Also prune legacy learned_patterns
+            if self.learned_patterns.len() > 15 {
+                self.learned_patterns.sort_by(|a, b| {
+                    b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+                });
+                self.learned_patterns.truncate(15);
             }
         }
     }

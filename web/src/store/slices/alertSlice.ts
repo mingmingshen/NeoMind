@@ -2,6 +2,7 @@
  * Alert Slice
  *
  * Handles alert state and operations.
+ * Note: Now uses the unified messages API internally for backward compatibility.
  */
 
 import type { StateCreator } from 'zustand'
@@ -35,24 +36,35 @@ export const createAlertSlice: StateCreator<
     set({ alertsLoading: true })
     try {
       const token = getToken()
-      const response = await fetch('/api/alerts', {
+      // Use the messages API instead of alerts
+      const response = await fetch('/api/messages', {
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',
         },
       })
       const rawData = await response.json()
 
-      // Handle different response formats
-      let alertsArray: unknown[] = []
+      // Handle different response formats from messages endpoint
+      let messagesArray: any[] = []
       if (Array.isArray(rawData)) {
-        alertsArray = rawData
-      } else if (rawData?.data?.alerts && Array.isArray(rawData.data.alerts)) {
-        alertsArray = rawData.data.alerts
-      } else if (rawData?.alerts && Array.isArray(rawData.alerts)) {
-        alertsArray = rawData.alerts
+        messagesArray = rawData
+      } else if (rawData?.messages && Array.isArray(rawData.messages)) {
+        messagesArray = rawData.messages
       } else if (rawData?.data && Array.isArray(rawData.data)) {
-        alertsArray = rawData.data
+        messagesArray = rawData.data
       }
+
+      // Convert messages to alert format for backward compatibility
+      const alertsArray = messagesArray.map((msg: any) => ({
+        id: msg.id,
+        title: msg.title,
+        message: msg.message,
+        severity: msg.severity,
+        status: msg.status,
+        source: msg.source,
+        acknowledged: msg.status !== 'active',
+        timestamp: msg.timestamp || msg.created_at,
+      }))
 
       set({ alerts: alertsArray as any })
     } catch (error) {
@@ -65,7 +77,7 @@ export const createAlertSlice: StateCreator<
 
   acknowledgeAlert: async (id: string) => {
     try {
-      const result = await api.acknowledgeAlert(id)
+      const result = await api.acknowledgeMessage(id)
       if (result.acknowledged) {
         // Update the alert in the list
         set((state) => ({
@@ -86,7 +98,15 @@ export const createAlertSlice: StateCreator<
 
   createAlert: async (alert) => {
     try {
-      await api.createAlert(alert)
+      // Map alert to message format
+      await api.createMessage({
+        category: 'alert',
+        severity: (alert.severity || 'info') as any,
+        title: alert.title,
+        message: alert.message,
+        source: alert.source || 'manual',
+        source_type: 'ui',
+      })
       // Refresh the alerts list after creating
       await get().fetchAlerts()
       return true

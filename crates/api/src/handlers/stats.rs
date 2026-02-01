@@ -198,29 +198,31 @@ pub async fn get_system_stats_handler(
         triggered_today,
     };
 
-    // Get alert stats
-    let all_alerts = state.alert_manager.list_alerts().await;
-    let active_alerts: Vec<_> = all_alerts
+    // Get alert stats (using message manager)
+    let all_messages = state.message_manager.list_messages().await;
+    let active_messages: Vec<_> = all_messages
         .into_iter()
-        .filter(|a| matches!(a.status, edge_ai_alerts::AlertStatus::Active))
+        .filter(|m| matches!(m.status, edge_ai_messages::MessageStatus::Active))
         .collect();
 
-    // Get today's alerts count from history store
-    let alerts_today = if let Some(store) = &state.alert_store {
-        store.count_since(start_of_today).unwrap_or(0) as usize
-    } else {
-        0
-    };
+    // Get today's messages count
+    let start_of_day = chrono::Utc::now().date_naive().and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let messages_today = active_messages
+        .iter()
+        .filter(|m| m.timestamp >= start_of_day)
+        .count();
 
     let alert_stats = AlertStats {
-        active_alerts: active_alerts.len(),
+        active_alerts: active_messages.len(),
         by_severity: json!({
-            "info": active_alerts.iter().filter(|a| matches!(a.severity, edge_ai_alerts::AlertSeverity::Info)).count(),
-            "warning": active_alerts.iter().filter(|a| matches!(a.severity, edge_ai_alerts::AlertSeverity::Warning)).count(),
-            "critical": active_alerts.iter().filter(|a| matches!(a.severity, edge_ai_alerts::AlertSeverity::Critical)).count(),
-            "emergency": active_alerts.iter().filter(|a| matches!(a.severity, edge_ai_alerts::AlertSeverity::Emergency)).count(),
+            "info": active_messages.iter().filter(|m| matches!(m.severity, edge_ai_messages::MessageSeverity::Info)).count(),
+            "warning": active_messages.iter().filter(|m| matches!(m.severity, edge_ai_messages::MessageSeverity::Warning)).count(),
+            "critical": active_messages.iter().filter(|m| matches!(m.severity, edge_ai_messages::MessageSeverity::Critical)).count(),
+            "emergency": active_messages.iter().filter(|m| matches!(m.severity, edge_ai_messages::MessageSeverity::Emergency)).count(),
         }),
-        alerts_today,
+        alerts_today: messages_today,
     };
 
     // Get command stats

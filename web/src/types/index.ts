@@ -197,6 +197,77 @@ export interface Alert {
   source?: string
 }
 
+// ========== Message Types ==========
+// New unified message/notification system
+
+export type MessageSeverity = 'info' | 'warning' | 'critical' | 'emergency'
+export type MessageStatus = 'active' | 'acknowledged' | 'resolved' | 'archived'
+export type MessageCategory = 'alert' | 'system' | 'business'
+
+/**
+ * Message/Notification type - must match backend Message (crates/messages/src/message.rs)
+ */
+export interface NotificationMessage {
+  id: string
+  category: MessageCategory
+  severity: MessageSeverity
+  title: string
+  message: string
+  source: string
+  source_type: string
+  timestamp: string  // ISO 8601 string from backend
+  status: MessageStatus
+  metadata?: Record<string, unknown>
+  tags: string[]
+}
+
+/**
+ * Message list response
+ */
+export interface MessageListResponse {
+  messages: NotificationMessage[]
+  count: number
+}
+
+/**
+ * Message statistics
+ */
+export interface MessageStats {
+  total: number
+  active: number
+  by_category: Record<string, number>
+  by_severity: Record<string, number>
+  by_status: Record<string, number>
+}
+
+/**
+ * Create message request
+ */
+export interface CreateMessageRequest {
+  category: MessageCategory
+  severity: MessageSeverity
+  title: string
+  message: string
+  source?: string
+  source_type?: string
+  metadata?: Record<string, unknown>
+  tags?: string[]
+}
+
+/**
+ * Bulk message operation request
+ */
+export interface BulkMessageRequest {
+  message_ids: string[]
+}
+
+/**
+ * Cleanup old messages request
+ */
+export interface CleanupMessagesRequest {
+  older_than_days: number
+}
+
 // Alert Channel Types
 export interface AlertChannel {
   name: string
@@ -250,6 +321,28 @@ export interface ChannelSchemaResponse {
   icon: string
   category: string
   config_schema: JsonSchema
+}
+
+// ========== Message Channel Types ==========
+// For the new unified messages system
+
+export interface MessageChannel {
+  name: string
+  channel_type: 'console' | 'memory' | 'webhook' | 'email'
+  enabled: boolean
+  config?: Record<string, unknown>
+}
+
+export interface MessageChannelListResponse {
+  channels: MessageChannel[]
+  count: number
+  stats: ChannelStats
+}
+
+export interface CreateMessageChannelRequest {
+  name: string
+  channel_type: string
+  [key: string]: unknown  // Additional config fields
 }
 
 export type JsonSchema = {

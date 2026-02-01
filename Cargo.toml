@@ -9,6 +9,7 @@ members = [
     "crates/storage",
     "crates/rules",
     "crates/alerts",
+    "crates/messages",
     "crates/memory",
     "crates/tools",
     "crates/agent",
@@ -65,3 +66,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 semver = { version = "1", features = ["serde"] }
+dashmap = "6"
+reqwest = { version = "0.12", features = ["json"] }
+lettre = "0.11"

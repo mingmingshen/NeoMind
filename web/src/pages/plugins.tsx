@@ -6,8 +6,8 @@ import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent } from "@/components/shared"
 import { ExtensionGrid, ExtensionConfigDialog } from "@/components/extensions"
 import { UnifiedLLMBackendsTab } from "@/components/llm/UnifiedLLMBackendsTab"
-import { UnifiedAlertChannelsTab } from "@/components/alerts/UnifiedAlertChannelsTab"
 import { UnifiedDeviceConnectionsTab } from "@/components/connections"
+import { UnifiedAlertChannelsTab } from "@/components/alerts/UnifiedAlertChannelsTab"
 import { useToast } from "@/hooks/use-toast"
 import { RefreshCw, Plus } from "lucide-react"
 import { ExtensionUploadDialog } from "@/components/extensions"
@@ -160,7 +160,7 @@ export function PluginsPage() {
   return (
     <PageLayout
       title={t('plugins:title', '扩展与连接')}
-      subtitle={t('plugins:description', '管理 LLM 后端、设备连接、告警通道和扩展插件')}
+      subtitle={t('plugins:description', '管理 LLM 后端、设备连接、外部通知通道和扩展插件')}
     >
       <PageTabs
         tabs={tabs}

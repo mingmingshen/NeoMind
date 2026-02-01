@@ -89,6 +89,7 @@ export default defineConfig({
           if (id.includes('/pages/events')) return 'page-events'
           if (id.includes('/pages/commands')) return 'page-commands'
           if (id.includes('/pages/decisions')) return 'page-decisions'
+          if (id.includes('/pages/messages')) return 'page-messages'
           if (id.includes('/pages/settings')) return 'page-settings'
           if (id.includes('/pages/chat')) return 'page-chat'
         },

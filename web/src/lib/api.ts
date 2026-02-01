@@ -56,6 +56,16 @@ import type {
   ChannelTestResult,
   ChannelSchemaResponse,
   CreateChannelRequest,
+  // Message Types
+  NotificationMessage,
+  MessageListResponse,
+  MessageStats,
+  CreateMessageRequest,
+  BulkMessageRequest,
+  CleanupMessagesRequest,
+  MessageChannel,
+  MessageChannelListResponse,
+  CreateMessageChannelRequest,
   DraftDevice,
   SuggestedDeviceType,
   // AI Agent Types
@@ -663,6 +673,14 @@ export const api = {
     fetchAPI<{ acknowledged: boolean; alertId: string }>(`/alerts/${id}/acknowledge`, {
       method: 'POST',
     }),
+  resolveAlert: (id: string) =>
+    fetchAPI<{ resolved: boolean }>(`/alerts/${id}/resolve`, {
+      method: 'POST',
+    }),
+  deleteAlert: (id: string) =>
+    fetchAPI<{ id: string; deleted: boolean }>(`/alerts/${id}`, {
+      method: 'DELETE',
+    }),
 
   // ========== Alert Channels API ==========
   listAlertChannels: () => fetchAPI<ChannelListResponse>('/alert-channels'),
@@ -685,6 +703,74 @@ export const api = {
       method: 'POST',
     }),
   getChannelStats: () => fetchAPI<ChannelStats>('/alert-channels/stats'),
+
+  // ========== Messages API (New Unified Notification System) ==========
+  listMessages: () => fetchAPI<MessageListResponse>('/messages'),
+  getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),
+  createMessage: (req: CreateMessageRequest) =>
+    fetchAPI<{ id: string; message: string; message_zh: string }>('/messages', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  acknowledgeMessage: (id: string) =>
+    fetchAPI<{ acknowledged: boolean; message_id: string }>(`/messages/${id}/acknowledge`, {
+      method: 'POST',
+    }),
+  resolveMessage: (id: string) =>
+    fetchAPI<{ resolved: boolean; message_id: string }>(`/messages/${id}/resolve`, {
+      method: 'POST',
+    }),
+  archiveMessage: (id: string) =>
+    fetchAPI<{ archived: boolean; message_id: string }>(`/messages/${id}/archive`, {
+      method: 'POST',
+    }),
+  deleteMessage: (id: string) =>
+    fetchAPI<{ message: string; message_zh: string }>(`/messages/${id}`, {
+      method: 'DELETE',
+    }),
+  getMessageStats: () => fetchAPI<MessageStats>('/messages/stats'),
+  bulkAcknowledgeMessages: (req: BulkMessageRequest) =>
+    fetchAPI<{ acknowledged: number }>('/messages/acknowledge', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  bulkResolveMessages: (req: BulkMessageRequest) =>
+    fetchAPI<{ resolved: number }>('/messages/resolve', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  bulkDeleteMessages: (req: BulkMessageRequest) =>
+    fetchAPI<{ deleted: number }>('/messages/delete', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  cleanupMessages: (req: CleanupMessagesRequest) =>
+    fetchAPI<{ cleaned: number; message: string; message_zh: string }>('/messages/cleanup', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+
+  // ========== Message Channels API ==========
+  listMessageChannels: () => fetchAPI<MessageChannelListResponse>('/messages/channels'),
+  getMessageChannel: (name: string) => fetchAPI<MessageChannel>(`/messages/channels/${encodeURIComponent(name)}`),
+  listMessageChannelTypes: () => fetchAPI<{ types: ChannelTypeInfo[]; count: number }>('/messages/channels/types'),
+  getMessageChannelSchema: (type: string) =>
+    fetchAPI<ChannelSchemaResponse>(`/messages/channels/types/${encodeURIComponent(type)}/schema`),
+  createMessageChannel: (req: CreateMessageChannelRequest) =>
+    fetchAPI<{ message: string; message_zh: string; channel: MessageChannel }>('/messages/channels', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
+  deleteMessageChannel: (name: string) =>
+    fetchAPI<{ message: string; message_zh: string; name: string }>(
+      `/messages/channels/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    ),
+  testMessageChannel: (name: string) =>
+    fetchAPI<ChannelTestResult>(`/messages/channels/${encodeURIComponent(name)}/test`, {
+      method: 'POST',
+    }),
+  getMessageChannelStats: () => fetchAPI<ChannelStats>('/messages/channels/stats'),
 
   // ========== LLM Backends API ==========
   listLlmBackends: (params?: { type?: string; active_only?: boolean }) =>

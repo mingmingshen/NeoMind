@@ -72,6 +72,7 @@ pub mod knowledge;
 pub mod llm_backends;
 pub mod llm_data;
 pub mod maintenance;
+pub mod messages;
 pub mod monitoring;
 pub mod multimodal;
 pub mod session;
@@ -95,6 +96,8 @@ pub use vector::{
 pub use session::{SessionMessage, SessionMessageImage, SessionMetadata, SessionStore, PendingStreamState, StreamStage};
 
 pub use multimodal::{DocumentMetadata, ImageMetadata, MultimodalStore};
+
+pub use messages::{MessageStore, MessageStats, StoredMessage};
 
 pub use settings::{
     ConfigChangeEntry, ExternalBroker, LlmBackendType, LlmSettings, MqttSettings,

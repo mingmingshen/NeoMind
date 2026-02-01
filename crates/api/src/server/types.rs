@@ -7,6 +7,7 @@ use tokio::sync::broadcast;
 
 use edge_ai_agent::SessionManager;
 use edge_ai_alerts::AlertManager;
+use edge_ai_messages::MessageManager;
 use edge_ai_commands::{CommandManager, CommandQueue, CommandStateStore};
 use edge_ai_core::{EventBus, extension::ExtensionRegistry};
 use edge_ai_devices::adapter::AdapterResult;
@@ -59,6 +60,8 @@ pub struct ServerState {
     pub rule_store: Option<Arc<RuleStore>>,
     /// Alert manager.
     pub alert_manager: Arc<AlertManager>,
+    /// Message manager for unified messages/notifications system.
+    pub message_manager: Arc<MessageManager>,
     /// Automation store for unified automations.
     pub automation_store: Option<Arc<SharedAutomationStore>>,
     /// Intent analyzer for automation type recommendations.
@@ -270,13 +273,19 @@ impl ServerState {
             }
         };
 
-        // Create alert manager first (needed by rule engine)
+        // Create message manager with default channels (console, memory)
+        let message_manager = Arc::new(MessageManager::new());
+        // Register default channels
+        message_manager.register_default_channels().await;
+
+        // Create alert manager for backward compatibility (deprecated)
         let alert_manager = Arc::new(AlertManager::new());
+
         let rule_engine = Arc::new(RuleEngine::new(value_provider));
-        // Wire rule engine to alert manager for CreateAlert actions
-        rule_engine.set_alert_manager(alert_manager.clone()).await;
-        // Wire event bus to alert manager for AlertCreated events
-        alert_manager.set_event_bus(event_bus.clone()).await;
+        // Wire rule engine to message manager for CreateAlert actions
+        rule_engine.set_message_manager(message_manager.clone()).await;
+        // Wire event bus to message manager for MessageCreated events
+        message_manager.set_event_bus(event_bus.clone()).await;
 
         // Create rule store for persistent rule storage
         let rule_store = match RuleStore::open("data/rules.redb") {
@@ -318,6 +327,7 @@ impl ServerState {
             rule_engine,
             rule_store,
             alert_manager,
+            message_manager,
             automation_store,
             intent_analyzer,
             transform_engine,
@@ -1047,7 +1057,7 @@ impl ServerState {
             time_series_storage: time_series_store,
             device_service: Some(self.device_service.clone()),
             event_bus: self.event_bus.clone(),
-            alert_manager: Some(self.alert_manager.clone()),
+            message_manager: Some(self.message_manager.clone()),
             llm_runtime,
             llm_backend_store,
         };

@@ -10,7 +10,7 @@ use edge_ai_storage::{
     LlmBackendStore,
 };
 use edge_ai_devices::DeviceService;
-use edge_ai_alerts::AlertManager;
+use edge_ai_messages::MessageManager;
 use edge_ai_llm::{OllamaConfig, OllamaRuntime, CloudConfig, CloudRuntime};
 use edge_ai_core::llm::backend::LlmRuntime;
 use std::sync::Arc;
@@ -418,6 +418,7 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
 }
 
 /// Compact history context while preserving key information.
+/// Prioritizes short-term summaries and long-term patterns for efficient context.
 fn compact_history_context(
     _history_context: &str,
     memory: &AgentMemory,
@@ -426,16 +427,35 @@ fn compact_history_context(
 
     // 1. Always preserve: system prompt (already separate), current data (already separate)
 
-    // 2. Preserve medium-term summary if available
-    if let Some(summary) = memory.state_variables.get("medium_term_summary")
-        && let Some(summary_obj) = summary.as_object()
-            && let Some(summary_text) = summary_obj.get("summary").and_then(|v| v.as_str()) {
-                preserved.push(format!("## 历史摘要\n{}", summary_text));
-            }
+    // 2. Preserve short-term memory summaries (most recent executions)
+    if !memory.short_term.summaries.is_empty() {
+        let recent_summaries: Vec<_> = memory.short_term.summaries
+            .iter()
+            .rev()
+            .take(2)
+            .collect();
 
-    // 3. Preserve high-confidence learned patterns (top 3 by category)
+        let summaries_text: Vec<String> = recent_summaries.iter().rev().enumerate()
+            .map(|(i, s)| {
+                let status = if s.success { "✓" } else { "✗" };
+                format!("{}. [{}] {} -> {}", i + 1, status, s.situation, s.conclusion)
+            })
+            .collect();
+
+        preserved.push(format!("## 最近执行摘要\n{}", summaries_text.join("\n")));
+    }
+
+    // 3. Preserve high-confidence patterns from both long_term.patterns and legacy learned_patterns
     let mut pattern_categories = std::collections::HashMap::new();
-    for pattern in &memory.learned_patterns {
+
+    // Use long_term.patterns if available, otherwise fall back to legacy learned_patterns
+    let patterns = if !memory.long_term.patterns.is_empty() {
+        &memory.long_term.patterns
+    } else {
+        &memory.learned_patterns
+    };
+
+    for pattern in patterns {
         pattern_categories
             .entry(pattern.pattern_type.as_str())
             .or_insert_with(Vec::new)
@@ -457,18 +477,31 @@ fn compact_history_context(
         preserved.push(format!("## 学到的模式\n{}", pattern_summaries.join("\n")));
     }
 
-    // 4. Recent critical decisions (last 2)
-    if let Some(recent) = memory.state_variables.get("recent_decisions").and_then(|v| v.as_array()) {
-        let recent_decisions: Vec<_> = recent.iter()
+    // 4. Preserve important long-term memories
+    if !memory.long_term.memories.is_empty() {
+        let important: Vec<_> = memory.long_term.memories
+            .iter()
+            .filter(|m| m.importance >= memory.long_term.min_importance)
             .rev()
             .take(2)
-            .filter_map(|d| d.get("description").and_then(|desc| desc.as_str()))
-            .map(|d| format!("- {}", d))
             .collect();
 
-        if !recent_decisions.is_empty() {
-            preserved.push(format!("## 最近决策\n{}", recent_decisions.join("\n")));
+        if !important.is_empty() {
+            let memories_text: Vec<String> = important.iter()
+                .map(|m| format!("- [{}] {}", m.memory_type, m.content))
+                .collect();
+            preserved.push(format!("## 重要记忆\n{}", memories_text.join("\n")));
         }
+    }
+
+    // 5. Preserve baselines
+    if !memory.baselines.is_empty() {
+        let baseline_info: Vec<_> = memory.baselines
+            .iter()
+            .take(3)
+            .map(|(metric, value)| format!("- {}: 基线值 {:.2}", metric, value))
+            .collect();
+        preserved.push(format!("## 指标基线\n{}", baseline_info.join("\n")));
     }
 
     preserved.join("\n\n")
@@ -494,8 +527,8 @@ pub struct AgentExecutorConfig {
     pub device_service: Option<Arc<DeviceService>>,
     /// Event bus for event subscription
     pub event_bus: Option<Arc<EventBus>>,
-    /// Alert manager for sending notifications
-    pub alert_manager: Option<Arc<AlertManager>>,
+    /// Message manager for sending notifications (replaces AlertManager)
+    pub message_manager: Option<Arc<MessageManager>>,
     /// LLM runtime for intent analysis (default)
     pub llm_runtime: Option<Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>>,
     /// LLM backend store for per-agent backend lookup
@@ -537,8 +570,8 @@ pub struct AgentExecutor {
     device_service: Option<Arc<DeviceService>>,
     /// Event bus for publishing events
     event_bus: Option<Arc<EventBus>>,
-    /// Alert manager for sending notifications
-    alert_manager: Option<Arc<AlertManager>>,
+    /// Message manager for sending notifications (replaces AlertManager)
+    message_manager: Option<Arc<MessageManager>>,
     /// Configuration
     config: AgentExecutorConfig,
     /// LLM runtime (default)
@@ -559,13 +592,13 @@ impl AgentExecutor {
     pub async fn new(config: AgentExecutorConfig) -> Result<Self, AgentError> {
         let llm_runtime = config.llm_runtime.clone();
         let llm_backend_store = config.llm_backend_store.clone();
-        let alert_manager = config.alert_manager.clone();
+        let message_manager = config.message_manager.clone();
         Ok(Self {
             store: config.store.clone(),
             time_series_storage: config.time_series_storage.clone(),
             device_service: config.device_service.clone(),
             event_bus: config.event_bus.clone(),
-            alert_manager,
+            message_manager,
             config,
             llm_runtime,
             llm_backend_store,
@@ -978,7 +1011,7 @@ Respond in JSON format:
                     let executor_time_series = self.time_series_storage.clone();
                     let executor_device = self.device_service.clone();
                     let executor_event_bus = self.event_bus.clone();
-                    let executor_alert_manager = self.alert_manager.clone();
+                    let executor_message_manager = self.message_manager.clone();
                     let executor_llm = self.llm_runtime.clone();
                     let executor_llm_store = self.llm_backend_store.clone();
                     let agent_id_for_log = agent.id.clone();
@@ -998,7 +1031,7 @@ Respond in JSON format:
                             time_series_storage: executor_time_series.clone(),
                             device_service: executor_device.clone(),
                             event_bus: executor_event_bus.clone(),
-                            alert_manager: executor_alert_manager,
+                            message_manager: executor_message_manager,
                             llm_runtime: executor_llm,
                             llm_backend_store: executor_llm_store,
                         };
@@ -2711,8 +2744,70 @@ Respond in JSON format:
             }
         }
 
-        // === CONVERSATION HISTORY (Short-term memory) ===
-        // Reduced to 1 entry for small models
+        // === SHORT-TERM MEMORY (Recent execution summaries) ===
+        // Use compressed summaries from short_term.memory for efficient context
+        if !agent.memory.short_term.summaries.is_empty() {
+            let recent_summaries: Vec<_> = agent.memory.short_term.summaries
+                .iter()
+                .rev()
+                .take(3) // 最近3次执行摘要
+                .collect();
+
+            if !recent_summaries.is_empty() {
+                history_parts.push(format!(
+                    "\n## 最近执行摘要 (短期记忆)\n{}",
+                    recent_summaries.iter().rev().enumerate()
+                        .map(|(i, s)| {
+                            let status = if s.success { "✓" } else { "✗" };
+                            let timestamp = chrono::DateTime::from_timestamp(s.timestamp, 0)
+                                .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                                .unwrap_or_else(|| "??".to_string());
+                            format!(
+                                "{}. [{}] {} -> {}",
+                                i + 1,
+                                status,
+                                s.situation,
+                                s.conclusion
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
+            }
+        }
+
+        // === LONG-TERM MEMORY (Important memories) ===
+        // Retrieve high-importance memories from long-term storage
+        if !agent.memory.long_term.memories.is_empty() {
+            let important_memories: Vec<_> = agent.memory.long_term.memories
+                .iter()
+                .filter(|m| m.importance >= agent.memory.long_term.min_importance)
+                .rev()
+                .take(2) // 最多2条重要记忆
+                .collect();
+
+            if !important_memories.is_empty() {
+                history_parts.push(format!(
+                    "\n## 历史重要记忆\n{}",
+                    important_memories.iter()
+                        .map(|m| {
+                            let timestamp = chrono::DateTime::from_timestamp(m.created_at, 0)
+                                .map(|dt| dt.format("%m-%d").to_string())
+                                .unwrap_or_else(|| "??".to_string());
+                            format!("- [{}] [{}] {}",
+                                m.memory_type,
+                                timestamp,
+                                m.content
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
+            }
+        }
+
+        // === CONVERSATION HISTORY (Full execution details) ===
+        // Reduced to 1 entry for small models - provides more detail than summaries
         if !agent.conversation_history.is_empty() {
             let recent: Vec<_> = agent.conversation_history
                 .iter()
@@ -2720,7 +2815,7 @@ Respond in JSON format:
                 .take(1) // Keep minimal for small models
                 .collect();
             history_parts.push(format!(
-                "\n## 最近执行 (最近{}次)\n{}",
+                "\n## 最近执行详情 (最近{}次)\n{}",
                 recent.len(),
                 recent.iter().rev().enumerate()
                     .map(|(i, turn)| format!(
@@ -3382,7 +3477,7 @@ Respond in JSON format:
                     should_send_alert,
                     has_parsed_intent = agent.parsed_intent.is_some(),
                     actions = ?agent.parsed_intent.as_ref().map(|i| &i.actions),
-                    has_alert_manager = self.alert_manager.is_some(),
+                    has_message_manager = self.message_manager.is_some(),
                     "Checking if alert should be sent"
                 );
 
@@ -3530,23 +3625,23 @@ Respond in JSON format:
     ) {
         let alert_message = format!("Agent '{}' - {}: {}", agent.name, decision.decision_type, decision.description);
 
-        // Send via AlertManager if available
-        if let Some(ref alert_manager) = self.alert_manager {
-            use edge_ai_alerts::{Alert as AlertsAlert, AlertSeverity as AlertsAlertSeverity};
+        // Send via MessageManager if available
+        if let Some(ref message_manager) = self.message_manager {
+            use edge_ai_messages::{Message, MessageSeverity};
 
             // Determine severity based on decision type
             let severity = if decision.decision_type.to_lowercase().contains("critical") ||
                              decision.decision_type.to_lowercase().contains("emergency") ||
                              decision.decision_type.to_lowercase().contains("紧急") {
-                AlertsAlertSeverity::Critical
+                MessageSeverity::Critical
             } else if decision.decision_type.to_lowercase().contains("warning") ||
                        decision.decision_type.to_lowercase().contains("警告") {
-                AlertsAlertSeverity::Warning
+                MessageSeverity::Warning
             } else {
-                AlertsAlertSeverity::Info
+                MessageSeverity::Info
             };
 
-            let alert = AlertsAlert::new(
+            let msg = Message::alert(
                 severity,
                 format!("Agent Alert: {}", agent.name),
                 alert_message.clone(),
@@ -3557,13 +3652,13 @@ Respond in JSON format:
                 agent_id = %agent.id,
                 alert_message = %alert_message,
                 severity = ?severity,
-                "Sending alert via AlertManager"
+                "Sending message via MessageManager"
             );
 
-            match alert_manager.create_alert(alert).await {
-                Ok(alert) => {
+            match message_manager.create_message(msg).await {
+                Ok(msg) => {
                     notifications_sent.push(edge_ai_storage::NotificationSent {
-                        channel: "alert_manager".to_string(),
+                        channel: "message_manager".to_string(),
                         recipient: "configured_channels".to_string(),
                         message: alert_message,
                         sent_at: chrono::Utc::now().timestamp(),
@@ -3571,13 +3666,13 @@ Respond in JSON format:
                     });
                     tracing::info!(
                         agent_id = %agent.id,
-                        alert_id = %alert.id.to_string(),
-                        "Alert sent via AlertManager successfully"
+                        message_id = %msg.id.to_string(),
+                        "Message sent via MessageManager successfully"
                     );
                 }
                 Err(e) => {
                     notifications_sent.push(edge_ai_storage::NotificationSent {
-                        channel: "alert_manager".to_string(),
+                        channel: "message_manager".to_string(),
                         recipient: "configured_channels".to_string(),
                         message: alert_message.clone(),
                         sent_at: chrono::Utc::now().timestamp(),
@@ -3586,19 +3681,19 @@ Respond in JSON format:
                     tracing::warn!(
                         agent_id = %agent.id,
                         error = %e,
-                        "Failed to send alert via AlertManager"
+                        "Failed to send message via MessageManager"
                     );
                 }
             }
         } else {
-            // Fallback: Publish event to EventBus if AlertManager not available
+            // Fallback: Publish event to EventBus if MessageManager not available
             tracing::warn!(
                 agent_id = %agent.id,
-                "AlertManager not available, using EventBus fallback"
+                "MessageManager not available, using EventBus fallback"
             );
             if let Some(ref bus) = self.event_bus {
-                let _ = bus.publish(NeoTalkEvent::AlertCreated {
-                    alert_id: uuid::Uuid::new_v4().to_string(),
+                let _ = bus.publish(NeoTalkEvent::MessageCreated {
+                    message_id: uuid::Uuid::new_v4().to_string(),
                     title: format!("Agent Alert: {}", agent.name),
                     severity: "info".to_string(),
                     message: decision.description.clone(),

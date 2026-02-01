@@ -6,6 +6,126 @@
     "acknowledge": "确认",
     "moreAlerts": "还有{{count}}条"
   },
+  "messages": {
+    "title": "消息",
+    "description": "管理系统通知和告警",
+    "tabs": {
+      "messages": "消息",
+      "channels": "通知通道"
+    },
+    "create": "创建消息",
+    "createTitle": "创建新消息",
+    "createDescription": "创建新的系统消息或通知",
+    "error": "加载消息失败",
+    "empty": {
+      "title": "暂无消息",
+      "description": "没有符合条件的通知消息"
+    },
+    "selected": "已选择 {{count}} 条",
+    "count": "{{count}} 条消息",
+    "resolve": "解决",
+    "archive": "归档",
+    "acknowledge": "确认",
+    "source": "来源",
+    "filter": {
+      "severity": "严重程度",
+      "status": "状态",
+      "category": "分类",
+      "all": "全部",
+      "clear": "清除筛选"
+    },
+    "severity": {
+      "label": "严重程度",
+      "info": "信息",
+      "warning": "警告",
+      "critical": "严重",
+      "emergency": "紧急"
+    },
+    "status": {
+      "label": "状态",
+      "active": "活跃",
+      "acknowledged": "已确认",
+      "resolved": "已解决",
+      "archived": "已归档",
+      "false_positive": "误报"
+    },
+    "category": {
+      "label": "分类",
+      "alert": "告警",
+      "system": "系统",
+      "business": "业务"
+    },
+    "stats": {
+      "total": "总计",
+      "active": "活跃",
+      "byCategory": {
+        "alert": "告警",
+        "system": "系统",
+        "business": "业务"
+      },
+      "bySeverity": {
+        "info": "信息",
+        "warning": "警告",
+        "critical": "严重",
+        "emergency": "紧急"
+      }
+    },
+    "channels": {
+      "title": "通知通道",
+      "create": "添加通道",
+      "createTitle": "创建通道",
+      "createDescription": "创建新的消息通知通道",
+      "test": "测试",
+      "config": "配置",
+      "name": "通道名称",
+      "type": "通道类型",
+      "total": "通道总数",
+      "enabled": "已启用",
+      "types": "类型",
+      "error": "加载通道失败",
+      "empty": {
+        "title": "暂无通道",
+        "description": "创建通知通道来发送消息"
+      },
+      "webhookUrl": "Webhook URL",
+      "webhookHeaders": "请求头 (JSON)",
+      "smtpServer": "SMTP 服务器",
+      "smtpPort": "SMTP 端口",
+      "emailUsername": "用户名",
+      "emailPassword": "密码",
+      "emailFrom": "发件地址",
+      "emailTo": "收件地址"
+    },
+    "confirmBulkDelete": "删除消息",
+    "confirmBulkDeleteDesc": "确定要删除 {{count}} 条消息吗?",
+    "deleteSuccess": "删除成功",
+    "deleteSuccessDesc": "成功删除 {{count}} 条消息",
+    "deleteError": "删除失败",
+    "acknowledgeSuccess": "确认成功",
+    "acknowledgeSuccessDesc": "已确认 {{count}} 条消息",
+    "acknowledgeError": "确认失败",
+    "resolveSuccess": "解决成功",
+    "resolveSuccessDesc": "已解决 {{count}} 条消息",
+    "resolveError": "解决失败",
+    "formTitle": {
+      "label": "标题",
+      "placeholder": "消息标题"
+    },
+    "content": {
+      "label": "消息内容",
+      "placeholder": "输入消息内容"
+    },
+    "sourceType": {
+      "label": "来源类型",
+      "placeholder": "如: system, device"
+    },
+    "tags": {
+      "label": "标签",
+      "hint": "用逗号分隔多个标签"
+    },
+    "sourceLabel": "来源",
+    "sourcePlaceholder": "如: api, system"
+  },
   "connection": {
     "connected": "已连接",
     "disconnected": "未连接",
@@ -21,6 +141,7 @@
     "agents": "智能体",
     "alerts": "告警",
     "decisions": "决策",
+    "messages": "消息",
     "plugins": "插件",
     "settings": "设置"
   },

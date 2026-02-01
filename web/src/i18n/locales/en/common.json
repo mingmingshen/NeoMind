@@ -6,6 +6,126 @@
     "acknowledge": "Acknowledge",
     "moreAlerts": "+{{count}} more alerts"
   },
+  "messages": {
+    "title": "Messages",
+    "description": "Manage system notifications and alerts",
+    "tabs": {
+      "messages": "Messages",
+      "channels": "Channels"
+    },
+    "create": "Create Message",
+    "createTitle": "Create New Message",
+    "createDescription": "Create a new system message or notification",
+    "error": "Failed to load messages",
+    "empty": {
+      "title": "No Messages",
+      "description": "There are no messages matching your criteria"
+    },
+    "selected": "{{count}} selected",
+    "count": "{{count}} messages",
+    "resolve": "Resolve",
+    "archive": "Archive",
+    "acknowledge": "Acknowledge",
+    "source": "Source",
+    "filter": {
+      "severity": "Severity",
+      "status": "Status",
+      "category": "Category",
+      "all": "All",
+      "clear": "Clear Filters"
+    },
+    "severity": {
+      "label": "Severity",
+      "info": "Info",
+      "warning": "Warning",
+      "critical": "Critical",
+      "emergency": "Emergency"
+    },
+    "status": {
+      "label": "Status",
+      "active": "Active",
+      "acknowledged": "Acknowledged",
+      "resolved": "Resolved",
+      "archived": "Archived",
+      "false_positive": "False Positive"
+    },
+    "category": {
+      "label": "Category",
+      "alert": "Alert",
+      "system": "System",
+      "business": "Business"
+    },
+    "stats": {
+      "total": "Total",
+      "active": "Active",
+      "byCategory": {
+        "alert": "Alerts",
+        "system": "System",
+        "business": "Business"
+      },
+      "bySeverity": {
+        "info": "Info",
+        "warning": "Warnings",
+        "critical": "Critical",
+        "emergency": "Emergency"
+      }
+    },
+    "channels": {
+      "title": "Notification Channels",
+      "create": "Add Channel",
+      "createTitle": "Create Channel",
+      "createDescription": "Create a new notification channel",
+      "test": "Test",
+      "config": "Configuration",
+      "name": "Channel Name",
+      "type": "Channel Type",
+      "total": "Total Channels",
+      "enabled": "Enabled",
+      "types": "Types",
+      "error": "Failed to load channels",
+      "empty": {
+        "title": "No Channels",
+        "description": "Create a notification channel to send messages"
+      },
+      "webhookUrl": "Webhook URL",
+      "webhookHeaders": "Headers (JSON)",
+      "smtpServer": "SMTP Server",
+      "smtpPort": "SMTP Port",
+      "emailUsername": "Username",
+      "emailPassword": "Password",
+      "emailFrom": "From Address",
+      "emailTo": "To Address"
+    },
+    "confirmBulkDelete": "Delete Messages",
+    "confirmBulkDeleteDesc": "Are you sure you want to delete {{count}} message(s)?",
+    "deleteSuccess": "Messages Deleted",
+    "deleteSuccessDesc": "Successfully deleted {{count}} message(s)",
+    "deleteError": "Delete Failed",
+    "acknowledgeSuccess": "Messages Acknowledged",
+    "acknowledgeSuccessDesc": "Acknowledged {{count}} message(s)",
+    "acknowledgeError": "Acknowledge Failed",
+    "resolveSuccess": "Messages Resolved",
+    "resolveSuccessDesc": "Resolved {{count}} message(s)",
+    "resolveError": "Resolve Failed",
+    "formTitle": {
+      "label": "Title",
+      "placeholder": "Message title"
+    },
+    "content": {
+      "label": "Message",
+      "placeholder": "Enter the message content"
+    },
+    "sourceType": {
+      "label": "Source Type",
+      "placeholder": "e.g., system, device"
+    },
+    "tags": {
+      "label": "Tags",
+      "hint": "Separate multiple tags with commas"
+    },
+    "sourceLabel": "Source",
+    "sourcePlaceholder": "e.g. api, system"
+  },
   "connection": {
     "connected": "Connected",
     "disconnected": "Disconnected",
@@ -21,6 +141,7 @@
     "agents": "AI Agents",
     "alerts": "Alerts",
     "decisions": "Decisions",
+    "messages": "Messages",
     "plugins": "Plugins",
     "settings": "Settings"
   },
