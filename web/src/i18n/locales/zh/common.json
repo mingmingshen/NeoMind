@@ -28,12 +28,15 @@
     "acknowledge": "确认",
     "source": "来源",
     "filter": {
+      "title": "筛选",
       "severity": "严重程度",
       "status": "状态",
       "category": "分类",
       "all": "全部",
-      "clear": "清除筛选"
+      "clear": "清除",
+      "clearAll": "清除全部"
     },
+    "items": "条",
     "severity": {
       "label": "严重程度",
       "info": "信息",
@@ -76,6 +79,7 @@
       "createTitle": "创建通道",
       "createDescription": "创建新的消息通知通道",
       "test": "测试",
+      "sendTest": "发送测试消息",
       "config": "配置",
       "name": "通道名称",
       "type": "通道类型",

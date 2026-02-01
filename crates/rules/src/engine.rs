@@ -349,19 +349,6 @@ impl RuleEngine {
         guard.as_ref().map(Arc::clone)
     }
 
-    /// Set the alert manager (deprecated, use set_message_manager).
-    #[deprecated(note = "Use set_message_manager instead")]
-    pub async fn set_alert_manager(&self, _alert_manager: Arc<edge_ai_alerts::AlertManager>) {
-        tracing::warn!("set_alert_manager is deprecated, use set_message_manager instead");
-    }
-
-    /// Get the alert manager (deprecated, use get_message_manager).
-    #[deprecated(note = "Use get_message_manager instead")]
-    pub async fn get_alert_manager(&self) -> Option<Arc<edge_ai_alerts::AlertManager>> {
-        tracing::warn!("get_alert_manager is deprecated, use get_message_manager instead");
-        None
-    }
-
     /// Start the automatic rule scheduler.
     /// The scheduler will periodically evaluate rules and execute triggered ones.
     /// Returns an error if the scheduler is already running.
@@ -817,13 +804,15 @@ impl RuleEngine {
                 // Try to create message through MessageManager if available
                 let message_manager = self.message_manager.read().await;
                 if let Some(manager) = message_manager.as_ref() {
-                    let msg = Message::new(
+                    let mut msg = Message::new(
                         "alert".to_string(),
                         sev,
                         title.clone(),
                         message.clone(),
                         "rule".to_string(),
                     );
+                    // Set source_type to "rule" for better tracking
+                    msg.source_type = "rule".to_string();
 
                     match manager.create_message(msg).await {
                         Ok(created) => {

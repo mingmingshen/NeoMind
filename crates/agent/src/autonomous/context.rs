@@ -10,7 +10,6 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use edge_ai_alerts::AlertManager;
 use edge_ai_messages::MessageManager;
 use edge_ai_core::event::NeoTalkEvent;
 use edge_ai_core::eventbus::EventBus;
@@ -145,14 +144,6 @@ impl ContextCollector {
     /// Set the message manager (replaces AlertManager).
     pub fn with_message_manager(mut self, message_manager: Arc<MessageManager>) -> Self {
         self.message_manager = Some(message_manager);
-        self
-    }
-
-    /// Set the alert manager (deprecated, use with_message_manager).
-    #[deprecated(note = "Use with_message_manager instead")]
-    pub fn with_alert_manager(self, _alert_manager: Arc<AlertManager>) -> Self {
-        // This is a compatibility method - it does nothing now
-        tracing::warn!("with_alert_manager is deprecated, use with_message_manager instead");
         self
     }
 

@@ -268,7 +268,7 @@ export interface CleanupMessagesRequest {
   older_than_days: number
 }
 
-// Alert Channel Types
+// Message Channel Types (formerly AlertChannel for backward compatibility)
 export interface AlertChannel {
   name: string
   channel_type: 'console' | 'memory' | 'webhook' | 'email'

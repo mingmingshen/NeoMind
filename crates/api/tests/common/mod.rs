@@ -10,7 +10,7 @@ use edge_ai_rules::InMemoryValueProvider;
 use edge_ai_commands::{CommandManager, CommandQueue, CommandStateStore};
 use edge_ai_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
 use edge_ai_storage::decisions::DecisionStore;
-use edge_ai_alerts::AlertManager;
+use edge_ai_messages::MessageManager;
 
 use edge_ai_api::auth::AuthState;
 use edge_ai_api::auth_users::AuthUserState;
@@ -27,7 +27,7 @@ pub async fn create_test_server_state() -> ServerState {
     let session_manager = Arc::new(SessionManager::memory());
     let time_series_storage = Arc::new(TimeSeriesStorage::memory().unwrap());
     let rule_engine = Arc::new(edge_ai_rules::RuleEngine::new(value_provider));
-    let alert_manager = Arc::new(AlertManager::new());
+    let message_manager = Arc::new(MessageManager::new());
     let workflow_engine = Arc::new(tokio::sync::RwLock::new(None));
     let device_update_tx = broadcast::channel(100).0;
 
@@ -48,7 +48,7 @@ pub async fn create_test_server_state() -> ServerState {
         session_manager,
         time_series_storage,
         rule_engine,
-        alert_manager,
+        message_manager,
         workflow_engine,
         #[cfg(feature = "embedded-broker")]
         embedded_broker: None,
@@ -79,7 +79,7 @@ pub async fn create_test_server_state_with_workflow() -> ServerState {
     let session_manager = Arc::new(SessionManager::memory());
     let time_series_storage = Arc::new(TimeSeriesStorage::memory().unwrap());
     let rule_engine = Arc::new(edge_ai_rules::RuleEngine::new(value_provider));
-    let alert_manager = Arc::new(AlertManager::new());
+    let message_manager = Arc::new(MessageManager::new());
     let device_update_tx = broadcast::channel(100).0;
 
     let temp_dir = PathBuf::from(format!("/tmp/neotalk_workflow_test_{}_{}", std::process::id(), uuid::Uuid::new_v4()));
@@ -104,7 +104,7 @@ pub async fn create_test_server_state_with_workflow() -> ServerState {
         session_manager,
         time_series_storage,
         rule_engine,
-        alert_manager,
+        message_manager,
         workflow_engine: Arc::new(tokio::sync::RwLock::new(Some(workflow_engine))),
         #[cfg(feature = "embedded-broker")]
         embedded_broker: None,

@@ -23,6 +23,6 @@ lettre = { workspace = true, optional = true }
 tokio-test = "0.4"
 
 [features]
-default = []
+default = ["webhook", "email"]
 webhook = ["reqwest"]
 email = ["lettre"]

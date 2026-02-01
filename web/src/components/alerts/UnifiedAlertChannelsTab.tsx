@@ -179,7 +179,7 @@ export function UnifiedAlertChannelsTab({
         const response = await onListChannels()
         setChannels(response.channels || [])
       } else {
-        const response = await api.listAlertChannels()
+        const response = await api.listMessageChannels()
         setChannels(response.channels || [])
       }
     } catch (error) {
@@ -221,7 +221,7 @@ export function UnifiedAlertChannelsTab({
     if (onCreateChannel) {
       await onCreateChannel(data)
     } else {
-      await api.createAlertChannel(data)
+      await api.createMessageChannel(data)
     }
     return name // Return the ID (name for channels)
   }
@@ -237,7 +237,7 @@ export function UnifiedAlertChannelsTab({
     if (onDeleteChannel) {
       await onDeleteChannel(id)
     } else {
-      await api.deleteAlertChannel(id)
+      await api.deleteMessageChannel(id)
     }
   }
 
@@ -251,7 +251,7 @@ export function UnifiedAlertChannelsTab({
       }
     }
 
-    const result = await api.testAlertChannel(id)
+    const result = await api.testMessageChannel(id)
     return {
       success: result.success,
       message: result.message,

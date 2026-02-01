@@ -20,7 +20,7 @@ pub async fn create_router() -> Router {
 /// Create the application router with a specific state.
 pub fn create_router_with_state(state: ServerState) -> Router {
     use crate::handlers::{
-        alert_channels, alerts, agents, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
+        agents, automations, auth as auth_handlers, auth_users, basic, bulk, commands, config,
         dashboards, decisions, devices, events, extensions, llm_backends, memory, message_channels, messages, mqtt, plugins, rules,
         search, sessions, settings, setup, stats, suggestions, test_data, tools,
     };
@@ -53,13 +53,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/llm-backends/ollama/models", get(llm_backends::list_ollama_models_handler))
         // Device Adapter Types (public - read-only metadata)
         .route("/api/device-adapters/types", get(plugins::list_adapter_types_handler))
-        // Alert Channels Types API (public - read-only metadata)
-        .route("/api/alert-channels/types", get(alert_channels::list_channel_types_handler))
-        .route("/api/alert-channels/types/:type/schema", get(alert_channels::get_channel_type_schema_handler))
-        // Alert Channels (public - read-only for viewing)
-        .route("/api/alert-channels", get(alert_channels::list_channels_handler))
-        .route("/api/alert-channels/:name", get(alert_channels::get_channel_handler))
-        .route("/api/alert-channels/stats", get(alert_channels::get_channel_stats_handler))
         // Messages Channel Types API (public - read-only metadata)
         .route("/api/messages/channels/types", get(message_channels::list_channel_types_handler))
         .route("/api/messages/channels/types/:type/schema", get(message_channels::get_channel_type_schema_handler))
@@ -307,18 +300,6 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/rules/:id/history",
             get(rules::get_rule_history_handler),
         )
-        // Alerts API
-        .route("/api/alerts", get(alerts::list_alerts_handler))
-        .route("/api/alerts", post(alerts::create_alert_handler))
-        .route("/api/alerts/:id", get(alerts::get_alert_handler))
-        .route(
-            "/api/alerts/:id/acknowledge",
-            post(alerts::acknowledge_alert_handler),
-        )
-        // Alert Channels API (write operations - protected)
-        .route("/api/alert-channels", post(alert_channels::create_channel_handler))
-        .route("/api/alert-channels/:name", delete(alert_channels::delete_channel_handler))
-        .route("/api/alert-channels/:name/test", post(alert_channels::test_channel_handler))
         // Messages API
         .route("/api/messages", get(messages::list_messages_handler))
         .route("/api/messages", post(messages::create_message_handler))
@@ -382,6 +363,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/:id/memory", get(agents::get_agent_memory))
         .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
         .route("/api/agents/:id/stats", get(agents::get_agent_stats))
+        .route("/api/agents/validate-cron", post(agents::validate_cron_expression))
         // User messages API
         .route("/api/agents/:id/messages", get(agents::get_user_messages))
         .route("/api/agents/:id/messages", post(agents::add_user_message))

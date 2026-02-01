@@ -16,7 +16,7 @@ use edge_ai_storage::{
 };
 use edge_ai_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use edge_ai_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
-use edge_ai_alerts::{AlertManager, AlertSeverity, channels::ConsoleChannel};
+use edge_ai_messages::{MessageManager, MessageSeverity, channels::{ConsoleChannel, MessageChannel}};
 use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
 
 // ============================================================================
@@ -29,7 +29,7 @@ struct FullTestContext {
     pub event_bus: Arc<EventBus>,
     pub llm_runtime: Arc<OllamaRuntime>,
     pub time_series: Arc<TimeSeriesStore>,
-    pub alert_manager: Arc<AlertManager>,
+    pub message_manager: Arc<MessageManager>,
 }
 
 impl FullTestContext {
@@ -48,10 +48,10 @@ impl FullTestContext {
         // Create time series storage (memory-based for testing)
         let time_series = TimeSeriesStore::memory()?;
 
-        // Create alert manager with console channel
-        let alert_manager = Arc::new(AlertManager::new());
+        // Create message manager with console channel
+        let message_manager = Arc::new(MessageManager::new());
         let console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
-        alert_manager.add_channel(console_channel).await;
+        message_manager.register_channel(console_channel).await;
 
         // Note: We can't create device_service here without the full devices crate
         // So commands will be simulated
@@ -60,7 +60,7 @@ impl FullTestContext {
             time_series_storage: Some(time_series.clone()),
             device_service: None,
             event_bus: Some(event_bus.clone()),
-            alert_manager: Some(alert_manager.clone()),
+            message_manager: Some(message_manager.clone()),
             llm_runtime: Some(llm_runtime.clone() as Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>),
             llm_backend_store: None,
         };
@@ -73,7 +73,7 @@ impl FullTestContext {
             event_bus,
             llm_runtime,
             time_series,
-            alert_manager,
+            message_manager,
         })
     }
 
@@ -264,16 +264,17 @@ impl FullTestContext {
     }
 
     /// Send a test notification
-    async fn send_notification(&self, severity: AlertSeverity, message: &str) -> anyhow::Result<()> {
-        let alert = self.alert_manager.device_alert(
+    async fn send_notification(&self, severity: MessageSeverity, message: &str) -> anyhow::Result<()> {
+        let msg = edge_ai_messages::Message::alert(
             severity,
             "Agent Notification".to_string(),
             message.to_string(),
             "test_agent".to_string(),
-        ).await?;
+        );
+        let msg = self.message_manager.create_message(msg).await?;
 
         println!("  📢 通知发送: {} - {}", severity, message);
-        println!("     Alert ID: {}", alert.id);
+        println!("     Message ID: {}", msg.id);
 
         Ok(())
     }
@@ -452,9 +453,9 @@ async fn test_notification_sending() -> anyhow::Result<()> {
 
     println!("1. 测试不同严重级别的通知...");
 
-    ctx.send_notification(AlertSeverity::Info, "这是信息级别通知").await?;
-    ctx.send_notification(AlertSeverity::Warning, "这是警告级别通知").await?;
-    ctx.send_notification(AlertSeverity::Critical, "这是严重级别通知").await?;
+    ctx.send_notification(MessageSeverity::Info, "这是信息级别通知").await?;
+    ctx.send_notification(MessageSeverity::Warning, "这是警告级别通知").await?;
+    ctx.send_notification(MessageSeverity::Critical, "这是严重级别通知").await?;
 
     println!("\n2. 测试Agent触发的通知...");
 
@@ -478,7 +479,7 @@ async fn test_notification_sending() -> anyhow::Result<()> {
     // Simulate sending alert based on agent's decision
     if !record.decision_process.decisions.is_empty() {
         println!("\n5. 模拟发送告警通知...");
-        ctx.send_notification(AlertSeverity::Critical, &format!(
+        ctx.send_notification(MessageSeverity::Critical, &format!(
             "Agent {} 检测到异常: {}",
             agent.name,
             record.decision_process.conclusion
@@ -593,7 +594,7 @@ async fn test_end_to_end_workflow() -> anyhow::Result<()> {
        record3.decision_process.conclusion.contains("告警") ||
        record3.decision_process.conclusion.contains("高") {
         println!("⚠️  检测到异常条件！");
-        ctx.send_notification(AlertSeverity::Warning, &record3.decision_process.conclusion).await?;
+        ctx.send_notification(MessageSeverity::Warning, &record3.decision_process.conclusion).await?;
     }
 
     // Verify conversation history

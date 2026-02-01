@@ -7,7 +7,6 @@ edition.workspace = true
 edge-ai-core = { path = "../core" }
 edge-ai-sandbox = { path = "../sandbox" }
 edge-ai-devices = { path = "../devices" }
-edge-ai-alerts = { path = "../alerts" }
 edge-ai-messages = { path = "../messages" }
 
 tokio = { workspace = true }

@@ -156,7 +156,7 @@ impl MessageManager {
                 .map_err(|e| Error::Storage(format!("Failed to persist message: {}", e)))?;
         }
 
-        // Send through channels
+        // Send through channels (don't fail if channels fail - message is already stored)
         let channels = self.channels.read().await;
         let channel_names = channels.list_names().await;
         let mut send_results = Vec::new();
@@ -166,17 +166,27 @@ impl MessageManager {
                 if channel.is_enabled() {
                     match channel.send(&message).await {
                         Ok(()) => send_results.push((channel_name.clone(), Ok(()))),
-                        Err(e) => send_results.push((channel_name.clone(), Err(e))),
+                        Err(e) => {
+                            // Log channel failure but don't fail the entire operation
+                            tracing::warn!(
+                                "Failed to send message through channel '{}': {}",
+                                channel_name,
+                                e
+                            );
+                            send_results.push((channel_name.clone(), Err(e)));
+                        }
                     }
                 }
             }
         }
 
-        // Check if at least one channel succeeded
+        // Log if all channels failed (but message was still created successfully)
         let any_success = send_results.iter().any(|r| r.1.is_ok());
-
-        if !any_success && !channel_names.is_empty() {
-            return Err(Error::SendFailed("All channels failed".to_string()));
+        if !any_success && !send_results.is_empty() {
+            tracing::warn!(
+                "All channels failed for message '{}', but message was stored successfully",
+                message.title
+            );
         }
 
         // Publish MessageCreated event to EventBus if configured
@@ -192,6 +202,14 @@ impl MessageManager {
             }).await;
             tracing::debug!("Published MessageCreated event for message {}", id);
         }
+
+        tracing::info!(
+            "Message created successfully: id={}, title={}, severity={:?}, category={}",
+            id,
+            message.title,
+            severity,
+            message.category
+        );
 
         Ok(message)
     }
@@ -249,12 +267,13 @@ impl MessageManager {
 
     /// List all messages.
     pub async fn list_messages(&self) -> Vec<Message> {
-        self.messages
+        let msgs: Vec<Message> = self.messages
             .read()
             .await
             .values()
             .cloned()
-            .collect()
+            .collect();
+        msgs
     }
 
     /// List messages filtered by category.

@@ -75,6 +75,49 @@ fn extract_device_from_description(description: &str) -> Option<String> {
         .or_else(|| find_and_extract(description, "on ", 3))
 }
 
+/// Extract JSON from mixed text (when model outputs text before JSON).
+/// Returns the extracted JSON string if found, None otherwise.
+fn extract_json_from_mixed_text(text: &str) -> Option<String> {
+    // Find the first '{' that starts a JSON object
+    let start_idx = text.find('{')?;
+    let potential_json = &text[start_idx..];
+
+    // Count braces to find the matching closing brace
+    let mut open_braces = 0;
+    let mut in_string = false;
+    let mut escape_next = false;
+    let mut end_idx = 0;
+
+    for (i, ch) in potential_json.chars().enumerate() {
+        match ch {
+            '\\' if in_string => escape_next = true,
+            '"' if !escape_next => in_string = !in_string,
+            '{' if !in_string => open_braces += 1,
+            '}' if !in_string => {
+                open_braces -= 1;
+                if open_braces == 0 {
+                    end_idx = i + 1;
+                    break;
+                }
+            }
+            _ => {}
+        }
+        if escape_next && ch != '\\' {
+            escape_next = false;
+        }
+    }
+
+    if end_idx > 0 {
+        let json_str = &potential_json[..end_idx];
+        // Validate it's actually JSON
+        if serde_json::from_str::<serde_json::Value>(json_str).is_ok() {
+            return Some(json_str.to_string());
+        }
+    }
+
+    None
+}
+
 /// Attempts to recover a truncated JSON string by finding the last complete object.
 /// Returns Some((recovered_json, was_truncated)) if recovery was possible,
 /// None if the JSON is beyond recovery.
@@ -418,93 +461,101 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
 }
 
 /// Compact history context while preserving key information.
-/// Prioritizes short-term summaries and long-term patterns for efficient context.
+///
+/// COMPRESSION STRATEGY:
+/// 1. Ultra-compact format - no section titles, minimal punctuation
+/// 2. Merge similar information - don't repeat the same conclusion
+/// 3. Use codes instead of descriptions - "T30" instead of "温度超过30度"
+/// 4. Selective retention - only most relevant info
+///
+/// Target: < 200 characters for small models (qwen3:1.7b)
 fn compact_history_context(
     _history_context: &str,
     memory: &AgentMemory,
 ) -> String {
-    let mut preserved = Vec::new();
+    let mut parts = Vec::new();
 
-    // 1. Always preserve: system prompt (already separate), current data (already separate)
-
-    // 2. Preserve short-term memory summaries (most recent executions)
+    // === STRATEGY 1: Recent trend (最简化的趋势) ===
+    // Instead of listing each execution, show the pattern
     if !memory.short_term.summaries.is_empty() {
-        let recent_summaries: Vec<_> = memory.short_term.summaries
+        let last_3: Vec<_> = memory.short_term.summaries
             .iter()
             .rev()
-            .take(2)
+            .take(3)
             .collect();
 
-        let summaries_text: Vec<String> = recent_summaries.iter().rev().enumerate()
-            .map(|(i, s)| {
-                let status = if s.success { "✓" } else { "✗" };
-                format!("{}. [{}] {} -> {}", i + 1, status, s.situation, s.conclusion)
-            })
-            .collect();
+        // Count patterns
+        let success_count = last_3.iter().filter(|s| s.success).count();
+        let total = last_3.len();
 
-        preserved.push(format!("## 最近执行摘要\n{}", summaries_text.join("\n")));
+        // Get most recent conclusion (most relevant)
+        if let Some(latest) = last_3.first() {
+            // Ultra-compact: "最近: 3次执行, 2次成功, 最新结论: ..."
+            parts.push(format!(
+                "最近{}次: {}成功, {}",
+                total,
+                success_count,
+                truncate_to(&latest.conclusion, 30) // 只取前30字
+            ));
+        }
     }
 
-    // 3. Preserve high-confidence patterns from both long_term.patterns and legacy learned_patterns
-    let mut pattern_categories = std::collections::HashMap::new();
-
-    // Use long_term.patterns if available, otherwise fall back to legacy learned_patterns
+    // === STRATEGY 2: Most important pattern (单一最重要模式) ===
+    // Instead of all patterns, just show the highest confidence one
     let patterns = if !memory.long_term.patterns.is_empty() {
         &memory.long_term.patterns
     } else {
         &memory.learned_patterns
     };
 
-    for pattern in patterns {
-        pattern_categories
-            .entry(pattern.pattern_type.as_str())
-            .or_insert_with(Vec::new)
-            .push(pattern);
-    }
-
-    let mut pattern_summaries = Vec::new();
-    for (category, patterns) in pattern_categories.iter() {
-        // Take highest confidence pattern from each category
+    if !patterns.is_empty() {
         if let Some(best) = patterns.iter().max_by(|a, b| {
             a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal)
         }) {
-            pattern_summaries.push(format!("- [{}] {} (置信度: {:.0}%)",
-                category, best.description, best.confidence * 100.0));
+            // Ultra-compact: "模式: 温度>30度告警 (80%)"
+            parts.push(format!(
+                "模式: {} ({}%)",
+                truncate_to(&best.description, 25),
+                (best.confidence * 100.0) as u32
+            ));
         }
     }
 
-    if !pattern_summaries.is_empty() {
-        preserved.push(format!("## 学到的模式\n{}", pattern_summaries.join("\n")));
-    }
-
-    // 4. Preserve important long-term memories
-    if !memory.long_term.memories.is_empty() {
-        let important: Vec<_> = memory.long_term.memories
+    // === STRATEGY 3: Key baseline (关键基线) ===
+    // Only show baselines that are relevant to common metrics
+    if !memory.baselines.is_empty() {
+        // Show at most 2 most relevant baselines
+        let baseline_items: Vec<_> = memory.baselines
             .iter()
-            .filter(|m| m.importance >= memory.long_term.min_importance)
-            .rev()
             .take(2)
             .collect();
 
-        if !important.is_empty() {
-            let memories_text: Vec<String> = important.iter()
-                .map(|m| format!("- [{}] {}", m.memory_type, m.content))
-                .collect();
-            preserved.push(format!("## 重要记忆\n{}", memories_text.join("\n")));
+        if !baseline_items.is_empty() {
+            let baseline_str = baseline_items
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, **v as i32))
+                .collect::<Vec<_>>()
+                .join(",");
+            parts.push(format!("基线: {}", baseline_str));
         }
     }
 
-    // 5. Preserve baselines
-    if !memory.baselines.is_empty() {
-        let baseline_info: Vec<_> = memory.baselines
-            .iter()
-            .take(3)
-            .map(|(metric, value)| format!("- {}: 基线值 {:.2}", metric, value))
-            .collect();
-        preserved.push(format!("## 指标基线\n{}", baseline_info.join("\n")));
+    // Join with minimal separator
+    if parts.is_empty() {
+        String::new()
+    } else {
+        parts.join(" | ")
     }
+}
 
-    preserved.join("\n\n")
+/// Truncate text to max_chars, adding "..." if needed
+fn truncate_to(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        text.to_string()
+    } else {
+        let truncated: String = text.chars().take(max_chars.saturating_sub(3)).collect();
+        truncated + "..."
+    }
 }
 
 /// Event data for triggering agent execution.
@@ -2629,10 +2680,21 @@ Respond in JSON format:
         }
 
         // Build text data summary for non-image data
-        // Limit to prevent token overflow - prioritize most recent/important data
-        let max_metrics = 6; // Reduced for small models to avoid context overload
+        // IMPORTANT: Filter out memory-related data to avoid confusing small models
+        let max_metrics = 6;
         let text_data_summary: Vec<_> = data.iter()
-            .filter(|d| !d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false))
+            .filter(|d| {
+                // Exclude images
+                if d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    return false;
+                }
+                // Exclude memory-related data types (confuses small models)
+                let data_type_lower = d.data_type.to_lowercase();
+                !matches!(
+                    data_type_lower.as_str(),
+                    "summary" | "memory" | "state_variables" | "baselines" | "patterns"
+                )
+            })
             .take(max_metrics)
             .map(|d| {
                 // Create a more compact representation of values
@@ -2744,146 +2806,108 @@ Respond in JSON format:
             }
         }
 
-        // === SHORT-TERM MEMORY (Recent execution summaries) ===
-        // Use compressed summaries from short_term.memory for efficient context
-        if !agent.memory.short_term.summaries.is_empty() {
-            let recent_summaries: Vec<_> = agent.memory.short_term.summaries
+        // === CONTEXT MANAGEMENT ===
+        // === HISTORY CONTEXT - DISABLED for small models ===
+        // The compressed history context is NOT used to avoid confusing qwen3:1.7b
+        let _history_context = "";  // Intentionally unused
+
+        // === USER MESSAGES (用户发送的消息) ===
+        // Build user messages context for adding to user message (not system message)
+        let user_messages_for_user_msg = if !agent.user_messages.is_empty() {
+            let user_msgs_text: Vec<String> = agent.user_messages
                 .iter()
-                .rev()
-                .take(3) // 最近3次执行摘要
+                .enumerate()
+                .map(|(i, msg)| {
+                    let timestamp_str = chrono::DateTime::from_timestamp(msg.timestamp, 0)
+                        .map(|dt| dt.format("%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| "??".to_string());
+                    format!("{}. [{}] {}", i + 1, timestamp_str, msg.content)
+                })
                 .collect();
 
-            if !recent_summaries.is_empty() {
-                history_parts.push(format!(
-                    "\n## 最近执行摘要 (短期记忆)\n{}",
-                    recent_summaries.iter().rev().enumerate()
-                        .map(|(i, s)| {
-                            let status = if s.success { "✓" } else { "✗" };
-                            let timestamp = chrono::DateTime::from_timestamp(s.timestamp, 0)
-                                .map(|dt| dt.format("%m-%d %H:%M").to_string())
-                                .unwrap_or_else(|| "??".to_string());
-                            format!(
-                                "{}. [{}] {} -> {}",
-                                i + 1,
-                                status,
-                                s.situation,
-                                s.conclusion
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                ));
+            Some(format!(
+                "## ⚠️ 用户最新指令 (必须严格遵循)\n\n\
+                用户在运行期间发送了以下消息，这些消息包含对执行策略的更新。\
+                **请务必将这些指令作为最高优先级，覆盖初始配置中的任何冲突规则：**\n\n\
+                {}\n",
+                user_msgs_text.join("\n")
+            ))
+        } else {
+            None
+        };
+
+        // === SEMANTIC MEMORY CONTEXT ===
+        // Compress memory into meaning-preserving format that small models can understand
+        let memory_context = {
+            let mut parts = Vec::new();
+
+            // 1. Recent success pattern (learned from what works)
+            if !agent.memory.short_term.summaries.is_empty() {
+                let last_3: Vec<_> = agent.memory.short_term.summaries.iter().rev().take(3).collect();
+                let success_rate = last_3.iter().filter(|s| s.success).count() as f32 / last_3.len() as f32;
+
+                if success_rate >= 0.8 {
+                    parts.push("Recent: Success pattern established".to_string());
+                } else if success_rate <= 0.3 {
+                    parts.push("Recent: Multiple failures, needs new approach".to_string());
+                }
             }
-        }
 
-        // === LONG-TERM MEMORY (Important memories) ===
-        // Retrieve high-importance memories from long-term storage
-        if !agent.memory.long_term.memories.is_empty() {
-            let important_memories: Vec<_> = agent.memory.long_term.memories
-                .iter()
-                .filter(|m| m.importance >= agent.memory.long_term.min_importance)
-                .rev()
-                .take(2) // 最多2条重要记忆
-                .collect();
+            // 2. Action patterns (what actions typically work)
+            if !agent.memory.learned_patterns.is_empty() {
+                let high_confidence: Vec<_> = agent.memory.learned_patterns.iter()
+                    .filter(|p| p.confidence >= 0.75)
+                    .collect();
 
-            if !important_memories.is_empty() {
-                history_parts.push(format!(
-                    "\n## 历史重要记忆\n{}",
-                    important_memories.iter()
-                        .map(|m| {
-                            let timestamp = chrono::DateTime::from_timestamp(m.created_at, 0)
-                                .map(|dt| dt.format("%m-%d").to_string())
-                                .unwrap_or_else(|| "??".to_string());
-                            format!("- [{}] [{}] {}",
-                                m.memory_type,
-                                timestamp,
-                                m.content
-                            )
-                        })
+                if !high_confidence.is_empty() {
+                    let pattern_summary = high_confidence.iter()
+                        .map(|p| truncate_to(&p.description, 20))
                         .collect::<Vec<_>>()
-                        .join("\n")
-                ));
+                        .join(", ");
+                    parts.push(format!("Patterns: {}", pattern_summary));
+                }
             }
-        }
 
-        // === CONVERSATION HISTORY (Full execution details) ===
-        // Reduced to 1 entry for small models - provides more detail than summaries
-        if !agent.conversation_history.is_empty() {
-            let recent: Vec<_> = agent.conversation_history
-                .iter()
-                .rev()
-                .take(1) // Keep minimal for small models
-                .collect();
-            history_parts.push(format!(
-                "\n## 最近执行详情 (最近{}次)\n{}",
-                recent.len(),
-                recent.iter().rev().enumerate()
-                    .map(|(i, turn)| format!(
-                        "{}. 触发: {}, 结论: {}",
-                        i + 1,
-                        turn.trigger_type,
-                        turn.output.conclusion
-                    ))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
-        }
+            // 3. Baseline anomalies (if current values deviate significantly)
+            if !agent.memory.baselines.is_empty() && !data.is_empty() {
+                // Check if any current data significantly deviates from baseline
+                for (metric, baseline) in agent.memory.baselines.iter().take(2) {
+                    for d in data.iter().take(3) {
+                        if let Some(val) = d.values.get("value").and_then(|v| v.as_f64()) {
+                            if (val - baseline).abs() / baseline.abs().max(0.1) > 0.3 {
+                                parts.push(format!("Anomaly: {} changed significantly", metric));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 
-        let history_context = if !history_parts.is_empty() {
-            history_parts.join("\n")
-        } else {
-            "".to_string()
+            if parts.is_empty() {
+                String::new()
+            } else {
+                format!("[Memory: {}]", parts.join(" | "))
+            }
         };
 
-        // === INTELLIGENT COMPACTION ===
-        // Use semantic-aware compaction instead of simple truncation
-        // Threshold: ~1000 characters (~330 tokens) for small models
-        let _history_context = if should_compact_context(&history_context, 1000) {
-            tracing::info!(
-                history_len = history_context.chars().count(),
-                "Context exceeds threshold, applying semantic compaction"
-            );
-            compact_history_context(&history_context, &agent.memory)
-        } else {
-            history_context
-        };
-
-        // Generic system prompt for all agents
-        // CRITICAL: Small models (qwen3:1.7b) need very direct instructions
-        let role_prompt = "You are an IoT automation assistant. Output ONLY valid JSON. No other text.";
-
-        // Ultra-simplified prompt for small models - JSON format first and foremost
-        let system_prompt = if has_valid_images {
-            format!(
-                "{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录观察\n- alert: 检测到目标，发送告警\n- command: 执行设备指令",
-                role_prompt,
-                agent.user_prompt
-            )
-        } else {
-            format!(
-                "{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录\n- alert: 发送告警\n- command: 执行指令",
-                role_prompt,
-                agent.user_prompt
-            )
-        };
+        // === SYSTEM PROMPT - Function-style prompting ===
+        // Frame this as an API function, not a conversation. Small models understand function calls better.
+        let system_prompt = format!(
+            "You are an IoT analysis function. Your output must be ONLY valid JSON.\n\n\
+            Example output:\n\
+            {{\"situation_analysis\":\"Room temperature normal\",\"reasoning_steps\":[],\"decisions\":[{{\"decision_type\":\"info\",\"description\":\"Status logged\",\"action\":\"log\",\"rationale\":\"Routine check\"}}],\"conclusion\":\"No action needed\"}}\n\n\
+            Task: {}",
+            truncate_to(&agent.user_prompt, 100)
+        );
 
         // Build messages - multimodal if images present
         let messages = if has_valid_images {
-            // Build multimodal message with text and images
-            let mut parts = vec![ContentPart::text(format!(
-                "## 当前数据\n{}\n\n重要：只输出JSON格式，不要有任何其他文字。",
-                if text_data_summary.is_empty() {
-                    "仅有图像数据".to_string()
-                } else {
-                    text_data_summary.join("\n")
-                }
-            ))];
+            let mut parts = vec![ContentPart::text(
+                format!("Analyze image. {}", memory_context)
+            )];
 
-            // Add image references with context
+            // Add images
             for (source, data_type, image_content) in &image_parts {
-                let context_text = format!("\n\n图像来源: {} ({})", source, data_type);
-                parts.push(ContentPart::text(context_text));
-
                 match image_content {
                     ImageContent::Url(url) => {
                         parts.push(ContentPart::image_url(url.clone()));
@@ -2896,24 +2920,36 @@ Respond in JSON format:
                 }
             }
 
+            // Add user messages (highest priority)
+            if let Some(ref user_msgs) = user_messages_for_user_msg {
+                parts.push(ContentPart::text(format!("\n\n{}", user_msgs)));
+            }
+
             vec![
                 Message::new(MessageRole::System, Content::text(system_prompt)),
                 Message::from_parts(MessageRole::User, parts),
             ]
         } else {
-            // Text-only message
+            // Text-only message with memory context
             let data_summary = if text_data_summary.is_empty() {
-                "No data available".to_string()
+                "".to_string()
             } else {
-                text_data_summary.join("\n")
+                text_data_summary.join(" ").chars().take(150).collect::<String>()
             };
+
+            let mut user_msg_content = format!(
+                "Data: {}. {}",
+                data_summary, memory_context
+            );
+
+            // Add user messages if present
+            if let Some(ref user_msgs) = user_messages_for_user_msg {
+                user_msg_content = format!("{}\n\n{}", user_msg_content, user_msgs);
+            }
 
             vec![
                 Message::new(MessageRole::System, Content::text(system_prompt)),
-                Message::new(MessageRole::User, Content::text(format!(
-                    "## 当前数据\n{}\n\n只输出JSON，不要有其他文字。",
-                    data_summary
-                ))),
+                Message::new(MessageRole::User, Content::text(user_msg_content)),
             ]
         };
 
@@ -3078,7 +3114,53 @@ Respond in JSON format:
                             "Failed to parse LLM JSON response, attempting recovery"
                         );
 
-                        // Try to recover truncated JSON by finding the last complete object
+                        // STEP 1: Try to extract JSON from mixed text (model output text before JSON)
+                        if let Some(extracted_json) = extract_json_from_mixed_text(json_str) {
+                            tracing::info!(
+                                agent_id = %agent.id,
+                                extracted_len = extracted_json.len(),
+                                "Successfully extracted JSON from mixed text response"
+                            );
+                            match serde_json::from_str::<LlmResponse>(&extracted_json) {
+                                Ok(response) => {
+                                    let reasoning_steps: Vec<edge_ai_storage::ReasoningStep> = response.reasoning_steps
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(_i, step)| edge_ai_storage::ReasoningStep {
+                                            step_number: extract_step_number(&step.step, (_i + 1) as u32),
+                                            description: step.description,
+                                            step_type: "llm_analysis".to_string(),
+                                            input: Some(text_data_summary.join("\n")),
+                                            output: response.situation_analysis.clone(),
+                                            confidence: step.confidence,
+                                        })
+                                        .collect();
+
+                                    let decisions: Vec<edge_ai_storage::Decision> = response.decisions
+                                        .into_iter()
+                                        .map(|decision| edge_ai_storage::Decision {
+                                            decision_type: decision.decision_type,
+                                            description: decision.description,
+                                            action: decision.action,
+                                            rationale: decision.rationale,
+                                            expected_outcome: format!("Confidence: {:.0}%", decision.confidence * 100.0),
+                                        })
+                                        .collect();
+
+                                    return Ok((
+                                        response.situation_analysis,
+                                        reasoning_steps,
+                                        decisions,
+                                        response.conclusion,
+                                    ));
+                                }
+                                Err(_) => {
+                                    tracing::warn!("Extracted JSON failed to parse as LlmResponse");
+                                }
+                            }
+                        }
+
+                        // STEP 2: Try to recover truncated JSON by finding the last complete object
                         let recovered = try_recover_truncated_json(json_str);
 
                         if let Some((recovered_json, was_truncated)) = recovered {
@@ -3641,12 +3723,14 @@ Respond in JSON format:
                 MessageSeverity::Info
             };
 
-            let msg = Message::alert(
+            // Set source_type to "agent" for better tracking
+            let mut msg = Message::alert(
                 severity,
                 format!("Agent Alert: {}", agent.name),
                 alert_message.clone(),
                 agent.id.clone(),
             );
+            msg.source_type = "agent".to_string();
 
             tracing::info!(
                 agent_id = %agent.id,

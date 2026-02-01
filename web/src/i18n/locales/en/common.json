@@ -28,12 +28,15 @@
     "acknowledge": "Acknowledge",
     "source": "Source",
     "filter": {
+      "title": "Filter",
       "severity": "Severity",
       "status": "Status",
       "category": "Category",
       "all": "All",
-      "clear": "Clear Filters"
+      "clear": "Clear",
+      "clearAll": "Clear All"
     },
+    "items": "items",
     "severity": {
       "label": "Severity",
       "info": "Info",
@@ -76,6 +79,7 @@
       "createTitle": "Create Channel",
       "createDescription": "Create a new notification channel",
       "test": "Test",
+      "sendTest": "Send Test Message",
       "config": "Configuration",
       "name": "Channel Name",
       "type": "Channel Type",

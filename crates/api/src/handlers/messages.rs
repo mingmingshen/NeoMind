@@ -60,6 +60,8 @@ pub async fn create_message_handler(
 
     let source = req.source.unwrap_or_else(|| "api".to_string());
 
+    tracing::info!("Creating message: {} - {}", req.title, req.severity);
+
     let mut msg = Message::new(
         req.category,
         severity,

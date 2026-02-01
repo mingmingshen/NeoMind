@@ -2,7 +2,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
 };
 use serde_json::{Value, json};
 use chrono;
@@ -479,7 +479,10 @@ pub async fn set_rule_status_handler(
 pub async fn test_rule_handler(
     State(state): State<ServerState>,
     Path(id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
 ) -> HandlerResult<serde_json::Value> {
+    // Check if we should also execute actions (not just test condition)
+    let execute_actions = params.get("execute").map(|v| v == "true" || v == "1").unwrap_or(false);
     let rule_id = RuleId::from_string(&id)
         .map_err(|_| ErrorResponse::bad_request(format!("Invalid rule ID: {}", id)))?;
 
@@ -615,7 +618,19 @@ pub async fn test_rule_handler(
         )));
     };
 
-    ok(json!({
+    // If execute=true and condition is met, actually execute the rule actions
+    let execution_result = if execute_actions && condition_met {
+        tracing::info!(
+            rule_id = %id,
+            rule_name = %rule.name,
+            "Executing rule actions via test endpoint"
+        );
+        Some(state.rule_engine.execute_rule(&rule_id).await)
+    } else {
+        None
+    };
+
+    let mut response = json!({
         "rule_id": id,
         "rule_name": rule.name,
         "condition_met": condition_met,
@@ -623,7 +638,20 @@ pub async fn test_rule_handler(
         "value_source": if current_value.is_some() { "current" } else { value_source },
         "threshold": threshold,
         "operator": format!("{:?}", operator),
-    }))
+    });
+
+    // Add execution result if actions were executed
+    if let Some(ref result) = execution_result {
+        response["executed"] = json!(true);
+        response["execution_result"] = json!({
+            "success": result.success,
+            "actions_executed": result.actions_executed,
+            "error": result.error,
+            "duration_ms": result.duration_ms
+        });
+    }
+
+    ok(response)
 }
 
 /// Create rule.
@@ -838,8 +866,8 @@ pub async fn get_resources_handler(
         });
     }
 
-    // Message categories available for rule actions (replaces alert channels)
-    let alert_channels = vec![
+    // Message categories available for rule actions
+    let message_categories = vec![
         edge_ai_rules::AlertChannelInfo {
             id: "alert".to_string(),
             name: "Alert".to_string(),
@@ -862,7 +890,7 @@ pub async fn get_resources_handler(
 
     ok(json!({
         "devices": devices,
-        "alert_channels": alert_channels,
+        "message_categories": message_categories,
     }))
 }
 

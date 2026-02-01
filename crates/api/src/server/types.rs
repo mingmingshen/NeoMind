@@ -6,7 +6,6 @@ use futures::Stream;
 use tokio::sync::broadcast;
 
 use edge_ai_agent::SessionManager;
-use edge_ai_alerts::AlertManager;
 use edge_ai_messages::MessageManager;
 use edge_ai_commands::{CommandManager, CommandQueue, CommandStateStore};
 use edge_ai_core::{EventBus, extension::ExtensionRegistry};
@@ -58,8 +57,6 @@ pub struct ServerState {
     pub rule_engine: Arc<RuleEngine>,
     /// Rule store for persistent rule storage.
     pub rule_store: Option<Arc<RuleStore>>,
-    /// Alert manager.
-    pub alert_manager: Arc<AlertManager>,
     /// Message manager for unified messages/notifications system.
     pub message_manager: Arc<MessageManager>,
     /// Automation store for unified automations.
@@ -97,8 +94,6 @@ pub struct ServerState {
     pub auto_onboard_manager: Arc<tokio::sync::RwLock<Option<Arc<AutoOnboardManager>>>>,
     /// Rule history store for statistics.
     pub rule_history_store: Option<Arc<edge_ai_storage::business::RuleHistoryStore>>,
-    /// Alert store for statistics.
-    pub alert_store: Option<Arc<edge_ai_storage::business::AlertStore>>,
     /// Tiered memory system for conversation history and knowledge.
     pub memory: Arc<tokio::sync::RwLock<TieredMemory>>,
     /// AI Agent store for user-defined automation agents.
@@ -273,13 +268,19 @@ impl ServerState {
             }
         };
 
-        // Create message manager with default channels (console, memory)
-        let message_manager = Arc::new(MessageManager::new());
+        // Create message manager with persistent storage
+        let message_manager = match MessageManager::with_storage("data/messages.redb") {
+            Ok(manager) => {
+                tracing::info!("Message store initialized at data/messages.redb");
+                Arc::new(manager)
+            }
+            Err(e) => {
+                tracing::warn!(category = "storage", error = %e, "Failed to open message store, using in-memory");
+                Arc::new(MessageManager::new())
+            }
+        };
         // Register default channels
         message_manager.register_default_channels().await;
-
-        // Create alert manager for backward compatibility (deprecated)
-        let alert_manager = Arc::new(AlertManager::new());
 
         let rule_engine = Arc::new(RuleEngine::new(value_provider));
         // Wire rule engine to message manager for CreateAlert actions
@@ -326,7 +327,6 @@ impl ServerState {
             time_series_storage,
             rule_engine,
             rule_store,
-            alert_manager,
             message_manager,
             automation_store,
             intent_analyzer,
@@ -354,19 +354,6 @@ impl ServerState {
                     }
                     Err(e) => {
                         tracing::warn!(category = "storage", error = %e, "Failed to open rule history store, statistics will be limited");
-                        None
-                    }
-                }
-            },
-            alert_store: {
-                use edge_ai_storage::business::AlertStore;
-                match AlertStore::open("data/alerts.redb") {
-                    Ok(store) => {
-                        tracing::info!("Alert store initialized at data/alerts.redb");
-                        Some(Arc::new(store))
-                    }
-                    Err(e) => {
-                        tracing::warn!(category = "storage", error = %e, "Failed to open alert store, statistics will be limited");
                         None
                     }
                 }
@@ -756,6 +743,33 @@ impl ServerState {
 
                         // Update rule states (for FOR clauses)
                         rule_engine_for_update.update_states().await;
+
+                        // Evaluate and execute any rules that should trigger
+                        let results = rule_engine_for_update.execute_triggered().await;
+                        if !results.is_empty() {
+                            tracing::info!(
+                                "Executed {} triggered rule(s) from device event: {} {} = {:?}",
+                                results.len(),
+                                device_id,
+                                metric,
+                                num_value
+                            );
+                            for result in &results {
+                                if result.success {
+                                    tracing::info!(
+                                        "  Rule '{}' executed: actions={:?}",
+                                        result.rule_name,
+                                        result.actions_executed
+                                    );
+                                } else {
+                                    tracing::warn!(
+                                        "  Rule '{}' failed: {:?}",
+                                        result.rule_name,
+                                        result.error
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
             }

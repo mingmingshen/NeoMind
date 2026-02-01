@@ -15,7 +15,7 @@ use crate::models::{ErrorResponse, common::ApiResponse};
 pub struct SearchQuery {
     /// Search query string
     pub q: String,
-    /// Search targets (comma-separated: devices,sessions,rules,alerts,workflows)
+    /// Search targets (comma-separated: devices,sessions,rules,messages,workflows)
     #[serde(default = "default_targets")]
     pub targets: String,
     /// Maximum results per target
@@ -33,7 +33,7 @@ fn default_limit() -> usize {
 /// Search result item.
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResultItem {
-    /// Result type (device, session, rule, alert, workflow)
+    /// Result type (device, session, rule, message, workflow)
     pub result_type: String,
     /// Unique identifier
     pub id: String,
@@ -74,7 +74,7 @@ pub async fn global_search_handler(
     let mut counts = serde_json::Map::new();
 
     let targets = if query.targets == "all" {
-        vec!["devices", "sessions", "rules", "alerts", "workflows"]
+        vec!["devices", "sessions", "rules", "messages", "workflows"]
     } else {
         query
             .targets
@@ -114,14 +114,14 @@ pub async fn global_search_handler(
         counts.insert("rules".to_string(), json!(count));
     }
 
-    // Search alerts
-    if targets.contains(&"alerts") {
-        let alert_results = search_alerts(&state, &query_lower, query.limit).await;
-        let count = alert_results.len();
-        if !alert_results.is_empty() {
-            results.extend(alert_results);
+    // Search messages (replaces alerts)
+    if targets.contains(&"messages") || targets.contains(&"alerts") {
+        let message_results = search_messages(&state, &query_lower, query.limit).await;
+        let count = message_results.len();
+        if !message_results.is_empty() {
+            results.extend(message_results);
         }
-        counts.insert("alerts".to_string(), json!(count));
+        counts.insert("messages".to_string(), json!(count));
     }
 
     // Sort by score descending
@@ -285,13 +285,13 @@ async fn search_rules(state: &ServerState, query: &str, limit: usize) -> Vec<Sea
     results
 }
 
-async fn search_alerts(state: &ServerState, query: &str, limit: usize) -> Vec<SearchResultItem> {
-    let alerts = state.alert_manager.list_alerts().await;
+async fn search_messages(state: &ServerState, query: &str, limit: usize) -> Vec<SearchResultItem> {
+    let messages = state.message_manager.list_messages().await;
     let mut results = Vec::new();
 
-    for alert in alerts.into_iter().take(limit) {
-        let title_lower = alert.title.to_lowercase();
-        let message_lower = alert.message.to_lowercase();
+    for msg in messages.into_iter().take(limit) {
+        let title_lower = msg.title.to_lowercase();
+        let message_lower = msg.message.to_lowercase();
 
         let (matches, score) = if title_lower.contains(query) {
             let score = if title_lower == query {
@@ -310,10 +310,10 @@ async fn search_alerts(state: &ServerState, query: &str, limit: usize) -> Vec<Se
 
         if matches {
             results.push(SearchResultItem {
-                result_type: "alert".to_string(),
-                id: alert.id.to_string(),
-                title: alert.title,
-                description: Some(alert.message),
+                result_type: "message".to_string(),
+                id: msg.id.to_string(),
+                title: msg.title,
+                description: Some(msg.message),
                 score,
                 highlights: None,
             });

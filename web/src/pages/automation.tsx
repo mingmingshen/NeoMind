@@ -210,11 +210,18 @@ export function AutomationPage() {
 
   const handleExecuteRule = async (rule: Rule) => {
     try {
-      await api.testRule(rule.id)
-      toast({
-        title: tCommon('success'),
-        description: tAuto('executeSuccess'),
-      })
+      const result = await api.testRule(rule.id, true) // execute=true to actually run actions
+      if ((result as any).executed) {
+        toast({
+          title: tCommon('success'),
+          description: tAuto('executeSuccess') + ' - ' + ((result as any).execution_result?.actions_executed?.length || 0) + ' actions executed',
+        })
+      } else {
+        toast({
+          title: tCommon('success'),
+          description: tAuto('executeSuccess'),
+        })
+      }
     } catch (error) {
       console.error('Failed to execute rule:', error)
       toast({

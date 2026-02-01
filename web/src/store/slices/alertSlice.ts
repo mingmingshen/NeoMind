@@ -48,6 +48,8 @@ export const createAlertSlice: StateCreator<
       let messagesArray: any[] = []
       if (Array.isArray(rawData)) {
         messagesArray = rawData
+      } else if (rawData?.data?.messages && Array.isArray(rawData.data.messages)) {
+        messagesArray = rawData.data.messages
       } else if (rawData?.messages && Array.isArray(rawData.messages)) {
         messagesArray = rawData.messages
       } else if (rawData?.data && Array.isArray(rawData.data)) {

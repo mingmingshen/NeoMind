@@ -61,7 +61,7 @@ NeoTalk is a Rust workspace for edge-deployed LLM agents with:
 | `storage` | `edge-ai-storage` | Time-series, vector search, decisions DB |
 | `rules` | `edge-ai-rules` | Pest DSL rule engine |
 | `scenarios` | `edge-ai-scenarios` | Scenario management and templates |
-| `alerts` | `edge-ai-alerts` | Multi-level alert system |
+| `messages` | `edge-ai-messages` | Unified messaging and notification system |
 | `memory` | `edge-ai-memory` | Tiered memory (short/mid/long-term) |
 | `tools` | `edge-ai-tools` | Function calling framework |
 | `workflow` | `edge-ai-workflow` | Workflow orchestration |
@@ -164,9 +164,9 @@ pub enum NeoTalkEvent {
     LlmDecisionProposed { decision_id: String, title: String },
     LlmDecisionExecuted { decision_id: String, success: bool },
 
-    // Alert events
-    AlertCreated { alert_id: String, severity: AlertSeverity },
-    AlertAcknowledged { alert_id: String },
+    // Message events
+    MessageCreated { message_id: String, severity: MessageSeverity },
+    MessageAcknowledged { message_id: String },
 }
 ```
 
@@ -247,12 +247,20 @@ POST   /api/workflows/:id/execute # Execute workflow
 GET    /api/workflows/:id/executions  # Execution history
 ```
 
-### Alerts API
+### Messages API
 ```
-GET    /api/alerts                # List alerts
-POST   /api/alerts                # Create alert
-GET    /api/alerts/:id            # Get alert
-POST   /api/alerts/:id/acknowledge  # Acknowledge
+GET    /api/messages              # List messages
+POST   /api/messages              # Create message
+GET    /api/messages/:id          # Get message
+DELETE /api/messages/:id          # Delete message
+POST   /api/messages/:id/acknowledge  # Acknowledge
+POST   /api/messages/:id/resolve     # Resolve
+POST   /api/messages/:id/archive     # Archive
+GET    /api/messages/stats           # Message statistics
+POST   /api/messages/cleanup         # Cleanup old messages
+POST   /api/messages/acknowledge     # Bulk acknowledge
+POST   /api/messages/resolve         # Bulk resolve
+POST   /api/messages/delete          # Bulk delete
 ```
 
 ### Commands API

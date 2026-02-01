@@ -63,10 +63,10 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
         const rules = rulesData.rules || []
         const activeRules = rules.filter((r: any) => r.enabled).length
 
-        // Fetch alerts stats
-        const alertsData = await fetchAPI<{ alerts: any[] }>("/alerts")
-        const alerts = alertsData.alerts || []
-        const pendingAlerts = alerts.filter((a: any) => !a.resolved).length
+        // Fetch messages stats
+        const messagesData = await fetchAPI<{ messages: any[]; count: number }>("/messages")
+        const messages = messagesData.messages || []
+        const pendingAlerts = messages.filter((m: any) => m.status === 'active').length
 
         setStats({
           devicesOnline: onlineDevices,

@@ -661,56 +661,19 @@ export const api = {
       body: JSON.stringify({ host, ports, timeout_ms: timeoutMs }),
     }),
 
-  // Alerts - response can be either { alerts: Alert[] } or Alert[] directly
-  getAlerts: () => fetchAPI<{ alerts?: Alert[]; count?: number } | Alert[]>('/alerts'),
-  getAlert: (id: string) => fetchAPI<Alert>(`/alerts/${id}`),
-  createAlert: (req: { title: string; message: string; severity?: string; source?: string }) =>
-    fetchAPI<{ id: string; title: string; message: string; severity: string }>('/alerts', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  acknowledgeAlert: (id: string) =>
-    fetchAPI<{ acknowledged: boolean; alertId: string }>(`/alerts/${id}/acknowledge`, {
-      method: 'POST',
-    }),
-  resolveAlert: (id: string) =>
-    fetchAPI<{ resolved: boolean }>(`/alerts/${id}/resolve`, {
-      method: 'POST',
-    }),
-  deleteAlert: (id: string) =>
-    fetchAPI<{ id: string; deleted: boolean }>(`/alerts/${id}`, {
-      method: 'DELETE',
-    }),
-
-  // ========== Alert Channels API ==========
-  listAlertChannels: () => fetchAPI<ChannelListResponse>('/alert-channels'),
-  getAlertChannel: (name: string) => fetchAPI<AlertChannel>(`/alert-channels/${encodeURIComponent(name)}`),
-  listChannelTypes: () => fetchAPI<{ types: ChannelTypeInfo[]; count: number }>('/alert-channels/types'),
-  getChannelSchema: (type: string) =>
-    fetchAPI<ChannelSchemaResponse>(`/alert-channels/types/${encodeURIComponent(type)}/schema`),
-  createAlertChannel: (req: CreateChannelRequest) =>
-    fetchAPI<{ message: string; message_zh: string; channel: AlertChannel }>('/alert-channels', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  deleteAlertChannel: (name: string) =>
-    fetchAPI<{ message: string; message_zh: string; name: string }>(
-      `/alert-channels/${encodeURIComponent(name)}`,
-      { method: 'DELETE' }
-    ),
-  testAlertChannel: (name: string) =>
-    fetchAPI<ChannelTestResult>(`/alert-channels/${encodeURIComponent(name)}/test`, {
-      method: 'POST',
-    }),
-  getChannelStats: () => fetchAPI<ChannelStats>('/alert-channels/stats'),
-
-  // ========== Messages API (New Unified Notification System) ==========
-  listMessages: () => fetchAPI<MessageListResponse>('/messages'),
-  getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),
-  createMessage: (req: CreateMessageRequest) =>
+  // Messages (replaces Alerts) - response format: { messages: Message[], count: number }
+  getMessages: () => fetchAPI<{ messages: Message[]; count: number }>('/messages'),
+  getMessage: (id: string) => fetchAPI<Message>(`/messages/${id}`),
+  createMessage: (req: { category?: string; title: string; message: string; severity?: string; source?: string }) =>
     fetchAPI<{ id: string; message: string; message_zh: string }>('/messages', {
       method: 'POST',
-      body: JSON.stringify(req),
+      body: JSON.stringify({
+        category: req.category || 'alert',
+        title: req.title,
+        message: req.message,
+        severity: req.severity || 'info',
+        source: req.source || 'api',
+      }),
     }),
   acknowledgeMessage: (id: string) =>
     fetchAPI<{ acknowledged: boolean; message_id: string }>(`/messages/${id}/acknowledge`, {
@@ -728,36 +691,16 @@ export const api = {
     fetchAPI<{ message: string; message_zh: string }>(`/messages/${id}`, {
       method: 'DELETE',
     }),
-  getMessageStats: () => fetchAPI<MessageStats>('/messages/stats'),
-  bulkAcknowledgeMessages: (req: BulkMessageRequest) =>
-    fetchAPI<{ acknowledged: number }>('/messages/acknowledge', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  bulkResolveMessages: (req: BulkMessageRequest) =>
-    fetchAPI<{ resolved: number }>('/messages/resolve', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  bulkDeleteMessages: (req: BulkMessageRequest) =>
-    fetchAPI<{ deleted: number }>('/messages/delete', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
-  cleanupMessages: (req: CleanupMessagesRequest) =>
-    fetchAPI<{ cleaned: number; message: string; message_zh: string }>('/messages/cleanup', {
-      method: 'POST',
-      body: JSON.stringify(req),
-    }),
+  getMessageStats: () => fetchAPI<{ total: number; active: number; by_category: Record<string, number>; by_severity: Record<string, number>; by_status: Record<string, number> }>('/messages/stats'),
 
-  // ========== Message Channels API ==========
-  listMessageChannels: () => fetchAPI<MessageChannelListResponse>('/messages/channels'),
-  getMessageChannel: (name: string) => fetchAPI<MessageChannel>(`/messages/channels/${encodeURIComponent(name)}`),
-  listMessageChannelTypes: () => fetchAPI<{ types: ChannelTypeInfo[]; count: number }>('/messages/channels/types'),
-  getMessageChannelSchema: (type: string) =>
+  // ========== Message Channels API (replaces Alert Channels) ==========
+  listMessageChannels: () => fetchAPI<ChannelListResponse>('/messages/channels'),
+  getMessageChannel: (name: string) => fetchAPI<AlertChannel>(`/messages/channels/${encodeURIComponent(name)}`),
+  listChannelTypes: () => fetchAPI<{ types: ChannelTypeInfo[]; count: number }>('/messages/channels/types'),
+  getChannelSchema: (type: string) =>
     fetchAPI<ChannelSchemaResponse>(`/messages/channels/types/${encodeURIComponent(type)}/schema`),
-  createMessageChannel: (req: CreateMessageChannelRequest) =>
-    fetchAPI<{ message: string; message_zh: string; channel: MessageChannel }>('/messages/channels', {
+  createMessageChannel: (req: CreateChannelRequest) =>
+    fetchAPI<{ message: string; message_zh: string; channel: AlertChannel }>('/messages/channels', {
       method: 'POST',
       body: JSON.stringify(req),
     }),
@@ -770,7 +713,12 @@ export const api = {
     fetchAPI<ChannelTestResult>(`/messages/channels/${encodeURIComponent(name)}/test`, {
       method: 'POST',
     }),
-  getMessageChannelStats: () => fetchAPI<ChannelStats>('/messages/channels/stats'),
+  getChannelStats: () => fetchAPI<ChannelStats>('/messages/channels/stats'),
+  cleanupMessages: (req: { older_than_days: number }) =>
+    fetchAPI<{ cleaned: number; message: string; message_zh: string }>('/messages/cleanup', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
 
   // ========== LLM Backends API ==========
   listLlmBackends: (params?: { type?: string; active_only?: boolean }) =>
@@ -1024,8 +972,8 @@ export const api = {
     fetchAPI<{ message: string }>(`/rules/${id}/disable`, {
       method: 'POST',
     }),
-  testRule: (id: string) =>
-    fetchAPI<{ result: unknown; message?: string }>(`/rules/${id}/test`, {
+  testRule: (id: string, execute = false) =>
+    fetchAPI<{ result: unknown; message?: string }>(`/rules/${id}/test${execute ? '?execute=true' : ''}`, {
       method: 'POST',
     }),
   validateRuleDSL: (dsl: string) =>
@@ -1452,25 +1400,25 @@ export const api = {
     fetchAPI<{ formatted: string }>('/tools/format-for-llm'),
 
   // ========== Bulk Operations API ==========
-  bulkCreateAlerts: (alerts: Array<{ title: string; message: string; severity?: string }>) =>
-    fetchAPI<{ created: number; ids: string[] }>('/bulk/alerts', {
+  bulkCreateMessages: (messages: Array<{ title: string; message: string; severity?: string; category?: string }>) =>
+    fetchAPI<{ created: number; ids: string[] }>('/bulk/messages', {
       method: 'POST',
-      body: JSON.stringify({ alerts }),
+      body: JSON.stringify({ messages }),
     }),
-  bulkResolveAlerts: (ids: string[]) =>
-    fetchAPI<{ resolved: number }>('/bulk/alerts/resolve', {
+  bulkResolveMessages: (ids: string[]) =>
+    fetchAPI<{ resolved: number }>('/messages/resolve', {
       method: 'POST',
-      body: JSON.stringify({ alert_ids: ids }),
+      body: JSON.stringify({ message_ids: ids }),
     }),
-  bulkAcknowledgeAlerts: (ids: string[]) =>
-    fetchAPI<{ acknowledged: number }>('/bulk/alerts/acknowledge', {
+  bulkAcknowledgeMessages: (ids: string[]) =>
+    fetchAPI<{ acknowledged: number }>('/messages/acknowledge', {
       method: 'POST',
-      body: JSON.stringify({ alert_ids: ids }),
+      body: JSON.stringify({ message_ids: ids }),
     }),
-  bulkDeleteAlerts: (ids: string[]) =>
-    fetchAPI<{ deleted: number }>('/bulk/alerts/delete', {
+  bulkDeleteMessages: (ids: string[]) =>
+    fetchAPI<{ deleted: number }>('/messages/delete', {
       method: 'POST',
-      body: JSON.stringify({ alert_ids: ids }),
+      body: JSON.stringify({ message_ids: ids }),
     }),
   bulkDeleteSessions: (ids: string[]) =>
     fetchAPI<{ total: number; succeeded: number; failed: number }>('/bulk/sessions/delete', {

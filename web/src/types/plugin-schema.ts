@@ -300,7 +300,7 @@ export const PLUGIN_ICONS: Record<string, string> = {
   redb: 'Database',
   memory: 'Cpu',
 
-  // Alert Channels
+  // Message Channels
   email: 'Mail',
   webhook: 'Webhook',
   console: 'Terminal',

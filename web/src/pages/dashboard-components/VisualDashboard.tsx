@@ -2855,14 +2855,32 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
+                  <SelectField
+                    label={t('visualDashboard.size')}
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: t('sizes.sm') },
+                      { value: 'md', label: t('sizes.md') },
+                      { value: 'lg', label: t('sizes.lg') },
+                    ]}
+                  />
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
                   <Field>
                     <Label>{t('visualDashboard.label')}</Label>
-                    <input
-                      type="text"
+                    <Input
                       value={config.label || ''}
                       onChange={(e) => updateConfig('label')(e.target.value)}
                       placeholder={t('visualDashboard.devicePlaceholder')}
-                      className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm"
+                      className="h-9"
                     />
                   </Field>
 
@@ -2882,17 +2900,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     </Select>
                     <p className="text-xs text-muted-foreground">{t('visualDashboard.toggleStateHint')}</p>
                   </Field>
-
-                  <SelectField
-                    label={t('visualDashboard.size')}
-                    value={config.size || 'md'}
-                    onChange={updateConfig('size')}
-                    options={[
-                      { value: 'sm', label: t('sizes.sm') },
-                      { value: 'md', label: t('sizes.md') },
-                      { value: 'lg', label: t('sizes.lg') },
-                    ]}
-                  />
                 </div>
               ),
             },
@@ -2997,6 +3004,57 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               ),
             },
           ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>Alt Text</Label>
+                    <Input
+                      value={config.alt || ''}
+                      onChange={(e) => updateConfig('alt')(e.target.value)}
+                      placeholder="Describe the image for accessibility"
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Alternative text for screen readers and when image fails to load
+                    </p>
+                  </Field>
+
+                  <Field>
+                    <Label>{t('visualDashboard.title')}</Label>
+                    <Input
+                      value={config.title || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="Image title"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>Caption</Label>
+                    <Input
+                      value={config.caption || ''}
+                      onChange={(e) => updateConfig('caption')(e.target.value)}
+                      placeholder="Image caption text"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <SelectField
+                    label="Loading State"
+                    value={config.loadingState || 'lazy'}
+                    onChange={updateConfig('loadingState')}
+                    options={[
+                      { value: 'eager', label: 'Load Immediately' },
+                      { value: 'lazy', label: 'Lazy Load' },
+                    ]}
+                  />
+                </div>
+              ),
+            },
+          ],
         }
 
       case 'image-history':
@@ -3068,6 +3126,83 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               ),
             },
           ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>Default Alt Text</Label>
+                    <Input
+                      value={config.alt || ''}
+                      onChange={(e) => updateConfig('alt')(e.target.value)}
+                      placeholder="Default alt text for all images"
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Alternative text for accessibility when no specific alt is available
+                    </p>
+                  </Field>
+
+                  <Field>
+                    <Label>{t('visualDashboard.title')}</Label>
+                    <Input
+                      value={config.title || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="Gallery title"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.showNavigation ?? true}
+                        onChange={(e) => updateConfig('showNavigation')(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Show Navigation</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.showDots ?? true}
+                        onChange={(e) => updateConfig('showDots')(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Show Dots Indicator</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={config.autoPlay ?? false}
+                        onChange={(e) => updateConfig('autoPlay')(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Auto Play</span>
+                    </label>
+                  </div>
+
+                  {config.autoPlay && (
+                    <Field>
+                      <Label>Auto Play Interval (seconds)</Label>
+                      <Input
+                        type="number"
+                        value={config.autoPlayInterval ?? 3}
+                        onChange={(e) => updateConfig('autoPlayInterval')(Number(e.target.value))}
+                        min={1}
+                        max={60}
+                        className="h-9"
+                      />
+                    </Field>
+                  )}
+                </div>
+              ),
+            },
+          ],
         }
 
       case 'web-display':
@@ -3120,6 +3255,61 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               ),
             },
           ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>{t('visualDashboard.title')}</Label>
+                    <Input
+                      value={config.title || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="Website title"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>Refresh Interval (seconds)</Label>
+                    <Input
+                      type="number"
+                      value={config.refreshInterval ?? 0}
+                      onChange={(e) => updateConfig('refreshInterval')(Number(e.target.value))}
+                      min={0}
+                      max={3600}
+                      step={10}
+                      placeholder="0 = no refresh"
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Set to 0 to disable auto-refresh
+                    </p>
+                  </Field>
+
+                  <Field>
+                    <Label>Loading Message</Label>
+                    <Input
+                      value={config.loadingMessage || 'Loading...'}
+                      onChange={(e) => updateConfig('loadingMessage')(e.target.value)}
+                      placeholder="Message shown while loading"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.allowFullScreen ?? true}
+                      onChange={(e) => updateConfig('allowFullScreen')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Allow Fullscreen</span>
+                  </label>
+                </div>
+              ),
+            },
+          ],
         }
 
       case 'markdown-display':
@@ -3159,6 +3349,47 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       { value: 'minimal', label: t('visualDashboard.minimal') },
                     ]}
                   />
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>{t('visualDashboard.title')}</Label>
+                    <Input
+                      value={config.title || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="Content title"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.showCopyButton ?? false}
+                      onChange={(e) => updateConfig('showCopyButton')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Show Copy Button</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.sanitizeHtml ?? true}
+                      onChange={(e) => updateConfig('sanitizeHtml')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Sanitize HTML</span>
+                    <p className="text-xs text-muted-foreground">
+      Remove potentially dangerous HTML tags
+                    </p>
+                  </label>
                 </div>
               ),
             },
@@ -3283,6 +3514,57 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       <option value="false">{t('visualDashboard.hide')}</option>
                     </select>
                   </Field>
+                </div>
+              ),
+            },
+          ],
+          displaySections: [
+            {
+              type: 'custom' as const,
+              render: () => (
+                <div className="space-y-3">
+                  <Field>
+                    <Label>Poster Image URL</Label>
+                    <Input
+                      value={config.poster || ''}
+                      onChange={(e) => updateConfig('poster')(e.target.value)}
+                      placeholder="https://example.com/poster.jpg"
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Image shown before video plays
+                    </p>
+                  </Field>
+
+                  <Field>
+                    <Label>{t('visualDashboard.title')}</Label>
+                    <Input
+                      value={config.title || ''}
+                      onChange={(e) => updateConfig('title')(e.target.value)}
+                      placeholder="Video title"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <Field>
+                    <Label>Description</Label>
+                    <Input
+                      value={config.description || ''}
+                      onChange={(e) => updateConfig('description')(e.target.value)}
+                      placeholder="Video description"
+                      className="h-9"
+                    />
+                  </Field>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.showTitleOverlay ?? false}
+                      onChange={(e) => updateConfig('showTitleOverlay')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">Show Title Overlay</span>
+                  </label>
                 </div>
               ),
             },

@@ -1,7 +1,5 @@
 //! API handlers organized by domain.
 
-pub mod alerts;
-pub mod alert_channels;
 pub mod messages;
 pub mod message_channels;
 pub mod agents;
@@ -36,14 +34,6 @@ pub mod tools;
 pub use crate::server::ServerState;
 
 // Re-export commonly used handler functions
-pub use alerts::{
-    acknowledge_alert_handler, create_alert_handler, get_alert_handler, list_alerts_handler,
-};
-pub use alert_channels::{
-    create_channel_handler, delete_channel_handler, get_channel_handler,
-    get_channel_stats_handler, get_channel_type_schema_handler, list_channel_types_handler,
-    list_channels_handler, test_channel_handler,
-};
 pub use basic::health_handler;
 pub use devices::{
     add_device_handler, aggregate_metric_handler,
@@ -119,5 +109,9 @@ pub use messages::{
     delete_message_handler, get_message_handler, list_messages_handler,
     message_stats_handler, resolve_message_handler,
 };
-// Note: message_channels handlers are not re-exported here to avoid conflicts with alert_channels
-// They are used directly in the router via their full path
+// Message channels API
+pub use message_channels::{
+    create_channel_handler, delete_channel_handler, get_channel_handler,
+    get_channel_stats_handler, get_channel_type_schema_handler, list_channel_types_handler,
+    list_channels_handler, test_channel_handler,
+};

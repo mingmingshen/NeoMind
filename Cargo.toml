@@ -8,7 +8,6 @@ members = [
     "crates/devices",
     "crates/storage",
     "crates/rules",
-    "crates/alerts",
     "crates/messages",
     "crates/memory",
     "crates/tools",

@@ -12,7 +12,8 @@ use edge_ai_storage::{
 };
 use edge_ai_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use edge_ai_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
-use edge_ai_alerts::{AlertManager, AlertSeverity, channels::ConsoleChannel};
+// Note: MessageManager is not used in this test, kept for consistency
+// use edge_ai_messages::{MessageManager, MessageSeverity};
 use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
 
 struct RealPerfTestContext {

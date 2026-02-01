@@ -1267,3 +1267,124 @@ pub async fn clear_user_messages(
         "count": count,
     }))
 }
+
+// ============================================================================
+// Cron Expression Validation
+// ============================================================================
+
+/// Request to validate a cron expression.
+#[derive(Debug, serde::Deserialize)]
+pub struct ValidateCronRequest {
+    /// Cron expression to validate (e.g., "0 8 * * *")
+    pub expression: String,
+    /// Optional timezone (IANA format, e.g., "Asia/Shanghai")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+}
+
+/// Response from cron validation.
+#[derive(Debug, serde::Serialize)]
+pub struct ValidateCronResponse {
+    /// Whether the expression is valid
+    pub valid: bool,
+    /// Error message if invalid
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Next 5 execution times (if valid)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_executions: Option<Vec<String>>,
+    /// Human-readable description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Validate a cron expression.
+///
+/// POST /api/agents/validate-cron
+pub async fn validate_cron_expression(
+    State(state): State<ServerState>,
+    Json(request): Json<ValidateCronRequest>,
+) -> HandlerResult<Value> {
+    use edge_ai_agent::ai_agent::{AgentScheduler, SchedulerConfig};
+
+    // Get the scheduler from agent manager
+    let agent_manager = match state.get_or_init_agent_manager().await {
+        Ok(manager) => manager,
+        Err(e) => {
+            // Create a temporary scheduler for validation
+            let scheduler = AgentScheduler::new(SchedulerConfig::default()).await
+                .map_err(|e| ErrorResponse::internal(format!("Failed to create scheduler: {}", e)))?;
+            return validate_with_scheduler(&scheduler, &request);
+        }
+    };
+
+    let scheduler = agent_manager.scheduler();
+    validate_with_scheduler(scheduler, &request)
+}
+
+fn validate_with_scheduler(
+    scheduler: &edge_ai_agent::ai_agent::AgentScheduler,
+    request: &ValidateCronRequest,
+) -> HandlerResult<Value> {
+    let tz = request.timezone.as_deref();
+
+    match scheduler.validate_cron(&request.expression, tz) {
+        Ok(next_executions) => {
+            let execution_strings: Vec<String> = next_executions
+                .iter()
+                .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                .collect();
+
+            let description = describe_cron_expression(&request.expression);
+
+            ok(json!(ValidateCronResponse {
+                valid: true,
+                error: None,
+                next_executions: Some(execution_strings),
+                description,
+            }))
+        }
+        Err(e) => {
+            ok(json!(ValidateCronResponse {
+                valid: false,
+                error: Some(e.to_string()),
+                next_executions: None,
+                description: None,
+            }))
+        }
+    }
+}
+
+/// Provide a human-readable description of a cron expression.
+fn describe_cron_expression(expr: &str) -> Option<String> {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+
+    // Support both 5-field and 6-field cron formats
+    let fields = if parts.len() >= 6 {
+        // 6-field format: sec min hour day month weekday
+        &parts[1..]  // Skip seconds field
+    } else {
+        &parts[..]
+    };
+
+    if fields.len() < 5 {
+        return Some(format!("Custom cron: {}", expr));
+    }
+
+    let (minute, hour, day, month, weekday) = (fields[0], fields[1], fields[2], fields[3], fields[4]);
+
+    // Check for common patterns
+    match (minute, hour, day, month, weekday) {
+        ("0", "*", "*", "*", "*") => Some("Every hour at minute 0".to_string()),
+        ("*", "*", "*", "*", "*") => Some("Every minute".to_string()),
+        ("0", "0", "*", "*", "*") => Some("Daily at midnight".to_string()),
+        ("0", "8", "*", "*", "*") => Some("Daily at 8:00 AM".to_string()),
+        ("0", "*/6", "*", "*", "*") => Some("Every 6 hours".to_string()),
+        ("0", "*/12", "*", "*", "*") => Some("Every 12 hours".to_string()),
+        ("0", "0", "*", "*", "0") => Some("Weekly on Sunday at midnight".to_string()),
+        ("0", "0", "*", "*", "1") => Some("Weekly on Monday at midnight".to_string()),
+        ("0", "0", "1", "*", "*") => Some("Monthly on the 1st at midnight".to_string()),
+        ("0", "0", "1", "1", "*") => Some("Yearly on January 1st at midnight".to_string()),
+        _ => Some(format!("Custom cron: {}", expr)),
+    }
+}

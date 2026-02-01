@@ -21,7 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use executor::{AgentExecutor, AgentExecutorConfig, ExecutionContext, AgentExecutionResult};
-pub use scheduler::{AgentScheduler, ScheduledTask, SchedulerConfig};
+pub use scheduler::{AgentScheduler, ScheduledTask, SchedulerConfig, SchedulerError};
 
 /// AI Agent manager - the main entry point for user-defined agents.
 ///
@@ -317,6 +317,11 @@ impl AiAgentManager {
     /// Get the executor for direct access.
     pub fn executor(&self) -> &Arc<AgentExecutor> {
         &self.executor
+    }
+
+    /// Get the scheduler for direct access.
+    pub fn scheduler(&self) -> &Arc<AgentScheduler> {
+        &self.scheduler
     }
 
     /// Build resources from request.

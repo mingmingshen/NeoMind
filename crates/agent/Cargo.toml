@@ -14,13 +14,13 @@ edge-ai-tools = { path = "../tools" }
 edge-ai-devices = { path = "../devices" }
 edge-ai-storage = { path = "../storage" }
 edge-ai-rules = { path = "../rules" }
-edge-ai-alerts = { path = "../alerts" }
 edge-ai-messages = { path = "../messages" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = "0.10"
 tokio = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
@@ -28,6 +28,9 @@ futures = { workspace = true }
 async-stream = "0.3"
 tracing = { workspace = true }
 rand = "0.8"
+# Cron scheduling libraries
+cron = "0.12"
+tokio-cron-scheduler = "0.13"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }

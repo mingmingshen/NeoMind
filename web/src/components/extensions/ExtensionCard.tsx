@@ -51,7 +51,7 @@ const EXTENSION_COLORS: Record<string, string> = {
 const EXTENSION_TYPE_NAMES: Record<string, { en: string; zh: string }> = {
   llm_provider: { en: "LLM Provider", zh: "LLM 提供者" },
   device_protocol: { en: "Device Protocol", zh: "设备协议" },
-  alert_channel_type: { en: "Alert Channel", zh: "告警通道" },
+  alert_channel_type: { en: "Message Channel", zh: "消息通道" },
   tool: { en: "Tool", zh: "工具" },
   generic: { en: "Generic", zh: "通用" },
 }

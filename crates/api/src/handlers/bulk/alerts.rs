@@ -1,9 +1,9 @@
-//! Bulk alert operations.
+//! Bulk message operations (migrated from alerts to messages).
 
 use axum::{Json, extract::State};
 use serde_json::json;
 
-use edge_ai_alerts::{Alert, AlertId, AlertSeverity};
+use edge_ai_messages::{Message, MessageSeverity};
 use edge_ai_core::event::NeoTalkEvent;
 
 use super::models::{
@@ -15,7 +15,7 @@ use crate::handlers::{
     common::{HandlerResult, ok},
 };
 
-/// Bulk create alerts.
+/// Bulk create messages (alerts endpoint redirected to messages).
 ///
 /// POST /api/bulk/alerts
 pub async fn bulk_create_alerts_handler(
@@ -28,11 +28,11 @@ pub async fn bulk_create_alerts_handler(
 
     for (index, item) in req.alerts.into_iter().enumerate() {
         let severity = match item.severity.to_lowercase().as_str() {
-            "info" => AlertSeverity::Info,
-            "warning" => AlertSeverity::Warning,
-            "critical" => AlertSeverity::Critical,
-            "emergency" => AlertSeverity::Emergency,
-            _ => AlertSeverity::Info,
+            "info" => MessageSeverity::Info,
+            "warning" => MessageSeverity::Warning,
+            "critical" => MessageSeverity::Critical,
+            "emergency" => MessageSeverity::Emergency,
+            _ => MessageSeverity::Info,
         };
 
         let source = if item.source.is_empty() {
@@ -41,14 +41,14 @@ pub async fn bulk_create_alerts_handler(
             item.source
         };
 
-        let alert = Alert::new(severity, item.title, item.message, source);
+        let message = Message::alert(severity, item.title, item.message, source);
 
-        match state.alert_manager.create_alert(alert).await {
-            Ok(alert) => {
+        match state.message_manager.create_message(message).await {
+            Ok(msg) => {
                 results.push(BulkOperationResult {
                     index,
                     success: true,
-                    id: Some(alert.id.to_string()),
+                    id: Some(msg.id.to_string()),
                     error: None,
                 });
                 succeeded += 1;
@@ -73,20 +73,22 @@ pub async fn bulk_create_alerts_handler(
     }))
 }
 
-/// Bulk resolve alerts.
+/// Bulk resolve messages (alerts endpoint redirected to messages).
 ///
 /// POST /api/bulk/alerts/resolve
 pub async fn bulk_resolve_alerts_handler(
     State(state): State<ServerState>,
     Json(req): Json<BulkResolveAlertsRequest>,
 ) -> HandlerResult<serde_json::Value> {
+    use edge_ai_messages::MessageId;
+
     let mut results = Vec::new();
     let mut succeeded = 0;
     let mut failed = 0;
 
     for (index, id_str) in req.alert_ids.into_iter().enumerate() {
-        match AlertId::from_string(&id_str) {
-            Ok(alert_id) => match state.alert_manager.resolve(&alert_id).await {
+        match MessageId::from_string(&id_str) {
+            Ok(msg_id) => match state.message_manager.resolve(&msg_id).await {
                 Ok(_) => {
                     results.push(BulkOperationResult {
                         index,
@@ -111,7 +113,7 @@ pub async fn bulk_resolve_alerts_handler(
                     index,
                     success: false,
                     id: Some(id_str.clone()),
-                    error: Some("Invalid alert ID".to_string()),
+                    error: Some("Invalid message ID".to_string()),
                 });
                 failed += 1;
             }
@@ -126,31 +128,33 @@ pub async fn bulk_resolve_alerts_handler(
     }))
 }
 
-/// Bulk acknowledge alerts.
+/// Bulk acknowledge messages (alerts endpoint redirected to messages).
 ///
 /// POST /api/bulk/alerts/acknowledge
 pub async fn bulk_acknowledge_alerts_handler(
     State(state): State<ServerState>,
     Json(req): Json<BulkAcknowledgeAlertsRequest>,
 ) -> HandlerResult<serde_json::Value> {
+    use edge_ai_messages::MessageId;
+
     let mut results = Vec::new();
     let mut succeeded = 0;
     let mut failed = 0;
 
     for (index, id_str) in req.alert_ids.into_iter().enumerate() {
-        match AlertId::from_string(&id_str) {
-            Ok(alert_id) => match state.alert_manager.acknowledge(&alert_id).await {
+        match MessageId::from_string(&id_str) {
+            Ok(msg_id) => match state.message_manager.acknowledge(&msg_id).await {
                 Ok(_) => {
-                    // Publish AlertAcknowledged event
+                    // Publish MessageAcknowledged event
                     if let Some(event_bus) = &state.event_bus {
                         let _ = event_bus
                             .publish_with_source(
-                                NeoTalkEvent::AlertAcknowledged {
-                                    alert_id: id_str.clone(),
+                                NeoTalkEvent::MessageAcknowledged {
+                                    message_id: id_str.clone(),
                                     acknowledged_by: "api:bulk".to_string(),
                                     timestamp: chrono::Utc::now().timestamp(),
                                 },
-                                "api:bulk_alert",
+                                "api:bulk_message",
                             )
                             .await;
                     }
@@ -178,7 +182,7 @@ pub async fn bulk_acknowledge_alerts_handler(
                     index,
                     success: false,
                     id: Some(id_str.clone()),
-                    error: Some("Invalid alert ID".to_string()),
+                    error: Some("Invalid message ID".to_string()),
                 });
                 failed += 1;
             }
@@ -193,20 +197,22 @@ pub async fn bulk_acknowledge_alerts_handler(
     }))
 }
 
-/// Bulk delete alerts.
+/// Bulk delete messages (alerts endpoint redirected to messages).
 ///
 /// POST /api/bulk/alerts/delete
 pub async fn bulk_delete_alerts_handler(
     State(state): State<ServerState>,
     Json(req): Json<BulkDeleteAlertsRequest>,
 ) -> HandlerResult<serde_json::Value> {
+    use edge_ai_messages::MessageId;
+
     let mut results = Vec::new();
     let mut succeeded = 0;
     let mut failed = 0;
 
     for (index, id_str) in req.alert_ids.into_iter().enumerate() {
-        match AlertId::from_string(&id_str) {
-            Ok(alert_id) => match state.alert_manager.delete_alert(&alert_id).await {
+        match MessageId::from_string(&id_str) {
+            Ok(msg_id) => match state.message_manager.delete(&msg_id).await {
                 Ok(_) => {
                     results.push(BulkOperationResult {
                         index,
@@ -231,7 +237,7 @@ pub async fn bulk_delete_alerts_handler(
                     index,
                     success: false,
                     id: Some(id_str.clone()),
-                    error: Some("Invalid alert ID".to_string()),
+                    error: Some("Invalid message ID".to_string()),
                 });
                 failed += 1;
             }

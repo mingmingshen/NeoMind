@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
   TableBody,
@@ -34,6 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from '@/components/ui/dropdown-menu'
 import {
   AlertCircle,
@@ -46,6 +48,10 @@ import {
   MoreVertical,
   Eye,
   RefreshCw,
+  Filter,
+  X,
+  CheckCircle2,
+  TestTube,
 } from 'lucide-react'
 import { CreateMessageDialog } from '@/components/messages/CreateMessageDialog'
 import { formatTimestamp } from '@/lib/utils/format'
@@ -103,10 +109,89 @@ export default function MessagesPage() {
   const [messagePage, setMessagePage] = useState(1)
   const messagesPerPage = 10
 
-  // Filters
-  const [severityFilter, setSeverityFilter] = useState<MessageSeverity | 'all'>('all')
-  const [statusFilter, setStatusFilter] = useState<MessageStatus | 'all'>('all')
-  const [categoryFilter, setCategoryFilter] = useState<MessageCategory | 'all'>('all')
+  // Filters - support multiple selections
+  const [selectedSeverities, setSelectedSeverities] = useState<Set<MessageSeverity>>(new Set())
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<MessageStatus>>(new Set())
+  const [selectedCategories, setSelectedCategories] = useState<Set<MessageCategory>>(new Set())
+
+  // Check if any filters are active
+  const hasActiveFilters = selectedSeverities.size > 0 || selectedStatuses.size > 0 || selectedCategories.size > 0
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setSelectedSeverities(new Set())
+    setSelectedStatuses(new Set())
+    setSelectedCategories(new Set())
+  }
+
+  // Toggle filter
+  const toggleSeverity = (severity: MessageSeverity) => {
+    const newSet = new Set(selectedSeverities)
+    if (newSet.has(severity)) {
+      newSet.delete(severity)
+    } else {
+      newSet.add(severity)
+    }
+    setSelectedSeverities(newSet)
+  }
+
+  const toggleStatus = (status: MessageStatus) => {
+    const newSet = new Set(selectedStatuses)
+    if (newSet.has(status)) {
+      newSet.delete(status)
+    } else {
+      newSet.add(status)
+    }
+    setSelectedStatuses(newSet)
+  }
+
+  const toggleCategory = (category: MessageCategory) => {
+    const newSet = new Set(selectedCategories)
+    if (newSet.has(category)) {
+      newSet.delete(category)
+    } else {
+      newSet.add(category)
+    }
+    setSelectedCategories(newSet)
+  }
+
+  // Get active filter count
+  const getActiveFilterCount = () => selectedSeverities.size + selectedStatuses.size + selectedCategories.size
+
+  // Test channel state
+  const [testingChannel, setTestingChannel] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
+
+  // Test a channel
+  const handleTestChannel = async (channelName: string) => {
+    setTestingChannel(channelName)
+    try {
+      const response = await fetch(`/api/messages/channels/${encodeURIComponent(channelName)}/test`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'Test message from NeoTalk',
+          title: 'Channel Test',
+        }),
+      })
+      const result = await response.json()
+      if (result.success) {
+        setTestResults(prev => ({ ...prev, [channelName]: { success: true, message: result.message || 'Test sent successfully' } }))
+        toast({ title: t('common.success'), description: `Channel "${channelName}" test successful` })
+      } else {
+        throw new Error(result.message || 'Test failed')
+      }
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error)
+      setTestResults(prev => ({ ...prev, [channelName]: { success: false, message: errorMsg } }))
+      toast({ title: t('common.failed'), description: errorMsg, variant: 'destructive' })
+    } finally {
+      setTestingChannel(null)
+    }
+  }
 
   // Calculate paginated messages
   const paginatedMessages = messages.slice(
@@ -143,7 +228,7 @@ export default function MessagesPage() {
     try {
       const response = await fetch('/api/messages', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
         },
       })
       const rawData = await response.json() as any
@@ -155,6 +240,8 @@ export default function MessagesPage() {
         messagesArray = rawData
       } else if (rawData?.messages && Array.isArray(rawData.messages)) {
         messagesArray = rawData.messages
+      } else if (rawData?.data?.messages && Array.isArray(rawData.data.messages)) {
+        messagesArray = rawData.data.messages
       } else if (rawData?.data && Array.isArray(rawData.data)) {
         messagesArray = rawData.data
       }
@@ -174,25 +261,26 @@ export default function MessagesPage() {
         metadata: msg.metadata,
       }))
 
-      console.log('Messages before filter:', messages.length, messages)
-
-      // Apply filters
-      if (severityFilter !== 'all') {
-        messages = messages.filter((m: NotificationMessage) => m.severity === severityFilter)
+      // Apply filters using Sets
+      if (selectedSeverities.size > 0) {
+        messages = messages.filter((m: NotificationMessage) => selectedSeverities.has(m.severity as MessageSeverity))
       }
-      if (statusFilter !== 'all') {
-        messages = messages.filter((m: NotificationMessage) => m.status === statusFilter)
+      if (selectedStatuses.size > 0) {
+        messages = messages.filter((m: NotificationMessage) => selectedStatuses.has(m.status as MessageStatus))
       }
-      if (categoryFilter !== 'all') {
-        messages = messages.filter((m: NotificationMessage) => m.category === categoryFilter)
+      if (selectedCategories.size > 0) {
+        messages = messages.filter((m: NotificationMessage) => selectedCategories.has(m.category as MessageCategory))
       }
 
-      console.log('Messages after filter:', messages.length, 'Filters:', { severityFilter, statusFilter, categoryFilter })
-
-      // Sort by timestamp descending
-      messages.sort((a: NotificationMessage, b: NotificationMessage) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      )
+      // Sort by timestamp descending (handle invalid timestamps)
+      messages.sort((a: NotificationMessage, b: NotificationMessage) => {
+        const aTime = new Date(a.timestamp).getTime()
+        const bTime = new Date(b.timestamp).getTime()
+        // If either timestamp is invalid, treat it as oldest
+        if (isNaN(aTime)) return 1
+        if (isNaN(bTime)) return -1
+        return bTime - aTime
+      })
 
       setMessages(messages)
       setMessagePage(1) // Reset to first page when data changes
@@ -201,7 +289,7 @@ export default function MessagesPage() {
     } finally {
       setLoading(false)
     }
-  }, [severityFilter, statusFilter, categoryFilter])
+  }, [selectedSeverities, selectedStatuses, selectedCategories])
 
   // Fetch channels
   const fetchChannels = useCallback(async () => {
@@ -223,7 +311,7 @@ export default function MessagesPage() {
     } else {
       fetchChannels()
     }
-  }, [activeTab, fetchMessages, fetchChannels])
+  }, [activeTab, fetchMessages, fetchChannels, selectedSeverities, selectedStatuses, selectedCategories])
 
   // Message actions - using messages API endpoints
   const handleAcknowledge = async (id: string) => {
@@ -231,7 +319,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}/acknowledge`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
       })
@@ -254,7 +342,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}/resolve`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
       })
@@ -277,7 +365,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}/archive`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
       })
@@ -309,7 +397,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
         },
       })
       if (response.ok) {
@@ -348,58 +436,149 @@ export default function MessagesPage() {
         {/* Messages Tab */}
         <PageTabsContent value="messages" activeTab={activeTab}>
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <Select value={severityFilter} onValueChange={(v) => setSeverityFilter(v as MessageSeverity | 'all')}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder={t('messages.filter.severity')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('messages.filter.all')}</SelectItem>
-                <SelectItem value="info">{t('messages.severity.info')}</SelectItem>
-                <SelectItem value="warning">{t('messages.severity.warning')}</SelectItem>
-                <SelectItem value="critical">{t('messages.severity.critical')}</SelectItem>
-                <SelectItem value="emergency">{t('messages.severity.emergency')}</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {/* Filter Button with Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <Filter className="h-4 w-4" />
+                  {t('messages.filter.title')}
+                  {getActiveFilterCount() > 0 && (
+                    <Badge variant="secondary" className="h-5 px-1.5 text-xs">
+                      {getActiveFilterCount()}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56 max-h-[70vh] overflow-y-auto">
+                {/* Severity Filter */}
+                <div className="px-2 py-1.5">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.severity.label')}</p>
+                  {(['info', 'warning', 'critical', 'emergency'] as MessageSeverity[]).map((sev) => (
+                    <DropdownMenuCheckboxItem
+                      key={sev}
+                      checked={selectedSeverities.has(sev)}
+                      onCheckedChange={() => toggleSeverity(sev)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {sev === 'info' && <Info className="h-3.5 w-3.5 text-blue-500" />}
+                        {sev === 'warning' && <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />}
+                        {sev === 'critical' && <AlertCircle className="h-3.5 w-3.5 text-orange-500" />}
+                        {sev === 'emergency' && <ShieldAlert className="h-3.5 w-3.5 text-red-500" />}
+                        {t(`messages.severity.${sev}`)}
+                      </div>
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
 
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as MessageStatus | 'all')}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder={t('messages.filter.status')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('messages.filter.all')}</SelectItem>
-                <SelectItem value="active">{t('messages.status.active')}</SelectItem>
-                <SelectItem value="acknowledged">{t('messages.status.acknowledged')}</SelectItem>
-                <SelectItem value="resolved">{t('messages.status.resolved')}</SelectItem>
-                <SelectItem value="archived">{t('messages.status.archived')}</SelectItem>
-              </SelectContent>
-            </Select>
+                <DropdownMenuSeparator />
 
-            <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as MessageCategory | 'all')}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder={t('messages.filter.category')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t('messages.filter.all')}</SelectItem>
-                <SelectItem value="alert">{t('messages.category.alert')}</SelectItem>
-                <SelectItem value="system">{t('messages.category.system')}</SelectItem>
-                <SelectItem value="business">{t('messages.category.business')}</SelectItem>
-              </SelectContent>
-            </Select>
+                {/* Status Filter */}
+                <div className="px-2 py-1.5">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.status.label')}</p>
+                  {(['active', 'acknowledged', 'resolved', 'archived'] as MessageStatus[]).map((stat) => (
+                    <DropdownMenuCheckboxItem
+                      key={stat}
+                      checked={selectedStatuses.has(stat)}
+                      onCheckedChange={() => toggleStatus(stat)}
+                    >
+                      {t(`messages.status.${stat}`)}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
 
-            {(severityFilter !== 'all' || statusFilter !== 'all' || categoryFilter !== 'all') && (
+                <DropdownMenuSeparator />
+
+                {/* Category Filter */}
+                <div className="px-2 py-1.5">
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{t('messages.category.label')}</p>
+                  {(['alert', 'system', 'business'] as MessageCategory[]).map((cat) => (
+                    <DropdownMenuCheckboxItem
+                      key={cat}
+                      checked={selectedCategories.has(cat)}
+                      onCheckedChange={() => toggleCategory(cat)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {cat === 'alert' && <AlertCircle className="h-3.5 w-3.5" />}
+                        {cat === 'system' && <Bell className="h-3.5 w-3.5" />}
+                        {cat === 'business' && <Megaphone className="h-3.5 w-3.5" />}
+                        {t(`messages.category.${cat}`)}
+                      </div>
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
+
+                {hasActiveFilters && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={clearAllFilters}>
+                      <X className="h-4 w-4 mr-2" />
+                      {t('messages.filter.clear')}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Active Filter Chips */}
+            {Array.from(selectedSeverities).map((sev) => (
+              <Badge
+                key={`sev-${sev}`}
+                variant="secondary"
+                className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                onClick={() => toggleSeverity(sev)}
+              >
+                {sev === 'info' && <Info className="h-3 w-3 text-blue-500" />}
+                {sev === 'warning' && <AlertTriangle className="h-3 w-3 text-yellow-500" />}
+                {sev === 'critical' && <AlertCircle className="h-3 w-3 text-orange-500" />}
+                {sev === 'emergency' && <ShieldAlert className="h-3 w-3 text-red-500" />}
+                {t(`messages.severity.${sev}`)}
+                <X className="h-3 w-3 ml-1 text-muted-foreground" />
+              </Badge>
+            ))}
+
+            {Array.from(selectedStatuses).map((stat) => (
+              <Badge
+                key={`stat-${stat}`}
+                variant="secondary"
+                className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                onClick={() => toggleStatus(stat)}
+              >
+                {t(`messages.status.${stat}`)}
+                <X className="h-3 w-3 ml-1 text-muted-foreground" />
+              </Badge>
+            ))}
+
+            {Array.from(selectedCategories).map((cat) => (
+              <Badge
+                key={`cat-${cat}`}
+                variant="secondary"
+                className="gap-1 pr-1 cursor-pointer hover:bg-secondary/80"
+                onClick={() => toggleCategory(cat)}
+              >
+                {cat === 'alert' && <AlertCircle className="h-3 w-3" />}
+                {cat === 'system' && <Bell className="h-3 w-3" />}
+                {cat === 'business' && <Megaphone className="h-3 w-3" />}
+                {t(`messages.category.${cat}`)}
+                <X className="h-3 w-3 ml-1 text-muted-foreground" />
+              </Badge>
+            ))}
+
+            {hasActiveFilters && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setSeverityFilter('all')
-                  setStatusFilter('all')
-                  setCategoryFilter('all')
-                }}
+                className="h-7 px-2 text-xs"
+                onClick={clearAllFilters}
               >
-                {t('messages.filter.clear')}
+                {t('messages.filter.clearAll')}
               </Button>
             )}
+
+            {/* Result count */}
+            <span className="text-sm text-muted-foreground ml-auto">
+              {messages.length} {t('messages.items')}
+            </span>
           </div>
 
           {/* Messages Table */}
@@ -557,21 +736,28 @@ export default function MessagesPage() {
             </Table>
           </Card>
 
-          {/* Pagination */}
+          {/* Pagination - Fixed at bottom */}
           {messages.length > messagesPerPage && (
-            <div className="sticky bottom-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-4 pb-2">
-              <Pagination
-                total={messages.length}
-                pageSize={messagesPerPage}
-                currentPage={messagePage}
-                onPageChange={setMessagePage}
-              />
+            <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t pt-3 pb-3 px-4 z-10">
+              <div className="max-w-6xl mx-auto">
+                <Pagination
+                  total={messages.length}
+                  pageSize={messagesPerPage}
+                  currentPage={messagePage}
+                  onPageChange={setMessagePage}
+                />
+              </div>
             </div>
           )}
         </PageTabsContent>
 
         {/* Channels Tab */}
         <PageTabsContent value="channels" activeTab={activeTab}>
+          {/* Channel count */}
+          <div className="text-sm text-muted-foreground mb-4">
+            {channels.filter(c => c.enabled).length} {t('enabled')} channels
+          </div>
+
           <Card className="overflow-hidden">
             <Table>
               <TableHeader>
@@ -621,6 +807,8 @@ export default function MessagesPage() {
                     const channelConfig = config[channel.channel_type] || config.console
                     const ChannelIcon = channelConfig.icon
 
+                    const testResult = testResults[channel.name]
+
                     return (
                       <TableRow key={channel.name} className="group transition-colors hover:bg-muted/50">
                         <TableCell>
@@ -628,9 +816,29 @@ export default function MessagesPage() {
                             <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${channelConfig.color}`}>
                               <ChannelIcon className="h-4 w-4" />
                             </div>
-                            <div>
-                              <div className="font-medium text-sm">{channel.name}</div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{channel.name}</span>
+                                {(channel.channel_type === 'webhook' || channel.channel_type === 'email') && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => handleTestChannel(channel.name)}
+                                    disabled={testingChannel === channel.name}
+                                  >
+                                    <TestTube className="h-3 w-3 mr-1" />
+                                    {testingChannel === channel.name ? 'Testing...' : 'Test'}
+                                  </Button>
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground">{channel.channel_type}</div>
+                              {testResult && (
+                                <div className={`text-xs mt-1 ${testResult.success ? 'text-green-500' : 'text-red-500'}`}>
+                                  {testResult.success ? '✓ ' : '✗ '}
+                                  {testResult.message}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </TableCell>
@@ -690,7 +898,7 @@ export default function MessagesPage() {
           const response = await fetch('/api/messages', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+              'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({

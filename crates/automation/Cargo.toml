@@ -8,7 +8,6 @@ edge-ai-core = { path = "../core" }
 edge-ai-llm = { path = "../llm" }
 edge-ai-rules = { path = "../rules" }
 edge-ai-devices = { path = "../devices" }
-edge-ai-alerts = { path = "../alerts" }
 
 # Force axum 0.7 to avoid conflicts with rumqttd's axum 0.6
 axum = { version = "0.7", default-features = false }

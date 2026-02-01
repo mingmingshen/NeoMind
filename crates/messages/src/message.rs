@@ -1,7 +1,7 @@
 //! Message types.
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, Deserializer};
 use uuid::Uuid;
 
 use super::MessageCategory;
@@ -33,8 +33,7 @@ impl std::fmt::Display for MessageId {
 }
 
 /// Message severity levels.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum MessageSeverity {
     /// Informational - no action required
     #[default]
@@ -55,6 +54,25 @@ impl MessageSeverity {
             Self::Critical => "critical",
             Self::Emergency => "emergency",
         }
+    }
+
+    // Serialize as lowercase string
+    pub fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+
+    // Deserialize from lowercase string
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!("invalid severity: {}", s))
+        })
     }
 
     pub fn display_name(&self) -> &str {
@@ -88,8 +106,7 @@ impl std::fmt::Display for MessageSeverity {
 }
 
 /// Message status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageStatus {
     /// Message is active and requires attention
     #[default]
@@ -110,6 +127,25 @@ impl MessageStatus {
             Self::Resolved => "resolved",
             Self::Archived => "archived",
         }
+    }
+
+    // Serialize as lowercase string
+    pub fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+
+    // Deserialize from lowercase string
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!("invalid status: {}", s))
+        })
     }
 
     pub fn display_name(&self) -> &str {
@@ -146,6 +182,7 @@ pub struct Message {
     /// Message category
     pub category: String,
     /// Message severity
+    #[serde(serialize_with = "MessageSeverity::serialize", deserialize_with = "MessageSeverity::deserialize")]
     pub severity: MessageSeverity,
     /// Message title
     pub title: String,
@@ -158,6 +195,7 @@ pub struct Message {
     /// When the message was created
     pub timestamp: DateTime<Utc>,
     /// Current message status
+    #[serde(serialize_with = "MessageStatus::serialize", deserialize_with = "MessageStatus::deserialize")]
     pub status: MessageStatus,
     /// Additional metadata
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -135,20 +135,33 @@ export function MessageChannelsTab({
         {selectedChannelType.id === 'webhook' && (
           <>
             <div>
-              <Label htmlFor="webhook-url">{t('messages.channels.webhookUrl')}</Label>
+              <Label htmlFor="webhook-url" className="flex items-center gap-2">
+                {t('messages.channels.webhookUrl')}
+                <a
+                  href="https://webhook.site"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-500 hover:underline"
+                >
+                  (Get free test URL →)
+                </a>
+              </Label>
               <Input
                 id="webhook-url"
                 type="url"
-                placeholder="https://example.com/webhook"
+                placeholder="https://webhook.site/xxxxx-xxxx-xxxx-xxxx"
                 value={(newChannelConfig.url as string) || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, url: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Visit <a href="https://webhook.site" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">webhook.site</a> to get a free test URL
+              </p>
             </div>
             <div>
               <Label htmlFor="webhook-headers">{t('messages.channels.webhookHeaders')}</Label>
               <Input
                 id="webhook-headers"
-                placeholder='{"Authorization": "Bearer token"}'
+                placeholder='{"Content-Type": "application/json"}'
                 value={(newChannelConfig.headers as string) || ''}
                 onChange={(e) => {
                   try {
@@ -164,11 +177,19 @@ export function MessageChannelsTab({
         )}
         {selectedChannelType.id === 'email' && (
           <>
+            <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
+              <p className="font-medium mb-2">Quick Test Options:</p>
+              <ul className="space-y-1 text-xs">
+                <li>• <strong>MailHog</strong>: Run <code className="bg-background px-1 py-0.5 rounded">mailhog</code> (localhost:1025)</li>
+                <li>• <strong>Ethereal</strong>: <a href="https://ethereal.email" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">ethereal.email</a></li>
+                <li>• <strong>Gmail</strong>: smtp.gmail.com:587 (use App Password)</li>
+              </ul>
+            </div>
             <div>
               <Label htmlFor="smtp-server">{t('messages.channels.smtpServer')}</Label>
               <Input
                 id="smtp-server"
-                placeholder="smtp.example.com"
+                placeholder="localhost"
                 value={(newChannelConfig.smtp_server as string) || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, smtp_server: e.target.value }))}
               />
@@ -178,16 +199,16 @@ export function MessageChannelsTab({
               <Input
                 id="smtp-port"
                 type="number"
-                placeholder="587"
+                placeholder="1025"
                 value={(newChannelConfig.smtp_port as number) || ''}
-                onChange={(e) => setNewChannelConfig(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || 587 }))}
+                onChange={(e) => setNewChannelConfig(prev => ({ ...prev, smtp_port: parseInt(e.target.value) || 1025 }))}
               />
             </div>
             <div>
               <Label htmlFor="email-username">{t('messages.channels.emailUsername')}</Label>
               <Input
                 id="email-username"
-                placeholder="user@example.com"
+                placeholder="(optional)"
                 value={(newChannelConfig.username as string) || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, username: e.target.value }))}
               />
@@ -197,7 +218,7 @@ export function MessageChannelsTab({
               <Input
                 id="email-password"
                 type="password"
-                placeholder="••••••••"
+                placeholder="(optional)"
                 value={(newChannelConfig.password as string) || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, password: e.target.value }))}
               />
@@ -207,7 +228,7 @@ export function MessageChannelsTab({
               <Input
                 id="email-from"
                 type="email"
-                placeholder="noreply@example.com"
+                placeholder="test@example.com"
                 value={(newChannelConfig.from_address as string) || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, from_address: e.target.value }))}
               />
@@ -216,7 +237,8 @@ export function MessageChannelsTab({
               <Label htmlFor="email-to">{t('messages.channels.emailTo')}</Label>
               <Input
                 id="email-to"
-                placeholder="recipient@example.com"
+                type="email"
+                placeholder="your-email@example.com"
                 value={(newChannelConfig.recipients as string[])?.[0] || ''}
                 onChange={(e) => setNewChannelConfig(prev => ({ ...prev, recipients: [e.target.value] }))}
               />

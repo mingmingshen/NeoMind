@@ -380,6 +380,23 @@ export function ConfigFormBuilder({
                   }
                   rows={4}
                 />
+              ) : prop.type === 'object' || prop.type === 'record' ? (
+                <Textarea
+                  id={fieldName}
+                  value={typeof watchedValues[fieldName] === 'object' ? JSON.stringify(watchedValues[fieldName], null, 2) : String(watchedValues[fieldName] || '')}
+                  onChange={(e) => {
+                    try {
+                      const parsed = JSON.parse(e.target.value)
+                      setValue(fieldName, parsed)
+                    } catch {
+                      // Invalid JSON, keep as string for now
+                      setValue(fieldName, e.target.value)
+                    }
+                  }}
+                  placeholder='{"key": "value"}'
+                  rows={4}
+                  className="font-mono text-xs"
+                />
               ) : (
                 <div className="relative">
                   <Input

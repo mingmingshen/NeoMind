@@ -32,7 +32,7 @@ use edge_ai_storage::{
 };
 use edge_ai_agent::ai_agent::{AgentExecutor, AgentExecutorConfig};
 use edge_ai_llm::backends::ollama::{OllamaRuntime, OllamaConfig};
-use edge_ai_alerts::{AlertManager, AlertSeverity, channels::ConsoleChannel};
+use edge_ai_messages::{MessageManager, MessageSeverity, channels::{ConsoleChannel, MessageChannel}};
 
 // ============================================================================
 // Test Context
@@ -44,7 +44,7 @@ struct SimulationContext {
     pub event_bus: Arc<EventBus>,
     pub llm_runtime: Arc<OllamaRuntime>,
     pub time_series: Arc<TimeSeriesStore>,
-    pub alert_manager: Arc<AlertManager>,
+    pub message_manager: Arc<MessageManager>,
 }
 
 impl SimulationContext {
@@ -61,16 +61,16 @@ impl SimulationContext {
 
         let time_series = TimeSeriesStore::memory()?;
 
-        let alert_manager = Arc::new(AlertManager::new());
+        let message_manager = Arc::new(MessageManager::new());
         let console_channel = Arc::new(ConsoleChannel::new("console".to_string()));
-        alert_manager.add_channel(console_channel).await;
+        message_manager.register_channel(console_channel).await;
 
         let executor_config = AgentExecutorConfig {
             store: store.clone(),
             time_series_storage: Some(time_series.clone()),
             device_service: None,
             event_bus: Some(event_bus.clone()),
-            alert_manager: Some(alert_manager.clone()),
+            message_manager: Some(message_manager.clone()),
             llm_runtime: Some(llm_runtime.clone() as Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>),
             llm_backend_store: None,
         };
@@ -83,7 +83,7 @@ impl SimulationContext {
             event_bus,
             llm_runtime,
             time_series,
-            alert_manager,
+            message_manager,
         })
     }
 
@@ -195,15 +195,16 @@ impl SimulationContext {
         Ok(agent)
     }
 
-    async fn send_alert(&self, severity: AlertSeverity, title: &str, message: &str, device: &str) {
-        if let Ok(alert) = self.alert_manager.device_alert(
+    async fn send_alert(&self, severity: MessageSeverity, title: &str, message: &str, device: &str) {
+        let msg = edge_ai_messages::Message::alert(
             severity,
             title.to_string(),
             message.to_string(),
             device.to_string(),
-        ).await {
+        );
+        if let Ok(msg) = self.message_manager.create_message(msg).await {
             println!("    📢 [{}] {} - {}", severity, title, message);
-            println!("       Alert ID: {}", alert.id);
+            println!("       Message ID: {}", msg.id);
         }
     }
 
@@ -363,7 +364,7 @@ async fn scenario_1_smart_building_hvac() -> anyhow::Result<()> {
        record2.decision_process.conclusion.contains("高") ||
        record2.decision_process.conclusion.contains("超过") {
         ctx.send_alert(
-            AlertSeverity::Warning,
+            MessageSeverity::Warning,
             "HVAC温度异常",
             &format!("服务器机房温度达到 {:.1}°C，超过安全阈值", overheating_values.last().unwrap_or(&0.0)),
             "server_room"
@@ -568,7 +569,7 @@ async fn scenario_2_industrial_predictive_maintenance() -> anyhow::Result<()> {
 
     if has_alert_decision || record2.decision_process.conclusion.contains("异常") {
         ctx.send_alert(
-            AlertSeverity::Critical,
+            MessageSeverity::Critical,
             "设备故障预警",
             "motor_1 振动和温度异常升高，可能即将发生故障，建议立即检查",
             "motor_1"
