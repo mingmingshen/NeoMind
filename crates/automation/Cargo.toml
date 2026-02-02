@@ -30,8 +30,9 @@ hex = { workspace = true }
 base64 = { workspace = true }
 urlencoding = { workspace = true }
 
-# JavaScript execution (optional, has issues on Windows)
-quick-js = { version = "0.4", optional = true }
+# JavaScript execution - use Boa for cross-platform support
+boa_engine = "0.17"
+boa_gc = "0.17"
 
 # Storage
 redb = { workspace = true }
@@ -40,5 +41,5 @@ redb = { workspace = true }
 futures = { workspace = true }
 
 [features]
-default = ["javascript"]
-javascript = ["quick-js"]
+default = []
+javascript = []

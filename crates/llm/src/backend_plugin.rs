@@ -5,6 +5,7 @@
 //! modifying the core codebase.
 
 use serde_json::Value;
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
