@@ -2,6 +2,7 @@
   "name": "neomind",
   "private": true,
   "scripts": {
-    "tauri": "npm run tauri --prefix web"
+    "tauri": "npm run tauri --prefix web",
+    "build": "npm run build --prefix web"
   }
 }
