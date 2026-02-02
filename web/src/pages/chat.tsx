@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { useParams, useNavigate } from "react-router-dom"
-import { Settings, Send, Sparkles, PanelLeft, Plus, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain } from "lucide-react"
+import { Settings, Send, Sparkles, PanelLeft, Plus, Zap, ChevronDown, X, Image as ImageIcon, Loader2, Eye, Brain, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -18,8 +18,10 @@ import { MarkdownMessage } from "@/components/chat/MarkdownMessage"
 import { ThinkingBlock } from "@/components/chat/ThinkingBlock"
 import { ToolCallVisualization } from "@/components/chat/ToolCallVisualization"
 import { QuickActions } from "@/components/chat/QuickActions"
+import { ConnectionStatus } from "@/components/chat/ConnectionStatus"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { ws } from "@/lib/websocket"
+import { ws, type ConnectionState } from "@/lib/websocket"
+import { api } from "@/lib/api"
 import type { Message, ServerMessage, ChatImage } from "@/types"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
@@ -170,6 +172,17 @@ export function ChatPage() {
   // Track the ID of the last assistant message for tool call result updates
   const [lastAssistantMessageId, setLastAssistantMessageId] = useState<string | null>(null)
 
+  // Pending stream recovery state (for reconnect)
+  const [pendingStream, setPendingStream] = useState<{
+    hasPending: boolean
+    content: string
+    thinking: string
+    userMessage: string
+  } | null>(null)
+
+  // WebSocket connection state (for reconnection UI)
+  const [connectionState, setConnectionState] = useState<ConnectionState>({ status: 'disconnected' })
+
   // Image upload state
   const [attachedImages, setAttachedImages] = useState<ChatImage[]>([])
   const [isUploadingImage, setIsUploadingImage] = useState(false)
@@ -182,10 +195,8 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamingMessageIdRef = useRef<string | null>(null)
-  const streamingContentRef = useRef("")
-  const streamingThinkingRef = useRef("")
-  const streamingToolCallsRef = useRef<any[]>([])
-  const isStreamingRef = useRef(false)
+  // Captured streaming state for use in end event (state updates are async)
+  const capturedStreamingRef = useRef({ content: "", thinking: "", toolCalls: [] as any[] })
 
   // Load LLM backends and sessions on mount
   useEffect(() => {
@@ -267,25 +278,28 @@ export function ChatPage() {
     scrollToBottom()
   }, [messages, streamingContent, scrollToBottom])
 
-  // Sync isStreaming ref with state
-  useEffect(() => {
-    isStreamingRef.current = isStreaming
-  }, [isStreaming])
-
   // Handle WebSocket events
   useEffect(() => {
     const handleMessage = (data: ServerMessage) => {
       switch (data.type) {
         case "Thinking":
           setIsStreaming(true)
-          streamingThinkingRef.current += (data.content || "")
-          setStreamingThinking(streamingThinkingRef.current)
+          setStreamingThinking(prev => {
+            const updated = prev + (data.content || "")
+            // Sync to ref for end event
+            capturedStreamingRef.current.thinking = updated
+            return updated
+          })
           break
 
         case "Content":
           setIsStreaming(true)
-          streamingContentRef.current += (data.content || "")
-          setStreamingContent(streamingContentRef.current)
+          setStreamingContent(prev => {
+            const updated = prev + (data.content || "")
+            // Sync to ref for end event
+            capturedStreamingRef.current.content = updated
+            return updated
+          })
           break
 
         case "ToolCallStart": {
@@ -295,8 +309,12 @@ export function ChatPage() {
             arguments: data.arguments,
             result: null
           }
-          streamingToolCallsRef.current.push(toolCall)
-          setStreamingToolCalls([...streamingToolCallsRef.current])
+          setStreamingToolCalls(prev => {
+            const updated = [...prev, toolCall]
+            // Sync to ref for end event
+            capturedStreamingRef.current.toolCalls = updated
+            return updated
+          })
           break
         }
 
@@ -307,12 +325,12 @@ export function ChatPage() {
                 ? { ...tc, result: data.result }
                 : tc
             )
-            // Also update the ref for consistency
-            streamingToolCallsRef.current = updated
+            // Sync to ref for end event
+            capturedStreamingRef.current.toolCalls = updated
 
-            // If not streaming (stream ended before tool execution),
+            // If not currently streaming content (stream ended before tool execution),
             // update the saved assistant message's tool_calls
-            if (!isStreamingRef.current && lastAssistantMessageId) {
+            if (!isStreaming && lastAssistantMessageId) {
               const lastMessage = messages.find(m => m.id === lastAssistantMessageId)
               if (lastMessage && lastMessage.role === "assistant" && lastMessage.tool_calls) {
                 const updatedToolCalls = lastMessage.tool_calls.map(tc =>
@@ -333,16 +351,17 @@ export function ChatPage() {
           break
         }
 
-        case "end":
-          if (streamingContentRef.current || streamingThinkingRef.current || streamingToolCallsRef.current.length > 0) {
+        case "end": {
+          const { content, thinking, toolCalls } = capturedStreamingRef.current
+          if (content || thinking || toolCalls.length > 0) {
             const messageId = streamingMessageIdRef.current || crypto.randomUUID()
             const completeMessage: Message = {
               id: messageId,
               role: "assistant",
-              content: streamingContentRef.current,
+              content,
               timestamp: Date.now(),
-              thinking: streamingThinkingRef.current || undefined,
-              tool_calls: streamingToolCallsRef.current.length > 0 ? streamingToolCallsRef.current : undefined,
+              thinking: thinking || undefined,
+              tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
             }
             addMessage(completeMessage)
             // Track this message for potential tool call result updates
@@ -352,14 +371,16 @@ export function ChatPage() {
           setStreamingContent("")
           setStreamingThinking("")
           setStreamingToolCalls([])
-          streamingContentRef.current = ""
-          streamingThinkingRef.current = ""
-          streamingToolCallsRef.current = []
+          // Reset captured ref
+          capturedStreamingRef.current = { content: "", thinking: "", toolCalls: [] }
           streamingMessageIdRef.current = null
           break
+        }
 
         case "Error":
           setIsStreaming(false)
+          // Reset captured ref on error too
+          capturedStreamingRef.current = { content: "", thinking: "", toolCalls: [] }
           break
 
         case "session_created":
@@ -374,7 +395,39 @@ export function ChatPage() {
 
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, switchSession, lastAssistantMessageId, messages, sessionId])
+  }, [addMessage, switchSession, lastAssistantMessageId, messages, sessionId, isStreaming])
+
+  // Check for pending stream after reconnection
+  useEffect(() => {
+    const unsubscribe = ws.onConnection((connected, isReconnect) => {
+      if (connected && isReconnect && sessionId) {
+        // Check if there's a pending stream from before disconnection
+        api.getPendingStream(sessionId).then(result => {
+          if (result?.hasPending) {
+            setPendingStream({
+              hasPending: true,
+              content: result.content || "",
+              thinking: result.thinking || "",
+              userMessage: result.userMessage || "",
+            })
+            // Restore streaming state
+            setStreamingContent(result.content || "")
+            setStreamingThinking(result.thinking || "")
+            setIsStreaming(true)
+          }
+        }).catch(() => {
+          // Ignore errors checking pending stream
+        })
+      }
+    })
+    return () => { void unsubscribe() }
+  }, [sessionId])
+
+  // Subscribe to WebSocket connection state changes
+  useEffect(() => {
+    const unsubscribe = ws.onStateChange(setConnectionState)
+    return () => { void unsubscribe() }
+  }, [])
 
   // Send message - in welcome mode, create session and navigate
   const handleSend = async () => {
@@ -475,6 +528,34 @@ export function ChatPage() {
     inputRef.current?.focus()
   }
 
+  // Handle pending stream recovery - restore
+  const handleRestorePendingStream = () => {
+    if (pendingStream) {
+      // The streaming state is already restored, just clear the prompt
+      setPendingStream(null)
+    }
+  }
+
+  // Handle pending stream recovery - discard
+  const handleDiscardPendingStream = async () => {
+    if (sessionId && pendingStream) {
+      // Clear pending stream from server
+      await api.clearPendingStream(sessionId).catch(() => {})
+      // Reset streaming state
+      setIsStreaming(false)
+      setStreamingContent("")
+      setStreamingThinking("")
+      setStreamingToolCalls([])
+      capturedStreamingRef.current = { content: "", thinking: "", toolCalls: [] }
+    }
+    setPendingStream(null)
+  }
+
+  // Handle manual reconnect
+  const handleManualReconnect = () => {
+    ws.manualReconnect()
+  }
+
   // Handle keyboard shortcuts
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -521,6 +602,58 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full">
+      {/* Pending stream recovery dialog */}
+      {pendingStream?.hasPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="max-w-md w-full mx-4 bg-card border border-border rounded-xl shadow-lg p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                <RotateCcw className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+              </div>
+              <div>
+                <h3 className="font-semibold">恢复未完成的响应？</h3>
+                <p className="text-sm text-muted-foreground">
+                  检测到之前断线时有正在进行的响应
+                </p>
+              </div>
+            </div>
+
+            {(pendingStream.content || pendingStream.thinking) && (
+              <div className="mb-4 p-3 bg-muted rounded-lg text-sm">
+                {pendingStream.thinking && (
+                  <div className="mb-2 text-muted-foreground italic">
+                    {pendingStream.thinking.slice(0, 200)}
+                    {pendingStream.thinking.length > 200 && "..."}
+                  </div>
+                )}
+                {pendingStream.content && (
+                  <div>
+                    {pendingStream.content.slice(0, 200)}
+                    {pendingStream.content.length > 200 && "..."}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={handleDiscardPendingStream}
+              >
+                放弃
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleRestorePendingStream}
+              >
+                恢复
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Desktop Sidebar - always show when there are sessions or in chat mode */}
       {isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
         <SessionSidebar
@@ -545,34 +678,46 @@ export function ChatPage() {
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Mobile Header - show when there are sessions or in chat mode */}
         {!isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
-          <div className="h-11 flex items-center px-3 gap-2 bg-background/50 backdrop-blur-sm border-b border-border/30">
-            {/* Menu button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarOpen(true)}
-              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
+          <div className="flex flex-col bg-background/50 backdrop-blur-sm border-b border-border/30">
+            <div className="h-11 flex items-center px-3 gap-2">
+              {/* Menu button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(true)}
+                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
 
-            <div className="flex-1" />
+              <div className="flex-1" />
 
-            {/* New session button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                const newSessionId = await createSession()
-                if (newSessionId) {
-                  navigate(`/chat/${newSessionId}`)
-                }
-              }}
-              className="h-8 gap-1.5 rounded-lg text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="text-xs">{t('chat:input.newChat')}</span>
-            </Button>
+              {/* New session button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  const newSessionId = await createSession()
+                  if (newSessionId) {
+                    navigate(`/chat/${newSessionId}`)
+                  }
+                }}
+                className="h-8 gap-1.5 rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="text-xs">{t('chat:input.newChat')}</span>
+              </Button>
+            </div>
+
+            {/* Connection status - show when not connected */}
+            {(connectionState.status === 'reconnecting' || connectionState.status === 'error') && (
+              <div className="px-3 py-1.5 flex justify-center">
+                <ConnectionStatus
+                  state={connectionState}
+                  onManualReconnect={handleManualReconnect}
+                />
+              </div>
+            )}
           </div>
         )}
 

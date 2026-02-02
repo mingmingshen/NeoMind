@@ -2,7 +2,7 @@
 import type { ServerMessage, ClientChatMessage, ChatImage } from '@/types'
 
 type MessageHandler = (message: ServerMessage) => void
-type ConnectionHandler = (connected: boolean) => void
+type ConnectionHandler = (connected: boolean, isReconnect?: boolean) => void
 type StateChangeHandler = (state: ConnectionState) => void
 
 // Connection state for UI display
@@ -15,8 +15,27 @@ export interface ConnectionState {
 
 // Get authentication token (JWT)
 function getAuthToken(): string | null {
-  // Get JWT token from localStorage or sessionStorage
-  return localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session')
+  // Try new keys first
+  let token = localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session')
+
+  // Migration: try old keys if new keys don't exist
+  if (!token) {
+    const oldToken = localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session')
+    if (oldToken) {
+      // Migrate to new key
+      const isLocal = !!localStorage.getItem('neotalk_token')
+      if (isLocal) {
+        localStorage.setItem('neomind_token', oldToken)
+        localStorage.removeItem('neotalk_token')
+      } else {
+        sessionStorage.setItem('neomind_token_session', oldToken)
+        sessionStorage.removeItem('neotalk_token_session')
+      }
+      token = oldToken
+    }
+  }
+
+  return token
 }
 
 export class ChatWebSocket {
@@ -25,7 +44,11 @@ export class ChatWebSocket {
   private countdownTimer: ReturnType<typeof setInterval> | null = null
   private tokenCheckTimer: ReturnType<typeof setInterval> | null = null
   private reconnectAttempts = 0
-  private maxReconnectAttempts = Infinity  // 无限重连，直到用户手动刷新
+  private maxReconnectAttempts = 10  // 最多重连10次
+  private baseReconnectDelay = 1000  // 初始重连延迟1秒
+  private maxReconnectDelay = 30000   // 最大重连延迟30秒
+  private isManualDisconnect = false  // 是否用户主动断开
+  private wasConnected = false  // 跟踪是否曾经连接过（用于区分初始连接和重连）
   private messageHandlers: Set<MessageHandler> = new Set()
   private connectionHandlers: Set<ConnectionHandler> = new Set()
   private stateChangeHandlers: Set<StateChangeHandler> = new Set()
@@ -86,8 +109,11 @@ export class ChatWebSocket {
     this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {
-      this.reconnectAttempts = 0
-      this.notifyConnection(true)
+      const isReconnect = this.wasConnected
+      this.wasConnected = true  // 标记已连接过
+
+      this.resetReconnectState()  // 重置重连状态
+      this.notifyConnection(true, isReconnect)
       this.setState({ status: 'connected' })
 
       // Send pending messages
@@ -131,30 +157,6 @@ export class ChatWebSocket {
     }
   }
 
-  disconnect() {
-    // Clear countdown timer
-    if (this.countdownTimer) {
-      clearInterval(this.countdownTimer)
-      this.countdownTimer = null
-    }
-    // Clear token check timer
-    if (this.tokenCheckTimer) {
-      clearInterval(this.tokenCheckTimer)
-      this.tokenCheckTimer = null
-    }
-    // Clear reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-    // Close WebSocket
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
-    this.setState({ status: 'disconnected' })
-  }
-
   sendRequest(request: ClientChatMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(request))
@@ -186,15 +188,30 @@ export class ChatWebSocket {
   }
 
   private scheduleReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+    // 如果是用户主动断开，不重连
+    if (this.isManualDisconnect) {
       this.setState({
-        status: 'error',
-        errorMessage: '无法连接到服务器，请刷新页面重试'
+        status: 'disconnected',
+        errorMessage: undefined
       })
       return
     }
 
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.setState({
+        status: 'error',
+        errorMessage: '连接已断开，请点击重新连接',
+        retryCount: this.reconnectAttempts,
+        nextRetryIn: undefined
+      })
+      return
+    }
+
+    // 使用指数退避算法，但有最大延迟限制
+    const delay = Math.min(
+      this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
+      this.maxReconnectDelay
+    )
     this.reconnectAttempts++
 
     // Set reconnecting state
@@ -240,7 +257,7 @@ export class ChatWebSocket {
 
   onConnection(handler: ConnectionHandler) {
     this.connectionHandlers.add(handler)
-    handler(this.ws?.readyState === WebSocket.OPEN)
+    handler(this.ws?.readyState === WebSocket.OPEN, false)
     return () => this.connectionHandlers.delete(handler)
   }
 
@@ -248,8 +265,8 @@ export class ChatWebSocket {
     this.messageHandlers.forEach(handler => handler(message))
   }
 
-  private notifyConnection(connected: boolean) {
-    this.connectionHandlers.forEach(handler => handler(connected))
+  private notifyConnection(connected: boolean, isReconnect = false) {
+    this.connectionHandlers.forEach(handler => handler(connected, isReconnect))
   }
 
   private setState(state: ConnectionState) {
@@ -266,6 +283,69 @@ export class ChatWebSocket {
     this.stateChangeHandlers.add(handler)
     handler(this.currentState) // Immediately call with current state
     return () => this.stateChangeHandlers.delete(handler)
+  }
+
+  /**
+   * 手动断开连接（不会触发重连）
+   */
+  disconnect() {
+    this.isManualDisconnect = true
+    this.reconnectAttempts = 0
+
+    // Clear timers
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer)
+      this.countdownTimer = null
+    }
+    if (this.tokenCheckTimer) {
+      clearInterval(this.tokenCheckTimer)
+      this.tokenCheckTimer = null
+    }
+
+    // Close WebSocket
+    if (this.ws) {
+      this.ws.close(1000, 'User disconnected')
+      this.ws = null
+    }
+
+    this.setState({ status: 'disconnected' })
+  }
+
+  /**
+   * 手动重新连接（重置重连计数器）
+   */
+  manualReconnect() {
+    this.isManualDisconnect = false
+    this.reconnectAttempts = 0
+
+    // Clear existing timers
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer)
+      this.countdownTimer = null
+    }
+
+    // If connected, disconnect first
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close()
+    }
+
+    this.connect(this.sessionId || undefined)
+  }
+
+  /**
+   * 重置重连状态（用于连接成功后）
+   */
+  private resetReconnectState() {
+    this.reconnectAttempts = 0
+    this.isManualDisconnect = false
   }
 
   isConnected() {

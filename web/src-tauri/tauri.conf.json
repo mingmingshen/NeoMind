@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
-  "productName": "NeoTalk",
+  "productName": "NeoMind",
   "version": "0.1.0",
-  "identifier": "com.neotalk.app",
+  "identifier": "com.neomind.neomind",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NeoTalk",
+        "title": "NeoMind",
         "width": 1400,
         "height": 900,
         "minWidth": 1024,
@@ -42,7 +42,7 @@
     ],
     "category": "Developer Tool",
     "shortDescription": "Edge AI Platform",
-    "longDescription": "NeoTalk - Edge-deployed LLM agent platform for IoT automation",
+    "longDescription": "NeoMind - Edge-deployed LLM agent platform for IoT automation",
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.13",

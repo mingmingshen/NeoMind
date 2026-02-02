@@ -69,7 +69,7 @@ export const useStore = create<NeoTalkStore>()(
         ...createDashboardSlice(set, get, api),
       }),
       {
-        name: 'neotalk-store',
+        name: 'neomind-store',
         partialize: (state) => ({
           messages: state.messages,
           sessionId: state.sessionId,
@@ -87,7 +87,7 @@ export const useStore = create<NeoTalkStore>()(
 
 // Performance optimization: Only expose store globally in development
 if (typeof window !== 'undefined' && import.meta.env.DEV) {
-  (window as any).neotalkStore = useStore
+  (window as any).neomindStore = useStore
 }
 
 // ============================================================================

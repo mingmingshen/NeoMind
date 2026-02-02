@@ -51,7 +51,7 @@ export interface DataSourceSection {
     dataSource?: DataSourceOrList
     onChange: (dataSource: DataSourceOrList | DataSource | undefined) => void
     // Optional: filter which source types to show
-    allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
+    allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
     // Optional: enable multiple data source selection
     multiple?: boolean
     // Optional: max number of data sources (only used when multiple is true)
@@ -916,7 +916,7 @@ export function createChartConfig(config: {
     props: {
       dataSource: config.dataSource,
       onChange: config.onDataSourceChange,
-      allowedTypes: ['device-metric'],  // Charts only support metrics, not commands
+      allowedTypes: ['device-metric', 'system'],  // Charts support device metrics and system metrics
       multiple: config.multiple ?? true,
       maxSources: config.maxSources ?? 10
     },

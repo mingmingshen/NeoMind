@@ -11,7 +11,7 @@ import { api } from '@/lib/api'
 
 // Get auth token
 const getToken = (): string | null => {
-  return localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session')
+  return localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session')
 }
 
 export interface AlertSlice extends AlertState {
@@ -68,6 +68,16 @@ export const createAlertSlice: StateCreator<
         timestamp: msg.timestamp || msg.created_at,
       }))
 
+      // Sort by timestamp descending (newest first)
+      alertsArray.sort((a: any, b: any) => {
+        const aTime = new Date(a.timestamp).getTime()
+        const bTime = new Date(b.timestamp).getTime()
+        // If either timestamp is invalid, treat it as oldest
+        if (isNaN(aTime)) return 1
+        if (isNaN(bTime)) return -1
+        return bTime - aTime
+      })
+
       set({ alerts: alertsArray as any })
     } catch (error) {
       console.error('Failed to fetch alerts:', error)
@@ -107,7 +117,6 @@ export const createAlertSlice: StateCreator<
         title: alert.title,
         message: alert.message,
         source: alert.source || 'manual',
-        source_type: 'ui',
       })
       // Refresh the alerts list after creating
       await get().fetchAlerts()

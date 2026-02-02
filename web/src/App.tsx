@@ -83,6 +83,57 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Setup Route component
+// Only accessible when:
+// 1. Setup is required (not completed)
+// 2. User is NOT authenticated
+// Otherwise redirects appropriately
+function SetupRoute({ children }: { children: React.ReactNode }) {
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const checkSetup = async () => {
+      try {
+        const response = await fetch('/api/setup/status')
+        const data = await response.json()
+        setSetupRequired(data.setup_required)
+      } catch {
+        // If API fails, assume setup is not required
+        setSetupRequired(false)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    checkSetup()
+  }, [])
+
+  const token = tokenManager.getToken()
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    )
+  }
+
+  // Setup already completed - redirect to login
+  if (setupRequired === false) {
+    return <Navigate to="/login" replace />
+  }
+
+  // Already authenticated - redirect to home
+  if (token) {
+    return <Navigate to="/" replace />
+  }
+
+  // Show setup page
+  return <>{children}</>
+}
+
 // Setup Required Route component
 // Checks if setup is needed and redirects to /setup if required
 // Otherwise redirects to login if authenticated
@@ -184,8 +235,15 @@ function App() {
     <>
       <Suspense fallback={<PageLoading />}>
         <Routes>
-          {/* Setup route - always accessible, handles its own redirect logic */}
-          <Route path="/setup" element={<SetupPage />} />
+          {/* Setup route - protected, only accessible when setup required and not authenticated */}
+          <Route
+            path="/setup"
+            element={
+              <SetupRoute>
+                <SetupPage />
+              </SetupRoute>
+            }
+          />
 
         {/* Login route with setup check - redirects to /setup if needed */}
         <Route

@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { BrandLogoWithName } from "@/components/shared/BrandName"
 import { Badge } from "@/components/ui/badge"
 import {
   Tooltip,
@@ -131,10 +132,7 @@ export function TopNav() {
       <nav className="h-16 bg-background/95 backdrop-blur flex items-center px-4 sm:px-6 shadow-sm z-50 relative">
         {/* Logo */}
         <Link to="/chat" className="flex items-center gap-2.5 mr-6">
-          <div className="w-9 h-9 rounded-xl bg-foreground flex items-center justify-center shadow-sm">
-            <Sparkles className="h-4.5 w-4.5 text-background" />
-          </div>
-          <span className="font-semibold text-foreground text-base hidden sm:block">NeoTalk</span>
+          <BrandLogoWithName />
         </Link>
 
         {/* Desktop Navigation Icons - hidden on mobile */}

@@ -2557,50 +2557,9 @@ async fn execute_tool_with_retry(
 /// Simplified names are used in LLM prompts (e.g., "device.discover")
 /// while real names are used in ToolRegistry (e.g., "list_devices").
 ///
-/// NOTE: This must match the mapping in agent/mod.rs to ensure consistency.
+/// NOTE: This now uses the unified ToolNameMapper to ensure consistency.
 fn resolve_tool_name(simplified_name: &str) -> String {
-    match simplified_name {
-        // Device tools - note: device.* tools are registered with their simplified names
-        // device.discover → list_devices (for backward compatibility)
-        "device.discover" => "list_devices".to_string(),
-        // device.query, device.control, device.analyze are registered as-is
-        "device.query" | "device.control" | "device.analyze" => simplified_name.to_string(),
-
-        // Rule tools
-        "rule.list" | "rules.list" => "list_rules".to_string(),
-        // rule.from_context is a separate tool that generates DSL from natural language
-        // It should keep its name as it's registered as "rule.from_context" in core_tools
-        // Note: "rule.create" is an alias for create_rule
-        "rule.create" => "create_rule".to_string(),
-        "rule.delete" => "delete_rule".to_string(),
-        // These tools are registered with their simplified names
-        "rule.from_context" => "rule.from_context".to_string(),
-        "rule.enable" => "enable_rule".to_string(),
-        "rule.disable" => "disable_rule".to_string(),
-        "rule.test" => "test_rule".to_string(),
-
-        // Workflow tools
-        "workflow.list" | "workflows.list" => "list_workflows".to_string(),
-        "workflow.create" => "create_workflow".to_string(),
-        "workflow.trigger" | "workflow.execute" => "trigger_workflow".to_string(),
-
-        // Scenario tools
-        "scenario.list" => "list_scenarios".to_string(),
-        "scenario.create" => "create_scenario".to_string(),
-        "scenario.execute" => "execute_scenario".to_string(),
-
-        // Data tools
-        "data.query" => "query_data".to_string(),
-        "data.analyze" => "analyze_data".to_string(),
-
-        // Alert tools
-        "alert.list" => "list_alerts".to_string(),
-        "alert.create" => "create_alert".to_string(),
-        "alert.acknowledge" => "acknowledge_alert".to_string(),
-
-        // Default: use the name as-is (already a real tool name)
-        _ => simplified_name.to_string(),
-    }
+    crate::tools::resolve_tool_name(simplified_name)
 }
 
 /// Inner retry logic without caching (for code reuse)
@@ -2613,8 +2572,19 @@ async fn execute_with_retry_impl(
     // Map simplified tool name to real tool name
     let real_tool_name = resolve_tool_name(name);
 
+    // Tool execution timeout (30 seconds default)
+    const TOOL_TIMEOUT_SECS: u64 = 30;
+
     for attempt in 0..=max_retries {
-        let result = tools.execute(&real_tool_name, arguments.clone()).await;
+        let result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(TOOL_TIMEOUT_SECS),
+            tools.execute(&real_tool_name, arguments.clone())
+        )
+        .await
+        .unwrap_or(Err(edge_ai_tools::ToolError::Execution(format!(
+            "Tool '{}' timed out after {}s",
+            name, TOOL_TIMEOUT_SECS
+        ))));
 
         match &result {
             Ok(output) if output.success => return result,

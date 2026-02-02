@@ -119,6 +119,7 @@ pub use system_tools::{
 // AI Agent tools for Chat integration
 pub use agent_tools::{
     ListAgentsTool, GetAgentTool, ExecuteAgentTool, ControlAgentTool, CreateAgentTool, AgentMemoryTool,
+    GetAgentExecutionsTool, GetAgentExecutionDetailTool, GetAgentConversationTool,
 };
 
 // Feature-gated real tools

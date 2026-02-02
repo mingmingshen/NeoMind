@@ -2,13 +2,16 @@
 import { cn } from '@/lib/utils'
 import type { ConnectionState } from '@/lib/websocket'
 import { useTranslation } from 'react-i18next'
+import { RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface ConnectionStatusProps {
   state: ConnectionState
   className?: string
+  onManualReconnect?: () => void
 }
 
-export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
+export function ConnectionStatus({ state, className, onManualReconnect }: ConnectionStatusProps) {
   const { t } = useTranslation('chat')
 
   const getStatusInfo = (connectionState: ConnectionState) => {
@@ -21,7 +24,7 @@ export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
             </svg>
           ),
           text: t('connection.connected'),
-          bgClass: 'bg-green-50 text-green-700 border-green-200'
+          bgClass: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800'
         }
       case 'reconnecting':
         return {
@@ -31,7 +34,7 @@ export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
             </svg>
           ),
           text: t('connection.reconnecting'),
-          bgClass: 'bg-yellow-50 text-yellow-700 border-yellow-200'
+          bgClass: 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800'
         }
       case 'error':
         return {
@@ -41,7 +44,7 @@ export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
             </svg>
           ),
           text: connectionState.errorMessage || t('connection.error'),
-          bgClass: 'bg-red-50 text-red-700 border-red-200'
+          bgClass: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800'
         }
       case 'disconnected':
         return {
@@ -51,7 +54,7 @@ export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
             </svg>
           ),
           text: t('connection.disconnected'),
-          bgClass: 'bg-gray-50 text-gray-700 border-gray-200'
+          bgClass: 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900 dark:text-gray-300 dark:border-gray-700'
         }
     }
   }
@@ -66,10 +69,25 @@ export function ConnectionStatus({ state, className }: ConnectionStatusProps) {
     )}>
       {info.icon}
       <span>{info.text}</span>
-      {state.status === 'reconnecting' && state.retryCount && state.retryCount > 1 && (
+
+      {/* Show retry count and countdown when reconnecting */}
+      {state.status === 'reconnecting' && state.retryCount && state.retryCount > 0 && (
         <span className="text-xs opacity-75">
-          ({t('connection.retryAttempt', { count: state.retryCount })})
+          (尝试 {state.retryCount}/10{state.nextRetryIn !== undefined && ` · ${state.nextRetryIn}s`})
         </span>
+      )}
+
+      {/* Show manual reconnect button when max retries reached */}
+      {state.status === 'error' && onManualReconnect && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs gap-1 hover:bg-inherit"
+          onClick={onManualReconnect}
+        >
+          <RotateCcw className="w-3 h-3" />
+          重新连接
+        </Button>
       )}
     </div>
   )

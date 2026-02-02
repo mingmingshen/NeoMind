@@ -51,6 +51,9 @@ pub struct AiAgent {
     pub schedule: AgentSchedule,
     /// Agent status
     pub status: AgentStatus,
+    /// Priority for execution (0-255, higher = more priority)
+    #[serde(default = "default_priority")]
+    pub priority: u8,
     /// Creation timestamp
     pub created_at: i64,
     /// Last update timestamp
@@ -80,6 +83,11 @@ pub struct AiAgent {
 /// Default value for context window size.
 fn default_context_window() -> usize {
     10
+}
+
+/// Default value for agent priority.
+fn default_priority() -> u8 {
+    128 // Middle priority (0-255 range)
 }
 
 /// Parsed intent from user's natural language description.

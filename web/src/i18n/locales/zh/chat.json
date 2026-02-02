@@ -1,7 +1,7 @@
 {
   "title": "智能物联网助手",
   "welcome": {
-    "greeting": "你好！我是 NeoTalk",
+    "greeting": "你好！我是 NeoMind",
     "description": "智能物联网助手，帮你管理设备和自动化",
     "suggestions": {
       "checkDevices": "查看设备状态",

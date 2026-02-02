@@ -380,7 +380,7 @@ export function ConfigFormBuilder({
                   }
                   rows={4}
                 />
-              ) : prop.type === 'object' || prop.type === 'record' ? (
+              ) : prop.type === 'object' || (prop.type as any) === 'record' ? (
                 <Textarea
                   id={fieldName}
                   value={typeof watchedValues[fieldName] === 'object' ? JSON.stringify(watchedValues[fieldName], null, 2) : String(watchedValues[fieldName] || '')}

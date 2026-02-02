@@ -3,6 +3,7 @@
 //! This crate defines the foundational abstractions used across the project.
 
 pub mod alerts;
+pub mod brand;
 pub mod config;
 pub mod error;
 pub mod event;

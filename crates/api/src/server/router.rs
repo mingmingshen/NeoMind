@@ -81,6 +81,8 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Test data generation (public - for development)
         .route("/api/test-data/alerts", post(test_data::generate_test_alerts_handler))
         .route("/api/test-data/all", post(test_data::generate_test_data_handler))
+        // Stats API (public - system stats for dashboard components)
+        .route("/api/stats/system", get(stats::get_system_stats_handler))
         // Suggestions API (public - provides intelligent input suggestions)
         .route("/api/suggestions", get(suggestions::get_suggestions_handler))
         .route("/api/suggestions/categories", get(suggestions::get_suggestions_categories_handler))
@@ -319,6 +321,10 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/messages/channels/:name/test", post(message_channels::test_channel_handler))
         // LLM Generation API (one-shot, no session)
         .route("/api/llm/generate", post(settings::llm_generate_handler))
+        // Global Timezone Settings API
+        .route("/api/settings/timezone", get(settings::get_timezone))
+        .route("/api/settings/timezone", put(settings::update_timezone))
+        .route("/api/settings/timezones", get(settings::list_timezones))
         // Unified Automations API
         .route("/api/automations", get(automations::list_automations_handler))
         .route("/api/automations", post(automations::create_automation_handler))
@@ -506,8 +512,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/decisions/cleanup",
             post(decisions::cleanup_decisions_handler),
         )
-        // Stats API
-        .route("/api/stats/system", get(stats::get_system_stats_handler))
+        // Stats API (devices and rules require auth, system info is public)
         .route("/api/stats/devices", get(stats::get_device_stats_handler))
         .route("/api/stats/rules", get(stats::get_rule_stats_handler))
         // Bulk Operations API

@@ -1,6 +1,6 @@
 // Events WebSocket/SSE Manager for Real-time System Events
 //
-// Provides real-time event streaming from the NeoTalk event bus.
+// Provides real-time event streaming from the NeoMind event bus.
 
 import { tokenManager } from '@/lib/api'
 
@@ -33,7 +33,7 @@ export type EventType =
   | 'ToolExecutionFailure'
   | 'Custom'
 
-export interface CustomEvent extends NeoTalkEvent {
+export interface CustomEvent extends NeoMindEvent {
   type: 'Custom'
   data: {
     event_type: string
@@ -43,7 +43,7 @@ export interface CustomEvent extends NeoTalkEvent {
 
 export type EventCategory = 'device' | 'rule' | 'llm' | 'alert' | 'tool' | 'agent' | 'all'
 
-export interface NeoTalkEvent {
+export interface NeoMindEvent {
   id: string
   type: EventType
   timestamp: number
@@ -51,7 +51,7 @@ export interface NeoTalkEvent {
   data: unknown
 }
 
-export interface DeviceMetricEvent extends NeoTalkEvent {
+export interface DeviceMetricEvent extends NeoMindEvent {
   type: 'DeviceMetric'
   data: {
     device_id: string
@@ -61,7 +61,7 @@ export interface DeviceMetricEvent extends NeoTalkEvent {
   }
 }
 
-export interface RuleTriggeredEvent extends NeoTalkEvent {
+export interface RuleTriggeredEvent extends NeoMindEvent {
   type: 'RuleTriggered'
   data: {
     rule_id: string
@@ -71,7 +71,7 @@ export interface RuleTriggeredEvent extends NeoTalkEvent {
   }
 }
 
-export interface LlmDecisionProposedEvent extends NeoTalkEvent {
+export interface LlmDecisionProposedEvent extends NeoMindEvent {
   type: 'LlmDecisionProposed'
   data: {
     decision_id: string
@@ -88,7 +88,7 @@ export interface LlmDecisionProposedEvent extends NeoTalkEvent {
 }
 
 // Agent-related events
-export interface AgentExecutionStartedEvent extends NeoTalkEvent {
+export interface AgentExecutionStartedEvent extends NeoMindEvent {
   type: 'AgentExecutionStarted'
   data: {
     agent_id: string
@@ -98,7 +98,7 @@ export interface AgentExecutionStartedEvent extends NeoTalkEvent {
   }
 }
 
-export interface AgentExecutionCompletedEvent extends NeoTalkEvent {
+export interface AgentExecutionCompletedEvent extends NeoMindEvent {
   type: 'AgentExecutionCompleted'
   data: {
     agent_id: string
@@ -109,7 +109,7 @@ export interface AgentExecutionCompletedEvent extends NeoTalkEvent {
   }
 }
 
-export interface AgentThinkingEvent extends NeoTalkEvent {
+export interface AgentThinkingEvent extends NeoMindEvent {
   type: 'AgentThinking'
   data: {
     agent_id: string
@@ -121,7 +121,7 @@ export interface AgentThinkingEvent extends NeoTalkEvent {
   }
 }
 
-export interface AgentDecisionEvent extends NeoTalkEvent {
+export interface AgentDecisionEvent extends NeoMindEvent {
   type: 'AgentDecision'
   data: {
     agent_id: string
@@ -133,7 +133,7 @@ export interface AgentDecisionEvent extends NeoTalkEvent {
   }
 }
 
-export interface AgentProgressEvent extends NeoTalkEvent {
+export interface AgentProgressEvent extends NeoMindEvent {
   type: 'AgentProgress'
   data: {
     agent_id: string
@@ -145,7 +145,7 @@ export interface AgentProgressEvent extends NeoTalkEvent {
   }
 }
 
-export interface AgentMemoryUpdatedEvent extends NeoTalkEvent {
+export interface AgentMemoryUpdatedEvent extends NeoMindEvent {
   type: 'AgentMemoryUpdated'
   data: {
     agent_id: string
@@ -153,7 +153,7 @@ export interface AgentMemoryUpdatedEvent extends NeoTalkEvent {
   }
 }
 
-export type EventHandler = (event: NeoTalkEvent) => void
+export type EventHandler = (event: NeoMindEvent) => void
 export type ConnectionHandler = (connected: boolean) => void
 export type ErrorHandler = (error: Error) => void
 
@@ -166,7 +166,7 @@ interface EventsConfig {
 }
 
 /**
- * EventsWebSocket - Manages real-time event streaming from NeoTalk event bus
+ * EventsWebSocket - Manages real-time event streaming from NeoMind event bus
  *
  * Supports both WebSocket and SSE (Server-Sent Events) connections.
  */
@@ -279,10 +279,14 @@ export class EventsWebSocket {
     }
 
     // Build WebSocket URL
+    // In Tauri, connect to the backend server running on port 3000
     // In development, use direct connection to backend server (port 3000)
-    // In production, use the same host as the frontend
+    // In production web, use the same host as the frontend
     let wsHost = window.location.host
-    if (window.location.port === '5173' || window.location.hostname === 'localhost') {
+    if ((window as any).__TAURI__) {
+      // Tauri: backend runs on localhost:3000
+      wsHost = 'localhost:3000'
+    } else if (window.location.port === '5173' || window.location.hostname === 'localhost') {
       // Development: connect directly to backend server
       wsHost = 'localhost:3000'
     }
@@ -323,7 +327,7 @@ export class EventsWebSocket {
             return
           }
         }
-        this.notifyEvent(data as NeoTalkEvent)
+        this.notifyEvent(data as NeoMindEvent)
       } catch {
         // Silent error handling for malformed messages
       }
@@ -359,7 +363,7 @@ export class EventsWebSocket {
     // SSE messages come through the onmessage handler
     this.eventSource.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as NeoTalkEvent
+        const data = JSON.parse(event.data) as NeoMindEvent
         this.notifyEvent(data)
       } catch {
         // Silent error handling
@@ -404,7 +408,7 @@ export class EventsWebSocket {
   /**
    * Subscribe to a specific event type
    */
-  on<T extends EventType>(eventType: T, handler: (event: Extract<NeoTalkEvent, { type: T }>) => void) {
+  on<T extends EventType>(eventType: T, handler: (event: Extract<NeoMindEvent, { type: T }>) => void) {
     if (!this.eventHandlers.has(eventType)) {
       this.eventHandlers.set(eventType, new Set())
     }
@@ -466,7 +470,7 @@ export class EventsWebSocket {
     }, delay)
   }
 
-  private notifyEvent(event: NeoTalkEvent) {
+  private notifyEvent(event: NeoMindEvent) {
     // Notify type-specific handlers
     const typeHandlers = this.eventHandlers.get(event.type as EventType)
     if (typeHandlers) {

@@ -75,6 +75,58 @@ fn extract_device_from_description(description: &str) -> Option<String> {
         .or_else(|| find_and_extract(description, "on ", 3))
 }
 
+/// Get time context string for LLM prompts.
+/// This provides the LLM with current time information for better temporal understanding.
+/// Loads timezone from settings if available, otherwise uses default.
+fn get_time_context() -> String {
+    use edge_ai_storage::SettingsStore;
+
+    const SETTINGS_DB_PATH: &str = "data/settings.redb";
+
+    // Try to load timezone from settings
+    let timezone = SettingsStore::open(SETTINGS_DB_PATH)
+        .ok()
+        .and_then(|store| store.load_global_timezone().ok())
+        .flatten()
+        .unwrap_or_else(|| "Asia/Shanghai".to_string());
+
+    let now = chrono::Utc::now();
+
+    // Parse timezone
+    let tz = timezone.parse::<chrono_tz::Tz>()
+        .unwrap_or_else(|_| chrono_tz::Tz::Asia__Shanghai);
+
+    // Get current time in the configured timezone
+    let local_now = now.with_timezone(&tz);
+
+    // Format various time components
+    let utc_time = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    let local_time = local_now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let date_str = local_now.format("%Y年%m月%d日").to_string();
+    let day_of_week = local_now.format("%A").to_string(); // Monday, Tuesday, etc.
+
+    // Get time period description - use format to get hour value
+    let hour_str = local_now.format("%H").to_string();
+    let hour: u32 = hour_str.parse().unwrap_or(12);
+    let time_period = match hour {
+        5..=11 => "上午",
+        12..=13 => "中午",
+        14..=17 => "下午",
+        18..=22 => "晚上",
+        _ => "夜间",
+    };
+
+    format!(
+        "### 当前时间信息\n\
+         - UTC时间: {}\n\
+         - 本地时间: {} ({})\n\
+         - 日期: {}\n\
+         - 星期: {}\n\
+         - 时段: {}",
+        utc_time, local_time, timezone, date_str, day_of_week, time_period
+    )
+}
+
 /// Extract JSON from mixed text (when model outputs text before JSON).
 /// Returns the extracted JSON string if found, None otherwise.
 fn extract_json_from_mixed_text(text: &str) -> Option<String> {
@@ -638,6 +690,75 @@ pub struct AgentExecutor {
     llm_runtime_cache: Arc<RwLock<HashMap<String, Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>>>>,
 }
 
+/// Calculate relevance score for a conversation turn based on current context.
+///
+/// Scoring factors (inspired by MemoryOS heat-based approach):
+/// - Time decay (30%): exp(-0.03 * age_hours) - recent turns score higher
+/// - Success reference (20%): successful turns are more valuable
+/// - Device overlap (30%): turns involving same devices are more relevant
+/// - Trigger similarity (20%): same trigger type suggests similar context
+///
+/// Returns a score between 0.0 (irrelevant) and 1.0 (highly relevant).
+fn score_turn_relevance(
+    turn: &ConversationTurn,
+    current_data: &[DataCollected],
+    current_trigger: &str,
+) -> f64 {
+    let mut score = 0.0;
+    let now = chrono::Utc::now().timestamp();
+    let age_hours = ((now - turn.timestamp).max(0) as f64) / 3600.0;
+
+    // Factor 1: Time decay (30% weight) - exponential decay
+    // Recent turns (< 1 hour) get close to full score
+    // Old turns (> 24 hours) get minimal score
+    let recency_score = (-0.03 * age_hours).exp().max(0.0).min(1.0);
+    score += recency_score * 0.3;
+
+    // Factor 2: Success reference (20% weight)
+    // Successful executions are more valuable as positive examples
+    if turn.success {
+        score += 0.2;
+    }
+
+    // Factor 3: Device overlap (30% weight)
+    // Turns that handled the same devices are highly relevant
+    let current_devices: std::collections::HashSet<_> = current_data
+        .iter()
+        .map(|d| d.source.as_str())
+        .collect();
+
+    let turn_devices: std::collections::HashSet<_> = turn
+        .input
+        .data_collected
+        .iter()
+        .map(|d| d.source.as_str())
+        .collect();
+
+    if !current_devices.is_empty() {
+        let overlap = current_devices
+            .intersection(&turn_devices)
+            .count();
+        let union = current_devices
+            .union(&turn_devices)
+            .count();
+        let jaccard = if union > 0 {
+            overlap as f64 / union as f64
+        } else {
+            0.0
+        };
+        score += jaccard * 0.3;
+    }
+
+    // Factor 4: Trigger similarity (20% weight)
+    // Same trigger type suggests similar execution context
+    if !current_trigger.is_empty() && turn.trigger_type == current_trigger {
+        score += 0.2;
+    }
+
+    // Clamp to [0, 1]
+    score.min(1.0).max(0.0)
+}
+
 impl AgentExecutor {
     /// Create a new agent executor.
     pub async fn new(config: AgentExecutorConfig) -> Result<Self, AgentError> {
@@ -885,20 +1006,28 @@ impl AgentExecutor {
     ) -> Result<edge_ai_storage::ParsedIntent, AgentError> {
         use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
 
-        let system_prompt = r#"You are an intent parser for IoT automation. Analyze the user's request and extract:
+        // Get current time context for temporal understanding
+        let time_context = get_time_context();
+
+        let system_prompt = format!(
+            r#"You are an intent parser for IoT automation. Analyze the user's request and extract:
 1. Intent type: Monitoring, ReportGeneration, AnomalyDetection, Control, or Automation
 2. Target metrics: temperature, humidity, power, etc.
 3. Conditions: any thresholds or comparison operators
 4. Actions: what actions to take when conditions are met
 
+{}
+
 Respond in JSON format:
-{
+{{
   "intent_type": "Monitoring|ReportGeneration|AnomalyDetection|Control|Automation",
   "target_metrics": ["metric1", "metric2"],
   "conditions": ["condition1", "condition2"],
   "actions": ["action1", "action2"],
   "confidence": 0.9
-}"#;
+}}"#,
+            time_context
+        );
 
         let messages = vec![
             Message::new(MessageRole::System, Content::text(system_prompt)),
@@ -1570,8 +1699,12 @@ Respond in JSON format:
     ) -> Result<Vec<AgentExecutionRecord>, AgentError> {
         use futures::future::join_all;
 
+        // Sort agents by priority (higher priority first)
+        let mut sorted_agents = agents;
+        sorted_agents.sort_by(|a, b| b.priority.cmp(&a.priority));
+
         let executor_ref = self;
-        let futures: Vec<_> = agents
+        let futures: Vec<_> = sorted_agents
             .into_iter()
             .map(|agent| executor_ref.execute_agent(agent))
             .collect();
@@ -2890,37 +3023,57 @@ Respond in JSON format:
             }
         };
 
-        // === SYSTEM PROMPT - Function-style prompting ===
-        // Frame this as an API function, not a conversation. Small models understand function calls better.
-        let system_prompt = format!(
-            "You are an IoT analysis function. Your output must be ONLY valid JSON.\n\n\
-            Example output:\n\
-            {{\"situation_analysis\":\"Room temperature normal\",\"reasoning_steps\":[],\"decisions\":[{{\"decision_type\":\"info\",\"description\":\"Status logged\",\"action\":\"log\",\"rationale\":\"Routine check\"}}],\"conclusion\":\"No action needed\"}}\n\n\
-            Task: {}",
-            truncate_to(&agent.user_prompt, 100)
-        );
+        // === SYSTEM PROMPT - Restore original working structure ===
+        // This was the proven working format - don't over-engineer it
+        let role_prompt = "You are an IoT automation assistant. Output ONLY valid JSON. No other text.";
+
+        // Get current time context for temporal understanding
+        let time_context = get_time_context();
+
+        let system_prompt = if has_valid_images {
+            format!(
+                "{}\n\n{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录观察\n- alert: 检测到目标，发送告警\n- command: 执行设备指令",
+                role_prompt, time_context, agent.user_prompt
+            )
+        } else {
+            format!(
+                "{}\n\n{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录\n- alert: 发送告警\n- command: 执行指令",
+                role_prompt, time_context, agent.user_prompt
+            )
+        };
+
+        // === CONTEXT MANAGEMENT ===
+        // For image analysis, include minimal memory context
+        let memory_context_for_msg = if !memory_context.is_empty() {
+            format!("\n\n# 历史参考\n{}", memory_context)
+        } else {
+            String::new()
+        };
 
         // Build messages - multimodal if images present
         let messages = if has_valid_images {
             let mut parts = vec![ContentPart::text(
-                format!("Analyze image. {}", memory_context)
+                format!("## 当前数据\n{}\n\n重要：只输出JSON格式，不要有任何其他文字。",
+                    if text_data_summary.is_empty() {
+                        "仅有图像数据".to_string()
+                    } else {
+                        text_data_summary.join("\n")
+                    }
+                )
             )];
 
             // Add images
-            for (source, data_type, image_content) in &image_parts {
-                match image_content {
-                    ImageContent::Url(url) => {
-                        parts.push(ContentPart::image_url(url.clone()));
-                        tracing::debug!(source = %source, url = %url, "Adding image URL to LLM message");
-                    }
-                    ImageContent::Base64(data, mime) => {
-                        parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
-                        tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
-                    }
+            for (source, _data_type, image_content) in &image_parts {
+                if let ImageContent::Base64(data, mime) = image_content {
+                    parts.push(ContentPart::image_base64(data.clone(), mime.clone()));
+                    tracing::debug!(source = %source, mime = %mime, "Adding base64 image to LLM message");
                 }
             }
 
-            // Add user messages (highest priority)
+            // Add memory context and user messages
+            if !memory_context_for_msg.is_empty() {
+                parts.push(ContentPart::text(memory_context_for_msg));
+            }
             if let Some(ref user_msgs) = user_messages_for_user_msg {
                 parts.push(ContentPart::text(format!("\n\n{}", user_msgs)));
             }
@@ -2930,19 +3083,21 @@ Respond in JSON format:
                 Message::from_parts(MessageRole::User, parts),
             ]
         } else {
-            // Text-only message with memory context
+            // Text-only message
             let data_summary = if text_data_summary.is_empty() {
-                "".to_string()
+                "No data available".to_string()
             } else {
-                text_data_summary.join(" ").chars().take(150).collect::<String>()
+                text_data_summary.join("\n")
             };
 
             let mut user_msg_content = format!(
-                "Data: {}. {}",
-                data_summary, memory_context
+                "## 当前数据\n{}\n\n只输出JSON，不要有其他文字。",
+                data_summary
             );
 
-            // Add user messages if present
+            if !memory_context_for_msg.is_empty() {
+                user_msg_content = format!("{}\n\n{}", user_msg_content, memory_context_for_msg);
+            }
             if let Some(ref user_msgs) = user_messages_for_user_msg {
                 user_msg_content = format!("{}\n\n{}", user_msg_content, user_msgs);
             }
@@ -4000,9 +4155,14 @@ Respond in JSON format:
 
         // 1. Generic system prompt with conversation context
         let role_prompt = "你是一个 NeoTalk 智能物联网系统的自动化助手。根据用户的指令分析数据、做出决策并执行相应操作。";
+
+        // Get current time context for temporal understanding
+        let time_context = get_time_context();
+
         let system_prompt = format!(
-            "{}\n\n## 你的任务\n{}\n\n{}",
+            "{}\n\n{}\n\n## 你的任务\n{}\n\n{}",
             role_prompt,
+            time_context,
             agent.user_prompt,
             CONVERSATION_CONTEXT_ZH
         );
@@ -4040,11 +4200,28 @@ Respond in JSON format:
             )));
         }
 
-        // 4. Add recent conversation turns as context
+        // 4. Add recent conversation turns as context with intelligent filtering
+        // Use relevance scoring to select the most valuable conversation turns
         let context_window = agent.context_window_size;
-        let recent_turns: Vec<_> = agent.conversation_history
+        let current_trigger = if event_data.is_some() { "event" } else { "scheduled" };
+
+        // Score all turns by relevance and select top N
+        let mut scored_turns: Vec<_> = agent.conversation_history
             .iter()
-            .rev()
+            .map(|turn| {
+                let score = score_turn_relevance(turn, current_data, current_trigger);
+                (turn, score)
+            })
+            .collect();
+
+        // Filter out turns with very low relevance (< 0.15) to save context space
+        scored_turns.retain(|(_, score)| *score >= 0.15);
+
+        // Sort by relevance score (descending) and take top N
+        scored_turns.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let recent_turns: Vec<_> = scored_turns
+            .into_iter()
             .take(context_window)
             .collect();
 
@@ -4054,8 +4231,9 @@ Respond in JSON format:
                 recent_turns.len()
             )));
 
-            // Add each turn as context (in reverse order since we collected reversed)
-            for (i, turn) in recent_turns.iter().rev().enumerate() {
+            // Add each turn as context (in reverse order since we sorted by relevance desc)
+            // recent_turns is Vec<(&ConversationTurn, f64)>
+            for (i, (turn, _score)) in recent_turns.iter().rev().enumerate() {
                 let timestamp_str = chrono::DateTime::from_timestamp(turn.timestamp, 0)
                     .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
                     .unwrap_or_else(|| "Unknown".to_string());

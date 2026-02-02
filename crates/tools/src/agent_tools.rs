@@ -805,6 +805,7 @@ impl Tool for CreateAgentTool {
                 timezone: Some("UTC".to_string()),
             },
             status: edge_ai_storage::agents::AgentStatus::Active,
+            priority: 128, // Default middle priority
             created_at: chrono::Utc::now().timestamp(),
             updated_at: chrono::Utc::now().timestamp(),
             last_execution_at: None,
@@ -1039,6 +1040,585 @@ impl Tool for AgentMemoryTool {
                     }
                 })))
             }
+        }
+    }
+}
+
+// ============================================================================
+// Agent Execution History Tools
+// ============================================================================
+
+/// Tool for querying agent execution history.
+pub struct GetAgentExecutionsTool {
+    agent_store: Arc<AgentStore>,
+}
+
+impl GetAgentExecutionsTool {
+    /// Create a new get agent executions tool.
+    pub fn new(agent_store: Arc<AgentStore>) -> Self {
+        Self { agent_store }
+    }
+}
+
+#[async_trait]
+impl Tool for GetAgentExecutionsTool {
+    fn name(&self) -> &str {
+        "get_agent_executions"
+    }
+
+    fn description(&self) -> &str {
+        r#"获取指定AI Agent的执行历史记录列表。
+
+## 使用场景
+- 查看Agent的执行历史
+- 分析Agent的执行趋势
+- 检查Agent的执行成功/失败情况
+- 了解Agent每次执行的耗时
+- 追踪Agent的触发类型（定时/事件/手动）
+
+## 返回信息
+- executions: 执行记录列表
+  - execution_id: 执行ID
+  - timestamp: 执行时间
+  - trigger_type: 触发类型（schedule/event/manual）
+  - status: 执行状态（running/completed/failed/partial）
+  - duration_ms: 执行耗时
+  - conclusion: 执行结论摘要
+- count: 总执行数量
+- summary: 执行统计摘要
+
+## 建议
+使用此工具后，可以使用 get_agent_execution_detail 查看具体某次执行的详细信息。"#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "agent_id": string_property("Agent的唯一ID"),
+                "limit": number_property("可选，限制返回数量，默认20"),
+                "status": string_property("可选，按状态过滤：completed, failed, running, partial"),
+                "offset": number_property("可选，偏移量，用于分页，默认0")
+            }),
+            vec!["agent_id".to_string()]
+        )
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters(),
+            example: Some(ToolExample {
+                arguments: serde_json::json!({
+                    "agent_id": "agent_1",
+                    "limit": 10
+                }),
+                result: serde_json::json!({
+                    "agent_id": "agent_1",
+                    "count": 10,
+                    "executions": [
+                        {
+                            "execution_id": "exec_123",
+                            "timestamp": 1735804800,
+                            "trigger_type": "schedule",
+                            "status": "completed",
+                            "duration_ms": 1250,
+                            "conclusion": "温度正常，无需告警"
+                        }
+                    ],
+                    "summary": {
+                        "total": 182,
+                        "completed": 180,
+                        "failed": 2,
+                        "avg_duration_ms": 1684
+                    }
+                }),
+                description: "获取Agent执行历史".to_string(),
+            }),
+            category: ToolCategory::Agent,
+            scenarios: vec![
+                UsageScenario {
+                    description: "查看Agent执行历史".to_string(),
+                    example_query: "查看tesy Agent的执行历史".to_string(),
+                    suggested_call: Some(r#"{"tool": "get_agent_executions", "arguments": {"agent_id": "tesy", "limit": 10}}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                call_after: vec!["list_agents".to_string(), "get_agent".to_string()],
+                output_to: vec!["get_agent_execution_detail".to_string()],
+                exclusive_with: vec![],
+            },
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
+            examples: vec![],
+            response_format: Some("detailed".to_string()),
+            namespace: Some("agent".to_string()),
+        }
+    }
+
+    fn namespace(&self) -> Option<&str> {
+        Some("agent")
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let agent_id = args["agent_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".to_string()))?;
+
+        let limit = args["limit"].as_u64().unwrap_or(20) as usize;
+        let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+
+        // Build execution filter
+        use edge_ai_storage::agents::{ExecutionFilter, ExecutionStatus};
+
+        let mut filter = ExecutionFilter {
+            agent_id: Some(agent_id.to_string()),
+            limit: Some(limit + offset), // Fetch extra for offset
+            ..Default::default()
+        };
+
+        // Parse status filter
+        if let Some(status_str) = args["status"].as_str() {
+            filter.status = match status_str {
+                "completed" => Some(ExecutionStatus::Completed),
+                "failed" => Some(ExecutionStatus::Failed),
+                "running" => Some(ExecutionStatus::Running),
+                "partial" => Some(ExecutionStatus::Partial),
+                _ => None,
+            };
+        }
+
+        // Query executions
+        let mut executions = self.agent_store.query_executions(filter).await
+            .map_err(|e| ToolError::Execution(format!("Failed to query executions: {}", e)))?;
+
+        // Apply offset
+        if offset > 0 && executions.len() > offset {
+            executions = executions.into_iter().skip(offset).collect();
+        } else if offset >= executions.len() {
+            executions = vec![];
+        }
+
+        // Limit results
+        if executions.len() > limit {
+            executions.truncate(limit);
+        }
+
+        // Calculate summary stats from all executions (without filters for full context)
+        let all_executions = self.agent_store.get_agent_executions(agent_id, 1000).await
+            .map_err(|e| ToolError::Execution(format!("Failed to get summary stats: {}", e)))?;
+
+        let total = all_executions.len();
+        let completed = all_executions.iter().filter(|e| matches!(e.status, ExecutionStatus::Completed)).count();
+        let failed = all_executions.iter().filter(|e| matches!(e.status, ExecutionStatus::Failed)).count();
+        let avg_duration = if all_executions.is_empty() {
+            0
+        } else {
+            all_executions.iter().map(|e| e.duration_ms).sum::<u64>() / total as u64
+        };
+
+        // Convert to response format
+        let execution_list: Vec<Value> = executions
+            .iter()
+            .map(|e| {
+                serde_json::json!({
+                    "execution_id": e.id,
+                    "timestamp": e.timestamp,
+                    "trigger_type": e.trigger_type,
+                    "status": format!("{:?}", e.status).to_lowercase(),
+                    "duration_ms": e.duration_ms,
+                    "conclusion": e.decision_process.conclusion,
+                    "has_error": e.error.is_some(),
+                    "has_result": e.result.is_some()
+                })
+            })
+            .collect();
+
+        Ok(ToolOutput::success(serde_json::json!({
+            "agent_id": agent_id,
+            "count": execution_list.len(),
+            "executions": execution_list,
+            "summary": {
+                "total": total,
+                "completed": completed,
+                "failed": failed,
+                "avg_duration_ms": avg_duration
+            }
+        })))
+    }
+}
+
+/// Tool for getting detailed information about a specific execution.
+pub struct GetAgentExecutionDetailTool {
+    agent_store: Arc<AgentStore>,
+}
+
+impl GetAgentExecutionDetailTool {
+    /// Create a new get agent execution detail tool.
+    pub fn new(agent_store: Arc<AgentStore>) -> Self {
+        Self { agent_store }
+    }
+}
+
+#[async_trait]
+impl Tool for GetAgentExecutionDetailTool {
+    fn name(&self) -> &str {
+        "get_agent_execution_detail"
+    }
+
+    fn description(&self) -> &str {
+        r#"获取单次Agent执行的详细信息，包括完整的决策过程和推理步骤。
+
+## 使用场景
+- 查看某次执行的完整决策过程
+- 了解Agent的推理步骤和逻辑
+- 分析Agent为什么做出某个决策
+- 调试Agent的执行问题
+- 查看执行过程中收集的数据
+
+## 返回信息
+- 基本信息：执行ID、时间、触发类型、状态、耗时
+- 决策过程：
+  - situation_analysis: 情况分析
+  - data_collected: 收集的数据
+  - reasoning_steps: 推理步骤列表
+  - decisions: 做出的决策
+  - conclusion: 结论
+  - confidence: 置信度
+- 执行结果：
+  - actions_executed: 执行的动作
+  - report: 生成的报告
+  - summary: 执行摘要
+- 错误信息：如果执行失败
+
+## 建议
+先使用 get_agent_executions 获取执行列表，然后使用此工具查看某次执行的详情。"#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "execution_id": string_property("执行记录的唯一ID"),
+                "agent_id": string_property("可选，Agent ID，用于验证执行属于该Agent")
+            }),
+            vec!["execution_id".to_string()]
+        )
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters(),
+            example: Some(ToolExample {
+                arguments: serde_json::json!({
+                    "execution_id": "exec_123"
+                }),
+                result: serde_json::json!({
+                    "execution_id": "exec_123",
+                    "agent_id": "agent_1",
+                    "timestamp": 1735804800,
+                    "trigger_type": "schedule",
+                    "status": "completed",
+                    "duration_ms": 1250,
+                    "decision_process": {
+                        "situation_analysis": "温度传感器数据正常...",
+                        "reasoning_steps": [
+                            {
+                                "step_number": 1,
+                                "description": "检查温度值",
+                                "output": "当前温度25°C，在正常范围内"
+                            }
+                        ],
+                        "conclusion": "温度正常，无需告警",
+                        "confidence": 0.95
+                    },
+                    "result": {
+                        "summary": "执行成功，无需采取行动",
+                        "actions_executed": []
+                    }
+                }),
+                description: "获取执行详情".to_string(),
+            }),
+            category: ToolCategory::Agent,
+            scenarios: vec![
+                UsageScenario {
+                    description: "查看执行详情".to_string(),
+                    example_query: "查看最近一次执行的详细过程".to_string(),
+                    suggested_call: Some(r#"{"tool": "get_agent_execution_detail", "arguments": {"execution_id": "exec_123"}}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                call_after: vec!["get_agent_executions".to_string()],
+                output_to: vec![],
+                exclusive_with: vec![],
+            },
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
+            examples: vec![],
+            response_format: Some("detailed".to_string()),
+            namespace: Some("agent".to_string()),
+        }
+    }
+
+    fn namespace(&self) -> Option<&str> {
+        Some("agent")
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let execution_id = args["execution_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("execution_id is required".to_string()))?;
+
+        let agent_id = args["agent_id"].as_str();
+
+        // Get execution
+        let execution = self.agent_store.get_execution(execution_id).await
+            .map_err(|e| ToolError::Execution(format!("Failed to get execution: {}", e)))?
+            .ok_or_else(|| ToolError::Execution(format!("Execution '{}' not found", execution_id)))?;
+
+        // Verify agent_id if provided
+        if let Some(id) = agent_id {
+            if execution.agent_id != id {
+                return Err(ToolError::Execution(format!(
+                    "Execution '{}' belongs to agent '{}', not '{}'",
+                    execution_id, execution.agent_id, id
+                )));
+            }
+        }
+
+        // Build detailed response
+        let response = serde_json::json!({
+            "execution_id": execution.id,
+            "agent_id": execution.agent_id,
+            "timestamp": execution.timestamp,
+            "trigger_type": execution.trigger_type,
+            "status": format!("{:?}", execution.status).to_lowercase(),
+            "duration_ms": execution.duration_ms,
+            "error": execution.error,
+            "decision_process": {
+                "situation_analysis": execution.decision_process.situation_analysis,
+                "data_collected": execution.decision_process.data_collected.iter().map(|d| serde_json::json!({
+                    "source": d.source,
+                    "data_type": d.data_type,
+                    "values": d.values,
+                    "timestamp": d.timestamp
+                })).collect::<Vec<_>>(),
+                "reasoning_steps": execution.decision_process.reasoning_steps.iter().map(|s| serde_json::json!({
+                    "step_number": s.step_number,
+                    "description": s.description,
+                    "step_type": s.step_type,
+                    "input": s.input,
+                    "output": s.output,
+                    "confidence": s.confidence
+                })).collect::<Vec<_>>(),
+                "decisions": execution.decision_process.decisions.iter().map(|d| serde_json::json!({
+                    "decision_type": d.decision_type,
+                    "description": d.description,
+                    "action": d.action,
+                    "rationale": d.rationale,
+                    "expected_outcome": d.expected_outcome
+                })).collect::<Vec<_>>(),
+                "conclusion": execution.decision_process.conclusion,
+                "confidence": execution.decision_process.confidence
+            },
+            "result": execution.result.as_ref().map(|r| serde_json::json!({
+                "actions_executed": r.actions_executed.iter().map(|a| serde_json::json!({
+                    "action_type": a.action_type,
+                    "description": a.description,
+                    "target": a.target,
+                    "success": a.success,
+                    "result": a.result
+                })).collect::<Vec<_>>(),
+                "report": r.report.as_ref().map(|rep| serde_json::json!({
+                    "report_type": rep.report_type,
+                    "content": rep.content,
+                    "generated_at": rep.generated_at
+                })),
+                "notifications_sent": r.notifications_sent.iter().map(|n| serde_json::json!({
+                    "channel": n.channel,
+                    "recipient": n.recipient,
+                    "message": n.message
+                })).collect::<Vec<_>>(),
+                "summary": r.summary,
+                "success_rate": r.success_rate
+            }))
+        });
+
+        Ok(ToolOutput::success(response))
+    }
+}
+
+/// Tool for querying agent conversation history.
+pub struct GetAgentConversationTool {
+    agent_store: Arc<AgentStore>,
+}
+
+impl GetAgentConversationTool {
+    /// Create a new get agent conversation tool.
+    pub fn new(agent_store: Arc<AgentStore>) -> Self {
+        Self { agent_store }
+    }
+}
+
+#[async_trait]
+impl Tool for GetAgentConversationTool {
+    fn name(&self) -> &str {
+        "get_agent_conversation"
+    }
+
+    fn description(&self) -> &str {
+        r#"获取AI Agent的对话历史记录，包括用户交互消息。
+
+## 使用场景
+- 查看Agent与用户的交互历史
+- 了解Agent收到的用户指令
+- 分析Agent的响应内容
+- 追踪Agent的对话上下文
+
+## 返回信息
+- conversation_turns: 对话轮次列表
+  - execution_id: 关联的执行ID
+  - timestamp: 时间戳
+  - trigger_type: 触发类型
+  - success: 是否成功
+  - duration_ms: 执行耗时
+  - user_input: 用户输入（如果有）
+  - agent_response: Agent响应（如果有）
+- user_messages: 用户消息列表
+  - message_id: 消息ID
+  - timestamp: 时间戳
+  - content: 消息内容
+  - message_type: 消息类型
+- count: 对话轮次数量
+
+## 注意事项
+- 对话历史按时间倒序返回
+- 用户消息和Agent响应可能为空（自动执行的情况）
+- 使用limit参数控制返回数量"#
+    }
+
+    fn parameters(&self) -> Value {
+        object_schema(
+            serde_json::json!({
+                "agent_id": string_property("Agent的唯一ID"),
+                "limit": number_property("可选，限制返回数量，默认20"),
+                "include_user_messages_only": boolean_property("可选，只返回用户消息，默认false")
+            }),
+            vec!["agent_id".to_string()]
+        )
+    }
+
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: self.name().to_string(),
+            description: self.description().to_string(),
+            parameters: self.parameters(),
+            example: Some(ToolExample {
+                arguments: serde_json::json!({
+                    "agent_id": "agent_1",
+                    "limit": 10
+                }),
+                result: serde_json::json!({
+                    "agent_id": "agent_1",
+                    "count": 2,
+                    "conversation_turns": [
+                        {
+                            "execution_id": "exec_123",
+                            "timestamp": 1735804800,
+                            "trigger_type": "manual",
+                            "success": true,
+                            "duration_ms": 1250,
+                            "user_input": "分析这张图片",
+                            "agent_response": "图片中检测到危险物品"
+                        }
+                    ]
+                }),
+                description: "获取Agent对话历史".to_string(),
+            }),
+            category: ToolCategory::Agent,
+            scenarios: vec![
+                UsageScenario {
+                    description: "查看对话历史".to_string(),
+                    example_query: "查看Agent与用户的对话记录".to_string(),
+                    suggested_call: Some(r#"{"tool": "get_agent_conversation", "arguments": {"agent_id": "agent_1"}}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                call_after: vec!["get_agent".to_string()],
+                output_to: vec!["get_agent_execution_detail".to_string()],
+                exclusive_with: vec![],
+            },
+            deprecated: false,
+            replaced_by: None,
+            version: "1.0.0".to_string(),
+            examples: vec![],
+            response_format: Some("detailed".to_string()),
+            namespace: Some("agent".to_string()),
+        }
+    }
+
+    fn namespace(&self) -> Option<&str> {
+        Some("agent")
+    }
+
+    async fn execute(&self, args: Value) -> Result<ToolOutput> {
+        let agent_id = args["agent_id"]
+            .as_str()
+            .ok_or_else(|| ToolError::InvalidArguments("agent_id is required".to_string()))?;
+
+        let limit = args["limit"].as_u64().unwrap_or(20) as usize;
+        let user_messages_only = args["include_user_messages_only"].as_bool().unwrap_or(false);
+
+        // Get agent
+        let agent = self.agent_store.get_agent(agent_id).await
+            .map_err(|e| ToolError::Execution(format!("Failed to get agent: {}", e)))?
+            .ok_or_else(|| ToolError::Execution(format!("Agent '{}' not found", agent_id)))?;
+
+        if user_messages_only {
+            // Return only user messages
+            let messages: Vec<Value> = agent.user_messages
+                .iter()
+                .rev()
+                .take(limit)
+                .map(|m| serde_json::json!({
+                    "message_id": m.id,
+                    "timestamp": m.timestamp,
+                    "content": m.content,
+                    "message_type": m.message_type
+                }))
+                .collect();
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "agent_id": agent_id,
+                "count": messages.len(),
+                "user_messages": messages
+            })))
+        } else {
+            // Return conversation turns
+            let turns: Vec<Value> = agent.conversation_history
+                .iter()
+                .rev()
+                .take(limit)
+                .map(|turn| serde_json::json!({
+                    "execution_id": turn.execution_id,
+                    "timestamp": turn.timestamp,
+                    "trigger_type": turn.trigger_type,
+                    "success": turn.success,
+                    "duration_ms": turn.duration_ms,
+                    "input": turn.input,
+                    "output": turn.output
+                }))
+                .collect();
+
+            Ok(ToolOutput::success(serde_json::json!({
+                "agent_id": agent_id,
+                "count": turns.len(),
+                "conversation_turns": turns,
+                "total_user_messages": agent.user_messages.len()
+            })))
         }
     }
 }

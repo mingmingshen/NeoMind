@@ -1,5 +1,6 @@
 //! API handlers organized by domain.
 
+pub mod ws;
 pub mod messages;
 pub mod message_channels;
 pub mod agents;

@@ -1,4 +1,8 @@
 {
+  "app": {
+    "name": "NeoMind",
+    "shortName": "NM"
+  },
   "alerts": {
     "title": "Alerts",
     "unread": "unread",
@@ -257,7 +261,7 @@
       "evening": "Good evening",
       "night": "Good night"
     },
-    "tagline": "NeoTalk Smart IoT Assistant, at your service",
+    "tagline": "{{appName}} Smart IoT Assistant, at your service",
     "stats": {
       "devicesOnline": "{{online}}/{{total}} Devices Online",
       "activeRules": "{{count}} Active Rules",

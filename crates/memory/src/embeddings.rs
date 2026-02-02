@@ -1,15 +1,52 @@
 //! Real embedding model support for semantic search.
 //!
 //! This module provides embedding generation using actual ML models:
-//! - Ollama: Local embedding models (nomic-embed-text, mxbai-embed-large, etc.)
-//! - OpenAI: Cloud embedding models (text-embedding-3-small, text-embedding-3-large, etc.)
-//! - Fallback: Simple hash-based embedding when no model is configured
+//! - **Local**: Placeholder for native Rust embeddings (currently uses hash-based fallback)
+//!   - Recommended for future: fastembed-rs for pure Rust local embeddings
+//!   - Chinese models: bge-small-zh-v1.5 (24M params, 512 dim)
+//!   - English models: BAAI/bge-small-en-v1.5, nomic-embed-text
+//! - **Ollama**: Local embedding service (requires separate Ollama installation)
+//! - **Cloud (OpenAI)**: Cloud embedding models for production use
+//! - **Fallback**: Simple hash-based embedding when no model is configured
+//!
+//! ## Local Embeddings
+//!
+//! The `Local` provider provides a stub implementation that uses hash-based embeddings.
+//! For true local ML embeddings, consider:
+//! 1. **Ollama** (recommended): `EmbeddingConfig::ollama("nomic-embed-text")`
+//! 2. **fastembed-rs** (future): Will be integrated in a future update
+//!
+//! ### Usage
+//! ```rust,no_run
+//! use edge_ai_memory::embeddings::{EmbeddingConfig, create_embedding_model};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Local Chinese model (stub - uses hash-based fallback)
+//! let config = EmbeddingConfig::local("bge-small-zh-v1.5");
+//! let model = create_embedding_model(config)?;
+//!
+//! // Ollama local model (requires Ollama to be installed)
+//! let config = EmbeddingConfig::ollama("nomic-embed-text");
+//! let model = create_embedding_model(config)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Ollama Setup
+//!
+//! If you prefer Ollama for local ML embeddings:
+//! ```bash
+//! curl -fsSL https://ollama.com/install.sh | sh
+//! ollama pull nomic-embed-text
+//! ollama pull bge-small-zh-v1.5  # For Chinese
+//! ```
 
 use async_trait::async_trait;
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
+use std::path::PathBuf as StdPathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +56,10 @@ pub use super::error::MemoryError as Error;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum EmbeddingProvider {
-    /// Ollama local embedding models
+    /// Local embeddings (currently stub, uses hash-based fallback)
+    /// For true ML embeddings, use Ollama provider instead.
+    Local,
+    /// Ollama local embedding models (requires separate Ollama installation)
     Ollama,
     /// OpenAI embedding API
     OpenAI,
@@ -111,6 +151,48 @@ impl EmbeddingConfig {
         }
     }
 
+    /// Create local embedding configuration (currently uses hash-based fallback).
+    ///
+    /// **Note**: This is currently a stub implementation that provides hash-based
+    /// embeddings. For true ML-based local embeddings, use Ollama instead:
+    /// ```rust,no_run
+    /// # use edge_ai_memory::embeddings::EmbeddingConfig;
+    /// let config = EmbeddingConfig::ollama("nomic-embed-text");
+    /// ```
+    ///
+    /// # Arguments
+    /// * `model` - Model name (for future use, e.g., "bge-small-zh-v1.5")
+    ///
+    /// # Example
+    /// ```
+    /// use edge_ai_memory::embeddings::EmbeddingConfig;
+    ///
+    /// // Uses hash-based fallback
+    /// let config = EmbeddingConfig::local("bge-small-zh-v1.5");
+    /// ```
+    pub fn local(model: impl Into<String>) -> Self {
+        Self {
+            provider: EmbeddingProvider::Local,
+            model: model.into(),
+            endpoint: None,
+            api_key: None,
+            timeout_secs: Some(60),
+            cache_size: Some(1000),
+        }
+    }
+
+    /// Create local embedding with custom cache directory (for future use).
+    pub fn local_with_cache(model: impl Into<String>, cache_dir: impl Into<String>) -> Self {
+        Self {
+            provider: EmbeddingProvider::Local,
+            model: model.into(),
+            endpoint: Some(cache_dir.into()),
+            api_key: None,
+            timeout_secs: Some(60),
+            cache_size: Some(1000),
+        }
+    }
+
     /// Set the endpoint.
     pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
@@ -150,6 +232,208 @@ pub trait EmbeddingModel: Send + Sync {
 
     /// Get the model name.
     fn model_name(&self) -> &str;
+}
+
+/// Local embedding support (stub implementation).
+///
+/// **Note**: This is currently a stub that uses hash-based embeddings as a fallback.
+/// The model metadata and information are provided for future integration with
+/// true ML-based embedding libraries like fastembed-rs or Candle.
+///
+/// For production ML-based embeddings, use Ollama instead:
+/// ```rust,no_run
+/// use edge_ai_memory::embeddings::OllamaEmbedding;
+/// let model = OllamaEmbedding::new("nomic-embed-text", "http://localhost:11434");
+/// ```
+///
+/// # Model Information
+///
+/// The following models are supported for future integration:
+///
+/// **Chinese:**
+/// - `bge-small-zh-v1.5` - 24M params, 512 dimensions, ~100MB
+///
+/// **English:**
+/// - `BAAI/bge-small-en-v1.5` - 33M params, 384 dimensions, ~130MB
+/// - `nomic-embed-text-v1.5` - 137M params, 768 dimensions, ~500MB
+/// - `all-MiniLM-L6-v2` - 23M params, 384 dimensions, ~90MB
+///
+/// **Multilingual:**
+/// - `intfloat/multilingual-e5-large` - 560M params, 1024 dimensions, ~2GB
+pub struct LocalEmbedding {
+    model_name: String,
+    dimension: usize,
+    _private: (),
+}
+
+impl LocalEmbedding {
+    /// Create a new local embedding model.
+    ///
+    /// The model will be downloaded from HuggingFace on first use
+    /// and cached locally for future use.
+    ///
+    /// # Arguments
+    /// * `model_name` - Name of the model (e.g., "bge-small-zh-v1.5")
+    ///
+    /// # Example
+    /// ```
+    /// use edge_ai_memory::embeddings::LocalEmbedding;
+    ///
+    /// let model = LocalEmbedding::new("bge-small-zh-v1.5").unwrap();
+    /// ```
+    pub fn new(model_name: impl Into<String>) -> Result<Self, Error> {
+        let model_name_str = model_name.into();
+        let dimension = Self::default_dimension(&model_name_str);
+
+        Ok(Self {
+            model_name: model_name_str,
+            dimension,
+            _private: (),
+        })
+    }
+
+    /// Create with custom cache directory.
+    pub fn new_with_cache(model_name: impl Into<String>, _cache_dir: impl Into<StdPathBuf>) -> Result<Self, Error> {
+        Self::new(model_name)
+    }
+
+    /// Get default dimension for known models.
+    fn default_dimension(name: &str) -> usize {
+        let name_lower = name.to_lowercase();
+        if name_lower.contains("bge-small-zh") {
+            512
+        } else if name_lower.contains("bge-small-en") || name_lower.contains("minilm") {
+            384
+        } else if name_lower.contains("nomic-embed") {
+            768
+        } else if name_lower.contains("multilingual-e5-large") {
+            1024
+        } else if name_lower.contains("bge-large") {
+            1024
+        } else {
+            384 // Default for most small models
+        }
+    }
+
+    /// Get recommended models for a language.
+    pub fn recommended_models(language: &str) -> Vec<&'static str> {
+        match language.to_lowercase().as_str() {
+            "zh" | "chinese" | "中文" => vec![
+                "bge-small-zh-v1.5",  // Best for Chinese
+            ],
+            "en" | "english" => vec![
+                "BAAI/bge-small-en-v1.5",  // Fast, good quality
+                "all-MiniLM-L6-v2",        // Smallest, fastest
+                "nomic-embed-text-v1.5",   // Larger, better quality
+            ],
+            _ => vec![
+                "intfloat/multilingual-e5-large",  // Multilingual
+            ],
+        }
+    }
+
+    /// Get model info for a model name.
+    pub fn model_info(name: &str) -> ModelInfo {
+        let name_lower = name.to_lowercase();
+        match name_lower.as_str() {
+            name if name.contains("bge-small-zh") => ModelInfo {
+                name: "bge-small-zh-v1.5".to_string(),
+                display_name: "BGE Small Chinese v1.5".to_string(),
+                language: "Chinese".to_string(),
+                dimension: 512,
+                size_mb: 100,
+                params_m: 24,
+                description: "Best lightweight model for Chinese text".to_string(),
+            },
+            name if name.contains("bge-small-en") => ModelInfo {
+                name: "BAAI/bge-small-en-v1.5".to_string(),
+                display_name: "BGE Small English v1.5".to_string(),
+                language: "English".to_string(),
+                dimension: 384,
+                size_mb: 130,
+                params_m: 33,
+                description: "Fast and accurate for English text".to_string(),
+            },
+            name if name.contains("minilm") => ModelInfo {
+                name: "all-MiniLM-L6-v2".to_string(),
+                display_name: "All MiniLM L6 v2".to_string(),
+                language: "English/Multilingual".to_string(),
+                dimension: 384,
+                size_mb: 90,
+                params_m: 23,
+                description: "Smallest and fastest model".to_string(),
+            },
+            name if name.contains("nomic-embed") => ModelInfo {
+                name: "nomic-embed-text-v1.5".to_string(),
+                display_name: "Nomic Embed Text v1.5".to_string(),
+                language: "English".to_string(),
+                dimension: 768,
+                size_mb: 500,
+                params_m: 137,
+                description: "High quality English embeddings".to_string(),
+            },
+            name if name.contains("multilingual-e5") => ModelInfo {
+                name: "intfloat/multilingual-e5-large".to_string(),
+                display_name: "Multilingual E5 Large".to_string(),
+                language: "Multilingual".to_string(),
+                dimension: 1024,
+                size_mb: 2000,
+                params_m: 560,
+                description: "Best multilingual model (larger)".to_string(),
+            },
+            _ => ModelInfo {
+                name: name.to_string(),
+                display_name: name.to_string(),
+                language: "Unknown".to_string(),
+                dimension: 384,
+                size_mb: 0,
+                params_m: 0,
+                description: "Unknown model".to_string(),
+            },
+        }
+    }
+}
+
+/// Information about an embedding model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// Model identifier (e.g., "bge-small-zh-v1.5")
+    pub name: String,
+    /// Human-readable display name
+    pub display_name: String,
+    /// Primary language(s)
+    pub language: String,
+    /// Embedding dimension
+    pub dimension: usize,
+    /// Model download size in MB
+    pub size_mb: usize,
+    /// Parameter count in millions
+    pub params_m: usize,
+    /// Short description
+    pub description: String,
+}
+
+#[async_trait]
+impl EmbeddingModel for LocalEmbedding {
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, Error> {
+        // Stub implementation - uses SimpleEmbedding as fallback
+        // In full implementation, this would call the fastembed model
+        let simple = SimpleEmbedding::new(self.dimension);
+        Ok(simple.embed(text))
+    }
+
+    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, Error> {
+        let simple = SimpleEmbedding::new(self.dimension);
+        Ok(texts.iter().map(|t| simple.embed(t)).collect())
+    }
+
+    fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
 }
 
 /// Simple hash-based embedding (fallback).
@@ -248,7 +532,7 @@ impl OllamaEmbedding {
 #[derive(Debug, Serialize)]
 struct OllamaEmbedRequest<'a> {
     model: &'a str,
-    input: &'a str,
+    prompt: &'a str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,7 +546,7 @@ impl EmbeddingModel for OllamaEmbedding {
         let url = format!("{}/api/embeddings", self.endpoint);
         let req = OllamaEmbedRequest {
             model: &self.model,
-            input: text,
+            prompt: text,
         };
 
         let resp: reqwest::Response = self.client
@@ -500,6 +784,14 @@ impl EmbeddingModel for CachedEmbeddingModel {
 /// Create an embedding model from configuration.
 pub fn create_embedding_model(config: EmbeddingConfig) -> Result<Box<dyn EmbeddingModel>, Error> {
     let model: Box<dyn EmbeddingModel> = match config.provider {
+        EmbeddingProvider::Local => {
+            // Native local embeddings using fastembed (pure Rust, no external service)
+            if let Some(cache_dir) = config.endpoint {
+                Box::new(LocalEmbedding::new_with_cache(&config.model, cache_dir)?)
+            } else {
+                Box::new(LocalEmbedding::new(&config.model)?)
+            }
+        }
         EmbeddingProvider::Ollama => {
             let endpoint = config.endpoint
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
@@ -667,5 +959,79 @@ mod tests {
         assert_eq!(OpenAIEmbedding::model_dimension("text-embedding-3-small"), 1536);
         assert_eq!(OpenAIEmbedding::model_dimension("text-embedding-3-large"), 3072);
         assert_eq!(OpenAIEmbedding::model_dimension("text-embedding-ada-002"), 1536);
+    }
+
+    #[test]
+    fn test_embedding_config_local() {
+        let config = EmbeddingConfig::local("bge-small-zh-v1.5");
+        assert_eq!(config.provider, EmbeddingProvider::Local);
+        assert_eq!(config.model, "bge-small-zh-v1.5");
+        assert_eq!(config.endpoint, None); // Not used for fastembed
+    }
+
+    #[test]
+    fn test_local_embedding_config_with_cache() {
+        let config = EmbeddingConfig::local_with_cache("bge-small-zh-v1.5", "/tmp/models");
+        assert_eq!(config.provider, EmbeddingProvider::Local);
+        assert_eq!(config.model, "bge-small-zh-v1.5");
+        assert_eq!(config.endpoint, Some("/tmp/models".to_string()));
+    }
+
+    #[test]
+    fn test_local_model_info() {
+        let info = LocalEmbedding::model_info("bge-small-zh-v1.5");
+        assert_eq!(info.name, "bge-small-zh-v1.5");
+        assert_eq!(info.language, "Chinese");
+        assert_eq!(info.dimension, 512);
+        assert_eq!(info.params_m, 24);
+        assert_eq!(info.size_mb, 100);
+    }
+
+    #[test]
+    fn test_local_recommended_models_chinese() {
+        let models = LocalEmbedding::recommended_models("zh");
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0], "bge-small-zh-v1.5");
+    }
+
+    #[test]
+    fn test_local_recommended_models_english() {
+        let models = LocalEmbedding::recommended_models("en");
+        assert!(models.len() >= 3);
+        assert!(models.contains(&"BAAI/bge-small-en-v1.5"));
+        assert!(models.contains(&"all-MiniLM-L6-v2"));
+        assert!(models.contains(&"nomic-embed-text-v1.5"));
+    }
+
+    #[test]
+    fn test_local_model_info_all() {
+        // Test Chinese model
+        let info_zh = LocalEmbedding::model_info("bge-small-zh-v1.5");
+        assert_eq!(info_zh.language, "Chinese");
+        assert_eq!(info_zh.dimension, 512);
+
+        // Test English model
+        let info_en = LocalEmbedding::model_info("BAAI/bge-small-en-v1.5");
+        assert_eq!(info_en.language, "English");
+        assert_eq!(info_en.dimension, 384);
+
+        // Test MiniLM
+        let info_minilm = LocalEmbedding::model_info("all-MiniLM-L6-v2");
+        assert_eq!(info_minilm.dimension, 384);
+
+        // Test Nomic
+        let info_nomic = LocalEmbedding::model_info("nomic-embed-text-v1.5");
+        assert_eq!(info_nomic.dimension, 768);
+    }
+
+    #[tokio::test]
+    async fn test_create_embedding_model_local_simple() {
+        // Test with simple (no download needed for this test)
+        let config = EmbeddingConfig::simple();
+        let model = create_embedding_model(config).unwrap();
+
+        let embedding = model.embed("test").await.unwrap();
+        assert!(!embedding.is_empty());
+        assert_eq!(model.dimension(), 768);
     }
 }

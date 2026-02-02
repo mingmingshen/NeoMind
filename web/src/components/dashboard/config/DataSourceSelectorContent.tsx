@@ -8,7 +8,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Server, Check, Zap, Info, ChevronRight, X, ChevronDown } from 'lucide-react'
+import { Search, Server, Check, Zap, Info, ChevronRight, X, ChevronDown, Activity } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
@@ -19,12 +19,12 @@ import type { MetricDefinition, CommandDefinition } from '@/types'
 export interface DataSourceSelectorContentProps {
   onSelect: (dataSource: DataSourceOrList | DataSource | undefined) => void
   currentDataSource?: DataSourceOrList
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
   multiple?: boolean
   maxSources?: number
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device-info'
+type CategoryType = 'device-metric' | 'device-command' | 'device-info' | 'system'
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
 
 // Device info property definitions factory (uses translations)
@@ -40,20 +40,37 @@ function getDeviceInfoProperties(t: (key: string) => string) {
   ]
 }
 
+// System metrics definitions factory (uses translations)
+function getSystemMetrics(t: (key: string) => string) {
+  return [
+    { id: 'uptime', name: t('systemDataSource.uptime'), description: t('systemDataSource.uptimeDesc'), unit: '', dataType: 'number' as const },
+    { id: 'cpu_count', name: t('systemDataSource.cpuCount'), description: t('systemDataSource.cpuCountDesc'), unit: ' cores', dataType: 'number' as const },
+    { id: 'total_memory', name: t('systemDataSource.totalMemory'), description: t('systemDataSource.totalMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'used_memory', name: t('systemDataSource.usedMemory'), description: t('systemDataSource.usedMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'free_memory', name: t('systemDataSource.freeMemory'), description: t('systemDataSource.freeMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'available_memory', name: t('systemDataSource.availableMemory'), description: t('systemDataSource.availableMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'memory_percent', name: t('systemDataSource.memoryPercent'), description: t('systemDataSource.memoryPercentDesc'), unit: '%', dataType: 'number' as const },
+    { id: 'platform', name: t('systemDataSource.platform'), description: t('systemDataSource.platformDesc'), unit: '', dataType: 'string' as const },
+    { id: 'arch', name: t('systemDataSource.arch'), description: t('systemDataSource.archDesc'), unit: '', dataType: 'string' as const },
+    { id: 'version', name: t('systemDataSource.version'), description: t('systemDataSource.versionDesc'), unit: '', dataType: 'string' as const },
+  ]
+}
+
 // Category configuration factory (uses translations)
 function getCategories(t: (key: string) => string) {
   return [
     { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
     { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
     { id: 'device-info' as const, name: t('dataSource.basicInfo'), icon: Info, description: t('dataSource.basicInfoDesc') },
+    { id: 'system' as const, name: t('systemDataSource.title'), icon: Activity, description: t('systemDataSource.description') },
   ]
 }
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info']
+  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info', 'system']
 
   const result: CategoryType[] = []
 
@@ -61,6 +78,7 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
   if (allowedTypes.includes('device-info')) result.push('device-info')
+  if (allowedTypes.includes('system')) result.push('system')
 
   // Old format types - map to new format
   if (allowedTypes.includes('device') || allowedTypes.includes('metric')) {
@@ -70,7 +88,7 @@ function normalizeAllowedTypes(
     if (!result.includes('device-command')) result.push('device-command')
   }
 
-  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info']
+  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info', 'system']
 }
 
 /**
@@ -83,15 +101,16 @@ function selectedItemsToDataSource(
   if (selectedItems.size === 0) return undefined
   if (!multiple && selectedItems.size === 1) {
     const item = [...selectedItems][0]!
-    const [type, deviceId, ...rest] = item.split(':')
+    const parts = item.split(':')
+    const type = parts[0] as CategoryType
 
-    switch (type as CategoryType) {
+    switch (type) {
       case 'device-metric':
-        // Return telemetry type for chart components to fetch historical data
+        // Format: device-metric:deviceId:metricId
         return {
           type: 'telemetry',
-          deviceId,
-          metricId: rest.join(':'),
+          deviceId: parts[1],
+          metricId: parts.slice(2).join(':'),
           timeRange: 1, // Default 1 hour
           limit: 50,    // Default 50 points
           aggregate: 'raw',
@@ -101,16 +120,25 @@ function selectedItemsToDataSource(
           transform: 'raw',
         }
       case 'device-command':
+        // Format: device-command:deviceId:command
         return {
           type: 'command',
-          deviceId,
-          command: rest.join(':'),
+          deviceId: parts[1],
+          command: parts.slice(2).join(':'),
         }
       case 'device-info':
+        // Format: device-info:deviceId:property
         return {
           type: 'device-info',
-          deviceId,
-          property: rest.join(':'),
+          deviceId: parts[1],
+          property: parts.slice(2).join(':'),
+        }
+      case 'system':
+        // Format: system:metricId (not system:deviceId:metricId)
+        return {
+          type: 'system',
+          systemMetric: parts.slice(1).join(':') as any,
+          refresh: 10,
         }
       default:
         return undefined
@@ -120,15 +148,16 @@ function selectedItemsToDataSource(
   // Multiple selection - return array
   const result: DataSource[] = []
   for (const item of selectedItems) {
-    const [type, deviceId, ...rest] = item.split(':')
+    const parts = item.split(':')
+    const type = parts[0] as CategoryType
 
-    switch (type as CategoryType) {
+    switch (type) {
       case 'device-metric':
-        // Return telemetry type for chart components to fetch historical data
+        // Format: device-metric:deviceId:metricId
         result.push({
           type: 'telemetry',
-          deviceId,
-          metricId: rest.join(':'),
+          deviceId: parts[1],
+          metricId: parts.slice(2).join(':'),
           timeRange: 1,
           limit: 50,
           aggregate: 'raw',
@@ -139,17 +168,27 @@ function selectedItemsToDataSource(
         })
         break
       case 'device-command':
+        // Format: device-command:deviceId:command
         result.push({
           type: 'command',
-          deviceId,
-          command: rest.join(':'),
+          deviceId: parts[1],
+          command: parts.slice(2).join(':'),
         })
         break
       case 'device-info':
+        // Format: device-info:deviceId:property
         result.push({
           type: 'device-info',
-          deviceId,
-          property: rest.join(':'),
+          deviceId: parts[1],
+          property: parts.slice(2).join(':'),
+        })
+        break
+      case 'system':
+        // Format: system:metricId (not system:deviceId:metricId)
+        result.push({
+          type: 'system',
+          systemMetric: parts.slice(1).join(':') as any,
+          refresh: 10,
         })
         break
     }
@@ -182,6 +221,9 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
       case 'device-info':
         items.add(`device-info:${dataSource.deviceId}:${dataSource.property}` as SelectedItem)
         break
+      case 'system':
+        items.add(`system:${dataSource.systemMetric}` as SelectedItem)
+        break
     }
   }
 
@@ -192,22 +234,35 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
  * Get a readable label for a selected item
  */
 function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: string) => string): string {
-  const [type, deviceId, ...rest] = item.split(':')
+  const parts = item.split(':')
+  const type = parts[0] as CategoryType
 
-  switch (type as CategoryType) {
-    case 'device-metric':
-      const device1 = devices.find(d => d.id === deviceId)
-      const deviceName1 = device1?.name || deviceId
-      return `${deviceName1} · ${rest.join(':')}`
-    case 'device-command':
-      const device2 = devices.find(d => d.id === deviceId)
-      const deviceName2 = device2?.name || deviceId
-      return `${deviceName2} · ${rest.join(':')}`
-    case 'device-info':
-      const device3 = devices.find(d => d.id === deviceId)
-      const deviceName3 = device3?.name || deviceId
-      const prop = getDeviceInfoProperties(t).find(p => p.id === rest.join(':'))
-      return `${deviceName3} · ${prop?.name || rest.join(':')}`
+  switch (type) {
+    case 'device-metric': {
+      // Format: device-metric:deviceId:metricId
+      const device = devices.find(d => d.id === parts[1])
+      const deviceName = device?.name || parts[1]
+      return `${deviceName} · ${parts.slice(2).join(':')}`
+    }
+    case 'device-command': {
+      // Format: device-command:deviceId:command
+      const device = devices.find(d => d.id === parts[1])
+      const deviceName = device?.name || parts[1]
+      return `${deviceName} · ${parts.slice(2).join(':')}`
+    }
+    case 'device-info': {
+      // Format: device-info:deviceId:property
+      const device = devices.find(d => d.id === parts[1])
+      const deviceName = device?.name || parts[1]
+      const prop = getDeviceInfoProperties(t).find(p => p.id === parts.slice(2).join(':'))
+      return `${deviceName} · ${prop?.name || parts.slice(2).join(':')}`
+    }
+    case 'system': {
+      // Format: system:metricId (not system:deviceId:metricId)
+      const metricId = parts.slice(1).join(':')
+      const systemMetric = getSystemMetrics(t).find(m => m.id === metricId)
+      return `${t('systemDataSource.title')} · ${systemMetric?.name || metricId}`
+    }
     default:
       return item
   }
@@ -276,7 +331,7 @@ export function DataSourceSelectorContent({
 
   // Available categories based on allowedTypes
   const availableCategories = useMemo(
-    () => getCategories(t).filter(c => normalizeAllowedTypes(allowedTypes).includes(c.id)),
+    () => getCategories(t).filter(c => (normalizeAllowedTypes(allowedTypes) as CategoryType[]).includes(c.id)),
     [allowedTypes, t]
   )
 
@@ -398,6 +453,9 @@ export function DataSourceSelectorContent({
   const isDeviceBasedCategory = selectedCategory === 'device-metric' ||
                                 selectedCategory === 'device-command' ||
                                 selectedCategory === 'device-info'
+
+  // System metrics don't require device selection
+  const isSystemCategory = selectedCategory === 'system'
 
   // Auto-select first device when switching to device-based category
   useMemo(() => {
@@ -645,6 +703,31 @@ export function DataSourceSelectorContent({
         ) : (
           /* Non-device categories: single panel */
           <div className="flex-1 overflow-y-auto p-2">
+            {selectedCategory === 'system' && (
+              <div className="space-y-0.5">
+                {getSystemMetrics(t).map(metric => {
+                  const itemKey = `system:${metric.id}` as SelectedItem
+                  const isSelected = selectedItems.has(itemKey)
+
+                  return (
+                    <button
+                      key={metric.id}
+                      onClick={() => handleSelectItem(itemKey)}
+                      className={cn(
+                        'w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-muted/50 rounded-md transition-colors',
+                        isSelected && 'bg-primary/10 text-primary'
+                      )}
+                    >
+                      <div className="text-left">
+                        <div className="font-medium">{metric.name}</div>
+                        <div className="text-[10px] text-muted-foreground">{metric.description}</div>
+                      </div>
+                      {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>

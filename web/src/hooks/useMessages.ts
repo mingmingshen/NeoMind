@@ -167,7 +167,7 @@ export function useMessages(options: UseMessagesOptions = {}): UseMessagesResult
 
     try {
       const [messagesResponse, statsResponse] = await Promise.all([
-        api.listMessages(),
+        api.getMessages(),
         api.getMessageStats(),
       ])
 
@@ -290,7 +290,7 @@ export function useMessages(options: UseMessagesOptions = {}): UseMessagesResult
     setError(null)
 
     try {
-      const result = await api.bulkAcknowledgeMessages({ message_ids: ids })
+      const result = await api.bulkAcknowledgeMessages(ids)
       setMessages(prev => prev.map(m =>
         ids.includes(m.id) ? { ...m, status: 'acknowledged' as MessageStatus } : m
       ))
@@ -309,7 +309,7 @@ export function useMessages(options: UseMessagesOptions = {}): UseMessagesResult
     setError(null)
 
     try {
-      const result = await api.bulkResolveMessages({ message_ids: ids })
+      const result = await api.bulkResolveMessages(ids)
       setMessages(prev => prev.map(m =>
         ids.includes(m.id) ? { ...m, status: 'resolved' as MessageStatus } : m
       ))
@@ -328,7 +328,7 @@ export function useMessages(options: UseMessagesOptions = {}): UseMessagesResult
     setError(null)
 
     try {
-      const result = await api.bulkDeleteMessages({ message_ids: ids })
+      const result = await api.bulkDeleteMessages(ids)
       setMessages(prev => prev.filter(m => !ids.includes(m.id)))
       return result.deleted
     } catch (err) {
@@ -421,8 +421,8 @@ export function useMessageChannels(): UseMessageChannelsResult {
     try {
       const [channelsResponse, typesResponse, statsResponse] = await Promise.all([
         api.listMessageChannels(),
-        api.listMessageChannelTypes(),
-        api.getMessageChannelStats(),
+        api.listChannelTypes(),
+        api.getChannelStats(),
       ])
 
       setChannels(channelsResponse.channels || [])

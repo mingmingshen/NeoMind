@@ -19,6 +19,15 @@
 
 use crate::translation::Language;
 
+/// Placeholder for current UTC time in prompts.
+pub const CURRENT_TIME_PLACEHOLDER: &str = "{{CURRENT_TIME}}";
+
+/// Placeholder for current local time in prompts.
+pub const LOCAL_TIME_PLACEHOLDER: &str = "{{LOCAL_TIME}}";
+
+/// Placeholder for system timezone in prompts.
+pub const TIMEZONE_PLACEHOLDER: &str = "{{TIMEZONE}}";
+
 /// Enhanced prompt builder with multi-language support.
 #[derive(Debug, Clone)]
 pub struct PromptBuilder {
@@ -75,6 +84,25 @@ impl PromptBuilder {
         }
     }
 
+    /// Build the enhanced system prompt with time placeholders replaced.
+    ///
+    /// # Arguments
+    /// * `current_time_utc` - Current time in ISO 8601 format (UTC)
+    /// * `local_time` - Current local time in ISO 8601 format
+    /// * `timezone` - Timezone string (e.g., "Asia/Shanghai")
+    pub fn build_system_prompt_with_time(
+        &self,
+        current_time_utc: &str,
+        local_time: &str,
+        timezone: &str,
+    ) -> String {
+        let prompt = self.build_system_prompt();
+        prompt
+            .replace(CURRENT_TIME_PLACEHOLDER, current_time_utc)
+            .replace(LOCAL_TIME_PLACEHOLDER, local_time)
+            .replace(TIMEZONE_PLACEHOLDER, timezone)
+    }
+
     /// Get the core identity section.
     pub fn core_identity(&self) -> String {
         match self.language {
@@ -114,7 +142,11 @@ impl PromptBuilder {
 
 ### 重要原则
 1. **不要编造数据**: 当用户询问系统状态、执行历史、数据趋势时，**必须调用工具获取真实数据**
-2. **时间感知**: 当前系统时间是 {{CURRENT_TIME}}，查询历史数据时需要正确计算时间范围
+2. **时间感知**:
+   - 当前UTC时间: {{CURRENT_TIME}}
+   - 当前本地时间: {{LOCAL_TIME}}
+   - 系统时区: {{TIMEZONE}}
+   查询历史数据时需要正确计算时间范围
 3. **趋势分析**: 分析数据变化时，需要查询时间范围内的多个数据点，不能只看当前值"#;
 
     const VISION_CAPABILITIES_ZH: &str = r#"## 图像理解能力

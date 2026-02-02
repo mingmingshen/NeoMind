@@ -1,16 +1,16 @@
 /**
- * Dashboard type definitions for NeoTalk
+ * Dashboard type definitions for NeoMind
  *
  * Two-layer component system:
  * - Generic Components: Reusable IoT/dashboard components
- * - Business Components: NeoTalk-specific components
+ * - Business Components: NeoMind-specific components
  */
 
 // ============================================================================
 // Data Source Types
 // ============================================================================
 
-export type DataSourceType = 'api' | 'websocket' | 'static' | 'computed' | 'device' | 'metric' | 'command' | 'telemetry' | 'device-info'
+export type DataSourceType = 'api' | 'websocket' | 'static' | 'computed' | 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system'
 
 export interface ValueMapping {
   on?: unknown
@@ -150,6 +150,9 @@ export interface DataSource {
 
   // === Device-info fields ===
   infoProperty?: 'name' | 'status' | 'online' | 'last_seen' | 'device_type' | 'plugin_name' | 'adapter_id'
+
+  // === System fields ===
+  systemMetric?: 'uptime' | 'cpu_count' | 'total_memory' | 'used_memory' | 'free_memory' | 'available_memory' | 'memory_percent' | 'platform' | 'arch' | 'version'
 }
 
 // Union type for single or multiple data sources
@@ -200,7 +203,7 @@ export type GenericComponentType =
 
 /**
  * Business Component Types
- * NeoTalk-specific business components
+ * NeoMind-specific business components
  */
 export type BusinessComponentType =
   | 'agent-monitor-widget'

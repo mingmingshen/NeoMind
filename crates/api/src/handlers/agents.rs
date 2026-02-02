@@ -733,6 +733,7 @@ pub async fn create_agent(
         resources,
         schedule,
         status: AgentStatus::Active,
+        priority: 128, // Default middle priority (0-255 range)
         created_at: chrono::Utc::now().timestamp(),
         updated_at: chrono::Utc::now().timestamp(),
         last_execution_at: None,

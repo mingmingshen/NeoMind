@@ -23,8 +23,8 @@ import {
 // LocalStorage Storage
 // ============================================================================
 
-const LOCAL_STORAGE_KEY = 'neotalk_dashboards'
-const CURRENT_DASHBOARD_KEY = 'neotalk_current_dashboard_id'
+const LOCAL_STORAGE_KEY = 'neomind_dashboards'
+const CURRENT_DASHBOARD_KEY = 'neomind_current_dashboard_id'
 
 export class LocalStorageDashboardStorage implements DashboardStorage {
   private storageKey: string

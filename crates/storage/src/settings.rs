@@ -14,6 +14,14 @@ use crate::Error;
 // Settings table: key = "llm_config", value = LlmSettings (serialized)
 pub const SETTINGS_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("settings");
 
+// Settings keys
+pub const KEY_LLM_CONFIG: &str = "llm_config";
+pub const KEY_MQTT_CONFIG: &str = "mqtt_config";
+pub const KEY_GLOBAL_TIMEZONE: &str = "global_timezone";
+
+/// Default global timezone (IANA format)
+pub const DEFAULT_GLOBAL_TIMEZONE: &str = "Asia/Shanghai";
+
 // External brokers table: key = broker_id, value = ExternalBroker (serialized)
 const EXTERNAL_BROKERS_TABLE: TableDefinition<&str, &[u8]> =
     TableDefinition::new("external_brokers");
@@ -1028,6 +1036,29 @@ impl SettingsStore {
     pub fn load_hass_discovery_enabled(&self) -> Result<bool, Error> {
         // HASS discovery deprecated - stub implementation
         Ok(false)
+    }
+
+    // ========================================================================
+    // Global Timezone Settings
+    // ========================================================================
+
+    /// Save the global timezone setting (IANA format, e.g., "Asia/Shanghai").
+    pub fn save_global_timezone(&self, timezone: &str) -> Result<(), Error> {
+        self.save(KEY_GLOBAL_TIMEZONE, timezone)
+    }
+
+    /// Load the global timezone setting.
+    /// Returns the stored timezone, or None if not set.
+    pub fn load_global_timezone(&self) -> Result<Option<String>, Error> {
+        self.load(KEY_GLOBAL_TIMEZONE)
+    }
+
+    /// Get the global timezone setting, returning the default if not set.
+    pub fn get_global_timezone(&self) -> String {
+        self.load_global_timezone()
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| DEFAULT_GLOBAL_TIMEZONE.to_string())
     }
 }
 

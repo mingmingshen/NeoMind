@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
@@ -11,30 +11,33 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Globe,
   Clock,
   Check,
   Info,
+  Loader2,
+  Globe,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { api } from "@/lib/api"
+import { useGlobalTimezone } from "@/hooks/useTimeFormat"
+import { COMMON_TIMEZONES } from "@/lib/time"
 
 type Language = "zh" | "en"
 type TimeFormat = "12h" | "24h"
-type TimeZone = "local" | "utc"
 
 interface Preferences {
   language: Language
   timeFormat: TimeFormat
-  timeZone: TimeZone
+  // Keep timeZone for backward compatibility
+  timeZone?: "local" | "utc"
 }
 
-const PREFERENCES_KEY = "neotalk_preferences"
+const PREFERENCES_KEY = "neomind_preferences"
 
 // Default preferences
 const defaultPreferences: Preferences = {
   language: "zh",
   timeFormat: "24h",
-  timeZone: "local",
 }
 
 // Load preferences from localStorage
@@ -67,6 +70,15 @@ export function PreferencesTab() {
   const { toast } = useToast()
   const [preferences, setPreferences] = useState<Preferences>(loadPreferences)
   const [hasChanges, setHasChanges] = useState(false)
+
+  // Global timezone for scheduling (separate from UI display)
+  const {
+    timezone: globalTimezone,
+    isLoading: timezoneLoading,
+    updateTimezone,
+    availableTimezones,
+    refresh: refreshTimezone,
+  } = useGlobalTimezone()
 
   // Update preferences
   const updatePreference = <K extends keyof Preferences>(
@@ -102,11 +114,6 @@ export function PreferencesTab() {
   const timeFormatOptions = [
     { value: "12h" as TimeFormat, label: "12小时制 (12:00 PM)" },
     { value: "24h" as TimeFormat, label: "24小时制 (14:00)" },
-  ]
-
-  const timeZoneOptions = [
-    { value: "local" as TimeZone, label: t("settings:localTime") },
-    { value: "utc" as TimeZone, label: "UTC (Coordinated Universal Time)" },
   ]
 
   return (
@@ -186,7 +193,7 @@ export function PreferencesTab() {
             {t("settings:timeSettings")}
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
           {/* Time Format */}
           <div className="flex items-center justify-between">
             <div>
@@ -201,7 +208,7 @@ export function PreferencesTab() {
               value={preferences.timeFormat}
               onValueChange={(v) => updatePreference("timeFormat", v as TimeFormat)}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -214,31 +221,53 @@ export function PreferencesTab() {
             </Select>
           </div>
 
-          {/* Time Zone */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">
-                {t("settings:timeZone")}
-              </Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {t("settings:timeZoneDesc")}
-              </p>
+          {/* System Timezone */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <Label className="text-sm font-medium">
+                  {t("settings:systemTimezone")}
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t("settings:systemTimezoneDesc")}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {timezoneLoading && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+                <Select
+                  value={globalTimezone}
+                  onValueChange={async (value) => {
+                    try {
+                      await updateTimezone(value)
+                      toast({
+                        title: t("settings:timezoneUpdated"),
+                      })
+                    } catch (e) {
+                      toast({
+                        title: t("settings:timezoneUpdateFailed"),
+                        variant: "destructive",
+                      })
+                    }
+                  }}
+                  disabled={timezoneLoading}
+                >
+                  <SelectTrigger className="w-[280px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(availableTimezones.length > 0 ? availableTimezones : COMMON_TIMEZONES).map(
+                      (tz) => (
+                        <SelectItem key={tz.id} value={tz.id}>
+                          {tz.name}
+                        </SelectItem>
+                      )
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <Select
-              value={preferences.timeZone}
-              onValueChange={(v) => updatePreference("timeZone", v as TimeZone)}
-            >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timeZoneOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           {/* Current Time Preview */}
@@ -248,7 +277,7 @@ export function PreferencesTab() {
                 {t("settings:currentTime")}
               </div>
               <div className="text-2xl font-mono font-medium">
-                {formatTime(new Date(), preferences.timeFormat, preferences.timeZone)}
+                {formatTimeInTimezone(globalTimezone, preferences.timeFormat)}
               </div>
             </div>
           </div>
@@ -263,25 +292,21 @@ export function PreferencesTab() {
   )
 }
 
-// Format time based on preferences
-function formatTime(date: Date, format: TimeFormat, timeZone: TimeZone): string {
-  let displayDate = date
-
-  // Convert to UTC if needed
-  if (timeZone === "utc") {
-    displayDate = new Date(date.toUTCString())
+// Format time in a specific timezone (IANA format like "Asia/Shanghai")
+function formatTimeInTimezone(timezone: string, format: TimeFormat = "24h"): string {
+  try {
+    const now = new Date()
+    const formatter = new Intl.DateTimeFormat("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZone: timezone,
+      hour12: format === "12h",
+    })
+    return formatter.format(now)
+  } catch {
+    return new Date().toLocaleTimeString()
   }
-
-  const hours = displayDate.getHours()
-  const minutes = displayDate.getMinutes().toString().padStart(2, "0")
-
-  if (format === "12h") {
-    const period = hours >= 12 ? "PM" : "AM"
-    const displayHours = hours % 12 || 12
-    return `${displayHours}:${minutes} ${period}`
-  }
-
-  return `${hours.toString().padStart(2, "0")}:${minutes}`
 }
 
 // Export hook for using preferences

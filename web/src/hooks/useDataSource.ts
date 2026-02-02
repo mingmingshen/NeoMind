@@ -91,6 +91,85 @@ const telemetryCache = new Map<string, { data: number[]; raw?: any[]; timestamp:
 const TELEMETRY_CACHE_TTL = 5000 // 5 seconds cache
 
 /**
+ * Cache for system stats data
+ */
+const systemStatsCache = new Map<string, { data: unknown; timestamp: number }>()
+const SYSTEM_CACHE_TTL = 5000 // 5 seconds cache
+
+/**
+ * Fetch system stats for a specific metric
+ */
+async function fetchSystemStats(
+  metric: string
+): Promise<{ data: unknown; success: boolean }> {
+  const cacheKey = `system|${metric}`
+  const cached = systemStatsCache.get(cacheKey)
+
+  // Return cached data if fresh
+  if (cached && Date.now() - cached.timestamp < SYSTEM_CACHE_TTL) {
+    return { data: cached.data, success: true }
+  }
+
+  try {
+    const api = (await import('@/lib/api')).api
+    const stats = await api.getSystemStats()
+
+    if (!stats) {
+      return { data: null, success: false }
+    }
+
+    // Extract the requested metric
+    let value: unknown = null
+    switch (metric) {
+      case 'uptime':
+        value = stats.uptime
+        break
+      case 'cpu_count':
+        value = stats.cpu_count
+        break
+      case 'total_memory':
+        // Convert bytes to GB
+        value = stats.total_memory / (1024 * 1024 * 1024)
+        break
+      case 'used_memory':
+        value = stats.used_memory / (1024 * 1024 * 1024)
+        break
+      case 'free_memory':
+        value = stats.free_memory / (1024 * 1024 * 1024)
+        break
+      case 'available_memory':
+        value = stats.available_memory / (1024 * 1024 * 1024)
+        break
+      case 'memory_percent':
+        value = stats.used_memory / stats.total_memory * 100
+        break
+      case 'platform':
+        value = stats.platform
+        break
+      case 'arch':
+        value = stats.arch
+        break
+      case 'version':
+        value = stats.version
+        break
+      default:
+        value = null
+    }
+
+    // Cache the result
+    systemStatsCache.set(cacheKey, {
+      data: value,
+      timestamp: Date.now()
+    })
+
+    return { data: value, success: true }
+  } catch (error) {
+    console.error('[fetchSystemStats] Error:', error)
+    return { data: null, success: false }
+  }
+}
+
+/**
  * Fetch historical telemetry data for a device metric
  * @param includeRawPoints - if true, return full TelemetryPoint[] instead of just values
  */
@@ -451,6 +530,9 @@ export function useDataSource<T = unknown>(
   // This prevents showing loading state on refreshes/updates
   const initialTelemetryFetchDoneRef = useRef(false)
 
+  // Ref to track if initial system fetch has completed
+  const initialSystemFetchDoneRef = useRef(false)
+
   // Track processed event IDs to prevent duplicate processing
   // Events array changes frequently, but we only need to process new events
   const processedEventsRef = useRef<Set<string>>(new Set())
@@ -520,8 +602,8 @@ export function useDataSource<T = unknown>(
     }
 
     try {
-      // Filter out telemetry sources - they are handled separately by the fetch effect
-      const nonTelemetrySources = currentDataSources.filter((ds) => ds.type !== 'telemetry')
+      // Filter out telemetry and system sources - they are handled separately by fetch effects
+      const nonTelemetrySources = currentDataSources.filter((ds) => ds.type !== 'telemetry' && ds.type !== 'system')
 
       // Only process non-telemetry sources here
       const results = nonTelemetrySources.map((ds) => {
@@ -712,8 +794,8 @@ export function useDataSource<T = unknown>(
         // No data sources configured
         return
       } else {
-        // All sources are telemetry - the telemetry effect will handle this
-        // For single telemetry sources, telemetry effect sets the data
+        // All sources are telemetry or system - their effects will handle this
+        // For single telemetry/system sources, their effects set the data
         return
       }
 
@@ -1403,6 +1485,103 @@ export function useDataSource<T = unknown>(
       }
     }
   }, [telemetryKey, enabled, telemetryRefreshTrigger])
+
+  // System data fetching (single values from system stats)
+  const systemKey = useMemo(() => {
+    return dataSources
+      .filter((ds) => ds.type === 'system')
+      .map((ds) => createStableKey({
+        systemMetric: ds.systemMetric,
+      }))
+      .join('|')
+  }, [dataSources])
+
+  const systemDataSources = useMemo(() => {
+    return dataSources.filter((ds) => ds.type === 'system')
+  }, [dataSources])
+
+  const hasSystemSource = systemDataSources.length > 0
+
+  useEffect(() => {
+    if (!hasSystemSource || !enabled) {
+      // Clean up any existing interval when disabled
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      return
+    }
+
+    const fetchSystemData = async () => {
+      // Only show loading state on initial fetch, not on interval refreshes
+      if (!initialSystemFetchDoneRef.current) {
+        setLoading(true)
+      }
+      setError(null)
+
+      try {
+        const results = await Promise.all(
+          systemDataSources.map(async (ds) => {
+            const metric = ds.systemMetric
+            if (!metric) {
+              return { data: null }
+            }
+
+            const response = await fetchSystemStats(metric)
+            return { data: response.data, success: response.success }
+          })
+        )
+
+        // Combine results
+        let finalData: unknown
+        if (results.length > 1) {
+          finalData = results.map((r) => r.data)
+        } else {
+          finalData = results[0]?.data ?? null
+        }
+
+        const { transform: transformFn } = optionsRef.current
+        const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
+        setData(transformedData)
+        setLastUpdate(Date.now())
+        initialSystemFetchDoneRef.current = true
+      } catch (err) {
+        console.error('[useDataSource] System fetch error:', err)
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch system data'
+        setError(errorMessage)
+        const fallbackData = optionsRef.current.fallback ?? null
+        setData(fallbackData as T)
+        initialSystemFetchDoneRef.current = true
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    // Clean up existing interval before creating a new one
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+
+    fetchSystemData()
+
+    // Set up refresh interval if specified (refresh is in seconds, convert to ms)
+    const refreshIntervals = systemDataSources.map((ds) => ds.refresh).filter(Boolean) as number[]
+    const minRefreshSeconds = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : null
+
+    if (minRefreshSeconds) {
+      const minRefreshMs = minRefreshSeconds * 1000
+      intervalRef.current = setInterval(fetchSystemData, minRefreshMs)
+    }
+
+    // Cleanup function - always clear interval on unmount or dependency change
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [systemKey, enabled])
 
   return {
     data,

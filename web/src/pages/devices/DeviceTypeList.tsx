@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { EmptyStateInline, Pagination } from "@/components/shared"
+import { EmptyStateInline } from "@/components/shared"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -190,19 +190,6 @@ export function DeviceTypeList({
           </TableBody>
         </Table>
       </Card>
-
-      {deviceTypes.length > deviceTypesPerPage && (
-        <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t pt-3 pb-3 px-4 z-10">
-          <div className="max-w-6xl mx-auto">
-            <Pagination
-              total={deviceTypes.length}
-              pageSize={deviceTypesPerPage}
-              currentPage={deviceTypePage}
-              onPageChange={onPageChange}
-            />
-          </div>
-        </div>
-      )}
     </>
   )
 }

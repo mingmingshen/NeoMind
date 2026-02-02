@@ -25,6 +25,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { BrandName } from "@/components/shared/BrandName"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -372,7 +373,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
               <Sparkles className="h-4 w-4 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-[var(--foreground)]">NeoTalk</h1>
+              <h1 className="text-lg font-semibold text-[var(--foreground)]"><BrandName /></h1>
               <p className="text-xs text-muted-foreground">{t("title")}</p>
             </div>
           </div>

@@ -6,7 +6,7 @@
 import { useState, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { useDeviceEvents } from "@/hooks/useEvents"
-import type { NeoTalkEvent, DeviceMetricEvent } from "@/lib/events"
+import type { NeoMindEvent, DeviceMetricEvent } from "@/lib/events"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -216,7 +216,7 @@ export function DeviceRealtime({
   }, [events])
 
   // Handle incoming device events
-  function handleDeviceEvent(event: NeoTalkEvent) {
+  function handleDeviceEvent(event: NeoMindEvent) {
     const data = event.data as { device_id?: string }
 
     if (!data.device_id) return

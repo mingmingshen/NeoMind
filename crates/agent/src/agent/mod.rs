@@ -90,7 +90,8 @@ pub use model_selection::{
 };
 
 /// Maximum number of tool calls allowed per request to prevent infinite loops
-const MAX_TOOL_CALLS_PER_REQUEST: usize = 5;
+/// Note: This constant is kept for backward compatibility. Config values take precedence.
+const MAX_TOOL_CALLS_PER_REQUEST_DEFAULT: usize = 5;
 
 /// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing ===
 ///
@@ -100,13 +101,12 @@ const MAX_TOOL_CALLS_PER_REQUEST: usize = 5;
 /// in the message history, why would the agent need to see the raw result again?"
 ///
 /// Rules:
-/// - Keep the most recent 2 tool results intact (for context continuity)
+/// - Keep the most recent N tool results intact (configurable, default: 2)
 /// - Older tool results are compressed to one-line summaries
 /// - User and system messages are always kept
-fn compact_tool_results(messages: &[AgentMessage]) -> Vec<AgentMessage> {
+pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Vec<AgentMessage> {
     let mut result = Vec::new();
     let mut tool_result_count = 0;
-    const KEEP_RECENT_TOOL_RESULTS: usize = 2;
 
     for msg in messages.iter().rev() {
         // Always keep user and system messages
@@ -120,7 +120,7 @@ fn compact_tool_results(messages: &[AgentMessage]) -> Vec<AgentMessage> {
             tool_result_count += 1;
 
             // Keep recent tool results intact
-            if tool_result_count <= KEEP_RECENT_TOOL_RESULTS {
+            if tool_result_count <= keep_recent {
                 result.push(msg.clone());
             } else {
                 // Compress old tool results to a brief summary
@@ -174,7 +174,7 @@ fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<Age
     use tokenizer::select_messages_within_token_limit;
 
     // First, apply tool result clearing
-    let compacted = compact_tool_results(messages);
+    let compacted = compact_tool_results(messages, 2); // Default: keep 2 recent results
 
     // Select messages within token limit using improved estimation
     let selected_refs = select_messages_within_token_limit(
@@ -443,7 +443,8 @@ impl Agent {
     /// Generate a dynamic system prompt with tool descriptions.
     /// This ensures the prompt always reflects the currently available tools.
     async fn generate_dynamic_system_prompt(&self, simplified_tools: &[edge_ai_tools::simplified::LlmToolDefinition]) -> String {
-        let mut prompt = String::from(self.config.system_prompt.trim());
+        // Generate base prompt (static parts: system_prompt + tools)
+        let mut prompt = self.generate_base_prompt(simplified_tools);
 
         // === 动态注入系统资源上下文 ===
         // 这确保 LLM 能够感知当前系统中的实际设备、规则和工作流
@@ -452,6 +453,14 @@ impl Agent {
             prompt.push_str("\n\n");
             prompt.push_str(&resource_context);
         }
+
+        prompt
+    }
+
+    /// Generate base prompt (static parts: system_prompt + tools).
+    /// This avoids rebuilding tool descriptions on every request.
+    fn generate_base_prompt(&self, simplified_tools: &[edge_ai_tools::simplified::LlmToolDefinition]) -> String {
+        let mut prompt = String::from(self.config.system_prompt.trim());
 
         prompt.push_str("\n\n## 可用工具\n\n");
 
@@ -935,13 +944,15 @@ impl Agent {
         }
 
         // === Get conversation history ===
-        let history: Vec<AgentMessage> = self.internal_state.read().await.memory.clone();
-
-        // Exclude the last message (which is the user message we just added) from history
-        let history_without_last: Vec<AgentMessage> = if history.len() > 1 {
-            history.iter().take(history.len() - 1).cloned().collect()
-        } else {
-            Vec::new()
+        // Optimize: Clone only needed messages in one pass
+        let history_without_last: Vec<AgentMessage> = {
+            let state = self.internal_state.read().await;
+            let memory = &state.memory;
+            if memory.len() > 1 {
+                memory.iter().take(memory.len() - 1).cloned().collect()
+            } else {
+                Vec::new()
+            }
         };
 
         // Convert AgentMessage history to Message history
@@ -1047,14 +1058,16 @@ impl Agent {
         use tool_parser::parse_tool_calls;
 
         // Get existing history (user message already added by caller in `process`)
-        let history: Vec<AgentMessage> = self.internal_state.read().await.memory.clone();
-
-        // Exclude the last message (which is the user message we just added) from history
-        // The LLM interface will add the user message separately
-        let history_without_last: Vec<AgentMessage> = if history.len() > 1 {
-            history.iter().take(history.len() - 1).cloned().collect()
-        } else {
-            Vec::new()
+        // Optimize: Clone only needed messages in one pass, avoiding double-clone
+        let history_without_last: Vec<AgentMessage> = {
+            let state = self.internal_state.read().await;
+            let memory = &state.memory;
+            if memory.len() > 1 {
+                // Clone only what we need (skip last message)
+                memory.iter().take(memory.len() - 1).cloned().collect()
+            } else {
+                Vec::new()
+            }
         };
 
         // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
@@ -1158,13 +1171,14 @@ impl Agent {
         }
 
         // === SAFEGUARD: Limit number of tool calls to prevent infinite loops ===
-        if tool_calls.len() > MAX_TOOL_CALLS_PER_REQUEST {
+        let max_calls = self.config.max_tool_calls;
+        if tool_calls.len() > max_calls {
             tracing::warn!(
                 "Too many tool calls ({}) in single request, limiting to {}",
                 tool_calls.len(),
-                MAX_TOOL_CALLS_PER_REQUEST
+                max_calls
             );
-            tool_calls.truncate(MAX_TOOL_CALLS_PER_REQUEST);
+            tool_calls.truncate(max_calls);
         }
 
         // === DEDUPLICATE: Remove duplicate tool calls to avoid redundant execution ===
@@ -1423,49 +1437,12 @@ END"#)
     ///
     /// Simplified names are used in LLM prompts (e.g., "device.discover")
     /// while real names are used in ToolRegistry (e.g., "list_devices").
+    ///
+    /// This now uses the unified `ToolNameMapper` to ensure consistency
+    /// across the codebase.
     fn resolve_tool_name(&self, simplified_name: &str) -> String {
-        match simplified_name {
-            // Device tools - note: device.* tools are registered with their simplified names
-            // device.discover → list_devices (for backward compatibility)
-            "device.discover" => "list_devices".to_string(),
-            // device.query, device.control, device.analyze are registered as-is
-            "device.query" | "device.control" | "device.analyze" => simplified_name.to_string(),
-
-            // Rule tools
-            "rule.list" | "rules.list" => "list_rules".to_string(),
-            // rule.from_context is a separate tool that generates DSL from natural language
-            // It should keep its name as it's registered as "rule.from_context" in core_tools
-            // Note: "rule.create" is an alias for create_rule
-            "rule.create" => "create_rule".to_string(),
-            "rule.delete" => "delete_rule".to_string(),
-            // These tools are registered with their simplified names
-            "rule.from_context" => "rule.from_context".to_string(),
-            "rule.enable" => "enable_rule".to_string(),
-            "rule.disable" => "disable_rule".to_string(),
-            "rule.test" => "test_rule".to_string(),
-
-            // Workflow tools
-            "workflow.list" | "workflows.list" => "list_workflows".to_string(),
-            "workflow.create" => "create_workflow".to_string(),
-            "workflow.trigger" | "workflow.execute" => "trigger_workflow".to_string(),
-
-            // Scenario tools
-            "scenario.list" => "list_scenarios".to_string(),
-            "scenario.create" => "create_scenario".to_string(),
-            "scenario.execute" => "execute_scenario".to_string(),
-
-            // Data tools
-            "data.query" => "query_data".to_string(),
-            "data.analyze" => "analyze_data".to_string(),
-
-            // Alert tools
-            "alert.list" => "list_alerts".to_string(),
-            "alert.create" => "create_alert".to_string(),
-            "alert.acknowledge" => "acknowledge_alert".to_string(),
-
-            // Default: use the name as-is (already a real tool name)
-            _ => simplified_name.to_string(),
-        }
+        // Delegate to the unified mapper
+        crate::tools::resolve_tool_name(simplified_name)
     }
 
     /// Execute a tool with retry logic.

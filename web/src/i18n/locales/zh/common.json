@@ -1,4 +1,8 @@
 {
+  "app": {
+    "name": "NeoMind",
+    "shortName": "NM"
+  },
   "alerts": {
     "title": "告警",
     "unread": "未读",
@@ -257,7 +261,7 @@
       "evening": "晚上好",
       "night": "夜深了"
     },
-    "tagline": "NeoTalk 智能物联网助手，随时为你服务",
+    "tagline": "{{appName}} 智能物联网助手，随时为你服务",
     "stats": {
       "devicesOnline": "{{online}}/{{total}} 设备在线",
       "activeRules": "{{count}} 活跃规则",

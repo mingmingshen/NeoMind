@@ -18,7 +18,7 @@ export interface DataSourceConfigSectionProps {
   multiple?: boolean
   maxSources?: number
   // Allowed data source types - support both old and new formats
-  allowedTypes?: Array<'device' | 'metric' | 'command' | 'device-metric' | 'device-command' | 'device-info'>
+  allowedTypes?: Array<'device' | 'metric' | 'command' | 'device-metric' | 'device-command' | 'device-info' | 'system'>
 }
 
 export function DataSourceConfigSection({
@@ -29,7 +29,7 @@ export function DataSourceConfigSection({
   multiple: _multiple = false,
   // Reserved for future multi-select functionality
   maxSources: _maxSources,
-  allowedTypes = ['device', 'metric', 'command'],
+  allowedTypes = ['device', 'metric', 'command', 'system'],
 }: DataSourceConfigSectionProps) {
   const dataSources = normalizeDs(dataSource)
   const isBound = dataSources.length > 0

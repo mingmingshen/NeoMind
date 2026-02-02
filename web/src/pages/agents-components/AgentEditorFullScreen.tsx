@@ -1194,7 +1194,7 @@ export function AgentEditorFullScreen({
                                 <PopoverTrigger asChild>
                                   <button
                                     type="button"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-200 text-blue-700 text-xs hover:bg-blue-100 transition-colors cursor-help"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400 text-xs hover:bg-blue-100 dark:hover:bg-blue-950/50 transition-colors cursor-help"
                                   >
                                     <BarChart3 className="h-3 w-3" />
                                     <span>{m.displayName}</span>
@@ -1205,7 +1205,7 @@ export function AgentEditorFullScreen({
                                         e.stopPropagation()
                                         toggleMetric(resource.deviceId, m.name, m.displayName)
                                       }}
-                                      className="p-0.5 rounded-sm hover:bg-blue-200 transition-colors"
+                                      className="p-0.5 rounded-sm hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
                                     >
                                       <X className="h-3 w-3" />
                                     </button>
@@ -1250,13 +1250,13 @@ export function AgentEditorFullScreen({
                             )
                           })}
                           {resource.commands.map((c) => (
-                            <div key={c.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-orange-50 border border-orange-200 text-orange-700 text-xs">
+                            <div key={c.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-400 text-xs">
                               <Zap className="h-3 w-3" />
                               <span>{c.displayName}</span>
                               <button
                                 type="button"
                                 onClick={() => toggleCommand(resource.deviceId, c.name, c.displayName)}
-                                className="p-0.5 rounded-sm hover:bg-orange-200 transition-colors"
+                                className="p-0.5 rounded-sm hover:bg-orange-200 dark:hover:bg-orange-800 transition-colors"
                               >
                                 <X className="h-3 w-3" />
                               </button>
@@ -1432,12 +1432,12 @@ export function AgentEditorFullScreen({
                                 className={cn(
                                   "p-2 rounded-lg text-left transition-all text-sm",
                                   isSelected
-                                    ? "bg-blue-600 text-white"
-                                    : "hover:bg-blue-50 border border-blue-200"
+                                    ? "bg-blue-600 dark:bg-blue-700 text-white"
+                                    : "hover:bg-blue-50 dark:hover:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
                                 )}
                               >
                                 <div className="flex items-center gap-1.5">
-                                  {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-blue-300" />}
+                                  {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-blue-300 dark:border-blue-700" />}
                                   <span className="flex-1 truncate">{metric.display_name}</span>
                                 </div>
                               </button>
@@ -1468,12 +1468,12 @@ export function AgentEditorFullScreen({
                                 className={cn(
                                   "p-2 rounded-lg text-left transition-all text-sm",
                                   isSelected
-                                    ? "bg-orange-600 text-white"
-                                    : "hover:bg-orange-50 border border-orange-200"
+                                    ? "bg-orange-600 dark:bg-orange-700 text-white"
+                                    : "hover:bg-orange-50 dark:hover:bg-orange-950/30 border border-orange-200 dark:border-orange-800"
                                 )}
                               >
                                 <div className="flex items-center gap-1.5">
-                                  {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-orange-300" />}
+                                  {isSelected ? <Check className="h-3 w-3" /> : <div className="w-3 h-3 rounded border border-orange-300 dark:border-orange-700" />}
                                   <span className="flex-1 truncate">{command.display_name}</span>
                                 </div>
                               </button>

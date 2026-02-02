@@ -922,6 +922,31 @@ impl SemanticToolMapper {
         self.workflow_cache.write().await.clear();
     }
 
+    /// Periodic cache cleanup to prevent unbounded growth.
+    ///
+    /// This should be called on a timer (e.g., every 5 minutes) to keep cache sizes manageable.
+    /// Since the cache doesn't track timestamps, this performs a full clear when size exceeds threshold.
+    ///
+    /// # Arguments
+    /// * `max_cache_size` - Maximum entries per cache before cleanup (default: 1000)
+    pub async fn periodic_cache_cleanup(&self, max_cache_size: Option<usize>) {
+        let max_size = max_cache_size.unwrap_or(1000);
+
+        let rule_size = self.rule_cache.read().await.len();
+        let workflow_size = self.workflow_cache.read().await.len();
+
+        // Clear caches if they exceed threshold
+        if rule_size > max_size || workflow_size > max_size {
+            tracing::info!(
+                rule_cache_size = rule_size,
+                workflow_cache_size = workflow_size,
+                max_size = max_size,
+                "Cache size exceeded threshold, performing cleanup"
+            );
+            self.clear_caches().await;
+        }
+    }
+
     /// Get suggestion for resolving an ambiguous reference.
     pub async fn suggest_resolution(&self, reference: &str) -> Option<String> {
         // Try device resolution first

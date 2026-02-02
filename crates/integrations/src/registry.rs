@@ -599,7 +599,7 @@ mod tests {
             .register(std::sync::Arc::new(MockIntegration { metadata }))
             .await;
 
-        let metadata = IntegrationMetadata::new("test2", "Test 2", IntegrationType::Hass);
+        let metadata = IntegrationMetadata::new("test2", "Test 2", IntegrationType::Http);
         let _ = registry
             .register(std::sync::Arc::new(MockIntegration { metadata }))
             .await;

@@ -1,5 +1,5 @@
 // Messages Page
-// Unified notification/message system for NeoTalk
+// Unified notification/message system for NeoMind
 
 import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -169,11 +169,11 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/channels/${encodeURIComponent(channelName)}/test`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: 'Test message from NeoTalk',
+          message: 'Test message from NeoMind',
           title: 'Channel Test',
         }),
       })
@@ -228,7 +228,7 @@ export default function MessagesPage() {
     try {
       const response = await fetch('/api/messages', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
         },
       })
       const rawData = await response.json() as any
@@ -319,7 +319,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}/acknowledge`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
       })
@@ -342,7 +342,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}/resolve`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
       })
@@ -365,7 +365,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}/archive`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
           'Content-Type': 'application/json',
         },
       })
@@ -397,7 +397,7 @@ export default function MessagesPage() {
       const response = await fetch(`/api/messages/${id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+          'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
         },
       })
       if (response.ok) {
@@ -421,6 +421,16 @@ export default function MessagesPage() {
     <PageLayout
       title={t('messages.title')}
       subtitle={t('messages.description')}
+      footer={
+        activeTab === 'messages' && messages.length > messagesPerPage ? (
+          <Pagination
+            total={messages.length}
+            pageSize={messagesPerPage}
+            currentPage={messagePage}
+            onPageChange={setMessagePage}
+          />
+        ) : undefined
+      }
     >
       <PageTabs
         tabs={tabs}
@@ -434,9 +444,9 @@ export default function MessagesPage() {
         ]}
       >
         {/* Messages Tab */}
-        <PageTabsContent value="messages" activeTab={activeTab}>
+        <PageTabsContent value="messages" activeTab={activeTab} className="flex flex-col overflow-hidden">
           {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
             {/* Filter Button with Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -574,181 +584,164 @@ export default function MessagesPage() {
                 {t('messages.filter.clearAll')}
               </Button>
             )}
-
-            {/* Result count */}
-            <span className="text-sm text-muted-foreground ml-auto">
-              {messages.length} {t('messages.items')}
-            </span>
           </div>
 
-          {/* Messages Table */}
-          <Card className="overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent border-b bg-muted/30">
-                  <TableHead className="w-[50px]"></TableHead>
-                  <TableHead>
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('messages.formTitle.label')}
-                    </div>
-                  </TableHead>
-                  <TableHead>
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('messages.content.label')}
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[90px]">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('messages.severity.label')}
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[90px]">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('messages.category.label')}
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[90px]">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('messages.status.label')}
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[130px]">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('common.createdAt')}
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={8} className="py-8">
-                      <div className="flex items-center justify-center gap-2">
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">{t('loading')}</span>
+          {/* Messages Table - Scrollable Area */}
+          <Card className="overflow-hidden flex-1 min-h-0">
+            <div className="overflow-auto h-full">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-sm z-10">
+                  <TableRow className="hover:bg-transparent border-b bg-muted/30">
+                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead>
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('messages.formTitle.label')}
                       </div>
-                    </TableCell>
+                    </TableHead>
+                    <TableHead>
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('messages.content.label')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[90px]">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('messages.severity.label')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[90px]">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('messages.category.label')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[90px]">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('messages.status.label')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-[130px]">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t('common.createdAt')}
+                      </div>
+                    </TableHead>
+                    <TableHead className="w-12"></TableHead>
                   </TableRow>
-                ) : messages.length === 0 ? (
-                  <EmptyStateInline
-                    title={t('messages.empty.title')}
-                    colSpan={8}
-                  />
-                ) : (
-                  paginatedMessages.map((message) => {
-                    const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
-                    const categoryConfig = CATEGORY_CONFIG[message.category] || CATEGORY_CONFIG.system
-                    const statusConfig = STATUS_CONFIG[message.status] || STATUS_CONFIG.active
-                    const SeverityIcon = severityConfig.icon
-                    const CategoryIcon = categoryConfig.icon
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-8">
+                        <div className="flex items-center justify-center gap-2">
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">{t('loading')}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : messages.length === 0 ? (
+                    <EmptyStateInline
+                      title={t('messages.empty.title')}
+                      colSpan={8}
+                    />
+                  ) : (
+                    paginatedMessages.map((message) => {
+                      const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
+                      const categoryConfig = CATEGORY_CONFIG[message.category] || CATEGORY_CONFIG.system
+                      const statusConfig = STATUS_CONFIG[message.status] || STATUS_CONFIG.active
+                      const SeverityIcon = severityConfig.icon
+                      const CategoryIcon = categoryConfig.icon
 
-                    return (
-                      <TableRow
-                        key={message.id}
-                        className={cn(
-                          "group transition-colors hover:bg-muted/50",
-                          (message.status === 'resolved' || message.status === 'archived') && "opacity-60"
-                        )}
-                      >
-                        <TableCell className="text-center">
-                          <SeverityIcon className={cn("h-4 w-4 mx-auto", severityConfig.color)} />
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium text-sm truncate pr-4" title={message.title}>
-                            {message.title}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm text-muted-foreground line-clamp-2">
-                            {message.message}
-                          </div>
-                          {message.tags.length > 0 && (
-                            <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                              {message.tags.slice(0, 4).map((tag, i) => (
-                                <Badge key={i} variant="secondary" className="text-xs h-5 px-1.5">
-                                  {tag}
-                                </Badge>
-                              ))}
-                              {message.tags.length > 4 && (
-                                <span className="text-xs text-muted-foreground">+{message.tags.length - 4}</span>
-                              )}
-                            </div>
+                      return (
+                        <TableRow
+                          key={message.id}
+                          className={cn(
+                            "group transition-colors hover:bg-muted/50",
+                            (message.status === 'resolved' || message.status === 'archived') && "opacity-60"
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={cn("text-xs", severityConfig.bgColor, severityConfig.color)}>
-                            {t(`messages.severity.${message.severity}`)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <CategoryIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-xs">{t(categoryConfig.label)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={statusConfig.variant} className="text-xs">
-                            {t(statusConfig.label)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-xs text-muted-foreground">
-                            {formatTimestamp(message.timestamp, false)}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-40">
-                              {message.status === 'active' && (
-                                <DropdownMenuItem onClick={() => handleAcknowledge(message.id)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  {t('messages.acknowledge')}
+                        >
+                          <TableCell className="text-center">
+                            <SeverityIcon className={cn("h-4 w-4 mx-auto", severityConfig.color)} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium text-sm truncate pr-4" title={message.title}>
+                              {message.title}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-muted-foreground line-clamp-2">
+                              {message.message}
+                            </div>
+                            {message.tags.length > 0 && (
+                              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                {message.tags.slice(0, 4).map((tag, i) => (
+                                  <Badge key={i} variant="secondary" className="text-xs h-5 px-1.5">
+                                    {tag}
+                                  </Badge>
+                                ))}
+                                {message.tags.length > 4 && (
+                                  <span className="text-xs text-muted-foreground">+{message.tags.length - 4}</span>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={cn("text-xs", severityConfig.bgColor, severityConfig.color)}>
+                              {t(`messages.severity.${message.severity}`)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <CategoryIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="text-xs">{t(categoryConfig.label)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={statusConfig.variant} className="text-xs">
+                              {t(statusConfig.label)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <span className="text-xs text-muted-foreground">
+                              {formatTimestamp(message.timestamp, false)}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-40">
+                                {message.status === 'active' && (
+                                  <DropdownMenuItem onClick={() => handleAcknowledge(message.id)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    {t('messages.acknowledge')}
+                                  </DropdownMenuItem>
+                                )}
+                                {message.status !== 'resolved' && message.status !== 'archived' && (
+                                  <DropdownMenuItem onClick={() => handleResolve(message.id)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    {t('messages.resolve')}
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleDelete(message.id)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  {t('delete')}
                                 </DropdownMenuItem>
-                              )}
-                              {message.status !== 'resolved' && message.status !== 'archived' && (
-                                <DropdownMenuItem onClick={() => handleResolve(message.id)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  {t('messages.resolve')}
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleDelete(message.id)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                {t('delete')}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </Card>
-
-          {/* Pagination - Fixed at bottom */}
-          {messages.length > messagesPerPage && (
-            <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t pt-3 pb-3 px-4 z-10">
-              <div className="max-w-6xl mx-auto">
-                <Pagination
-                  total={messages.length}
-                  pageSize={messagesPerPage}
-                  currentPage={messagePage}
-                  onPageChange={setMessagePage}
-                />
-              </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
             </div>
-          )}
+          </Card>
         </PageTabsContent>
 
         {/* Channels Tab */}
@@ -898,7 +891,7 @@ export default function MessagesPage() {
           const response = await fetch('/api/messages', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session') || ''}`,
+              'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({

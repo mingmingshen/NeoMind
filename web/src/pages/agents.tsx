@@ -1,5 +1,5 @@
 /**
- * NeoTalk AI Agents Page
+ * NeoMind AI Agents Page
  *
  * User-defined AI Agents for autonomous IoT automation.
  * Card grid layout with detail dialog for viewing individual agent details.

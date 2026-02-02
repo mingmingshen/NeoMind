@@ -167,7 +167,7 @@ fn generate_test_messages() -> Vec<Message> {
         "system",
         MessageSeverity::Info,
         "系统启动完成".to_string(),
-        "NeoTalk 系统已成功启动，所有服务正常运行".to_string(),
+        "NeoMind 系统已成功启动，所有服务正常运行".to_string(),
         "system".to_string(),
     ));
 

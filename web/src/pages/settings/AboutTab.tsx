@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { BrandName } from "@/components/shared/BrandName"
 import {
   Bot,
   Server,
@@ -99,7 +100,7 @@ export function AboutTab() {
             <Bot className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">NeoTalk</h1>
+            <h1 className="text-2xl font-bold"><BrandName /></h1>
             <p className="text-sm text-muted-foreground">
               {t("settings:aboutDesc")}
             </p>
@@ -263,13 +264,13 @@ export function AboutTab() {
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">{t("settings:repository")}</span>
             <a
-              href="https://github.com/shenmingming/NeoTalk"
+              href="https://github.com/shenmingming/NeoMind"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 hover:underline flex items-center gap-1"
             >
               <Globe className="h-3 w-3" />
-              github.com/shenmingming/NeoTalk
+              github.com/shenmingming/NeoMind
             </a>
           </div>
         </CardContent>
@@ -277,7 +278,7 @@ export function AboutTab() {
 
       {/* Footer */}
       <div className="text-center text-sm text-muted-foreground">
-        © 2025 NeoTalk
+        © 2025 <BrandName />
       </div>
     </div>
   )

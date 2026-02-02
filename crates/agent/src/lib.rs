@@ -38,8 +38,11 @@ pub mod agent;
 pub mod ai_agent;
 pub mod autonomous;
 pub mod concurrency;
+pub mod config;
 pub mod context;
+pub mod hooks;
 pub mod context_selector;
+pub mod state_machine;
 pub mod error;
 pub mod llm;
 pub mod prompts;
@@ -54,6 +57,15 @@ pub mod translation;
 pub use agent::{
     Agent, AgentConfig, AgentEvent, AgentMessage, AgentResponse, FallbackRule, LlmBackend,
     SessionState, ToolCall, default_fallback_rules, process_fallback,
+};
+pub use config::{StreamingConfig, get_default_config, set_default_config};
+pub use hooks::{
+    AgentHook, ContentModerationHook, HookChain, HookContext, HookResult, InputSanitizationHook,
+    LoggingHook, MetricsHook, default_hook_chain, production_hook_chain,
+};
+pub use state_machine::{
+    ProcessState, StateMachine, StateMachineConfig, StateMonitor, StateTransition,
+    StateTransitionError,
 };
 pub use autonomous::{
     AgentState, AutonomousAgent, AutonomousConfig, ReviewContext, ReviewResult, ReviewType,
@@ -73,6 +85,7 @@ pub use session::SessionManager;
 // };
 pub use tools::{
     EventIntegratedToolRegistry, ToolExecutionHistory, ToolExecutionRecord, ToolExecutionStats,
+    resolve_tool_name as map_tool_name, ToolNameMapper,
 };
 
 /// Version information

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
-import { Bot, Languages, Lock, User, Shield, Check, ArrowRight, ArrowLeft, Server, ChevronRight } from "lucide-react"
+import { Bot, Languages, Lock, User, Shield, Check, ArrowRight, ArrowLeft, Server, ChevronRight, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,13 +12,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { BrandName, StyledBrandName } from "@/components/shared/BrandName"
 
 const languages = [
   { code: 'en', name: 'English' },
   { code: 'zh', name: '简体中文' },
 ]
 
-type SetupStep = 'welcome' | 'account' | 'llm' | 'complete'
+type SetupStep = 'welcome' | 'account' | 'timezone' | 'llm' | 'complete'
 type LlmProvider = 'ollama' | 'openai' | 'anthropic' | 'google' | 'xai'
 
 interface LlmProviderInfo {
@@ -62,6 +63,21 @@ const llmProviders: LlmProviderInfo[] = [
   },
 ]
 
+const timezoneOptions = [
+  { id: 'Asia/Shanghai', name: '中国 (UTC+8)' },
+  { id: 'Asia/Tokyo', name: '日本 (UTC+9)' },
+  { id: 'Asia/Seoul', name: '韩国 (UTC+9)' },
+  { id: 'Asia/Singapore', name: '新加坡 (UTC+8)' },
+  { id: 'Europe/London', name: '伦敦 (UTC+0/+1)' },
+  { id: 'Europe/Paris', name: '巴黎 (UTC+1/+2)' },
+  { id: 'Europe/Berlin', name: '柏林 (UTC+1/+2)' },
+  { id: 'America/New_York', name: '纽约 (UTC-5/-4)' },
+  { id: 'America/Los_Angeles', name: '洛杉矶 (UTC-8/-7)' },
+  { id: 'America/Chicago', name: '芝加哥 (UTC-6/-5)' },
+  { id: 'Australia/Sydney', name: '悉尼 (UTC+10/+11)' },
+  { id: 'UTC', name: 'UTC (UTC+0)' },
+]
+
 // Error translation helper
 function translateError(error: string, t: (key: string, params?: Record<string, unknown>) => string): string {
   const lowerError = error.toLowerCase()
@@ -100,6 +116,9 @@ export function SetupPage() {
   const [llmModel, setLlmModel] = useState("qwen3-vl:2b")
   const [llmEndpoint, setLlmEndpoint] = useState("http://localhost:11434")
   const [llmApiKey, setLlmApiKey] = useState("")
+
+  // Timezone state
+  const [selectedTimezone, setSelectedTimezone] = useState("Asia/Shanghai")
 
   // Validate password
   const getPasswordErrors = (pwd: string): string[] => {
@@ -174,11 +193,11 @@ export function SetupPage() {
       }
 
       // Store token for next steps
-      localStorage.setItem('neotalk_token', data.token)
-      localStorage.setItem('neotalk_user', JSON.stringify(data.user))
+      localStorage.setItem('neomind_token', data.token)
+      localStorage.setItem('neomind_user', JSON.stringify(data.user))
 
-      // Move to next step
-      setStep('llm')
+      // Move to timezone step
+      setStep('timezone')
     } catch (err) {
       setError(translateError(err instanceof Error ? err.message : String(err), t))
     } finally {
@@ -193,6 +212,18 @@ export function SetupPage() {
     setIsLoading(true)
 
     try {
+      // Save timezone setting first
+      try {
+        await fetch('/api/settings/timezone', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timezone: selectedTimezone }),
+        })
+      } catch (tzError) {
+        console.warn('Failed to save timezone:', tzError)
+        // Continue even if timezone save fails
+      }
+
       // Save LLM config
       await fetch('/api/setup/llm-config', {
         method: 'POST',
@@ -277,10 +308,7 @@ export function SetupPage() {
         <header className="relative z-10 backdrop-blur-sm">
           <div className="flex items-center justify-between px-6 h-16">
             <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-primary/20">
-                <Bot className="size-5" />
-              </div>
-              <h1 className="text-lg font-semibold">NeoTalk</h1>
+              <StyledBrandName size="base" />
             </div>
 
             <DropdownMenu>
@@ -324,6 +352,7 @@ export function SetupPage() {
               <div className="space-y-3 mb-8">
                 {[
                   { icon: User, text: t('setup:featureAccount') },
+                  { icon: Globe, text: t('setup:featureTimezone') },
                   { icon: Server, text: t('setup:featureLlm') },
                   { icon: Shield, text: t('setup:featureSecure') },
                 ].map((feature, index) => (
@@ -379,7 +408,7 @@ export function SetupPage() {
                 <ArrowLeft className="h-4 w-4" />
                 {t('setup:back')}
               </Button>
-              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 1, total: 2 })}</span>
+              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 1, total: 3 })}</span>
             </div>
 
             <DropdownMenu>
@@ -413,9 +442,13 @@ export function SetupPage() {
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
                   1
                 </div>
-                <div className="w-12 h-0.5 bg-muted" />
+                <div className="w-8 h-0.5 bg-muted" />
                 <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-bold">
                   2
+                </div>
+                <div className="w-8 h-0.5 bg-muted" />
+                <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-bold">
+                  3
                 </div>
               </div>
 
@@ -555,8 +588,29 @@ export function SetupPage() {
     )
   }
 
-  // ==================== LLM CONFIG STEP ====================
-  if (step === 'llm') {
+  // ==================== TIMEZONE STEP ====================
+  if (step === 'timezone') {
+    // Function to format current time in timezone
+    const formatTimeInTimezone = (tz: string) => {
+      try {
+        const now = new Date()
+        return new Intl.DateTimeFormat('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZone: tz,
+          hour12: false,
+        }).format(now)
+      } catch {
+        return '--:--:--'
+      }
+    }
+
+    // Handle timezone continue
+    const handleTimezoneContinue = async () => {
+      setStep('llm')
+    }
+
     return (
       <div className="min-h-screen flex flex-col bg-background overflow-hidden">
         {/* Background */}
@@ -582,7 +636,7 @@ export function SetupPage() {
                 <ArrowLeft className="h-4 w-4" />
                 {t('setup:back')}
               </Button>
-              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 2, total: 2 })}</span>
+              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 2, total: 3 })}</span>
             </div>
 
             <DropdownMenu>
@@ -619,6 +673,140 @@ export function SetupPage() {
                 <div className="w-12 h-0.5 bg-primary" />
                 <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
                   2
+                </div>
+                <div className="w-12 h-0.5 bg-muted" />
+                <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm font-bold">
+                  3
+                </div>
+              </div>
+
+              {/* Title */}
+              <h2 className="text-2xl font-semibold mb-2 text-center">{t('setup:timezoneConfig')}</h2>
+              <p className="text-muted-foreground text-center mb-6 text-sm">{t('setup:timezoneDescription')}</p>
+
+              {/* Timezone Selection */}
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-sm">{t('setup:selectTimezone')}</Label>
+                  <div className="grid grid-cols-1 gap-2 mt-3 max-h-[300px] overflow-y-auto">
+                    {timezoneOptions.map((tz) => (
+                      <button
+                        key={tz.id}
+                        type="button"
+                        onClick={() => setSelectedTimezone(tz.id)}
+                        className={`
+                          flex items-center justify-between p-3 rounded-lg border text-left transition-colors
+                          ${selectedTimezone === tz.id
+                            ? 'border-primary bg-primary/5 dark:bg-primary/10'
+                            : 'border-border hover:bg-muted/50'
+                          }
+                        `}
+                      >
+                        <span className="font-medium text-sm">{tz.name}</span>
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {formatTimeInTimezone(tz.id)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Current Time Preview */}
+                <div className="p-4 bg-muted/30 dark:bg-muted/10 rounded-lg">
+                  <div className="text-center">
+                    <div className="text-xs text-muted-foreground mb-1">{t('setup:currentTimeInTimezone')}</div>
+                    <div className="text-2xl font-mono font-medium">
+                      {formatTimeInTimezone(selectedTimezone)}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">{selectedTimezone}</div>
+                  </div>
+                </div>
+
+                {/* Continue Button */}
+                <Button
+                  onClick={handleTimezoneContinue}
+                  className="w-full h-10"
+                  size="default"
+                >
+                  {t('setup:continue')}
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // ==================== LLM CONFIG STEP ====================
+  if (step === 'llm') {
+    return (
+      <div className="min-h-screen flex flex-col bg-background overflow-hidden">
+        {/* Background */}
+        <div className="fixed inset-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-muted/10" />
+          <div className="absolute inset-0" style={{
+            backgroundImage: 'radial-gradient(circle, #80808015 1px, transparent 1px)',
+            backgroundSize: '32px 32px'
+          }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 dark:bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '8s' }} />
+        </div>
+
+        {/* Header */}
+        <header className="relative z-10 backdrop-blur-sm">
+          <div className="flex items-center justify-between px-6 h-16">
+            <div className="flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep('timezone')}
+                className="gap-1.5"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                {t('setup:back')}
+              </Button>
+              <span className="text-sm text-muted-foreground">{t('setup:step', { current: 3, total: 3 })}</span>
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-1.5">
+                  <Languages className="h-4 w-4" />
+                  {languages.find(l => l.code === i18n.language)?.name || 'Language'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[130px]">
+                {languages.map((lang) => (
+                  <DropdownMenuItem
+                    key={lang.code}
+                    onClick={() => i18n.changeLanguage(lang.code)}
+                    className={i18n.language === lang.code ? 'bg-muted' : ''}
+                  >
+                    {lang.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="relative z-10 flex-1 flex items-center justify-center px-6 py-12">
+          <div className="w-full max-w-md">
+            <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
+              {/* Progress Indicator */}
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+                  <Check className="size-4" />
+                </div>
+                <div className="w-8 h-0.5 bg-primary" />
+                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+                  <Check className="size-4" />
+                </div>
+                <div className="w-8 h-0.5 bg-primary" />
+                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-bold">
+                  3
                 </div>
               </div>
 

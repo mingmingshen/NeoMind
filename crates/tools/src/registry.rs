@@ -417,6 +417,21 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::agent_tools::AgentMemoryTool::new(agent_store)))
     }
 
+    /// Add the get agent executions tool with real agent store.
+    pub fn with_real_get_agent_executions_tool(self, agent_store: Arc<edge_ai_storage::AgentStore>) -> Self {
+        self.with_tool(Arc::new(super::agent_tools::GetAgentExecutionsTool::new(agent_store)))
+    }
+
+    /// Add the get agent execution detail tool with real agent store.
+    pub fn with_real_get_agent_execution_detail_tool(self, agent_store: Arc<edge_ai_storage::AgentStore>) -> Self {
+        self.with_tool(Arc::new(super::agent_tools::GetAgentExecutionDetailTool::new(agent_store)))
+    }
+
+    /// Add the get agent conversation tool with real agent store.
+    pub fn with_real_get_agent_conversation_tool(self, agent_store: Arc<edge_ai_storage::AgentStore>) -> Self {
+        self.with_tool(Arc::new(super::agent_tools::GetAgentConversationTool::new(agent_store)))
+    }
+
     /// Add all agent tools with real agent store.
     pub fn with_real_agent_tools(self, agent_store: Arc<edge_ai_storage::AgentStore>) -> Self {
         self.with_real_list_agents_tool(agent_store.clone())
@@ -424,7 +439,10 @@ impl ToolRegistryBuilder {
             .with_real_execute_agent_tool(agent_store.clone())
             .with_real_control_agent_tool(agent_store.clone())
             .with_real_create_agent_tool(agent_store.clone())
-            .with_real_agent_memory_tool(agent_store)
+            .with_real_agent_memory_tool(agent_store.clone())
+            .with_real_get_agent_executions_tool(agent_store.clone())
+            .with_real_get_agent_execution_detail_tool(agent_store.clone())
+            .with_real_get_agent_conversation_tool(agent_store)
     }
 
     /// Add the system help tool for onboarding and feature information.

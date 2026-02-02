@@ -1,5 +1,7 @@
 //! Session management handlers.
 
+use super::ws::{create_connection_metadata, ConnectionStateRef};
+
 use axum::extract::ws::{Message as AxumMessage, WebSocket, WebSocketUpgrade};
 use axum::{
     extract::{Path, Query, State},
@@ -154,34 +156,62 @@ async fn process_stream_to_channel(
                             None
                         };
 
-                        // Spawn a background task to consolidate to memory
+                        // Spawn a background task to consolidate to memory with timeout
                         let session_id_clone = session_id.clone();
                         let user_message_clone = user_message_for_memory.clone();
                         let state_clone = state.clone();
+                        let assistant_response_clone = assistant_response.clone();
+                        let thinking_clone = thinking.clone();
+
                         tokio::spawn(async move {
-                            if let Err(e) = state_clone.memory.write().await.consolidate(
-                                &session_id_clone,
-                            ).await {
-                                tracing::warn!("Failed to consolidate short-term to mid-term memory: {}", e);
-                            } else {
-                                // Also directly add to mid-term memory for immediate retrieval
-                                let response_with_thinking = if let Some(thinking_content) = thinking {
-                                    if !thinking_content.is_empty() {
-                                        format!("{}\n\nThinking: {}", assistant_response, thinking_content)
+                            // Memory consolidation timeout: 5 seconds
+                            // Prevents background tasks from hanging indefinitely
+                            let consolidate_timeout = Duration::from_secs(5);
+
+                            let consolidate_result = tokio::time::timeout(
+                                consolidate_timeout,
+                                state_clone.memory.write().await.consolidate(&session_id_clone)
+                            ).await;
+
+                            match consolidate_result {
+                                Ok(Ok(())) => {
+                                    // Also directly add to mid-term memory for immediate retrieval
+                                    let response_with_thinking = if let Some(thinking_content) = thinking_clone {
+                                        if !thinking_content.is_empty() {
+                                            format!("{}\n\nThinking: {}", assistant_response_clone, thinking_content)
+                                        } else {
+                                            assistant_response_clone.clone()
+                                        }
                                     } else {
-                                        assistant_response.clone()
+                                        assistant_response_clone.clone()
+                                    };
+
+                                    let add_result = tokio::time::timeout(
+                                        Duration::from_secs(2),
+                                        state_clone.memory.write().await.add_conversation(
+                                            &session_id_clone,
+                                            &user_message_clone,
+                                            &response_with_thinking,
+                                        )
+                                    ).await;
+
+                                    match add_result {
+                                        Ok(Ok(())) => {
+                                            tracing::debug!("Conversation consolidated to memory: session={}", session_id_clone);
+                                        }
+                                        Ok(Err(e)) => {
+                                            tracing::warn!("Failed to add conversation to mid-term memory: {}", e);
+                                        }
+                                        Err(_) => {
+                                            tracing::warn!("Timeout adding conversation to mid-term memory: session={}", session_id_clone);
+                                        }
                                     }
-                                } else {
-                                    assistant_response.clone()
-                                };
-                                if let Err(e) = state_clone.memory.write().await.add_conversation(
-                                    &session_id_clone,
-                                    &user_message_clone,
-                                    &response_with_thinking,
-                                ).await {
-                                    tracing::warn!("Failed to add conversation to mid-term memory: {}", e);
-                                } else {
-                                    tracing::debug!("Conversation consolidated to memory: session={}", session_id_clone);
+                                }
+                                Ok(Err(e)) => {
+                                    tracing::warn!("Failed to consolidate short-term to mid-term memory: {}", e);
+                                }
+                                Err(_) => {
+                                    tracing::warn!("Timeout consolidating memory for session={}", session_id_clone);
                                 }
                             }
                         });
@@ -619,6 +649,10 @@ async fn handle_ws_socket(
     session_id: Option<String>,
     _session_info: Option<crate::auth_users::SessionInfo>,
 ) {
+    // Create connection metadata for tracking state and heartbeat
+    let conn_meta = create_connection_metadata();
+    conn_meta.set_state(super::ws::ConnectionState::Authenticated).await;
+
     // Track the current session for this connection
     let current_session_id = Arc::new(tokio::sync::RwLock::new(session_id.clone()));
 
@@ -628,6 +662,9 @@ async fn handle_ws_socket(
     // Heartbeat interval
     let mut heartbeat_interval =
         tokio::time::interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
+
+    // Heartbeat timeout - 60 seconds without pong = disconnect
+    let heartbeat_timeout = Duration::from_secs(60);
 
     // Channel for receiving LLM stream events from spawned tasks
     // This keeps the main event loop responsive to WebSocket pings
@@ -642,6 +679,7 @@ async fn handle_ws_socket(
     .to_string();
 
     if socket.send(AxumMessage::Text(welcome)).await.is_err() {
+        conn_meta.mark_closed().await;
         return;
     }
 
@@ -654,68 +692,84 @@ async fn handle_ws_socket(
                     Some(Ok(msg)) => {
                         match msg {
                             AxumMessage::Text(text) => {
+                                // Track message received
+                                conn_meta.increment_received();
+
+                                // Check for pong response to our heartbeat ping
+                                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                                    if value.get("type") == Some(&json!("pong")) {
+                                        conn_meta.record_pong().await;
+                                        tracing::debug!("Received pong from client");
+                                        continue;
+                                    }
+                                }
+
                                 if let Ok(chat_req) = serde_json::from_str::<ChatRequest>(&text) {
                                     // Use the sessionId from the request if provided, otherwise use current
                                     let requested_session_id = chat_req.session_id;
-                                    let mut session_id_guard = current_session_id.write().await;
 
-                                    // If request has a different sessionId, switch to it
-                                    if let Some(req_id) = &requested_session_id
-                                        && req_id != session_id_guard.as_ref().unwrap_or(&String::new()) {
-                                            // Verify session exists
-                                            if state.session_manager.get_session(req_id).await.is_ok() {
-                                                *session_id_guard = Some(req_id.to_string());
-                                                // Notify client of session switch
+                                    // Session resolution helper - minimizes lock time
+                                    let session_id = {
+                                        let current_guard = current_session_id.read().await;
+                                        let empty = String::new();
+                                        let current = current_guard.as_ref().unwrap_or(&empty);
+
+                                        // Check if we need to switch sessions
+                                        let needs_switch = if let Some(req_id) = &requested_session_id {
+                                            req_id != current && state.session_manager.get_session(req_id).await.is_ok()
+                                        } else {
+                                            false
+                                        };
+
+                                        let has_valid_session = current_guard.as_ref()
+                                            .map(|s| !s.is_empty())
+                                            .unwrap_or(false);
+
+                                        if needs_switch {
+                                            // Switch to requested session
+                                            if let Some(req_id) = &requested_session_id {
+                                                drop(current_guard);
+                                                let mut write_guard = current_session_id.write().await;
+                                                *write_guard = Some(req_id.to_string());
+                                                let id = req_id.to_string();
+                                                drop(write_guard);
+
+                                                // Notify client of session switch (outside lock)
                                                 let msg = json!({
                                                     "type": "session_switched",
-                                                    "sessionId": req_id,
+                                                    "sessionId": id,
                                                 }).to_string();
                                                 if socket.send(AxumMessage::Text(msg)).await.is_err() {
                                                     return;
                                                 }
+                                                id
                                             } else {
-                                                // Requested session doesn't exist - keep the current valid session
-                                                // Only clear if current session is also invalid (empty string)
-                                                if session_id_guard.as_ref().map(|s| s.is_empty()).unwrap_or(false) {
-                                                    *session_id_guard = None;
-                                                }
-                                                // Otherwise, keep using the current valid session
-                                                let msg = json!({
-                                                    "type": "error",
-                                                    "message": format!("Requested session '{}' not found, using current session", req_id),
-                                                }).to_string();
-                                                if socket.send(AxumMessage::Text(msg)).await.is_err() {
-                                                    return;
-                                                }
+                                                unreachable!()
                                             }
+                                        } else if !has_valid_session {
+                                            // Create new session - drop read lock before write
+                                            drop(current_guard);
+                                            let new_id = state.session_manager.create_session().await
+                                                .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
+
+                                            let mut write_guard = current_session_id.write().await;
+                                            *write_guard = Some(new_id.clone());
+                                            drop(write_guard);
+
+                                            // Notify client of the new session (outside lock)
+                                            let msg = json!({
+                                                "type": "session_created",
+                                                "sessionId": new_id,
+                                            }).to_string();
+                                            if socket.send(AxumMessage::Text(msg)).await.is_err() {
+                                                return;
+                                            }
+                                            new_id
+                                        } else {
+                                            // Use current session
+                                            current.to_string()
                                         }
-
-                                    // Ensure we have a valid session (not None and not empty string)
-                                    let has_valid_session = session_id_guard.as_ref()
-                                        .map(|s| !s.is_empty())
-                                        .unwrap_or(false);
-
-                                    if !has_valid_session {
-                                        // Create new session for this message
-                                        let new_id = state.session_manager.create_session().await.unwrap_or_else(|_| {
-                                            uuid::Uuid::new_v4().to_string()
-                                        });
-                                        *session_id_guard = Some(new_id.clone());
-
-                                        // Notify client of the new session
-                                        let msg = json!({
-                                            "type": "session_created",
-                                            "sessionId": new_id,
-                                        }).to_string();
-                                        if socket.send(AxumMessage::Text(msg)).await.is_err() {
-                                            return;
-                                        }
-                                    }
-                                    // At this point session_id_guard is guaranteed to be Some
-                                    let session_id = session_id_guard.as_ref()
-                                        .expect("session_id should be set after check above")
-                                        .clone();
-                                    drop(session_id_guard);
+                                    };
 
                                     // Filter out control messages (commands starting with '/')
                                     // These are not user messages and should not be sent to the LLM
@@ -889,18 +943,41 @@ async fn handle_ws_socket(
             }
             // Handle heartbeat - send periodic ping to detect dead connections
             _ = heartbeat_interval.tick() => {
+                // Check for heartbeat timeout before sending ping
+                if conn_meta.check_heartbeat_timeout(heartbeat_timeout).await {
+                    tracing::warn!(
+                        "Heartbeat timeout - no pong received for {:?}",
+                        heartbeat_timeout
+                    );
+                    break;
+                }
+
+                conn_meta.record_ping().await;
+
                 let ping = json!({
                     "type": "ping",
                     "timestamp": chrono::Utc::now().timestamp(),
-                }).to_string();
+                })
+                .to_string();
 
                 if socket.send(AxumMessage::Text(ping)).await.is_err() {
                     // Client disconnected
                     break;
                 }
+
+                conn_meta.increment_sent();
             }
         }
     }
+
+    // Mark connection as closed
+    conn_meta.mark_closed().await;
+    tracing::info!(
+        "WebSocket connection closed. Sent: {}, Received: {}, Duration: {:?}",
+        conn_meta.get_sent_count(),
+        conn_meta.get_received_count(),
+        conn_meta.connection_duration()
+    );
 
     // Cleanup: persist session history AFTER loop ends (when connection closes)
     if let Some(session_id) = current_session_id.read().await.as_ref()

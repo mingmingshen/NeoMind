@@ -99,3 +99,100 @@ pub async fn llm_generate_handler(
         "processing_time_ms": latency_ms,
     }))
 }
+
+// ============================================================================
+// Global Timezone Settings Handlers
+// ============================================================================
+
+/// Request body for updating timezone.
+#[derive(serde::Deserialize)]
+pub struct TimezoneRequest {
+    pub timezone: String,
+}
+
+/// Response for timezone requests.
+#[derive(serde::Serialize)]
+pub struct TimezoneResponse {
+    pub timezone: String,
+    pub is_default: bool,
+}
+
+/// Get the current global timezone setting.
+pub async fn get_timezone(State(_state): State<ServerState>) -> HandlerResult<TimezoneResponse> {
+    use edge_ai_storage::SettingsStore;
+
+    const SETTINGS_DB_PATH: &str = "data/settings.redb";
+
+    let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    let timezone = settings_store.get_global_timezone();
+    let is_default = timezone == edge_ai_storage::DEFAULT_GLOBAL_TIMEZONE;
+
+    ok(TimezoneResponse { timezone, is_default })
+}
+
+/// Update the global timezone setting.
+pub async fn update_timezone(
+    State(_state): State<ServerState>,
+    Json(req): Json<TimezoneRequest>,
+) -> HandlerResult<serde_json::Value> {
+    use edge_ai_storage::SettingsStore;
+
+    const SETTINGS_DB_PATH: &str = "data/settings.redb";
+
+    // Validate timezone using chrono-tz
+    if req.timezone.parse::<chrono_tz::Tz>().is_err() {
+        return Err(ErrorResponse::bad_request(format!(
+            "Invalid timezone: '{}'. Expected IANA format like 'Asia/Shanghai'",
+            req.timezone
+        )));
+    }
+
+    let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to open settings store: {}", e)))?;
+
+    settings_store
+        .save_global_timezone(&req.timezone)
+        .map_err(|e| ErrorResponse::internal(format!("Failed to save timezone: {}", e)))?;
+
+    tracing::info!("Global timezone updated to: {}", req.timezone);
+
+    ok(json!({
+        "success": true,
+        "timezone": req.timezone,
+    }))
+}
+
+/// Get available timezone options.
+pub async fn list_timezones() -> HandlerResult<serde_json::Value> {
+    // Common IANA timezones with display names
+    let timezones = vec![
+        ("Asia/Shanghai", "中国 (UTC+8)"),
+        ("Asia/Tokyo", "日本 (UTC+9)"),
+        ("Asia/Seoul", "韩国 (UTC+9)"),
+        ("Asia/Singapore", "新加坡 (UTC+8)"),
+        ("Asia/Dubai", "迪拜 (UTC+4)"),
+        ("Europe/London", "伦敦 (UTC+0/+1)"),
+        ("Europe/Paris", "巴黎 (UTC+1/+2)"),
+        ("Europe/Berlin", "柏林 (UTC+1/+2)"),
+        ("Europe/Moscow", "莫斯科 (UTC+3)"),
+        ("America/New_York", "纽约 (UTC-5/-4)"),
+        ("America/Los_Angeles", "洛杉矶 (UTC-8/-7)"),
+        ("America/Chicago", "芝加哥 (UTC-6/-5)"),
+        ("America/Toronto", "多伦多 (UTC-5/-4)"),
+        ("America/Sao_Paulo", "圣保罗 (UTC-3/-2)"),
+        ("Australia/Sydney", "悉尼 (UTC+10/+11)"),
+        ("Pacific/Auckland", "奥克兰 (UTC+12/+13)"),
+        ("UTC", "UTC (UTC+0)"),
+    ];
+
+    ok(json!({
+        "timezones": timezones.iter().map(|(id, name)| {
+            json!({
+                "id": id,
+                "name": name,
+            })
+        }).collect::<Vec<_>>()
+    }))
+}

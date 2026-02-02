@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { BrandName, StyledBrandName } from "@/components/shared/BrandName"
 
 const languages = [
   { code: 'en', name: 'English' },
@@ -17,7 +18,7 @@ const languages = [
 ]
 
 // LocalStorage keys for remembering credentials
-const CREDENTIALS_KEY = 'neotalk_remembered_credentials'
+const CREDENTIALS_KEY = 'neomind_remembered_credentials'
 
 // Error translation helper
 function translateError(error: string, t: (key: string, params?: Record<string, unknown>) => string): string {
@@ -186,10 +187,7 @@ export function LoginPage() {
         <div className="flex items-center justify-between px-6 h-16">
           {/* Left - Logo & Name */}
           <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-primary/20">
-              <Bot className="size-5" />
-            </div>
-            <h1 className="text-lg font-semibold">NeoTalk</h1>
+            <StyledBrandName size="base" />
           </div>
 
           {/* Right - Language Switcher */}
@@ -296,7 +294,7 @@ export function LoginPage() {
             {/* Footer */}
             <div className="text-center mt-6 pt-6">
               <p className="text-xs text-muted-foreground/70 dark:text-muted-foreground/50">
-                NeoTalk Edge AI Agent v1.0
+                <BrandName /> Edge AI Agent v1.0
               </p>
             </div>
           </div>

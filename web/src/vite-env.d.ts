@@ -1,5 +1,12 @@
 /// <reference types="vite/client" />
 
+// Tauri global type declaration
+declare global {
+  interface Window {
+    __TAURI__?: unknown
+  }
+}
+
 interface ImportMetaEnv {
   readonly DEV: boolean
   readonly MODE: string

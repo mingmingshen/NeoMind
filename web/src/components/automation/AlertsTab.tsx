@@ -110,7 +110,7 @@ export function AlertsTab() {
     if (selectedIds.size === 0) return
     setBulkProcessing(true)
     try {
-      const response = await api.bulkAcknowledgeAlerts(Array.from(selectedIds))
+      const response = await api.bulkAcknowledgeMessages(Array.from(selectedIds))
       if (response.acknowledged) {
         toast({ title: t('common:success'), description: t('alerts:acknowledgedCount', { count: response.acknowledged }) })
         setSelectedIds(new Set())
@@ -137,7 +137,7 @@ export function AlertsTab() {
 
     setBulkProcessing(true)
     try {
-      const response = await api.bulkDeleteAlerts(Array.from(selectedIds))
+      const response = await api.bulkDeleteMessages(Array.from(selectedIds))
       if (response.deleted) {
         toast({ title: t('common:success'), description: t('alerts:deletedCount', { count: response.deleted }) })
         setSelectedIds(new Set())

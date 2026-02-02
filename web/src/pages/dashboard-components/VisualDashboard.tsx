@@ -945,14 +945,14 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Persist sidebar state to localStorage
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    const saved = localStorage.getItem('neotalk_dashboard_sidebar_open')
+    const saved = localStorage.getItem('neomind_dashboard_sidebar_open')
     return saved !== 'false' // Default to true
   })
 
   // Update localStorage when sidebar state changes
   const handleSidebarOpenChange = useCallback((open: boolean) => {
     setSidebarOpen(open)
-    localStorage.setItem('neotalk_dashboard_sidebar_open', String(open))
+    localStorage.setItem('neomind_dashboard_sidebar_open', String(open))
   }, [])
 
   // Fullscreen toggle function - CSS-only fullscreen for dashboard content
@@ -1994,7 +1994,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -2139,7 +2139,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -2270,7 +2270,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -2421,7 +2421,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -2524,7 +2524,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -2618,7 +2618,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -2732,7 +2732,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
                 multiple: true,
                 maxSources: 3,
               },
@@ -2841,7 +2841,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -2938,7 +2938,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -3065,7 +3065,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -3213,7 +3213,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],
@@ -3320,7 +3320,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric'],
+                allowedTypes: ['device-metric', 'system'],
               },
             },
           ],

@@ -116,7 +116,7 @@ export function AlertChannelPluginConfigDialog({
 
   const fetchChannels = async () => {
     try {
-      const response = await api.listAlertChannels()
+      const response = await api.listMessageChannels()
       // Filter channels by this type
       const typeChannels = response.channels.filter((ch: AlertChannel) => ch.channel_type === channelType)
       setChannels(typeChannels)
@@ -147,7 +147,7 @@ export function AlertChannelPluginConfigDialog({
         channel_type: channelType,
         ...values,
       }
-      await api.createAlertChannel(config as any)
+      await api.createMessageChannel(config as any)
       toast({ title: t('common:success'), description: t('alerts:channelCreated') })
       setNewChannelName("")
       setShowCreateForm(false)
@@ -171,7 +171,7 @@ export function AlertChannelPluginConfigDialog({
 
     setLoading(true)
     try {
-      await api.deleteAlertChannel(name)
+      await api.deleteMessageChannel(name)
       toast({ title: t('common:success'), description: t('alerts:channelDeleted') })
       await fetchChannels()
     } catch (error) {
@@ -184,7 +184,7 @@ export function AlertChannelPluginConfigDialog({
   const handleTestChannel = async (name: string) => {
     setTestingChannel(name)
     try {
-      const result = await api.testAlertChannel(name)
+      const result = await api.testMessageChannel(name)
       setTestResults((prev) => ({
         ...prev,
         [name]: { success: result.success, message: result.message },

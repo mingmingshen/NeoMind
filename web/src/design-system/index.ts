@@ -1,7 +1,7 @@
 /**
  * Design System
  *
- * Unified design system for NeoTalk dashboard components.
+ * Unified design system for NeoMind dashboard components.
  * Provides consistent tokens, components, and utilities.
  */
 

@@ -269,9 +269,16 @@ impl ConversationContext {
             });
         }
 
-        // 限制数量，只保留最近10个
-        if self.mentioned_devices.len() > 10 {
-            self.mentioned_devices.remove(0);
+        // LRU 驱逐：移除最久未提到的设备，而非最旧的
+        const MAX_DEVICES: usize = 10;
+        if self.mentioned_devices.len() > MAX_DEVICES {
+            let oldest_idx = self.mentioned_devices
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, e)| e.last_mentioned_turn)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.mentioned_devices.remove(oldest_idx);
         }
     }
 
@@ -289,9 +296,16 @@ impl ConversationContext {
             });
         }
 
-        // 限制数量
-        if self.mentioned_locations.len() > 5 {
-            self.mentioned_locations.remove(0);
+        // LRU 驱逐：移除最久未提到的位置，而非最旧的
+        const MAX_LOCATIONS: usize = 5;
+        if self.mentioned_locations.len() > MAX_LOCATIONS {
+            let oldest_idx = self.mentioned_locations
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, e)| e.last_mentioned_turn)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            self.mentioned_locations.remove(oldest_idx);
         }
     }
 

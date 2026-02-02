@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Server, Database, Check, Zap, ChevronRight, Info, Layers } from 'lucide-react'
+import { Search, Server, Database, Check, Zap, ChevronRight, Info, Layers, Activity } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -29,14 +29,14 @@ export interface DataSourceSelectorProps {
   onSelect: (dataSource: DataSourceOrList | DataSource | undefined) => void
   currentDataSource?: DataSourceOrList
   // Optional: filter which source types to show
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
   // Optional: enable multiple data source selection
   multiple?: boolean
   // Optional: max number of data sources (only used when multiple is true)
   maxSources?: number
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device-info'
+type CategoryType = 'device-metric' | 'device-command' | 'device-info' | 'system'
 type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
 
 // Device info property definitions factory (uses translations)
@@ -52,20 +52,37 @@ function getDeviceInfoProperties(t: (key: string) => string) {
   ]
 }
 
+// System metrics definitions factory (uses translations)
+function getSystemMetrics(t: (key: string) => string) {
+  return [
+    { id: 'uptime', name: t('systemDataSource.uptime'), description: t('systemDataSource.uptimeDesc'), unit: '', dataType: 'number' as const },
+    { id: 'cpu_count', name: t('systemDataSource.cpuCount'), description: t('systemDataSource.cpuCountDesc'), unit: ' cores', dataType: 'number' as const },
+    { id: 'total_memory', name: t('systemDataSource.totalMemory'), description: t('systemDataSource.totalMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'used_memory', name: t('systemDataSource.usedMemory'), description: t('systemDataSource.usedMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'free_memory', name: t('systemDataSource.freeMemory'), description: t('systemDataSource.freeMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'available_memory', name: t('systemDataSource.availableMemory'), description: t('systemDataSource.availableMemoryDesc'), unit: ' GB', dataType: 'bytes' as const },
+    { id: 'memory_percent', name: t('systemDataSource.memoryPercent'), description: t('systemDataSource.memoryPercentDesc'), unit: '%', dataType: 'number' as const },
+    { id: 'platform', name: t('systemDataSource.platform'), description: t('systemDataSource.platformDesc'), unit: '', dataType: 'string' as const },
+    { id: 'arch', name: t('systemDataSource.arch'), description: t('systemDataSource.archDesc'), unit: '', dataType: 'string' as const },
+    { id: 'version', name: t('systemDataSource.version'), description: t('systemDataSource.versionDesc'), unit: '', dataType: 'string' as const },
+  ]
+}
+
 // Category configuration factory (uses translations)
 function getCategories(t: (key: string) => string) {
   return [
     { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
     { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
     { id: 'device-info' as const, name: t('dataSource.basicInfo'), icon: Info, description: t('dataSource.basicInfoDesc') },
+    { id: 'system' as const, name: t('systemDataSource.title'), icon: Activity, description: t('systemDataSource.description') },
   ]
 }
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info']
+  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info', 'system']
 
   const result: CategoryType[] = []
 
@@ -73,6 +90,7 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
   if (allowedTypes.includes('device-info')) result.push('device-info')
+  if (allowedTypes.includes('system')) result.push('system')
 
   // Old format types - map to new format
   if (allowedTypes.includes('device') || allowedTypes.includes('metric')) {
@@ -82,7 +100,7 @@ function normalizeAllowedTypes(
     if (!result.includes('device-command')) result.push('device-command')
   }
 
-  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info']
+  return result.length > 0 ? result : ['device-metric', 'device-command', 'device-info', 'system']
 }
 
 export function DataSourceSelector({
@@ -146,6 +164,8 @@ export function DataSourceSelector({
           newSelectedItems.add(`device-command:${ds.deviceId}:${ds.command}`)
         } else if (ds.type === 'device-info' && ds.deviceId && ds.infoProperty) {
           newSelectedItems.add(`device-info:${ds.deviceId}:${ds.infoProperty}`)
+        } else if (ds.type === 'system' && ds.systemMetric) {
+          newSelectedItems.add(`system:${ds.systemMetric}`)
         }
       }
 
@@ -280,6 +300,13 @@ export function DataSourceSelector({
           infoProperty: infoProperty as any,
           refresh: 10,
         }
+      } else if (category === 'system') {
+        // Format: system:metricId (not system:deviceId:metricId)
+        return {
+          type: 'system',
+          systemMetric: rest.join(':') as any,
+          refresh: 10,
+        }
       }
 
       // Fallback
@@ -366,7 +393,7 @@ export function DataSourceSelector({
           {/* Category Tabs */}
           <Tabs value={selectedCategory} onValueChange={(v) => setSelectedCategory(v as CategoryType)} className="flex-1 flex flex-col">
             <div className="px-6 pt-3">
-              <TabsList className="grid w-full grid-cols-5 h-9 bg-muted/50">
+              <TabsList className="grid w-full grid-cols-4 h-9 bg-muted/50">
                 {availableCategories.map(cat => {
                   const Icon = cat.icon
                   const count = getCategoryCount(cat.id)
@@ -676,6 +703,53 @@ export function DataSourceSelector({
                   <p className="text-sm">{t('dataSource.noDevices')}</p>
                 </div>
               )}
+            </TabsContent>
+
+            {/* System Metrics Content */}
+            <TabsContent value="system" className="flex-1 overflow-y-auto px-6 py-4 mt-0">
+              <div className="space-y-2">
+                {getSystemMetrics(t).map(metric => {
+                  const itemId = `system:${metric.id}`
+                  const selected = isSelected(itemId)
+                  const disabled = multiple && !selected && !canSelectMore
+
+                  if (!filterMatches(metric.name) && !filterMatches(metric.description)) return null
+
+                  return (
+                    <button
+                      key={metric.id}
+                      onClick={() => !disabled && handleItemClick(itemId)}
+                      disabled={disabled}
+                      className={cn(
+                        "w-full flex items-center justify-between px-4 py-3",
+                        "border rounded-lg hover:bg-accent/50 transition-colors text-left",
+                        selected && 'bg-primary/5 border-primary',
+                        disabled && 'opacity-50 cursor-not-allowed'
+                      )}
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        {multiple && (
+                          <div className={cn(
+                            "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                            selected ? 'bg-primary border-primary' : 'border-border'
+                          )}>
+                            {selected && <Check className="h-3 w-3 text-white" />}
+                          </div>
+                        )}
+                        <Activity className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{metric.name}</p>
+                          <p className="text-xs text-muted-foreground">{metric.description}</p>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{metric.unit}</span>
+                      </div>
+                      {!multiple && selected && (
+                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             </TabsContent>
           </Tabs>
         </div>

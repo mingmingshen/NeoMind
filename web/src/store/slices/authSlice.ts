@@ -108,7 +108,7 @@ export const createAuthSlice: StateCreator<
     try {
       const user = await api.getCurrentUser()
       // Update cache with latest user info
-      const remember = !!localStorage.getItem('neotalk_token')
+      const remember = !!localStorage.getItem('neomind_token')
       tokenManager.setUser(user, remember)
       set({ user })
       return user

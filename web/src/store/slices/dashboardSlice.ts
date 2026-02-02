@@ -171,8 +171,8 @@ export const createDashboardSlice: StateCreator<
 > = (set, get) => {
   // Clear old localStorage dashboard data on initialization
   try {
-    localStorage.removeItem('neotalk_dashboards')
-    localStorage.removeItem('neotalk_current_dashboard_id')
+    localStorage.removeItem('neomind_dashboards')
+    localStorage.removeItem('neomind_current_dashboard_id')
     console.log('[DashboardSlice] Cleared old localStorage dashboard data')
   } catch (e) {
     // Ignore

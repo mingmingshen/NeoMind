@@ -2,13 +2,57 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::Manager;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::runtime::Runtime;
 
-// Global state for the Axum server handle
+// Global state for the Axum server
+// We use Arc<Runtime> to keep it alive for the app's lifetime
 struct ServerState {
-    runtime: Mutex<Option<Runtime>>,
-    server_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    runtime: Arc<Mutex<Option<Runtime>>>,
+    server_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
+}
+
+// Global state for the tray icon
+// We need to keep the tray icon alive for the app's lifetime
+struct TrayState {
+    _tray: Option<tauri::tray::TrayIcon>,
+}
+
+impl ServerState {
+    // Wait for server to be ready by polling the TCP port
+    fn wait_for_server_ready(&self, timeout_secs: u64) -> bool {
+        let max_attempts = timeout_secs * 20; // Check every 50ms
+
+        for _ in 0..max_attempts {
+            if self.check_server_health() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        false
+    }
+
+    fn check_server_health(&self) -> bool {
+        // Try to connect to the server's port to verify it's listening
+        match std::net::TcpStream::connect_timeout(
+            &std::net::SocketAddr::from(([127, 0, 0, 1], 3000)),
+            Duration::from_millis(100),
+        ) {
+            Ok(_) => true,
+            Err(_) => false,
+        }
+    }
+}
+
+// Implement safe shutdown for ServerState
+impl Drop for ServerState {
+    fn drop(&mut self) {
+        // Shutdown the runtime gracefully
+        if let Some(rt) = self.runtime.lock().unwrap().take() {
+            rt.shutdown_background();
+        }
+    }
 }
 
 // Tauri commands for frontend communication
@@ -49,7 +93,7 @@ fn open_devtools(window: tauri::Window) {
     }
 }
 
-fn create_tray_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+fn create_tray_menu(app: &tauri::App) -> Result<tauri::tray::TrayIcon, Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
 
@@ -60,7 +104,7 @@ fn create_tray_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
 
     let menu = Menu::with_items(app, &[&show, &hide, &dev, &quit])?;
 
-    let _tray = TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -87,23 +131,30 @@ fn create_tray_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         })
         .build(app)?;
 
-    Ok(())
+    Ok(tray)
 }
 
 fn start_axum_server(state: tauri::State<ServerState>) -> Result<(), String> {
-    let runtime = state.runtime.lock().unwrap();
-    let runtime = runtime.as_ref().ok_or("Runtime not initialized")?;
+    // Clone the Arc so we can move it into the thread
+    let runtime_arc = Arc::clone(&state.runtime);
 
-    // Start the Axum server in the background
-    // This uses the existing edge-api server setup
-    let handle = runtime.spawn(async move {
-        // Import and start the existing server
-        if let Err(e) = edge_api::start_server().await {
-            eprintln!("Failed to start server: {}", e);
-        }
+    // Start the Axum server in a background thread
+    // This thread owns the runtime and keeps it alive
+    let thread_handle = std::thread::spawn(move || {
+        // Take ownership of the runtime
+        let rt = runtime_arc.lock().unwrap()
+            .take()
+            .expect("Runtime not available");
+
+        // Run the server - this blocks until the server stops
+        rt.block_on(async {
+            if let Err(e) = edge_api::start_server().await {
+                eprintln!("Failed to start server: {}", e);
+            }
+        });
     });
 
-    *state.server_handle.lock().unwrap() = Some(handle);
+    *state.server_thread.lock().unwrap() = Some(thread_handle);
     Ok(())
 }
 
@@ -111,8 +162,8 @@ fn start_axum_server(state: tauri::State<ServerState>) -> Result<(), String> {
 pub fn run() {
     let rt = Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e)).unwrap();
     let server_state = ServerState {
-        runtime: Mutex::new(Some(rt)),
-        server_handle: Mutex::new(None),
+        runtime: Arc::new(Mutex::new(Some(rt))),
+        server_thread: Mutex::new(None),
     };
 
     tauri::Builder::default()
@@ -127,15 +178,27 @@ pub fn run() {
             open_devtools,
         ])
         .setup(|app| {
-            // Create system tray
-            if let Err(e) = create_tray_menu(app) {
-                eprintln!("Failed to create tray: {}", e);
-            }
+            // Create system tray and store it in global state to keep it alive
+            let tray = match create_tray_menu(app) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("Failed to create tray: {}", e);
+                    return Ok(());
+                }
+            };
+            // Store tray icon in app state so it lives for the app's lifetime
+            app.manage(TrayState { _tray: Some(tray) });
 
             // Start Axum server in background
             let state = app.state::<ServerState>();
             if let Err(e) = start_axum_server(state) {
                 eprintln!("Failed to start Axum server: {}", e);
+            }
+
+            // Wait for server to be ready (up to 10 seconds)
+            let state = app.state::<ServerState>();
+            if !state.wait_for_server_ready(10) {
+                eprintln!("Server did not become ready in time");
             }
 
             // Handle window close event - minimize to tray instead of quitting

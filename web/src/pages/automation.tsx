@@ -1,5 +1,5 @@
 /**
- * NeoTalk Automation Page
+ * NeoMind Automation Page
  *
  * Automation interface with rules and data transforms.
  * AI Agents are now managed separately in /agents page.
@@ -10,7 +10,7 @@ import { useState, useCallback, useEffect } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useLocation } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
-import { PageTabs, PageTabsContent } from "@/components/shared"
+import { PageTabs, PageTabsContent, Pagination } from "@/components/shared"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
@@ -21,8 +21,8 @@ import { SimpleRuleBuilderSplit } from "@/components/automation/SimpleRuleBuilde
 import { TransformBuilder as TransformBuilderSplit } from "@/components/automation/TransformBuilderSplit"
 
 // Import list components
-import { RulesList } from "./automation-components/RulesList"
-import { TransformsList } from "./automation-components/TransformsList"
+import { RulesList, ITEMS_PER_PAGE as RULES_ITEMS_PER_PAGE } from "./automation-components/RulesList"
+import { TransformsList, ITEMS_PER_PAGE as TRANSFORMS_ITEMS_PER_PAGE } from "./automation-components/TransformsList"
 
 type AutomationTab = 'rules' | 'transforms'
 
@@ -76,6 +76,10 @@ export function AutomationPage() {
   const [rules, setRules] = useState<Rule[]>([])
   const [transforms, setTransforms] = useState<TransformAutomation[]>([])
   const [loading, setLoading] = useState(false)
+
+  // Pagination state
+  const [rulesPage, setRulesPage] = useState(1)
+  const [transformsPage, setTransformsPage] = useState(1)
 
   // Resources for dialogs
   const [devices, setDevices] = useState<any[]>([])
@@ -132,6 +136,26 @@ export function AutomationPage() {
   useEffect(() => {
     loadItems()
   }, [loadItems])
+
+  // Reset pagination when data changes
+  useEffect(() => {
+    setRulesPage(1)
+  }, [rules.length])
+
+  useEffect(() => {
+    setTransformsPage(1)
+  }, [transforms.length])
+
+  // Compute paginated data
+  const paginatedRules = rules.slice(
+    (rulesPage - 1) * RULES_ITEMS_PER_PAGE,
+    rulesPage * RULES_ITEMS_PER_PAGE
+  )
+
+  const paginatedTransforms = transforms.slice(
+    (transformsPage - 1) * TRANSFORMS_ITEMS_PER_PAGE,
+    transformsPage * TRANSFORMS_ITEMS_PER_PAGE
+  )
 
   // Handlers
   const handleCreate = () => {
@@ -366,6 +390,23 @@ export function AutomationPage() {
     <PageLayout
       title={tAuto('title')}
       subtitle={tAuto('pageDescription')}
+      footer={
+        activeTab === 'rules' && rules.length > RULES_ITEMS_PER_PAGE ? (
+          <Pagination
+            total={rules.length}
+            pageSize={RULES_ITEMS_PER_PAGE}
+            currentPage={rulesPage}
+            onPageChange={setRulesPage}
+          />
+        ) : activeTab === 'transforms' && transforms.length > TRANSFORMS_ITEMS_PER_PAGE ? (
+          <Pagination
+            total={transforms.length}
+            pageSize={TRANSFORMS_ITEMS_PER_PAGE}
+            currentPage={transformsPage}
+            onPageChange={setTransformsPage}
+          />
+        ) : undefined
+      }
     >
       {/* Tabs with Actions */}
       <PageTabs
@@ -393,6 +434,9 @@ export function AutomationPage() {
           <RulesList
             rules={rules}
             loading={loading}
+            paginatedRules={paginatedRules}
+            page={rulesPage}
+            onPageChange={setRulesPage}
             onEdit={handleEditRule}
             onDelete={handleDeleteRule}
             onToggleStatus={handleToggleRule}
@@ -405,6 +449,9 @@ export function AutomationPage() {
           <TransformsList
             transforms={transforms}
             loading={loading}
+            paginatedTransforms={paginatedTransforms}
+            page={transformsPage}
+            onPageChange={setTransformsPage}
             onEdit={handleEditTransform}
             onDelete={handleDeleteTransform}
             onToggleStatus={handleToggleTransform}

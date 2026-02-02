@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type {
-  NeoTalkEvent,
+  NeoMindEvent,
   AgentThinkingEvent,
   AgentDecisionEvent,
   AgentExecutionStartedEvent,
@@ -55,7 +55,7 @@ export interface UseAgentEventsOptions {
   /**
    * Event handler callback
    */
-  onEvent?: (event: NeoTalkEvent) => void
+  onEvent?: (event: NeoMindEvent) => void
 
   /**
    * Execution started callback
@@ -97,7 +97,7 @@ export interface UseAgentEventsResult {
   /**
    * All events received for this agent
    */
-  events: NeoTalkEvent[]
+  events: NeoMindEvent[]
 
   /**
    * Thinking steps in current execution

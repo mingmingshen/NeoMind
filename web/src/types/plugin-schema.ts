@@ -116,7 +116,7 @@ export interface DynamicPluginMetadata {
   license?: string
 
   // Compatibility
-  requiredNeoTalk: string
+  requiredNeoMind: string
 
   // Capabilities (from descriptor)
   capabilities: PluginCapabilities

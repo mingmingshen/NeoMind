@@ -90,7 +90,9 @@ import type {
 } from '@/types'
 import { notifyFromError, notifySuccess } from './notify'
 
-const API_BASE = '/api'
+// In Tauri, we need to use the full URL since the backend runs on port 3000
+// In development/web, we can use relative path
+const API_BASE = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
 
 // ============================================================================
 // 401 Handling Callback Registry
@@ -119,14 +121,34 @@ function triggerUnauthorizedCallbacks() {
 // JWT Token Manager (for user authentication)
 // ============================================================================
 
-const TOKEN_KEY = 'neotalk_token'
-const TOKEN_KEY_SESSION = 'neotalk_token_session'
-const USER_KEY = 'neotalk_user'
-const USER_KEY_SESSION = 'neotalk_user_session'
+const TOKEN_KEY = 'neomind_token'
+const TOKEN_KEY_SESSION = 'neomind_token_session'
+const USER_KEY = 'neomind_user'
+const USER_KEY_SESSION = 'neomind_user_session'
 
 export const tokenManager = {
   getToken: (): string | null => {
-    return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY_SESSION)
+    // Try new keys first
+    let token = localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY_SESSION)
+
+    // Migration: try old keys if new keys don't exist
+    if (!token) {
+      const oldToken = localStorage.getItem('neotalk_token') || sessionStorage.getItem('neotalk_token_session')
+      if (oldToken) {
+        // Migrate to new key
+        const isLocal = !!localStorage.getItem('neotalk_token')
+        if (isLocal) {
+          localStorage.setItem(TOKEN_KEY, oldToken)
+          localStorage.removeItem('neotalk_token')
+        } else {
+          sessionStorage.setItem(TOKEN_KEY_SESSION, oldToken)
+          sessionStorage.removeItem('neotalk_token_session')
+        }
+        token = oldToken
+      }
+    }
+
+    return token
   },
   setToken: (token: string, remember: boolean = false): void => {
     if (remember) {
@@ -145,7 +167,25 @@ export const tokenManager = {
     return !!(localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY_SESSION))
   },
   getUser: (): UserInfo | null => {
-    const userStr = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY_SESSION)
+    let userStr = localStorage.getItem(USER_KEY) || sessionStorage.getItem(USER_KEY_SESSION)
+
+    // Migration: try old keys if new keys don't exist
+    if (!userStr) {
+      const oldUser = localStorage.getItem('neotalk_user') || sessionStorage.getItem('neotalk_user_session')
+      if (oldUser) {
+        // Migrate to new key
+        const isLocal = !!localStorage.getItem('neotalk_user')
+        if (isLocal) {
+          localStorage.setItem(USER_KEY, oldUser)
+          localStorage.removeItem('neotalk_user')
+        } else {
+          sessionStorage.setItem(USER_KEY_SESSION, oldUser)
+          sessionStorage.removeItem('neotalk_user_session')
+        }
+        userStr = oldUser
+      }
+    }
+
     if (userStr) {
       try {
         return JSON.parse(userStr)
@@ -661,9 +701,9 @@ export const api = {
       body: JSON.stringify({ host, ports, timeout_ms: timeoutMs }),
     }),
 
-  // Messages (replaces Alerts) - response format: { messages: Message[], count: number }
-  getMessages: () => fetchAPI<{ messages: Message[]; count: number }>('/messages'),
-  getMessage: (id: string) => fetchAPI<Message>(`/messages/${id}`),
+  // Messages (replaces Alerts) - response format: { messages: NotificationMessage[], count: number }
+  getMessages: () => fetchAPI<{ messages: NotificationMessage[]; count: number }>('/messages'),
+  getMessage: (id: string) => fetchAPI<NotificationMessage>(`/messages/${id}`),
   createMessage: (req: { category?: string; title: string; message: string; severity?: string; source?: string }) =>
     fetchAPI<{ id: string; message: string; message_zh: string }>('/messages', {
       method: 'POST',
@@ -834,6 +874,14 @@ export const api = {
   getSessionHistory: (id: string) => fetchAPI<SessionHistoryResponse>(`/sessions/${id}/history`),
   deleteSession: (id: string) =>
     fetchAPI<{ deleted: boolean; sessionId: string }>(`/sessions/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Pending stream recovery (for WebSocket reconnection)
+  getPendingStream: (id: string) =>
+    fetchAPI<{ hasPending: boolean; sessionId: string; userMessage?: string; content?: string; thinking?: string; stage?: string; elapsed?: number; startedAt?: number }>(`/sessions/${id}/pending`),
+  clearPendingStream: (id: string) =>
+    fetchAPI<{ cleared: boolean; sessionId: string }>(`/sessions/${id}/pending`, {
       method: 'DELETE',
     }),
 
@@ -1706,4 +1754,32 @@ export const api = {
    */
   getDashboardTemplate: (id: string) =>
     fetchAPI<DashboardTemplateResponse>(`/dashboards/templates/${id}`),
+
+  // ==========================================================================
+  // Timezone Settings API
+  // ==========================================================================
+
+  /**
+   * Get the current global timezone setting
+   * GET /api/settings/timezone
+   */
+  getTimezone: () =>
+    fetchAPI<{ timezone: string; is_default: boolean }>('/settings/timezone'),
+
+  /**
+   * Update the global timezone setting
+   * PUT /api/settings/timezone
+   */
+  updateTimezone: (timezone: string) =>
+    fetchAPI<{ success: boolean; timezone: string }>('/settings/timezone', {
+      method: 'PUT',
+      body: JSON.stringify({ timezone }),
+    }),
+
+  /**
+   * List available timezone options
+   * GET /api/settings/timezones
+   */
+  listTimezones: () =>
+    fetchAPI<{ timezones: Array<{ id: string; name: string }> }>('/settings/timezones'),
 }

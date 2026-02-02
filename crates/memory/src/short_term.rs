@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::error::{MemoryError, Result};
+// Use improved token estimation from core
+use edge_ai_core::llm::compaction::estimate_tokens;
 
 /// Maximum default size of short-term memory
 pub const DEFAULT_MAX_MESSAGES: usize = 100;
@@ -62,11 +64,6 @@ impl MemoryMessage {
         };
         format!("[{}] {}", self.role, content_preview)
     }
-}
-
-/// Estimate token count (rough approximation: ~4 chars per token).
-fn estimate_tokens(text: &str) -> usize {
-    text.len().div_ceil(4)
 }
 
 /// Short-term memory for current conversation.

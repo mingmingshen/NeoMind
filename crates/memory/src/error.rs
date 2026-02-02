@@ -45,6 +45,10 @@ pub enum MemoryError {
     /// Configuration error
     #[error("Configuration error: {0}")]
     Config(String),
+
+    /// Other error
+    #[error("Other error: {0}")]
+    Other(String),
 }
 
 /// Result type for memory operations.
@@ -64,6 +68,7 @@ impl From<MemoryError> for NeoTalkError {
             MemoryError::Serialization(s) => NeoTalkError::Serialization(s),
             MemoryError::Embedding(s) => NeoTalkError::Memory(s),
             MemoryError::Config(s) => NeoTalkError::Validation(s),
+            MemoryError::Other(s) => NeoTalkError::Config(s),
         }
     }
 }

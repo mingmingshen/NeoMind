@@ -1,8 +1,8 @@
 [package]
-name = "neotalk-tauri"
+name = "neomind-tauri"
 version = "0.1.0"
-description = "NeoTalk Edge AI Platform"
-authors = ["NeoTalk Team"]
+description = "NeoMind Edge AI Platform"
+authors = ["NeoMind Team"]
 license = ""
 repository = ""
 edition = "2021"
@@ -22,12 +22,13 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 
-# Local workspace crates - using absolute paths to avoid workspace issues
-edge-api = { path = "/Users/shenmingming/NeoTalk/crates/api", package = "edge-ai-api" }
-edge-core = { path = "/Users/shenmingming/NeoTalk/crates/core", package = "edge-ai-core" }
-edge-llm = { path = "/Users/shenmingming/NeoTalk/crates/llm", package = "edge-ai-llm" }
-edge-agent = { path = "/Users/shenmingming/NeoTalk/crates/agent", package = "edge-ai-agent" }
-edge-devices = { path = "/Users/shenmingming/NeoTalk/crates/devices", package = "edge-ai-devices" }
+# Local workspace crates - relative to web/ directory
+# Tauri is in web/src-tauri/, so we need ../../crates/
+edge-api = { path = "../../crates/api", package = "edge-ai-api" }
+edge-core = { path = "../../crates/core", package = "edge-ai-core" }
+edge-llm = { path = "../../crates/llm", package = "edge-ai-llm" }
+edge-agent = { path = "../../crates/agent", package = "edge-ai-agent" }
+edge-devices = { path = "../../crates/devices", package = "edge-ai-devices" }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

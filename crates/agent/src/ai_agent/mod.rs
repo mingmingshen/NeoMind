@@ -145,6 +145,7 @@ impl AiAgentManager {
             resources,
             schedule: request.schedule,
             status: AgentStatus::Active,
+            priority: 128, // Default middle priority
             created_at: chrono::Utc::now().timestamp(),
             updated_at: chrono::Utc::now().timestamp(),
             last_execution_at: None,
@@ -322,6 +323,19 @@ impl AiAgentManager {
     /// Get the scheduler for direct access.
     pub fn scheduler(&self) -> &Arc<AgentScheduler> {
         &self.scheduler
+    }
+
+    /// Set the global default timezone for the scheduler.
+    pub async fn set_global_timezone(&self, timezone: String) -> Result<(), crate::AgentError> {
+        self.scheduler
+            .set_default_timezone(timezone)
+            .await
+            .map_err(|e| crate::AgentError::Config(format!("Failed to set timezone: {}", e)))
+    }
+
+    /// Get the current global default timezone.
+    pub async fn get_global_timezone(&self) -> Option<String> {
+        self.scheduler.get_default_timezone().await
     }
 
     /// Build resources from request.

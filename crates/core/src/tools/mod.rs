@@ -326,6 +326,14 @@ pub trait Tool: Send + Sync {
         false
     }
 
+    /// Get the tool namespace for grouping/namespacing.
+    ///
+    /// This allows tools with the same name from different sources
+    /// to coexist. For example, "device.query" vs "storage.query".
+    fn namespace(&self) -> Option<&str> {
+        None
+    }
+
     /// Get the full tool definition.
     fn definition(&self) -> ToolDefinition {
         ToolDefinition {
@@ -341,7 +349,7 @@ pub trait Tool: Send + Sync {
             version: self.version().to_string(),
             examples: vec![],
             response_format: None,
-            namespace: None,
+            namespace: self.namespace().map(|s| s.to_string()),
         }
     }
 

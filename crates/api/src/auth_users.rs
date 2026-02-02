@@ -218,6 +218,22 @@ impl AuthUserState {
         }
     }
 
+    /// Create a new auth state with custom configuration (for testing).
+    pub fn with_config(db_path: String, jwt_secret: String) -> Self {
+        let users = Self::load_users_from_db(&db_path).unwrap_or_default();
+        // Leak the strings to get &'static str for db_path
+        let db_path_static: &'static str = Box::leak(db_path.into_boxed_str());
+        let jwt_secret_owned = jwt_secret;
+
+        Self {
+            users: Arc::new(RwLock::new(users)),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            db_path: db_path_static,
+            jwt_secret: jwt_secret_owned,
+            session_duration: 7 * 24 * 60 * 60,
+        }
+    }
+
     /// Load users from database.
     /// Returns empty HashMap if database doesn't exist yet (first run).
     fn load_users_from_db(path: &str) -> Result<HashMap<String, User>, Box<dyn std::error::Error>> {
@@ -694,20 +710,34 @@ pub type CurrentUserExtension = SessionInfo;
 mod tests {
     use super::*;
 
+    fn cleanup_test_db(path: &str) {
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(&format!("{}.lock", path));
+    }
+
+    fn make_test_auth(test_name: &str) -> AuthUserState {
+        let db_path = format!("data/test_{}.redb", test_name);
+        cleanup_test_db(&db_path);
+        let jwt_secret = std::env::var("NEOTALK_JWT_SECRET")
+            .unwrap_or_else(|_| "test_secret_key_12345678".to_string());
+        AuthUserState::with_config(db_path, jwt_secret)
+    }
+
     #[tokio::test]
     async fn test_user_registration() {
-        let auth = AuthUserState::new();
+        let auth = make_test_auth("registration");
         let (user, token) = auth
             .register("testuser", "password123", UserRole::User)
             .await
             .unwrap();
         assert_eq!(user.username, "testuser");
         assert!(!token.is_empty());
+        cleanup_test_db("data/test_registration.redb");
     }
 
     #[tokio::test]
     async fn test_user_login() {
-        let auth = AuthUserState::new();
+        let auth = make_test_auth("login");
         auth.register("testuser", "password123", UserRole::User)
             .await
             .unwrap();
@@ -719,7 +749,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_validation() {
-        let auth = AuthUserState::new();
+        let auth = make_test_auth("token_validation");
         let (_, token) = auth
             .register("testuser", "password123", UserRole::User)
             .await
@@ -727,5 +757,6 @@ mod tests {
 
         let session = auth.validate_token(&token).unwrap();
         assert_eq!(session.username, "testuser");
+        cleanup_test_db("data/test_token_validation.redb");
     }
 }

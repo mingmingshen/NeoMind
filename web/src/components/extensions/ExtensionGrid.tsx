@@ -53,7 +53,7 @@ export function ExtensionGrid({
         <h3 className="text-lg font-semibold mb-2">No Extensions Found</h3>
         <p className="text-sm text-muted-foreground text-center max-w-md">
           No extensions are currently registered. Extensions are dynamically loaded modules (.so/.wasm)
-          that extend NeoTalk's capabilities.
+          that extend NeoMind's capabilities.
         </p>
       </div>
     )

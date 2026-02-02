@@ -9,6 +9,7 @@ pub mod automation;
 pub mod dsl;
 pub mod event_integration;
 pub mod interaction;
+pub mod mapper;
 pub mod mdl;
 pub mod rule_gen;
 pub mod think;
@@ -44,4 +45,8 @@ pub use think::{ThinkStorage, ThinkTool, ThoughtRecord};
 
 pub use automation::{
     CreateAutomationTool, ListAutomationsTool, TriggerAutomationTool, DeleteAutomationTool,
+};
+
+pub use mapper::{
+    ToolNameMapper, get_mapper, map_tool_parameters, resolve_tool_name,
 };

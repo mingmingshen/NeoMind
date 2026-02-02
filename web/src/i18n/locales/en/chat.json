@@ -1,7 +1,7 @@
 {
   "title": "Smart IoT Assistant",
   "welcome": {
-    "greeting": "Hello! I'm NeoTalk",
+    "greeting": "Hello! I'm NeoMind",
     "description": "Smart IoT assistant to help you manage devices and automation",
     "suggestions": {
       "checkDevices": "Check device status",

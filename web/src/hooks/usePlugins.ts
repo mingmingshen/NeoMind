@@ -280,7 +280,7 @@ function toUnifiedPluginData(plugin: Plugin): UnifiedPluginData {
       version: plugin.version,
       description: plugin.description,
       author: plugin.author,
-      requiredNeoTalk: plugin.required_version,
+      requiredNeoMind: plugin.required_version,
       filePath: plugin.path,
       capabilities: {
         async: true,

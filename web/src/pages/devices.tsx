@@ -6,7 +6,7 @@ import { useEvents } from "@/hooks/useEvents"
 import { confirm } from "@/hooks/use-confirm"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
-import { PageTabs, PageTabsContent } from "@/components/shared"
+import { PageTabs, PageTabsContent, Pagination } from "@/components/shared"
 import { Upload, Download, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -618,6 +618,23 @@ export function DevicesPage() {
     <PageLayout
       title={deviceDetailView ? undefined : t('devices:title')}
       subtitle={deviceDetailView ? undefined : t('devices:subtitle')}
+      footer={
+        !deviceDetailView && activeTab === 'devices' && devices.length > devicesPerPage ? (
+          <Pagination
+            total={devices.length}
+            pageSize={devicesPerPage}
+            currentPage={devicePage}
+            onPageChange={setDevicePage}
+          />
+        ) : !deviceDetailView && activeTab === 'types' && deviceTypes.length > deviceTypesPerPage ? (
+          <Pagination
+            total={deviceTypes.length}
+            pageSize={deviceTypesPerPage}
+            currentPage={deviceTypePage}
+            onPageChange={setDeviceTypePage}
+          />
+        ) : undefined
+      }
     >
       {deviceDetailView ? (
         // Device Detail View

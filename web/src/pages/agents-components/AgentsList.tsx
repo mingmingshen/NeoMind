@@ -229,15 +229,13 @@ export function AgentsList({
       </Card>
 
       {agents.length > ITEMS_PER_PAGE && (
-        <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t pt-3 pb-3 px-4 z-10">
-          <div className="max-w-6xl mx-auto">
-            <Pagination
-              total={agents.length}
-              pageSize={ITEMS_PER_PAGE}
-              currentPage={page}
-              onPageChange={setPage}
-            />
-          </div>
+        <div className="px-4 pt-4 border-t">
+          <Pagination
+            total={agents.length}
+            pageSize={ITEMS_PER_PAGE}
+            currentPage={page}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </>

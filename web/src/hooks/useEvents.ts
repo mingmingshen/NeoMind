@@ -3,7 +3,7 @@
 // Provides real-time event streaming to React components via custom hooks.
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import type { NeoTalkEvent, EventType, EventCategory } from '@/lib/events'
+import type { NeoMindEvent, EventType, EventCategory } from '@/lib/events'
 import { fetchAPI } from '@/lib/api'
 
 export interface UseEventsOptions {
@@ -30,7 +30,7 @@ export interface UseEventsOptions {
   /**
    * Event handler callback
    */
-  onEvent?: (event: NeoTalkEvent) => void
+  onEvent?: (event: NeoMindEvent) => void
 
   /**
    * Connection state change callback
@@ -52,7 +52,7 @@ export interface UseEventsResult {
   /**
    * Recent events received
    */
-  events: NeoTalkEvent[]
+  events: NeoMindEvent[]
 
   /**
    * Clear the events buffer
@@ -67,7 +67,7 @@ export interface UseEventsResult {
   /**
    * Get events by type
    */
-  getEventsByType: <T extends EventType>(type: T) => Extract<NeoTalkEvent, { type: T }>[]
+  getEventsByType: <T extends EventType>(type: T) => Extract<NeoMindEvent, { type: T }>[]
 }
 
 const DEFAULT_MAX_EVENTS = 100
@@ -108,7 +108,7 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
   } = options
 
   const [isConnected, setIsConnected] = useState(false)
-  const [events, setEvents] = useState<NeoTalkEvent[]>([])
+  const [events, setEvents] = useState<NeoMindEvent[]>([])
   const connectionRef = useRef<ReturnType<typeof import('@/lib/events').getEventsConnection> | null>(null)
   const maxEvents = DEFAULT_MAX_EVENTS
 
@@ -148,7 +148,7 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
 
   // Get events by type from the buffer
   const getEventsByType = useCallback(<T extends EventType>(type: T) => {
-    return events.filter(e => e.type === type) as Extract<NeoTalkEvent, { type: T }>[]
+    return events.filter(e => e.type === type) as Extract<NeoMindEvent, { type: T }>[]
   }, [events])
 
   useEffect(() => {
@@ -197,7 +197,7 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsResult {
       })
 
       // Subscribe to events
-      unsubscribeEvent = connection.onEvent((event: NeoTalkEvent) => {
+      unsubscribeEvent = connection.onEvent((event: NeoMindEvent) => {
         if (isMounted) {
           // Filter by eventTypes on client side
           const currentEventTypes = eventTypesRef.current

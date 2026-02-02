@@ -1,4 +1,4 @@
-//! OpenAPI documentation for the NeoTalk API.
+//! OpenAPI documentation for the NeoMind API.
 //!
 //! This module sets up the OpenAPI/Swagger documentation for all API endpoints.
 //! The documentation is available at:
@@ -15,12 +15,12 @@ struct ServerModifier;
 impl Modify for ServerModifier {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         // Update the info section
-        openapi.info.title = "NeoTalk API".to_string();
+        openapi.info.title = "NeoMind API".to_string();
         openapi.info.version = "0.1.0".to_string();
         openapi.info.description = Some(
-            "NeoTalk Edge AI Agent API\n\n\
+            "NeoMind Edge AI Agent API\n\n\
              ## Overview\n\n\
-             NeoTalk is an edge-deployed AI agent system with multi-backend LLM support,\n\
+             NeoMind is an edge-deployed AI agent system with multi-backend LLM support,\n\
              device management, rule engine, and workflow automation capabilities.\n\n\
              ## Authentication\n\n\
              Most endpoints do not require authentication. For protected endpoints,\n\
@@ -32,7 +32,7 @@ impl Modify for ServerModifier {
     }
 }
 
-/// NeoTalk OpenAPI documentation.
+/// NeoMind OpenAPI documentation.
 #[derive(OpenApi)]
 #[openapi(
     modifiers(&ServerModifier),

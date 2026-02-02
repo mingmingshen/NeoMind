@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Link } from "react-router-dom"
+import { useBrandMessages } from "@/hooks/useBrand"
 
 interface WelcomeAreaProps {
   className?: string
@@ -43,6 +44,7 @@ interface AISuggestion {
 
 export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
   const { t } = useTranslation("common")
+  const { getWelcomeMessage } = useBrandMessages()
   const user = useStore((state) => state.user)
 
   const [stats, setStats] = useState<SystemStats | null>(null)
@@ -147,14 +149,11 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
       <div className="w-full max-w-2xl space-y-8">
         {/* Logo and greeting */}
         <div className="text-center animate-fade-in-up">
-          <div className="w-16 h-16 rounded-2xl bg-foreground flex items-center justify-center mx-auto mb-6">
-            <Sparkles className="h-8 w-8 text-background" />
-          </div>
           <h1 className="text-2xl font-semibold text-foreground mb-2">
             {t(getGreetingKey())}, {user?.username || t("common.user", { defaultValue: "User" })}
           </h1>
           <p className="text-muted-foreground">
-            {t("welcome.tagline")}
+            {getWelcomeMessage("tagline")}
           </p>
         </div>
 

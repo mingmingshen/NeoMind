@@ -81,7 +81,7 @@ export function ExtensionUploadDialog({
         <DialogHeader>
           <DialogTitle>Register Extension</DialogTitle>
           <DialogDescription>
-            Enter the path to the extension file (.so/.wasm) to register it with NeoTalk.
+            Enter the path to the extension file (.so/.wasm) to register it with NeoMind.
           </DialogDescription>
         </DialogHeader>
 

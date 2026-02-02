@@ -215,6 +215,22 @@ pub struct AgentConfig {
     pub api_endpoint: Option<String>,
     /// API key for cloud LLM
     pub api_key: Option<String>,
+    /// Maximum tool calls per request (default: 5)
+    #[serde(default = "default_max_tool_calls")]
+    pub max_tool_calls: usize,
+    /// Number of recent tool results to keep intact (default: 2)
+    #[serde(default = "default_keep_tool_results")]
+    pub keep_recent_tool_results: usize,
+}
+
+/// Default value for max tool calls per request.
+fn default_max_tool_calls() -> usize {
+    5
+}
+
+/// Default value for keep recent tool results.
+fn default_keep_tool_results() -> usize {
+    2
 }
 
 impl Default for AgentConfig {
@@ -263,6 +279,8 @@ impl Default for AgentConfig {
                 .or_else(|| std::env::var("OPENAI_ENDPOINT").ok())
                 .or_else(|| Some("http://localhost:11434/v1".to_string())),
             api_key: std::env::var("OPENAI_API_KEY").ok(),
+            max_tool_calls: default_max_tool_calls(),
+            keep_recent_tool_results: default_keep_tool_results(),
         }
     }
 }

@@ -51,33 +51,9 @@ export default defineConfig({
     target: 'es2020',
     rollupOptions: {
       output: {
-        // Performance optimization: Simple chunking strategy to avoid circular dependencies
+        // Simplified chunking strategy to avoid ALL circular dependencies
+        // Put all node_modules in a single vendor chunk
         manualChunks: (id) => {
-          // Put ALL React ecosystem in one chunk (React, ReactDOM, Router, Radix, etc.)
-          if (id.includes('node_modules')) {
-            // React-based libraries all go to vendor-react to avoid circular deps
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router') ||
-                id.includes('@radix-ui') || id.includes('@remix-run') ||
-                id.includes('recharts') || id.includes('react-markdown') ||
-                id.includes('react-grid-layout') || id.includes('react-syntax') ||
-                id.includes('scheduler') || id.includes('use-sync') ||
-                id.includes('history')) {
-              return 'vendor-react'
-            }
-            // D3 and other non-React visualization libraries
-            if (id.includes('d3-') || id.includes('d3-array') || id.includes('d3-scale') ||
-                id.includes('d3-shape') || id.includes('d3-time')) {
-              return 'vendor-d3'
-            }
-            // Markdown processing (unified, remark, etc.)
-            if (id.includes('unified') || id.includes('remark') || id.includes('mdast') ||
-                id.includes('micromark') || id.includes('vfile') || id.includes('bail')) {
-              return 'vendor-markdown'
-            }
-            // All other node_modules
-            return 'vendor-other'
-          }
-
           // Application chunks - only split heavy pages
           if (id.includes('/pages/login')) return 'page-login'
           if (id.includes('/pages/setup')) return 'page-setup'
@@ -92,6 +68,13 @@ export default defineConfig({
           if (id.includes('/pages/messages')) return 'page-messages'
           if (id.includes('/pages/settings')) return 'page-settings'
           if (id.includes('/pages/chat')) return 'page-chat'
+
+          // ALL node_modules in one chunk to eliminate circular dependencies
+          if (id.includes('node_modules')) {
+            return 'vendor'
+          }
+
+          return undefined
         },
       },
     },

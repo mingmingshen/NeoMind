@@ -254,6 +254,9 @@ pub struct LlmInterface {
     tool_filter: ToolFilter,
     /// Business context manager for dynamic context injection.
     context_manager: Option<crate::context::ContextManager>,
+    /// Global timezone for time-aware prompts (IANA format, e.g., "Asia/Shanghai").
+    /// Loaded from settings and used for all time-related context.
+    global_timezone: Arc<RwLock<Option<String>>>,
 }
 
 impl LlmInterface {
@@ -278,6 +281,7 @@ impl LlmInterface {
             intent_classifier: IntentClassifier::default(),
             tool_filter: ToolFilter::default(),
             context_manager: None,
+            global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
         }
     }
 
@@ -305,6 +309,7 @@ impl LlmInterface {
             intent_classifier: IntentClassifier::default(),
             tool_filter: ToolFilter::default(),
             context_manager: None,
+            global_timezone: Arc::new(RwLock::new(None)), // Will be loaded from settings
         }
     }
 
@@ -316,6 +321,36 @@ impl LlmInterface {
     /// Get the thinking mode setting.
     pub async fn get_thinking_enabled(&self) -> Option<bool> {
         *self.thinking_enabled.read().await
+    }
+
+    /// Set the global timezone for time-aware prompts.
+    /// This should be loaded from the settings store on initialization and updated when settings change.
+    pub async fn set_global_timezone(&self, timezone: String) {
+        *self.global_timezone.write().await = Some(timezone);
+        // Clear the system prompt cache so time placeholders are re-evaluated with new timezone
+        *self.system_prompt_cache.write().await = None;
+    }
+
+    /// Get the current global timezone setting.
+    pub async fn get_global_timezone(&self) -> Option<String> {
+        self.global_timezone.read().await.clone()
+    }
+
+    /// Load global timezone from settings store and apply it.
+    /// Returns the loaded timezone or default if not found.
+    pub async fn load_global_timezone(&self) -> Result<String, AgentError> {
+        use edge_ai_storage::SettingsStore;
+
+        const SETTINGS_DB_PATH: &str = "data/settings.redb";
+
+        let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
+            .map_err(|e| AgentError::Generation(format!("Failed to open settings store: {}", e)))?;
+
+        let timezone = settings_store.get_global_timezone();
+        self.set_global_timezone(timezone.clone()).await;
+
+        tracing::debug!("Loaded global timezone: {}", timezone);
+        Ok(timezone)
     }
 
     /// Enable or disable instance manager mode.
@@ -716,12 +751,68 @@ impl LlmInterface {
         prompt
     }
 
+    /// Build the base system prompt with current time injected.
+    /// This replaces the time placeholders with actual time values using the configured global timezone.
+    pub async fn build_base_system_prompt_with_time(&self, timezone: Option<&str>) -> String {
+        use crate::prompts::{CURRENT_TIME_PLACEHOLDER, LOCAL_TIME_PLACEHOLDER, TIMEZONE_PLACEHOLDER};
+
+        // Get the base prompt (which contains placeholders)
+        let base_prompt = self.build_base_system_prompt().await;
+
+        // Calculate current times
+        let now = chrono::Utc::now();
+        let current_time_utc = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+
+        // Use self.global_timezone first, then parameter, then default
+        let effective_timezone = self.global_timezone.read().await
+            .as_ref()
+            .cloned()
+            .or_else(|| timezone.map(|s| s.to_string()))
+            .unwrap_or_else(|| "Asia/Shanghai".to_string());
+
+        // Parse timezone to get local time
+        let tz = effective_timezone
+            .parse::<chrono_tz::Tz>()
+            .unwrap_or_else(|_| chrono_tz::Tz::Asia__Shanghai); // Default to Shanghai on error
+
+        let local_time = now.with_timezone(&tz).format("%Y-%m-%d %H:%M:%S").to_string();
+
+        // Get additional time context for better LLM understanding
+        let day_of_week = now.with_timezone(&tz).format("%A").to_string();
+        let date_str = now.with_timezone(&tz).format("%Y年%m月%d日").to_string();
+
+        // Get time period description (morning, afternoon, evening, night)
+        let hour_str = now.with_timezone(&tz).format("%H").to_string();
+        let hour: u32 = hour_str.parse().unwrap_or(12);
+        let time_period = match hour {
+            5..=11 => "上午",
+            12..=13 => "中午",
+            14..=17 => "下午",
+            18..=22 => "晚上",
+            _ => "夜间",
+        };
+
+        // Build enhanced time context
+        let local_time_with_context = format!(
+            "{} {} ({})",
+            date_str,
+            local_time,
+            format!("{}{}", time_period, day_of_week)
+        );
+
+        // Replace placeholders
+        base_prompt
+            .replace(CURRENT_TIME_PLACEHOLDER, &current_time_utc)
+            .replace(LOCAL_TIME_PLACEHOLDER, &local_time_with_context)
+            .replace(TIMEZONE_PLACEHOLDER, &effective_timezone)
+    }
+
     /// Build system prompt with tool descriptions.
     /// Uses enhanced prompts from prompts module for better conversation quality.
-    /// Uses cached base prompt and adds user-specific parts.
+    /// Uses cached base prompt with time placeholders replaced and adds user-specific parts.
     async fn build_system_prompt_with_tools(&self, user_message: Option<&str>) -> String {
-        // Get cached base prompt
-        let mut prompt = self.build_base_system_prompt().await;
+        // Get base prompt with time placeholders replaced
+        let mut prompt = self.build_base_system_prompt_with_time(None).await;
 
         // Add intent-specific addon if we can classify the user's message
         if let Some(msg) = user_message {

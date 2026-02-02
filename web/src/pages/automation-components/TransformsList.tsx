@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { EmptyStateInline, Pagination } from "@/components/shared"
+import { EmptyStateInline } from "@/components/shared"
 import { Edit, Trash2, MoreVertical, Code, Database, Globe, Cpu, HardDrive, CheckCircle2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
@@ -31,6 +31,9 @@ import type { TransformAutomation } from "@/types"
 interface TransformsListProps {
   transforms: TransformAutomation[]
   loading: boolean
+  paginatedTransforms?: TransformAutomation[]
+  page?: number
+  onPageChange?: (page: number) => void
   onEdit: (transform: TransformAutomation) => void
   onDelete: (transform: TransformAutomation) => void
   onToggleStatus: (transform: TransformAutomation) => void
@@ -43,7 +46,7 @@ const SCOPE_CONFIG: Record<string, { label: string; icon: typeof Globe; color: s
   device: { label: 'automation:transformBuilder.scopes.device', icon: HardDrive, color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
 }
 
-const ITEMS_PER_PAGE = 10
+export const ITEMS_PER_PAGE = 10
 
 // Get code summary for display
 function getCodeSummary(jsCode: string): string {
@@ -75,17 +78,24 @@ function getCodeSummary(jsCode: string): string {
 export function TransformsList({
   transforms,
   loading,
+  paginatedTransforms: propsPaginatedTransforms,
+  page: propsPage,
+  onPageChange,
   onEdit,
   onDelete,
   onToggleStatus,
 }: TransformsListProps) {
   const { t } = useTranslation(['common', 'automation'])
-  const [page, setPage] = useState(1)
+  const [internalPage, setInternalPage] = useState(1)
+
+  // Use props if provided, otherwise use internal state (backward compatibility)
+  const page = propsPage ?? internalPage
+  const setPage = onPageChange ?? setInternalPage
 
   const totalPages = Math.ceil(transforms.length / ITEMS_PER_PAGE) || 1
   const startIndex = (page - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedTransforms = transforms.slice(startIndex, endIndex)
+  const paginatedTransforms = propsPaginatedTransforms ?? transforms.slice(startIndex, endIndex)
 
   function getScopeInfo(scope: any): { label: string; icon: typeof Globe; color: string } {
     if (!scope || scope === 'global' || (typeof scope === 'string' && scope === 'global')) {
@@ -262,19 +272,6 @@ export function TransformsList({
           </TableBody>
         </Table>
       </Card>
-
-      {transforms.length > ITEMS_PER_PAGE && (
-        <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t pt-3 pb-3 px-4 z-10">
-          <div className="max-w-6xl mx-auto">
-            <Pagination
-              total={transforms.length}
-              pageSize={ITEMS_PER_PAGE}
-              currentPage={page}
-              onPageChange={setPage}
-            />
-          </div>
-        </div>
-      )}
     </>
   )
 }

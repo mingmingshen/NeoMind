@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/table"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { EmptyStateInline, Pagination } from "@/components/shared"
+import { EmptyStateInline } from "@/components/shared"
 import { Zap, Edit, Play, Trash2, MoreVertical, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Clock, CheckCircle2, Timer } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
@@ -32,6 +32,9 @@ import { formatTimestamp } from "@/lib/utils/format"
 interface RulesListProps {
   rules: Rule[]
   loading: boolean
+  paginatedRules?: Rule[]
+  page?: number
+  onPageChange?: (page: number) => void
   onEdit: (rule: Rule) => void
   onDelete: (rule: Rule) => void
   onToggleStatus: (rule: Rule) => void
@@ -49,7 +52,7 @@ const ACTION_CONFIG: Record<string, { icon: typeof Zap; label: string; color: st
   HttpRequest: { icon: FlaskConical, label: 'HTTP', color: 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800' },
 }
 
-const ITEMS_PER_PAGE = 10
+export const ITEMS_PER_PAGE = 10
 
 // Format condition for display
 function formatConditionDisplay(rule: Rule): string {
@@ -153,18 +156,25 @@ function parseActionsFromDSL(dsl?: string): RuleAction[] {
 export function RulesList({
   rules,
   loading,
+  paginatedRules: propsPaginatedRules,
+  page: propsPage,
+  onPageChange,
   onEdit,
   onDelete,
   onToggleStatus,
   onExecute,
 }: RulesListProps) {
   const { t } = useTranslation(['common', 'automation'])
-  const [page, setPage] = useState(1)
+  const [internalPage, setInternalPage] = useState(1)
+
+  // Use props if provided, otherwise use internal state (backward compatibility)
+  const page = propsPage ?? internalPage
+  const setPage = onPageChange ?? setInternalPage
 
   const totalPages = Math.ceil(rules.length / ITEMS_PER_PAGE) || 1
   const startIndex = (page - 1) * ITEMS_PER_PAGE
   const endIndex = startIndex + ITEMS_PER_PAGE
-  const paginatedRules = rules.slice(startIndex, endIndex)
+  const paginatedRules = propsPaginatedRules ?? rules.slice(startIndex, endIndex)
 
   return (
     <>
@@ -349,19 +359,6 @@ export function RulesList({
           </TableBody>
         </Table>
       </Card>
-
-      {rules.length > ITEMS_PER_PAGE && (
-        <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-t pt-3 pb-3 px-4 z-10">
-          <div className="max-w-6xl mx-auto">
-            <Pagination
-              total={rules.length}
-              pageSize={ITEMS_PER_PAGE}
-              currentPage={page}
-              onPageChange={setPage}
-            />
-          </div>
-        </div>
-      )}
     </>
   )
 }

@@ -73,13 +73,15 @@ pub struct AgentScheduler {
     /// Scheduled tasks
     tasks: Arc<RwLock<HashMap<String, ScheduledTask>>>,
     /// Configuration
-    config: SchedulerConfig,
+    config: Arc<RwLock<SchedulerConfig>>,
     /// Running state
     running: Arc<RwLock<bool>>,
     /// Currently running executions
     running_executions: Arc<RwLock<std::collections::HashSet<String>>>,
     /// Default timezone parsed
-    default_tz: Option<Tz>,
+    default_tz: Arc<RwLock<Option<Tz>>>,
+    /// Semaphore for limiting concurrent executions
+    execution_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl AgentScheduler {
@@ -101,19 +103,44 @@ impl AgentScheduler {
             None
         };
 
+        // Max concurrent executions from config (default 10)
+        let max_concurrent = config.max_concurrent;
+
         Ok(Self {
             tasks: Arc::new(RwLock::new(HashMap::new())),
-            config,
+            config: Arc::new(RwLock::new(config)),
             running: Arc::new(RwLock::new(false)),
             running_executions: Arc::new(RwLock::new(std::collections::HashSet::new())),
-            default_tz,
+            default_tz: Arc::new(RwLock::new(default_tz)),
+            execution_semaphore: Arc::new(tokio::sync::Semaphore::new(max_concurrent)),
         })
+    }
+
+    /// Set the global default timezone.
+    pub async fn set_default_timezone(&self, timezone: String) -> Result<(), SchedulerError> {
+        let tz = timezone.parse::<Tz>().map_err(|_| SchedulerError::InvalidTimezone(timezone.clone()))?;
+
+        // Update the parsed timezone
+        *self.default_tz.write().await = Some(tz);
+
+        // Update the config
+        let mut config = self.config.write().await;
+        config.default_timezone = Some(timezone);
+
+        tracing::info!("Default timezone updated to: {:?}", config.default_timezone);
+        Ok(())
+    }
+
+    /// Get the current default timezone string.
+    pub async fn get_default_timezone(&self) -> Option<String> {
+        self.config.read().await.default_timezone.clone()
     }
 
     /// Schedule an agent for execution.
     pub async fn schedule_agent(&self, agent: AiAgent) -> Result<(), crate::AgentError> {
         let (next_execution, cron_schedule) = self
             .calculate_next_execution(&agent.schedule)
+            .await
             .map_err(|e| crate::AgentError::Config(format!("Schedule error: {}", e)))?;
 
         let task = ScheduledTask {
@@ -159,12 +186,17 @@ impl AgentScheduler {
         *running = true;
         drop(running);
 
+        // Read config values before spawning the task
+        let config = self.config.read().await;
+        let tick_interval = Duration::from_millis(config.tick_interval_ms);
+        let max_concurrent = config.max_concurrent;
+        drop(config);
+
         let tasks = self.tasks.clone();
         let running_flag = self.running.clone();
         let running_executions = self.running_executions.clone();
-        let tick_interval = Duration::from_millis(self.config.tick_interval_ms);
-        let max_concurrent = self.config.max_concurrent;
         let executor_ref = executor;
+        let semaphore = self.execution_semaphore.clone();
 
         tokio::spawn(async move {
             let mut ticker = interval(tick_interval);
@@ -218,11 +250,23 @@ impl AgentScheduler {
                 for (agent_id, _cron_schedule) in tasks_to_execute {
                     let executor = executor_ref.clone();
                     let running_executions_clone = running_executions.clone();
+                    let semaphore_clone = semaphore.clone();
 
                     // Mark as running
                     running_executions_clone.write().await.insert(agent_id.clone());
 
                     tokio::spawn(async move {
+                        // Acquire semaphore permit for concurrency control
+                        // If semaphore is closed, log and skip execution
+                        let permit = match semaphore_clone.acquire().await {
+                            Ok(p) => p,
+                            Err(_) => {
+                                tracing::error!(agent_id = %agent_id, "Semaphore closed, skipping agent execution");
+                                running_executions_clone.write().await.remove(&agent_id);
+                                return;
+                            }
+                        };
+
                         tracing::debug!(agent_id = %agent_id, "Executing scheduled agent");
 
                         match executor.store().get_agent(&agent_id).await {
@@ -269,7 +313,8 @@ impl AgentScheduler {
             tracing::info!("Agent scheduler stopped");
         });
 
-        tracing::info!("Agent scheduler started with default timezone: {:?}", self.config.default_timezone);
+        let config = self.config.read().await;
+        tracing::info!("Agent scheduler started with default timezone: {:?}", config.default_timezone);
         Ok(())
     }
 
@@ -305,7 +350,7 @@ impl AgentScheduler {
         timezone: Option<&str>,
     ) -> Result<Vec<DateTime<Utc>>, SchedulerError> {
         let schedule = Self::parse_cron_expression(expression)?;
-        let tz_opt = self.parse_timezone(timezone);
+        let tz_opt = Self::parse_timezone(timezone);
 
         let now = Utc::now();
         // Use FixedOffset for unified calculation
@@ -333,7 +378,7 @@ impl AgentScheduler {
 
     /// Calculate the next execution time for a schedule.
     /// Returns (timestamp, parsed_schedule) where parsed_schedule is Some() for cron schedules.
-    pub(crate) fn calculate_next_execution(
+    pub(crate) async fn calculate_next_execution(
         &self,
         schedule: &AgentSchedule,
     ) -> Result<(i64, Option<Schedule>), SchedulerError> {
@@ -352,12 +397,14 @@ impl AgentScheduler {
 
                 let parsed = Self::parse_cron_expression(cron_expr)?;
 
-                // Get timezone for this schedule
+                // Get timezone for this schedule - read from RwLock
+                let default_tz = self.default_tz.read().await;
                 let tz_opt = schedule
                     .timezone
                     .as_ref()
-                    .and_then(|tz_str| self.parse_timezone(Some(tz_str)))
-                    .or(self.default_tz);
+                    .and_then(|tz_str| Self::parse_timezone(Some(tz_str)))
+                    .or(*default_tz);
+                drop(default_tz);
 
                 // Calculate next execution time
                 // We need to use a unified DateTime type for the calculation
@@ -404,13 +451,8 @@ impl AgentScheduler {
     }
 
     /// Parse a timezone string.
-    fn parse_timezone(&self, timezone: Option<&str>) -> Option<Tz> {
-        let tz_str = timezone.unwrap_or_else(|| {
-            self.config
-                .default_timezone
-                .as_deref()
-                .unwrap_or("UTC")
-        });
+    fn parse_timezone(timezone: Option<&str>) -> Option<Tz> {
+        let tz_str = timezone.unwrap_or("UTC");
         tz_str.parse::<Tz>().ok()
     }
 
@@ -468,6 +510,7 @@ mod tests {
         let now = Utc::now().timestamp();
         let (next, _) = scheduler
             .calculate_next_execution(&interval_schedule)
+            .await
             .unwrap();
 
         assert!(next >= now + 299 && next <= now + 301);
@@ -491,6 +534,7 @@ mod tests {
         let now = Utc::now().timestamp();
         let (next, parsed) = scheduler
             .calculate_next_execution(&cron_schedule)
+            .await
             .unwrap();
 
         // Should have parsed the cron expression
@@ -518,6 +562,7 @@ mod tests {
         let now = Utc::now().timestamp();
         let (next, parsed) = scheduler
             .calculate_next_execution(&cron_schedule)
+            .await
             .unwrap();
 
         // Should have parsed the cron expression
@@ -572,7 +617,7 @@ mod tests {
             timezone: None,
         };
 
-        let result = scheduler.calculate_next_execution(&cron_schedule);
+        let result = scheduler.calculate_next_execution(&cron_schedule).await;
         assert!(result.is_err());
     }
 
@@ -592,6 +637,7 @@ mod tests {
 
         let (next, _) = scheduler
             .calculate_next_execution(&event_schedule)
+            .await
             .unwrap();
 
         // Event schedules should have MAX next execution
@@ -613,7 +659,7 @@ mod tests {
         };
 
         let now = Utc::now().timestamp();
-        let (next, _) = scheduler.calculate_next_execution(&once_schedule).unwrap();
+        let (next, _) = scheduler.calculate_next_execution(&once_schedule).await.unwrap();
 
         // Once schedules should execute immediately
         assert!(next >= now && next <= now + 5);

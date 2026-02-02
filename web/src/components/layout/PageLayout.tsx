@@ -10,6 +10,8 @@ export interface PageLayoutProps {
   subtitle?: string
   /** Optional actions area rendered on the right of the header (buttons, filters, etc.) */
   actions?: ReactNode
+  /** Optional footer content (e.g., pagination bar fixed at bottom) */
+  footer?: ReactNode
   maxWidth?: 'md' | 'lg' | 'xl' | '2xl' | 'full'
   className?: string
   /** Whether to render a subtle bottom border under the header */
@@ -35,6 +37,7 @@ const maxWidthClass = {
  *   subtitle="Manage all connected devices"
  *   actions={<Button size="sm">Refresh</Button>}
  *   maxWidth="xl"
+ *   footer={<Pagination />}
  * >
  *   <div>Content here</div>
  * </PageLayout>
@@ -44,6 +47,7 @@ export function PageLayout({
   title,
   subtitle,
   actions,
+  footer,
   maxWidth = 'full',
   className,
   borderedHeader = false,
@@ -63,14 +67,22 @@ export function PageLayout({
         </div>
       )}
       {/* Content area - uses flex-col to push sticky elements to bottom when content is short */}
-      <div className={cn('flex-1 flex flex-col overflow-hidden', className)}>
+      <div className={cn('flex-1 flex flex-col min-h-0', className)}>
         {/* Scrollable content */}
-        <div className="flex-1 overflow-auto px-6 md:px-8">
+        <div className={cn('flex-1 overflow-auto px-6 md:px-8', footer ? 'pb-20' : 'pb-6')}>
           <div className={cn('mx-auto w-full space-y-6', maxWidthClass[maxWidth])}>
             {children}
           </div>
         </div>
       </div>
+      {/* Fixed footer with glass morphism effect */}
+      {footer && (
+        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-background/80 backdrop-blur-md border-t border-border/30">
+          <div className={cn('w-full px-6 md:px-8 py-4', maxWidthClass[maxWidth], className)}>
+            {footer}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

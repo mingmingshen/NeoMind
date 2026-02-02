@@ -85,6 +85,10 @@ pub enum Error {
     /// Parse errors with location context.
     #[error("Parse error at {location}: {message}")]
     Parse { location: String, message: String },
+
+    /// Other errors.
+    #[error("Other error: {0}")]
+    Other(String),
 }
 
 /// Result type alias for convenience.

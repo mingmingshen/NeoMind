@@ -240,12 +240,10 @@ export function ComponentConfigDialog({
         rounded-2xl
       ">
         {/* Header */}
-        <DialogHeader className="px-6 py-4 border-b shrink-0 bg-gradient-to-r from-primary/5 via-background to-background">
+        <DialogHeader className="px-6 py-4 border-b shrink-0">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/20">
-                <Settings className="h-5 w-5 text-primary" />
-              </div>
+            <div className="flex items-center gap-3">
+              <Settings className="h-5 w-5 text-muted-foreground" />
               <div>
                 <DialogTitle className="text-base font-semibold p-0 h-auto">
                   {t('componentConfig.editComponent')}
