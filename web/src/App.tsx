@@ -82,10 +82,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const response = await fetch('/api/setup/status')
-        const data = await response.json()
-        setSetupRequired(data.setup_required)
+        // Use correct API base for Tauri environment
+        const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+        const response = await fetch(`${apiBase}/setup/status`)
+        if (response.ok) {
+          const data = await response.json()
+          setSetupRequired(data.setup_required)
+        } else {
+          // If API returns error, assume setup is not required and let login handle it
+          setSetupRequired(false)
+        }
       } catch {
+        // If API is unreachable (backend not ready), assume setup is not required
         setSetupRequired(false)
       } finally {
         setLoading(false)
@@ -129,11 +137,15 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const response = await fetch('/api/setup/status')
-        const data = await response.json()
-        setSetupRequired(data.setup_required)
+        const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+        const response = await fetch(`${apiBase}/setup/status`)
+        if (response.ok) {
+          const data = await response.json()
+          setSetupRequired(data.setup_required)
+        } else {
+          setSetupRequired(false)
+        }
       } catch {
-        // If API fails, assume setup is not required
         setSetupRequired(false)
       } finally {
         setLoading(false)
@@ -178,11 +190,15 @@ function SetupCheckRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const response = await fetch('/api/setup/status')
-        const data = await response.json()
-        setSetupRequired(data.setup_required)
+        const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+        const response = await fetch(`${apiBase}/setup/status`)
+        if (response.ok) {
+          const data = await response.json()
+          setSetupRequired(data.setup_required)
+        } else {
+          setSetupRequired(false)
+        }
       } catch {
-        // If API fails, assume setup is not required (fallback to login)
         setSetupRequired(false)
       } finally {
         setLoading(false)
