@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0) - only for testing'
+        required: false
+        default: ''
 
 jobs:
   build:
