@@ -5,7 +5,7 @@
 NeoMind is a Rust-based edge AI platform that enables autonomous device management and automated decision-making through Large Language Models (LLMs).
 
 [![Build Release](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml/badge.svg)](https://github.com/camthink-ai/NeoMind/actions/workflows/build.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: MIT OR Apache-2.0](https://img.googleapis.com/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Features
 
@@ -15,24 +15,24 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 - **Tool Calling**: Execute real system actions through LLM function calling
 
 ### 🔌 Modular Device Integration
-- **Unified Abstraction**: MDL (Machine Description Language) for all device types
-- **Multi-Protocol**: MQTT, Modbus, HTTP, Home Assistant, OPC-UA, LoRaWAN
-- **Hot-Plug**: Runtime adapter loading/unloading
+- **Multi-Protocol**: MQTT, Modbus, Home Assistant
+- **Device Discovery**: Automatic device detection and type registration
+- **Hot-Plug**: Runtime adapter loading/unloading via plugin system
 
 ### ⚡ Event-Driven Architecture
 - **Real-time Response**: Device changes automatically trigger rules and automations
 - **Decoupled Design**: All components communicate via event bus
-- **Scalable**: Easy to add new event handlers
+- **Multiple Transports**: REST API, WebSocket, SSE
 
 ### 📦 Complete Storage System
-- **Time-Series**: Device metrics history and queries
-- **State Storage**: Device states, rule execution records
+- **Time-Series**: Device metrics history and queries (redb)
+- **State Storage**: Device states, automation execution records
 - **LLM Memory**: Three-tier memory (short/mid/long-term)
 - **Vector Search**: Semantic search across devices and rules
 
 ### 🖥️ Desktop Application
 - **Cross-Platform**: macOS, Windows, Linux native apps
-- **Modern UI**: React + TypeScript + Tailwind CSS
+- **Modern UI**: React 18 + TypeScript + Tailwind CSS
 - **System Tray**: Background operation with quick access
 - **Auto-Update**: Built-in update notifications
 
@@ -40,11 +40,7 @@ NeoMind is a Rust-based edge AI platform that enables autonomous device manageme
 
 ### Desktop App (Recommended)
 
-Download the latest release for your platform:
-
-[![macOS](https://img.shields.io/badge/macOS-Download-blue.svg)](https://github.com/camthink-ai/NeoMind/releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-Download-blue.svg)](https://github.com/camthink-ai/NeoMind/releases/latest)
-[![Linux](https://img.shields.io/badge/Linux-Download-blue.svg)](https://github.com/camthink-ai/NeoMind/releases/latest)
+Download the latest release for your platform from [Releases](https://github.com/camthink-ai/NeoMind/releases/latest).
 
 On first launch, the setup wizard will guide you through:
 1. Creating an admin account
@@ -54,7 +50,7 @@ On first launch, the setup wizard will guide you through:
 
 #### Prerequisites
 
-- Rust 1.70+
+- Rust 1.85+
 - Node.js 20+
 - Ollama (local LLM) or OpenAI API
 
@@ -122,7 +118,7 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 │                   Desktop App / Web UI                       │
 │                    React + TypeScript                       │
 └───────────────────────┬─────────────────────────────────────┘
-                        │ REST API / WebSocket
+                        │ REST API / WebSocket / SSE
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      API Gateway                             │
@@ -130,7 +126,7 @@ The installer will be in `web/src-tauri/target/release/bundle/`
 └──┬──────────────┬──────────────┬───────────────────────────┘
    │              │              │
    ▼              ▼              ▼
-Rules Engine   Workflow      Alert System
+Automation      Devices      Messages
    │              │              │
    └──────────────┴──────────────┘
                   │ Subscribe to all events
@@ -153,12 +149,19 @@ neomind/
 │   ├── llm/           # LLM runtime (Ollama/OpenAI/Anthropic)
 │   ├── api/           # Web API server (Axum)
 │   ├── agent/         # AI Agent with tool calling
-│   ├── devices/       # Device management and MDL
+│   ├── automation/    # Unified automation system (rules + transforms)
+│   ├── devices/       # Device management (MQTT/Modbus/HASS)
 │   ├── rules/         # Rule engine and DSL parser
-│   ├── workflow/      # Workflow orchestration
 │   ├── storage/       # Storage system (redb)
 │   ├── memory/        # Three-tier LLM memory
-│   └── ...
+│   ├── messages/      # Unified messaging and notification
+│   ├── tools/         # Function calling framework
+│   ├── commands/      # Command queue with retry
+│   ├── integrations/  # External system integrations
+│   ├── sandbox/       # WASM sandbox for secure execution
+│   ├── cli/           # Command-line interface
+│   ├── plugin-sdk/    # SDK for building plugins
+│   └── testing/       # Testing utilities
 ├── web/               # React frontend + Tauri desktop app
 │   ├── src/           # TypeScript source
 │   └── src-tauri/     # Rust backend for desktop
@@ -182,6 +185,30 @@ neomind/
 - **UI**: Tailwind CSS + Radix UI
 - **Desktop**: Tauri 2.x
 - **State**: Zustand
+
+## API Endpoints
+
+| Category | Endpoints |
+|----------|-----------|
+| **Health** | `/api/health`, `/api/health/status`, `/api/health/live`, `/api/health/ready` |
+| **Auth** | `/api/auth/login`, `/api/auth/register`, `/api/auth/status` |
+| **Setup** | `/api/setup/status`, `/api/setup/initialize`, `/api/setup/llm-config` |
+| **Devices** | `/api/devices`, `/api/devices/:id`, `/api/devices/discover` |
+| **Device Types** | `/api/device-types`, `/api/device-types/:id` |
+| **Automations** | `/api/automations`, `/api/automations/:id`, `/api/automations/templates` |
+| **Rules** | `/api/rules`, `/api/rules/:id`, `/api/rules/:id/test` |
+| **Transforms** | `/api/transforms`, `/api/transforms/:id` |
+| **Sessions** | `/api/sessions`, `/api/sessions/:id`, `/api/sessions/:id/chat` |
+| **Chat** | `/api/chat` (WebSocket) |
+| **LLM Backends** | `/api/llm-backends`, `/api/llm-backends/:id`, `/api/llm-backends/types` |
+| **Ollama Models** | `/api/llm-backends/ollama/models` |
+| **Memory** | `/api/memory/*` (memory operations) |
+| **Tools** | `/api/tools`, `/api/tools/:name/execute` |
+| **Messages** | `/api/messages`, `/api/messages/:id`, `/api/messages/channels` |
+| **Extensions** | `/api/extensions` (dynamic plugins) |
+| **Events** | `/api/events/stream` (SSE), `/api/events/ws` (WebSocket) |
+| **Stats** | `/api/stats/system`, `/api/stats/devices`, `/api/stats/rules` |
+| **Search** | `/api/search` |
 
 ## Usage Examples
 
@@ -213,8 +240,9 @@ LLM: [Notification] I noticed your AC is cycling frequently at night.
 
 ## Core Concepts
 
-### MDL (Machine Description Language)
-Unified device description format defining uplink metrics and downlink commands.
+### Device Type Definition
+
+Device types define available metrics and commands:
 
 ```json
 {
@@ -228,7 +256,8 @@ Unified device description format defining uplink metrics and downlink commands.
 ```
 
 ### DSL (Domain Specific Language)
-Human-readable rule language.
+
+Human-readable automation rule language:
 
 ```
 RULE "Auto AC on High Temp"
@@ -240,30 +269,61 @@ DO
 END
 ```
 
+### Natural Language to Automation
+
+Convert natural language to executable automation:
+
+```
+"Turn on the AC when living room temperature exceeds 30 degrees"
+    ↓
+[Intent Recognition → Device Matching → Action Generation → Rule Creation]
+    ↓
+Executable automation rule
+```
+
 ## Data Directory
 
 Desktop app stores data in platform-specific locations:
 
 | Platform | Data Directory |
 |----------|---------------|
-| macOS | `~/Library/Application Support/com.neomind.neomind/data/` |
+| macOS | `~/Library/Application Support/neomind/data/` |
 | Windows | `%APPDATA%/neomind/data/` |
 | Linux | `~/.config/neomind/data/` |
 
-## API Endpoints
+## Development Commands
 
-| Category | Endpoints |
-|----------|-----------|
-| **Health** | `/api/health`, `/api/health/status` |
-| **Auth** | `/api/auth/login`, `/api/auth/register` |
-| **Sessions** | `/api/sessions`, `/api/sessions/:id/chat` |
-| **Devices** | `/api/devices`, `/api/devices/:id/command/:cmd` |
-| **Rules** | `/api/rules`, `/api/rules/:id/test` |
-| **Workflows** | `/api/workflows`, `/api/workflows/:id/execute` |
-| **Agents** | `/api/agents`, `/api/agents/:id/execute` |
-| **Memory** | `/api/memory/query`, `/api/memory/consolidate` |
+```bash
+# Build the workspace
+cargo build
 
-See [API Documentation](docs/README.md) for more details.
+# Build with release optimizations
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run tests for specific crate
+cargo test -p edge-ai-agent
+cargo test -p edge-ai-llm
+cargo test -p edge-ai-core
+cargo test -p edge-ai-api
+
+# Check compilation without building
+cargo check
+
+# Format code
+cargo fmt
+
+# Lint
+cargo clippy
+
+# Run the API server (default port: 3000)
+cargo run -p edge-ai-api
+
+# Run with custom config
+cargo run -p edge-ai-api -- --config path/to/config.toml
+```
 
 ## Contributing
 
