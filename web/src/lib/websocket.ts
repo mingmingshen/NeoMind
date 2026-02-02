@@ -71,8 +71,12 @@ export class ChatWebSocket {
 
     this.sessionId = initialSessionId || null
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    let wsUrl = `${protocol}//${window.location.host}/api/chat`
+    // In Tauri desktop app, use localhost:3000 for WebSocket
+    // because window.location would be tauri://localhost
+    const isTauri = !!(window as any).__TAURI__
+    const protocol = isTauri || window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = isTauri ? 'localhost:3000' : window.location.host
+    let wsUrl = `${protocol}//${host}/api/chat`
 
     // Add JWT token as query parameter
     const token = getAuthToken()
