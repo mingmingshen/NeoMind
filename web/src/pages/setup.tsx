@@ -142,9 +142,20 @@ export function SetupPage() {
     checkSetupStatus()
   }, [])
 
+  // Helper to get API base URL for current environment
+  const getApiUrl = (path: string) => {
+    const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+    return `${apiBase}${path}`
+  }
+
   const checkSetupStatus = async () => {
     try {
-      const response = await fetch('/api/setup/status')
+      const response = await fetch(getApiUrl('/setup/status'))
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
       const data = await response.json()
 
       if (!data.setup_required) {
@@ -176,7 +187,7 @@ export function SetupPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/setup/initialize', {
+      const response = await fetch(getApiUrl('/setup/initialize'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -214,7 +225,7 @@ export function SetupPage() {
     try {
       // Save timezone setting first
       try {
-        await fetch('/api/settings/timezone', {
+        await fetch(getApiUrl('/settings/timezone'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ timezone: selectedTimezone }),
@@ -225,7 +236,7 @@ export function SetupPage() {
       }
 
       // Save LLM config
-      await fetch('/api/setup/llm-config', {
+      await fetch(getApiUrl('/setup/llm-config'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -237,7 +248,7 @@ export function SetupPage() {
       })
 
       // Complete setup
-      const response = await fetch('/api/setup/complete', {
+      const response = await fetch(getApiUrl('/setup/complete'), {
         method: 'POST',
       })
 
