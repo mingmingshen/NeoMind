@@ -48,6 +48,8 @@ web/src-tauri/gen/
 web/test-results/
 web/playwright-report/
 web/playwright/.cache/
+web/test_parens
+web/*.test
 
 # =============================================================================
 # IDE & Editor
