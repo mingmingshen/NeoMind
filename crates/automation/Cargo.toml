@@ -23,21 +23,21 @@ tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 chrono = { workspace = true, features = ["serde"] }
 async-trait = { workspace = true }
-futures = "0.3"
+futures = { workspace = true }
 
 # Encoding/decoding
-hex = "0.4"
-base64 = "0.22"
-urlencoding = "2.1"
+hex = { workspace = true }
+base64 = { workspace = true }
+urlencoding = { workspace = true }
 
 # JavaScript execution
 quick-js = "0.4"
 
 # Storage
-redb = "2.1"
+redb = { workspace = true }
 
 [dev-dependencies]
-futures = "0.3"
+futures = { workspace = true }
 
 [features]
 default = []

@@ -5,7 +5,12 @@ import viteCompression from 'vite-plugin-compression'
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      // Faster development builds
+      babel: {
+        plugins: process.env.NODE_ENV === 'development' ? [] : undefined
+      }
+    }),
     // Performance: Generate gzip and brotli compressed assets
     viteCompression({
       algorithm: 'gzip',
@@ -23,8 +28,24 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    // Pre-bundle heavy dependencies for faster dev start
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      'zustand',
+      'recharts',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+    ],
+  },
   server: {
     port: 5173,
+    // Faster HMR
+    hmr: {
+      overlay: true
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

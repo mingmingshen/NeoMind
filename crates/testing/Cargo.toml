@@ -18,7 +18,7 @@ tracing = { workspace = true }
 anyhow = "1.0"
 thiserror = { workspace = true }
 # Random for generating test data
-rand = "0.8"
+rand = { workspace = true }
 
 # Core types
 edge-ai-core = { path = "../core" }
