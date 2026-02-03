@@ -43,15 +43,17 @@ jobs:
       - name: Install Zig (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
         run: |
-          wget -q https://github.com/ziglang/zig/releases/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
-          tar -xf zig-linux-x86_64-0.11.0.tar.xz
-          sudo mv zig-linux-x86_64-0.11.0 /opt/zig
+          # Use install action or download with retry
+          curl -sSfL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o zig.tar.xz || \
+          curl -sSfL https://github.com/ziglang/zig/releases/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o zig.tar.xz
+          tar -xf zig.tar.xz
+          sudo mv zig-linux-x86_64-0.13.0 /opt/zig
           echo "/opt/zig" >> $GITHUB_PATH
           zig version
 
       - name: Install cargo-zigbuild (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
-        run: cargo install cargo-zigbuild --version 0.17.4
+        run: cargo install cargo-zigbuild --version 0.18.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
