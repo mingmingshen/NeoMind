@@ -16,10 +16,15 @@
  */
 
 import { useState, useCallback, useRef } from 'react'
+import { logError } from '@/lib/errors'
 
 export interface UseLoadingButtonOptions {
   /** Whether to reset error state on new click (default: true) */
   resetErrorOnClick?: boolean
+  /** Operation name for better error logging */
+  operationName?: string
+  /** Whether to log errors (default: true) */
+  logErrors?: boolean
 }
 
 export interface UseLoadingButtonReturn {
@@ -37,7 +42,7 @@ export function useLoadingButton(
   action: () => Promise<void>,
   options: UseLoadingButtonOptions = {}
 ): UseLoadingButtonReturn {
-  const { resetErrorOnClick = true } = options
+  const { resetErrorOnClick = true, operationName = 'Button Action', logErrors = true } = options
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -56,13 +61,19 @@ export function useLoadingButton(
 
     action()
       .catch((err) => {
-        setError(err instanceof Error ? err : new Error(String(err)))
+        const error = err instanceof Error ? err : new Error(String(err))
+        setError(error)
+
+        // Log error with operation context
+        if (logErrors) {
+          logError(err, { operation: operationName })
+        }
       })
       .finally(() => {
         isPendingRef.current = false
         setIsLoading(false)
       })
-  }, [action, resetErrorOnClick])
+  }, [action, resetErrorOnClick, operationName, logErrors])
 
   const clearError = useCallback(() => {
     setError(null)
@@ -88,7 +99,7 @@ export function useLoadingButton(
  * <Button onClick={handleClick}>Save</Button>
  * ```
  */
-export function useDebouncedCallback<T extends (...args: any[]) => any>(
+export function useDebouncedCallback<T extends (...args: unknown[]) => unknown>(
   callback: T,
   delay: number = 300
 ): T {
@@ -107,7 +118,7 @@ export function useDebouncedCallback<T extends (...args: any[]) => any>(
       isPendingRef.current = true
 
       timeoutRef.current = setTimeout(() => {
-        callback(...args).finally(() => {
+        Promise.resolve(callback(...args)).finally(() => {
           isPendingRef.current = false
           timeoutRef.current = null
         })

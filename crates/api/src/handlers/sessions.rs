@@ -295,8 +295,10 @@ async fn process_stream_to_channel(
                 break;
             }
             Err(_) => {
-                // Timeout occurred
-                tracing::warn!("Stream timeout after {:?}", stream_timeout);
+                // Timeout occurred - CRITICAL: clean up pending state to prevent memory leak
+                tracing::warn!("Stream timeout after {:?} - cleaning up pending state", stream_timeout);
+                let _ = session_store.delete_pending_stream(&session_id);
+
                 let timeout_json = json!({
                     "type": "Error",
                     "message": "Stream timeout: response took too long",

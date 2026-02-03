@@ -140,7 +140,8 @@ impl DeviceDiscovery {
     }
 
     /// Parse an IP range string into a list of addresses.
-    fn parse_ip_range(&self, range: &str) -> Result<Vec<IpAddr>, DiscoveryError> {
+    #[allow(dead_code)]
+    fn _parse_ip_range(&self, range: &str) -> Result<Vec<IpAddr>, DiscoveryError> {
         // Support formats:
         // - 192.168.1.0/24 (CIDR)
         // - 192.168.1.1-100 (range)

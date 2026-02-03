@@ -21,6 +21,7 @@ import { Loader2, Sparkles, Zap, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import type {
   AutomationType,
   CreateAutomationRequest,
@@ -46,6 +47,7 @@ export function AutomationCreatorDialog({
 }: AutomationCreatorDialogProps) {
   const { t } = useTranslation(['common', 'automation', 'devices'])
   const { toast } = useToast()
+  const { handleError, showSuccess, withErrorHandling } = useErrorHandler()
   const [activeTab, setActiveTab] = useState<TabValue>('manual')
 
   // Manual tab state
@@ -85,23 +87,21 @@ export function AutomationCreatorDialog({
 
   const loadResources = async () => {
     setLoadingTemplates(true)
-    try {
-      const [templatesResult, devicesResult] = await Promise.all([
-        api.listAutomationTemplates(),
-        api.getDevices(),
-      ])
-      setTemplates((templatesResult.templates || []) as AutomationTemplate[])
-      setDevices(devicesResult.devices?.map((d: any) => ({ id: d.id, name: d.name })) || [])
-    } catch (error) {
-      console.error('Failed to load resources:', error)
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    } finally {
-      setLoadingTemplates(false)
+    const result = await withErrorHandling(
+      async () => {
+        const [templatesResult, devicesResult] = await Promise.all([
+          api.listAutomationTemplates(),
+          api.getDevices(),
+        ])
+        return { templatesResult, devicesResult }
+      },
+      { operation: 'Load automation resources', showToast: true }
+    )
+    if (result) {
+      setTemplates((result.templatesResult.templates || []) as AutomationTemplate[])
+      setDevices(result.devicesResult.devices?.map((d: any) => ({ id: d.id, name: d.name })) || [])
     }
+    setLoadingTemplates(false)
   }
 
   const handleCreateManual = async () => {
@@ -114,30 +114,26 @@ export function AutomationCreatorDialog({
     }
 
     setCreating(true)
-    try {
-      const request: CreateAutomationRequest = {
-        name: automationName,
-        description: description,
-        type: selectedType,
-        enabled,
-        definition: {},
-      }
-      await api.createAutomation(request)
+    const request: CreateAutomationRequest = {
+      name: automationName,
+      description: description,
+      type: selectedType,
+      enabled,
+      definition: {},
+    }
+    const result = await withErrorHandling(
+      () => api.createAutomation(request),
+      { operation: 'Create automation', showToast: true }
+    )
+    setCreating(false)
+
+    if (result) {
       toast({
         title: t('common:success'),
         description: t('automation:automationCreated', { defaultValue: 'Automation created successfully' }),
       })
       onOpenChange(false)
       onAutomationCreated()
-    } catch (error) {
-      console.error('Failed to create automation:', error)
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    } finally {
-      setCreating(false)
     }
   }
 
@@ -167,46 +163,42 @@ export function AutomationCreatorDialog({
       return
     }
 
-    setCreating(true)
-    try {
-      // Validate required params
-      for (const param of selectedTemplate.parameters) {
-        if (param.required && !templateParams[param.name]) {
-          toast({
-            title: t('common:failed'),
-            description: `${param.label} is required`,
-            variant: 'destructive',
-          })
-          return
-        }
+    // Validate required params
+    for (const param of selectedTemplate.parameters) {
+      if (param.required && !templateParams[param.name]) {
+        toast({
+          title: t('common:failed'),
+          description: `${param.label} is required`,
+          variant: 'destructive',
+        })
+        return
       }
+    }
 
-      const request: CreateAutomationRequest = {
-        name: automationName,
-        description: selectedTemplate.description,
-        type: selectedTemplate.automation_type as AutomationType,
-        enabled: true,
-        definition: {
-          template_id: selectedTemplate.id,
-          parameters: templateParams,
-        },
-      }
-      await api.createAutomation(request)
+    setCreating(true)
+    const request: CreateAutomationRequest = {
+      name: automationName,
+      description: selectedTemplate.description,
+      type: selectedTemplate.automation_type as AutomationType,
+      enabled: true,
+      definition: {
+        template_id: selectedTemplate.id,
+        parameters: templateParams,
+      },
+    }
+    const result = await withErrorHandling(
+      () => api.createAutomation(request),
+      { operation: 'Create automation from template', showToast: true }
+    )
+    setCreating(false)
+
+    if (result) {
       toast({
         title: t('common:success'),
         description: t('automation:automationCreated', { defaultValue: 'Automation created successfully' }),
       })
       onOpenChange(false)
       onAutomationCreated()
-    } catch (error) {
-      console.error('Failed to create automation:', error)
-      toast({
-        title: t('common:failed'),
-        description: (error as Error).message,
-        variant: 'destructive',
-      })
-    } finally {
-      setCreating(false)
     }
   }
 

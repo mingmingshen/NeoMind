@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Database } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { DeviceTransformsDialog } from './DeviceTransformsDialog'
 
 interface TransformsBadgeProps {
@@ -12,6 +13,7 @@ interface TransformsBadgeProps {
 }
 
 export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: TransformsBadgeProps) {
+  const { handleError } = useErrorHandler()
   const [count, setCount] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -35,7 +37,7 @@ export function TransformsBadge({ deviceId, deviceTypeId, onRefresh }: Transform
 
       setCount(filtered.length)
     } catch (error) {
-      console.error('Failed to fetch transform count:', error)
+      handleError(error, { operation: 'Fetch transform count', showToast: false })
     } finally {
       setLoading(false)
     }

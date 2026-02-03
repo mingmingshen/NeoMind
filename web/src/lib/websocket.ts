@@ -31,6 +31,7 @@ export class ChatWebSocket {
   private sessionId: string | null = null
   private activeBackendId: string | null = null
   private pendingMessages: ClientChatMessage[] = []
+  private readonly MAX_PENDING_MESSAGES = 50  // P0: Limit pending messages to prevent memory leak
   private lastToken: string | null = null
   private currentState: ConnectionState = { status: 'disconnected' }
 
@@ -47,12 +48,12 @@ export class ChatWebSocket {
 
     this.sessionId = initialSessionId || null
 
-    // In Tauri desktop app, use localhost:3000 for WebSocket
+    // In Tauri desktop app, use localhost:9375 for WebSocket
     // because window.location would be tauri://localhost
     const isTauri = !!(window as any).__TAURI__
     const isSecure = window.location.protocol === 'https:'
     const protocol = (isTauri ? false : isSecure) ? 'wss:' : 'ws:'
-    const host = isTauri ? 'localhost:3000' : window.location.host
+    const host = isTauri ? 'localhost:9375' : window.location.host
     let wsUrl = `${protocol}//${host}/api/chat`
 
     // Add JWT token as query parameter
@@ -76,9 +77,17 @@ export class ChatWebSocket {
       return
     }
 
-    // If token changed, reconnect
+    // If token changed, reconnect with new token
     if (this.lastToken !== token && this.isConnected()) {
-      this.disconnect()
+      // Don't use disconnect() as it sets isManualDisconnect = true
+      // Just close and let the loop reconnect with new token
+      if (this.ws) {
+        // Use a non-1000 code so onclose will trigger reconnect
+        this.ws.close(4000, 'Token changed - reconnecting')
+      }
+      // Keep lastToken as the old one until we reconnect
+      // After reconnect, the new token will be used
+      return
     }
 
     this.lastToken = token
@@ -106,10 +115,16 @@ export class ChatWebSocket {
 
     this.ws.onclose = (event) => {
       this.notifyConnection(false)
-      // Don't reconnect if the server rejected us (auth error)
+      // Don't reconnect if the server rejected us (auth error) or normal close
+      // Code 4000 is used for token change - we DO want to reconnect
       if (event.code !== 1000 && event.code !== 4001) {
         this.scheduleReconnect()
       } else {
+        // P0: Clear pending messages on permanent disconnect (auth error or normal close)
+        if (this.pendingMessages.length > 0) {
+          console.warn(`[WebSocket] Clearing ${this.pendingMessages.length} pending messages on close (code: ${event.code})`)
+          this.pendingMessages = []
+        }
         this.setState({ status: 'disconnected' })
       }
     }
@@ -121,6 +136,15 @@ export class ChatWebSocket {
     this.ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as ServerMessage
+
+        // Auto-respond to ping from server
+        if (data.type === 'ping') {
+          if (this.ws?.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'pong' }))
+          }
+          return // Don't notify handlers about ping/pong
+        }
+
         // Handle auth error message from server
         if (data.type === 'Error') {
           if (data.message?.includes('token') || data.message?.includes('Authentication')) {
@@ -133,7 +157,7 @@ export class ChatWebSocket {
         }
         this.notifyMessage(data)
       } catch {
-        // Silent error handling
+        // Silent error handling - ignore malformed messages
       }
     }
   }
@@ -143,6 +167,12 @@ export class ChatWebSocket {
       this.ws.send(JSON.stringify(request))
     } else {
       // Queue message for when connected
+      // P0: Prevent unbounded growth - evict oldest if limit reached
+      if (this.pendingMessages.length >= this.MAX_PENDING_MESSAGES) {
+        // Remove oldest message (FIFO)
+        this.pendingMessages.shift()
+        console.warn('[WebSocket] Pending messages limit reached, dropping oldest message')
+      }
       this.pendingMessages.push(request)
     }
   }
@@ -179,6 +209,11 @@ export class ChatWebSocket {
     }
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      // P0: Clear pending messages when we give up reconnecting
+      if (this.pendingMessages.length > 0) {
+        console.warn(`[WebSocket] Clearing ${this.pendingMessages.length} pending messages after failed reconnect`)
+        this.pendingMessages = []
+      }
       this.setState({
         status: 'error',
         errorMessage: '连接已断开，请点击重新连接',
@@ -293,6 +328,12 @@ export class ChatWebSocket {
       this.ws = null
     }
 
+    // P0: Clear pending messages on manual disconnect to prevent memory leak
+    if (this.pendingMessages.length > 0) {
+      console.warn(`[WebSocket] Clearing ${this.pendingMessages.length} pending messages on disconnect`)
+      this.pendingMessages = []
+    }
+
     this.setState({ status: 'disconnected' })
   }
 
@@ -313,9 +354,13 @@ export class ChatWebSocket {
       this.countdownTimer = null
     }
 
-    // If connected, disconnect first
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.close()
+    // Close existing WebSocket and clear reference before connecting
+    // This prevents race conditions where the old socket triggers events
+    if (this.ws) {
+      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+        this.ws.close()
+      }
+      this.ws = null  // Clear immediately to prevent race conditions
     }
 
     this.connect(this.sessionId || undefined)

@@ -367,7 +367,7 @@ impl AutoOnboardManager {
         let sample = if is_binary {
             // For binary data, extract base64 string and decode to raw bytes
             let base64_str = data.as_str().unwrap_or("");
-            let raw_bytes = decode_base64(base64_str).unwrap_or_default();
+            let raw_bytes = decode_base64(base64_str);
             DeviceSample {
                 raw_data: raw_bytes,
                 parsed: None,  // Binary data has no parsed JSON
@@ -442,7 +442,7 @@ impl AutoOnboardManager {
         let source = draft.source.clone();
         let sample = if is_binary {
             let base64_str = data.as_str().unwrap_or("");
-            let raw_bytes = decode_base64(base64_str).unwrap_or_default();
+            let raw_bytes = decode_base64(base64_str);
             DeviceSample {
                 raw_data: raw_bytes,
                 parsed: None,

@@ -29,6 +29,7 @@ import {
   Monitor,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { AgentExecutionDetail, DataCollected, ReasoningStep, Decision } from "@/types"
 
@@ -46,6 +47,7 @@ export function ExecutionDetailDialog({
   executionId,
 }: ExecutionDetailDialogProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const { handleError } = useErrorHandler()
   const [execution, setExecution] = useState<AgentExecutionDetail | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -61,7 +63,7 @@ export function ExecutionDetailDialog({
       const data = await api.getExecution(agentId, executionId)
       setExecution(data)
     } catch (error) {
-      console.error('Failed to load execution:', error)
+      handleError(error, { operation: 'Load execution', showToast: false })
     } finally {
       setLoading(false)
     }

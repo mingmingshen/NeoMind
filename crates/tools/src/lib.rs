@@ -47,6 +47,8 @@
 //! }
 //! ```
 
+use std::sync::Arc;
+
 pub mod builtin;
 pub mod agent_tools;
 pub mod core_tools;
@@ -63,6 +65,11 @@ pub use registry::{ToolCall, ToolRegistry, ToolRegistryBuilder, ToolResult, form
 pub use tool::{DynTool, Parameter, Tool, ToolDefinition, ToolExample, ToolOutput};
 pub use simplified::{ErrorMessages, Example, FriendlyError, LlmToolDefinition, SimplifiedConfig,
                    format_tools_as_json, format_tools_for_llm, get_simplified_tools};
+
+// Type aliases to reduce complexity
+pub type SharedToolRegistry = Arc<ToolRegistry>;
+pub type ToolResultList = Vec<Result<ToolOutput>>;
+pub type ToolCallList = Vec<ToolCall>;
 
 // Re-exports from core (backward compatibility)
 pub use edge_ai_core::tools::{

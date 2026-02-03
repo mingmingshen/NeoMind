@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Height chain for flex layout - body/root fill viewport */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* iOS touch scrolling for overflow-y-auto containers */
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

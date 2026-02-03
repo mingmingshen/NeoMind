@@ -246,7 +246,7 @@ pub struct IntentClassification {
 /// 意图分类器
 pub struct IntentClassifier {
     /// 启用的意图类别
-    enabled_intents: Vec<IntentCategory>,
+    _enabled_intents: Vec<IntentCategory>,
     /// 置信度阈值
     confidence_threshold: f32,
 }
@@ -254,7 +254,7 @@ pub struct IntentClassifier {
 impl Default for IntentClassifier {
     fn default() -> Self {
         Self {
-            enabled_intents: vec![
+            _enabled_intents: vec![
                 IntentCategory::QueryData,
                 IntentCategory::AnalyzeData,
                 IntentCategory::ControlDevice,

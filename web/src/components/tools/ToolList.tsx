@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -7,6 +7,7 @@ import { LoadingState, EmptyState } from "@/components/shared"
 import { Wrench, Play, TrendingUp, RefreshCw } from "lucide-react"
 import type { Tool, ToolMetrics } from "@/types"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 interface ToolListProps {
   onExecuteTool: (toolName: string) => void
@@ -17,32 +18,34 @@ export function ToolList({ onExecuteTool }: ToolListProps) {
   const [metrics, setMetrics] = useState<ToolMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [filterCategory, setFilterCategory] = useState<string | null>(null)
+  const { handleError, withErrorHandling } = useErrorHandler()
 
-  const fetchTools = async () => {
+  const fetchTools = useCallback(async () => {
     setLoading(true)
-    try {
-      const response = await api.listTools()
-      setTools(response.tools)
-    } catch (error) {
-      console.error("Failed to fetch tools:", error)
-    } finally {
-      setLoading(false)
+    const result = await withErrorHandling(
+      () => api.listTools(),
+      { operation: 'Fetch tools', showToast: false }
+    )
+    if (result) {
+      setTools(result.tools)
     }
-  }
+    setLoading(false)
+  }, [withErrorHandling])
 
-  const fetchMetrics = async () => {
-    try {
-      const response = await api.getToolMetrics()
-      setMetrics(response.metrics)
-    } catch (error) {
-      console.error("Failed to fetch tool metrics:", error)
+  const fetchMetrics = useCallback(async () => {
+    const result = await withErrorHandling(
+      () => api.getToolMetrics(),
+      { operation: 'Fetch tool metrics', showToast: false }
+    )
+    if (result) {
+      setMetrics(result.metrics)
     }
-  }
+  }, [withErrorHandling])
 
   useEffect(() => {
     fetchTools()
     fetchMetrics()
-  }, [])
+  }, [fetchTools, fetchMetrics])
 
   // Get unique categories
   const categories = Array.from(new Set(tools.map((t) => t.category).filter(Boolean))) as string[]

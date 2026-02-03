@@ -7,6 +7,7 @@
 
 import type { StateCreator } from 'zustand'
 import type { Message } from '@/types'
+import { logError } from '@/lib/errors'
 
 /**
  * Merge fragmented assistant messages from backend.
@@ -238,7 +239,7 @@ export const createSessionSlice: StateCreator<
 
       return result.sessionId
     } catch (error) {
-      console.error('Failed to create session:', error)
+      logError(error, { operation: 'Create session' })
       return null
     }
   },
@@ -277,7 +278,7 @@ export const createSessionSlice: StateCreator<
         messages: mergedMessages,
       })
     } catch (error: any) {
-      console.error('Failed to switch session:', error)
+      logError(error, { operation: 'Switch session' })
 
       // If session not found (404), show error but don't auto-delete
       // This prevents data loss when database has inconsistencies
@@ -303,16 +304,16 @@ export const createSessionSlice: StateCreator<
             }))
           } else {
             // No sessions on server - keep local state and notify user
-            console.error('No sessions found on server. Database may be corrupted.')
+            logError(new Error('No sessions found on server'), { operation: 'Switch session - database check' })
           }
         } catch (loadError) {
-          console.error('Failed to reload sessions:', loadError)
+          logError(loadError, { operation: 'Reload sessions after switch' })
         }
         return
       }
 
       // For other errors, just keep current state
-      console.error('Error switching session:', error)
+      logError(error, { operation: 'Switch session - general error' })
     }
   },
 
@@ -355,7 +356,7 @@ export const createSessionSlice: StateCreator<
               return {}
             })
           }).catch(err => {
-            console.error('Failed to load history for first session:', err)
+            logError(err, { operation: 'Load history for first session' })
           })
           return {
             sessions,
@@ -371,7 +372,7 @@ export const createSessionSlice: StateCreator<
         }
       })
     } catch (error) {
-      console.error('Failed to delete session:', error)
+      logError(error, { operation: 'Delete session' })
       throw error
     }
   },
@@ -394,7 +395,7 @@ export const createSessionSlice: StateCreator<
       // Bulk delete all sessions
       await api.bulkDeleteSessions(sessionIds)
     } catch (error) {
-      console.error('Failed to bulk delete sessions:', error)
+      logError(error, { operation: 'Bulk delete sessions' })
       throw error
     }
 
@@ -426,7 +427,7 @@ export const createSessionSlice: StateCreator<
         messages: [],
       })
     } catch (createError) {
-      console.error('Failed to create new session after clearing:', createError)
+      logError(createError, { operation: 'Create new session after clearing' })
     }
   },
 
@@ -439,7 +440,7 @@ export const createSessionSlice: StateCreator<
         ),
       }))
     } catch (error) {
-      console.error('Failed to update session title:', error)
+      logError(error, { operation: 'Update session title' })
       throw error
     }
   },
@@ -456,7 +457,7 @@ export const createSessionSlice: StateCreator<
         sessions,
       }))
     } catch (error) {
-      console.error('Failed to load sessions:', error)
+      logError(error, { operation: 'Load sessions' })
     }
   },
 
@@ -467,7 +468,7 @@ export const createSessionSlice: StateCreator<
       const mergedMessages = mergeAssistantMessages(result.messages || [])
       set({ messages: mergedMessages })
     } catch (error) {
-      console.error('Failed to fetch session history:', error)
+      logError(error, { operation: 'Fetch session history' })
     }
   },
 })

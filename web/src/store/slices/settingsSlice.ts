@@ -8,6 +8,7 @@
 import type { StateCreator } from 'zustand'
 import type { SettingsState } from '../types'
 import { api } from '@/lib/api'
+import { logError } from '@/lib/errors'
 
 export interface SettingsSlice extends SettingsState {
   // Dialog actions
@@ -37,7 +38,7 @@ export const createSettingsSlice: StateCreator<
       const result = await api.exportConfig()
       return result
     } catch (error) {
-      console.error('Failed to export config:', error)
+      logError(error, { operation: 'Export config' })
       throw error
     }
   },
@@ -48,7 +49,7 @@ export const createSettingsSlice: StateCreator<
       const result = await api.importConfig(config, merge)
       return result
     } catch (error) {
-      console.error('Failed to import config:', error)
+      logError(error, { operation: 'Import config' })
       throw error
     }
   },
@@ -59,7 +60,7 @@ export const createSettingsSlice: StateCreator<
       const result = await api.validateConfig(config)
       return result
     } catch (error) {
-      console.error('Failed to validate config:', error)
+      logError(error, { operation: 'Validate config' })
       return { valid: false, errors: ['验证失败'] }
     }
   },

@@ -12,6 +12,7 @@
 import type { StateCreator } from 'zustand'
 import type { Extension, ExtensionStatsDto, ExtensionTypeDto, ExtensionDiscoveryResult } from '@/types'
 import { api } from '@/lib/api'
+import { logError } from '@/lib/errors'
 
 export interface ExtensionState {
   extensions: Extension[]
@@ -97,7 +98,7 @@ export const createExtensionSlice: StateCreator<
       const extensions = await api.listExtensions(params)
       set({ extensions })
     } catch (error) {
-      console.error('Failed to fetch extensions:', error)
+      logError(error, { operation: 'Fetch extensions' })
       set({ extensions: [] })
     } finally {
       set({ extensionsLoading: false })
@@ -111,7 +112,7 @@ export const createExtensionSlice: StateCreator<
       const extension = await api.getExtension(id)
       return extension
     } catch (error) {
-      console.error('Failed to fetch extension:', error)
+      logError(error, { operation: 'Fetch extension' })
       return null
     }
   },
@@ -125,7 +126,7 @@ export const createExtensionSlice: StateCreator<
       await get().fetchExtensions()
       return true
     } catch (error) {
-      console.error('Failed to register extension:', error)
+      logError(error, { operation: 'Register extension' })
       return false
     }
   },
@@ -144,7 +145,7 @@ export const createExtensionSlice: StateCreator<
       }))
       return true
     } catch (error) {
-      console.error('Failed to unregister extension:', error)
+      logError(error, { operation: 'Unregister extension' })
       return false
     }
   },
@@ -162,7 +163,7 @@ export const createExtensionSlice: StateCreator<
       await get().getExtensionStats(id)
       return true
     } catch (error) {
-      console.error('Failed to start extension:', error)
+      logError(error, { operation: 'Start extension' })
       return false
     }
   },
@@ -180,7 +181,7 @@ export const createExtensionSlice: StateCreator<
       await get().getExtensionStats(id)
       return true
     } catch (error) {
-      console.error('Failed to stop extension:', error)
+      logError(error, { operation: 'Stop extension' })
       return false
     }
   },
@@ -195,7 +196,7 @@ export const createExtensionSlice: StateCreator<
       }))
       return stats
     } catch (error) {
-      console.error('Failed to fetch extension stats:', error)
+      logError(error, { operation: 'Fetch extension stats' })
       return null
     }
   },
@@ -207,7 +208,7 @@ export const createExtensionSlice: StateCreator<
       const response = await api.getExtensionHealth(id)
       return { healthy: response.healthy }
     } catch (error) {
-      console.error('Failed to fetch extension health:', error)
+      logError(error, { operation: 'Fetch extension health' })
       return null
     }
   },
@@ -222,7 +223,7 @@ export const createExtensionSlice: StateCreator<
       await get().fetchExtensions()
       return { discovered: results.length, results }
     } catch (error) {
-      console.error('Failed to discover extensions:', error)
+      logError(error, { operation: 'Discover extensions' })
       return { discovered: 0, results: [] }
     } finally {
       set({ discovering: false })
@@ -236,7 +237,7 @@ export const createExtensionSlice: StateCreator<
       const types = await api.listExtensionTypes()
       set({ extensionTypes: types })
     } catch (error) {
-      console.error('Failed to fetch extension types:', error)
+      logError(error, { operation: 'Fetch extension types' })
       set({ extensionTypes: [] })
     }
   },
@@ -250,7 +251,7 @@ export const createExtensionSlice: StateCreator<
       await get().getExtensionStats(id)
       return { success: true, result }
     } catch (error) {
-      console.error('Failed to execute extension command:', error)
+      logError(error, { operation: 'Execute extension command' })
       return { success: false, message: 'Command execution failed' }
     }
   },
@@ -280,7 +281,7 @@ export const createExtensionSlice: StateCreator<
       await get().fetchDeviceAdapters()
       return true
     } catch (error) {
-      console.error('Failed to register device adapter:', error)
+      logError(error, { operation: 'Register device adapter' })
       return false
     }
   },
@@ -294,7 +295,7 @@ export const createExtensionSlice: StateCreator<
       set({ selectedAdapterDevices: response.devices || [] })
       return response.devices || []
     } catch (error) {
-      console.error('Failed to fetch adapter devices:', error)
+      logError(error, { operation: 'Fetch adapter devices' })
       set({ selectedAdapterDevices: [] })
       return []
     } finally {
@@ -313,7 +314,7 @@ export const createExtensionSlice: StateCreator<
         total_devices: response.total_devices,
       }
     } catch (error) {
-      console.error('Failed to fetch device adapter stats:', error)
+      logError(error, { operation: 'Fetch device adapter stats' })
       return null
     }
   },

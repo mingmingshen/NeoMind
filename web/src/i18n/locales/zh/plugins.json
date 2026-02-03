@@ -179,6 +179,13 @@
   "yes": "是",
   "no": "否",
   "llm": {
+    "providers": {
+      "ollama": "Ollama",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "google": "Google",
+      "xai": "xAI"
+    },
     "deleteConfirm": "确定要删除后端 \"{{name}}\" 吗？",
     "active": "活跃",
     "currentActive": "当前活跃",

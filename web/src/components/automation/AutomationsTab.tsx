@@ -13,10 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { LoadingState, EmptyState } from '@/components/shared'
+import { LoadingState, EmptyState, ResponsiveTable } from '@/components/shared'
 import { AutomationCreatorDialog, AutomationConverterDialog } from '@/components/automation'
 import { formatTimestamp } from '@/lib/utils/format'
 import { useToast } from '@/hooks/use-toast'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { confirm } from '@/hooks/use-confirm'
 import {
   RefreshCw,
@@ -35,14 +36,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Switch } from '@/components/ui/switch'
 
 export interface AutomationsTabProps {
@@ -56,6 +49,7 @@ type StatusFilter = 'all' | 'enabled' | 'disabled'
 export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChange }: AutomationsTabProps) {
   const { t } = useTranslation(['automation', 'common'])
   const { toast } = useToast()
+  const { handleError } = useErrorHandler()
 
   // Data state
   const [automations, setAutomations] = useState<Automation[]>([])
@@ -88,7 +82,7 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
       })
       setAutomations(response.automations || [])
     } catch (error) {
-      console.error('Failed to load automations:', error)
+      handleError(error, { operation: 'Load automations', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -264,93 +258,123 @@ export function AutomationsTab({ searchQuery: externalSearchQuery, onSearchChang
           }}
         />
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[40px]"></TableHead>
-                    <TableHead>{t('automation:automationName')}</TableHead>
-                    <TableHead>{t('automation:recommendedType')}</TableHead>
-                    <TableHead>{t('automation:complexity')}</TableHead>
-                    <TableHead>{t('automation:status')}</TableHead>
-                    <TableHead>{t('automation:executionCount')}</TableHead>
-                    <TableHead>{t('automation:updatedAt')}</TableHead>
-                    <TableHead className="text-right">{t('automation:actions')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {automations.map((automation) => (
-                    <TableRow key={automation.id}>
-                      <TableCell>
-                        <Switch
-                          checked={automation.enabled}
-                          onCheckedChange={() => handleToggleEnabled(automation)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{automation.name}</p>
-                          <p className="text-sm text-muted-foreground line-clamp-1">
-                            {automation.description}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={getTypeColor(automation.type)}>
-                          {getTypeLabel(automation.type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-0.5">{getComplexityDots(automation.complexity)}</div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={automation.enabled ? 'default' : 'secondary'}>
-                          {automation.enabled ? t('automation:enabled') : t('automation:disabled')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{automation.execution_count}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatTimestamp(automation.updated_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleExecute(automation)}>
-                              <Play className="h-4 w-4 mr-2" />
-                              {t('automation:execute')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Edit className="h-4 w-4 mr-2" />
-                              {t('automation:edit')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleConvert(automation)}>
-                              <ArrowRightLeft className="h-4 w-4 mr-2" />
-                              {t('automation:convertAutomation')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(automation)}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              {t('automation:delete')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+        <ResponsiveTable
+          columns={[
+            {
+              key: 'enabled',
+              label: '',
+              width: 'w-[50px]',
+              align: 'center',
+            },
+            {
+              key: 'name',
+              label: t('automation:automationName'),
+            },
+            {
+              key: 'type',
+              label: t('automation:recommendedType'),
+              align: 'center',
+            },
+            {
+              key: 'complexity',
+              label: t('automation:complexity'),
+              align: 'center',
+            },
+            {
+              key: 'status',
+              label: t('automation:status'),
+              align: 'center',
+            },
+            {
+              key: 'execution_count',
+              label: t('automation:executionCount'),
+              align: 'center',
+            },
+            {
+              key: 'updated_at',
+              label: t('automation:updatedAt'),
+            },
+          ]}
+          data={automations as unknown as Record<string, unknown>[]}
+          rowKey={(auto) => (auto as unknown as Automation).id}
+          renderCell={(columnKey, rowData) => {
+            const automation = rowData as unknown as Automation
+            switch (columnKey) {
+              case 'enabled':
+                return (
+                  <Switch
+                    checked={automation.enabled}
+                    onCheckedChange={() => handleToggleEnabled(automation)}
+                  />
+                )
+              case 'name':
+                return (
+                  <div>
+                    <p className="font-medium">{automation.name}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-1">
+                      {automation.description}
+                    </p>
+                  </div>
+                )
+              case 'type':
+                return (
+                  <Badge variant="outline" className={getTypeColor(automation.type)}>
+                    {getTypeLabel(automation.type)}
+                  </Badge>
+                )
+              case 'complexity':
+                return <div className="flex gap-0.5 justify-center">{getComplexityDots(automation.complexity)}</div>
+              case 'status':
+                return (
+                  <Badge variant={automation.enabled ? 'default' : 'secondary'}>
+                    {automation.enabled ? t('automation:enabled') : t('automation:disabled')}
+                  </Badge>
+                )
+              case 'execution_count':
+                return <span>{automation.execution_count}</span>
+              case 'updated_at':
+                return (
+                  <span className="text-sm text-muted-foreground">
+                    {formatTimestamp(automation.updated_at)}
+                  </span>
+                )
+              default:
+                return null
+            }
+          }}
+          actions={[
+            {
+              label: t('automation:execute'),
+              icon: <Play className="h-4 w-4" />,
+              onClick: (rowData) => {
+                const automation = rowData as unknown as Automation
+                handleExecute(automation)
+              },
+            },
+            {
+              label: t('automation:edit'),
+              icon: <Edit className="h-4 w-4" />,
+              onClick: () => {},
+            },
+            {
+              label: t('automation:convertAutomation'),
+              icon: <ArrowRightLeft className="h-4 w-4" />,
+              onClick: (rowData) => {
+                const automation = rowData as unknown as Automation
+                handleConvert(automation)
+              },
+            },
+            {
+              label: t('automation:delete'),
+              icon: <Trash2 className="h-4 w-4" />,
+              variant: 'destructive',
+              onClick: (rowData) => {
+                const automation = rowData as unknown as Automation
+                handleDelete(automation)
+              },
+            },
+          ]}
+        />
       )}
 
       {/* Dialogs */}

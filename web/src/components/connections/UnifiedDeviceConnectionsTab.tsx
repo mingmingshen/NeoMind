@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import {
   ArrowLeft,
   Server,
@@ -181,6 +182,7 @@ function toUnifiedPluginType(type: AdapterType): UnifiedPluginType {
 
 export function UnifiedDeviceConnectionsTab() {
   const { t } = useTranslation(['plugins', 'devices', 'common'])
+  const { handleError } = useErrorHandler()
   const { toast } = useToast()
   const [view, setView] = useState<View>('list')
   const [loading, setLoading] = useState(true)
@@ -237,7 +239,7 @@ export function UnifiedDeviceConnectionsTab() {
         setDevices(devicesResult.value.devices || [])
       }
     } catch (error) {
-      console.error('Failed to load device connections data:', error)
+      handleError(error, { operation: 'Load device connections data', showToast: false })
       setAdapterTypes([])
       setMqttStatus(null)
       setExternalBrokers([])
@@ -395,7 +397,7 @@ export function UnifiedDeviceConnectionsTab() {
       setInstanceToDelete(null)
       await loadData()
     } catch (error) {
-      console.error('Failed to delete broker:', error)
+      handleError(error, { operation: 'Delete broker', showToast: true })
       toast({
         title: t('common:failed', { defaultValue: 'Failed' }),
         description: (error as Error).message || t('plugins:deleteFailed', { defaultValue: 'Failed to delete broker' }),

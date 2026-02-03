@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { SearchResult, SearchSuggestion } from "@/types"
 import { useNavigate } from "react-router-dom"
 
@@ -17,6 +18,7 @@ interface SearchBarProps {
 }
 
 export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBarProps) {
+  const { handleError } = useErrorHandler()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SearchResult[]>([])
@@ -48,7 +50,7 @@ export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBa
         const response = await api.getSearchSuggestions(query)
         setSuggestions(response.suggestions.slice(0, 5))
       } catch (error) {
-        console.error("Failed to fetch suggestions:", error)
+        handleError(error, { operation: 'Fetch search suggestions', showToast: false })
       }
     }, 300)
 
@@ -64,7 +66,7 @@ export function SearchBar({ placeholder = "搜索设备、规则..." }: SearchBa
       const response = await api.globalSearch(searchQuery)
       setResults(response.results)
     } catch (error) {
-      console.error("Search failed:", error)
+      handleError(error, { operation: 'Global search', showToast: false })
     } finally {
       setLoading(false)
     }

@@ -56,7 +56,7 @@ export function PageLayout({
     <div className="flex flex-col h-full">
       {title && (
         <div className="shrink-0 bg-background">
-          <div className={cn('w-full px-6 md:px-8 py-6', maxWidthClass[maxWidth], className)}>
+          <div className={cn('w-full px-4 py-4 sm:px-6 sm:py-5 md:px-8 md:py-6', maxWidthClass[maxWidth], className)}>
             <PageHeader
               title={title}
               description={subtitle}
@@ -69,7 +69,7 @@ export function PageLayout({
       {/* Content area - uses flex-col to push sticky elements to bottom when content is short */}
       <div className={cn('flex-1 flex flex-col min-h-0', className)}>
         {/* Scrollable content */}
-        <div className={cn('flex-1 overflow-auto px-6 md:px-8', footer ? 'pb-20' : 'pb-6')}>
+        <div className={cn('flex-1 overflow-auto px-4 sm:px-6 md:px-8', footer ? 'pb-20' : 'pb-4 sm:pb-6')}>
           <div className={cn('mx-auto w-full space-y-6', maxWidthClass[maxWidth])}>
             {children}
           </div>
@@ -78,7 +78,7 @@ export function PageLayout({
       {/* Fixed footer with glass morphism effect */}
       {footer && (
         <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-background via-background/95 to-background/80 backdrop-blur-md border-t border-border/30">
-          <div className={cn('w-full px-6 md:px-8 py-4', maxWidthClass[maxWidth], className)}>
+          <div className={cn('w-full px-4 py-3 sm:px-6 sm:py-4 md:px-8', maxWidthClass[maxWidth], className)}>
             {footer}
           </div>
         </div>

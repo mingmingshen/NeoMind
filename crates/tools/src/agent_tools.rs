@@ -1021,7 +1021,7 @@ impl Tool for AgentMemoryTool {
                     "baselines": memory.baselines
                 })))
             }
-            "all" | _ => {
+            _ => {
                 Ok(ToolOutput::success(serde_json::json!({
                     "agent_id": agent_id,
                     "query_type": "all",

@@ -11,11 +11,15 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:headed": "playwright test --headed",
+    "clean": "rm -rf dist src-tauri/target",
+    "clean:all": "rm -rf dist node_modules src-tauri/target",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:debug": "tauri build --debug",
-    "tauri:build:dmg": "tauri build --bundles dmg"
+    "tauri:build:dmg": "tauri build --bundles dmg",
+    "tauri:clean": "cd src-tauri && cargo clean && rm -rf target",
+    "tauri:rebuild": "npm run tauri:clean && npm run tauri:build"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

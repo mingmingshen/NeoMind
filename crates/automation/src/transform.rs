@@ -862,8 +862,6 @@ impl TransformEngine {
                 // JSONPath extraction
                 let path = if var_name.starts_with("$") {
                     var_name.to_string()
-                } else if var_name.contains('.') {
-                    format!("$.{}", var_name)
                 } else {
                     format!("$.{}", var_name)
                 };

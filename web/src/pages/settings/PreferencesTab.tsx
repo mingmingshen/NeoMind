@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { logError } from "@/lib/errors"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -51,7 +53,7 @@ function loadPreferences(): Preferences {
       return { ...defaultPreferences, ...parsed }
     }
   } catch (e) {
-    console.error("Failed to load preferences:", e)
+    logError(e, { operation: 'Load preferences' })
   }
   return defaultPreferences
 }
@@ -61,12 +63,13 @@ function savePreferences(pref: Preferences) {
   try {
     localStorage.setItem(PREFERENCES_KEY, JSON.stringify(pref))
   } catch (e) {
-    console.error("Failed to save preferences:", e)
+    logError(e, { operation: 'Save preferences' })
   }
 }
 
 export function PreferencesTab() {
   const { t, i18n } = useTranslation(["common", "settings"])
+  const { handleError } = useErrorHandler()
   const { toast } = useToast()
   const [preferences, setPreferences] = useState<Preferences>(loadPreferences)
   const [hasChanges, setHasChanges] = useState(false)

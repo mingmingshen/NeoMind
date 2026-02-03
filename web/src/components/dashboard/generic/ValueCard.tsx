@@ -122,9 +122,10 @@ interface ValueIconProps {
 function ValueIcon({ icon, title, iconType = 'entity', size, className, iconColor }: ValueIconProps) {
   const config = valueCardSize[size]
 
-  // Emoji fallback
+  // Emoji fallback - use fixed font-size to prevent scaling
   if (icon && iconType === 'emoji') {
-    return <span className={cn('opacity-80', size === 'sm' ? 'text-lg' : size === 'md' ? 'text-xl' : 'text-2xl', className)}>{icon}</span>
+    const emojiSize = size === 'sm' ? '1.125rem' : size === 'md' ? '1.25rem' : '1.5rem'
+    return <span className={cn('opacity-80 shrink-0', className)} style={{ fontSize: emojiSize }}>{icon}</span>
   }
 
   // Get SVG icon
@@ -149,10 +150,20 @@ function ValueIcon({ icon, title, iconType = 'entity', size, className, iconColo
   const iconBgColor = iconColor ? hexToRgba(iconColor, 0.15) : undefined
   const iconTextColor = iconColor || undefined
 
+  // Get icon size in pixels for fixed sizing
+  const getIconSize = () => {
+    switch (size) {
+      case 'sm': return 14
+      case 'md': return 16
+      case 'lg': return 20
+      default: return 16
+    }
+  }
+
   return (
     <div
       className={cn(
-        'flex items-center justify-center rounded-lg',
+        'flex items-center justify-center rounded-lg shrink-0',
         'bg-primary/10 text-primary',
         config.iconContainer,
         className
@@ -162,7 +173,12 @@ function ValueIcon({ icon, title, iconType = 'entity', size, className, iconColo
         color: iconTextColor
       }}
     >
-      <IconComponent className={cn(config.iconSize)} />
+      <IconComponent
+        className={cn('shrink-0')}
+        width={getIconSize()}
+        height={getIconSize()}
+        strokeWidth={2}
+      />
     </div>
   )
 }
@@ -400,45 +416,48 @@ export function ValueCard({
   // ============================================================================
 
   return (
-    <div className={cn(dashboardCardHorizontal, 'items-center', sizeConfig.contentGap, sizeConfig.padding, className)}>
-      {/* Icon section */}
-      <div className={cn('flex items-center justify-center shrink-0', sizeConfig.iconContainer)}>
-        <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />
-      </div>
-
-      {/* Content section - left-aligned like LEDIndicator */}
-      <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-        {/* Title - primary text */}
-        {title && (
-          <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', sizeConfig.titleText)}>
-            {title}
-          </span>
-        )}
-
-        {/* Value - secondary text */}
-        {loading ? (
-          <Skeleton className={cn('h-5 w-16 rounded mt-0.5')} />
-        ) : (
-          <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText)} style={{ color: finalValueColor }}>
-            {formattedValue}
-          </span>
-        )}
-      </div>
-
-      {/* Optional trend indicator on the right */}
-      {showTrend && trendDirection && (
-        <div className={cn(
-          'flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0',
-          trendDirection === 'up' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-          trendDirection === 'down' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-          trendDirection === 'neutral' && 'bg-muted text-muted-foreground'
-        )}>
-          {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
-          {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
-          {trendDirection === 'neutral' && <Minus className="h-3 w-3" />}
-          <span>{Math.abs(trendValue ?? 0)}%</span>
+    <div className={cn(dashboardCardHorizontal, sizeConfig.padding, className)}>
+      {/* Content wrapper with fixed left margin */}
+      <div className="flex items-center" style={{ marginLeft: '0.625rem' /* 10px */ }}>
+        {/* Icon section - fixed size */}
+        <div className={cn('flex items-center justify-center shrink-0', sizeConfig.iconContainer)}>
+          <ValueIcon icon={icon} title={title} iconType={iconType} size={safeSize} iconColor={iconColor} />
         </div>
-      )}
+
+        {/* Content section - left-aligned like LEDIndicator */}
+        <div className="flex flex-col min-w-0 flex-1" style={{ marginLeft: '0.625rem' /* 10px */ }}>
+          {/* Title - primary text */}
+          {title && (
+            <span className={cn(indicatorFontWeight.title, 'text-foreground truncate', sizeConfig.titleText)}>
+              {title}
+            </span>
+          )}
+
+          {/* Value - secondary text */}
+          {loading ? (
+            <Skeleton className={cn('h-5 w-16 rounded mt-0.5')} />
+          ) : (
+            <span className={cn(indicatorFontWeight.value, 'tabular-nums', sizeConfig.labelText)} style={{ color: finalValueColor }}>
+              {formattedValue}
+            </span>
+          )}
+        </div>
+
+        {/* Optional trend indicator on the right */}
+        {showTrend && trendDirection && (
+          <div className={cn(
+            'flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0',
+            trendDirection === 'up' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+            trendDirection === 'down' && 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+            trendDirection === 'neutral' && 'bg-muted text-muted-foreground'
+          )}>
+            {trendDirection === 'up' && <ArrowUpRight className="h-3 w-3" />}
+            {trendDirection === 'down' && <ArrowDownRight className="h-3 w-3" />}
+            {trendDirection === 'neutral' && <Minus className="h-3 w-3" />}
+            <span>{Math.abs(trendValue ?? 0)}%</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

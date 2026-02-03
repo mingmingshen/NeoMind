@@ -14,4 +14,5 @@ export * from './BulkActionBar'
 export * from './MonitorStatsGrid'
 export * from './FullScreenEditor'
 export * from './BrandName'
+export * from './ResponsiveTable'
 

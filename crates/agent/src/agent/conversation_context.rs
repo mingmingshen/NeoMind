@@ -68,6 +68,23 @@ pub struct ConversationContext {
     pub turn_count: usize,
 }
 
+/// 上下文清理配置
+pub struct ContextCleanupConfig {
+    /// 多少轮后自动清理旧实体（默认：10轮）
+    pub cleanup_turn_interval: usize,
+    /// 保留最近几轮的实体引用（默认：5轮）
+    pub keep_recent_turns: usize,
+}
+
+impl Default for ContextCleanupConfig {
+    fn default() -> Self {
+        Self {
+            cleanup_turn_interval: 10,
+            keep_recent_turns: 5,
+        }
+    }
+}
+
 impl Default for ConversationContext {
     fn default() -> Self {
         Self::new()
@@ -91,6 +108,18 @@ impl ConversationContext {
     pub fn update(&mut self, user_input: &str, tool_results: &[(String, String)]) {
         self.turn_count += 1;
 
+        // === AUTO CLEANUP: Periodically clean up old entities to prevent unbounded growth ===
+        // This prevents the context from growing too large and causing repetitive LLM responses
+        let config = ContextCleanupConfig::default();
+        if self.turn_count.is_multiple_of(config.cleanup_turn_interval) {
+            self.cleanup_old_entities(config.keep_recent_turns);
+            tracing::debug!(
+                "Auto-cleaned conversation context at turn {} (kept last {} turns)",
+                self.turn_count,
+                config.keep_recent_turns
+            );
+        }
+
         // 检测位置
         if let Some(location) = self.extract_location(user_input) {
             self.add_location(location.clone());
@@ -110,6 +139,30 @@ impl ConversationContext {
 
         // 更新对话主题
         self.topic = self.detect_topic(user_input);
+    }
+
+    /// 清理旧实体引用，只保留最近几轮的引用
+    /// 这可以防止上下文无限增长导致重复响应
+    fn cleanup_old_entities(&mut self, keep_recent_turns: usize) {
+        // 清理设备引用 - 只保留最近的
+        self.mentioned_devices.retain(|entity| {
+            entity.last_mentioned_turn > 0 && self.turn_count.saturating_sub(entity.last_mentioned_turn) <= keep_recent_turns
+        });
+
+        // 清理位置引用 - 只保留最近的
+        self.mentioned_locations.retain(|entity| {
+            entity.last_mentioned_turn > 0 && self.turn_count.saturating_sub(entity.last_mentioned_turn) <= keep_recent_turns
+        });
+
+        // 如果当前设备/位置不在引用列表中，清空它们
+        if let Some(ref device) = self.current_device
+            && !self.mentioned_devices.iter().any(|e| &e.name == device) {
+                self.current_device = None;
+            }
+        if let Some(ref location) = self.current_location
+            && !self.mentioned_locations.iter().any(|e| &e.name == location) {
+                self.current_location = None;
+            }
     }
 
     /// 提取位置信息

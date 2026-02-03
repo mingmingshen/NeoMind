@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { fetchAPI } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import {
   Sparkles,
   Cpu,
@@ -46,6 +47,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
   const { t } = useTranslation("common")
   const { getWelcomeMessage } = useBrandMessages()
   const user = useStore((state) => state.user)
+  const { handleError } = useErrorHandler()
 
   const [stats, setStats] = useState<SystemStats | null>(null)
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([])
@@ -110,7 +112,7 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
 
         setSuggestions(newSuggestions)
       } catch (error) {
-        console.error("Failed to fetch stats:", error)
+        handleError(error, { operation: 'Fetch welcome stats', showToast: false })
       } finally {
         setIsLoadingStats(false)
       }
@@ -145,8 +147,10 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
   ]
 
   return (
-    <div className={cn("flex-1 flex flex-col items-center justify-center p-6", className)}>
-      <div className="w-full max-w-2xl space-y-8">
+    <div className={cn("flex min-h-full w-full flex-col items-center p-6", className)}>
+      {/* Top spacer: shrinks to 0 when content overflows, centers when content fits */}
+      <div className="min-h-0 flex-1 shrink" />
+      <div className="w-full max-w-2xl shrink-0 space-y-8">
         {/* Logo and greeting */}
         <div className="text-center animate-fade-in-up">
           <h1 className="text-2xl font-semibold text-foreground mb-2">
@@ -288,6 +292,8 @@ export function WelcomeArea({ className, onQuickAction }: WelcomeAreaProps) {
           })}
         </div>
       </div>
+      {/* Bottom spacer: matches top for vertical centering when content fits */}
+      <div className="min-h-0 flex-1 shrink" />
     </div>
   )
 }

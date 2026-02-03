@@ -422,7 +422,7 @@ impl HookChain {
     pub async fn run_on_error(&self, ctx: &HookContext, error: &str) -> HookResult<String> {
         let current_error = error.to_string();
 
-        if let Some(hook) = self.hooks.iter().next() {
+        if let Some(hook) = self.hooks.first() {
             match hook.on_error(ctx, &current_error).await {
                 HookResult::Continue(result) => {
                     return HookResult::Continue(result);

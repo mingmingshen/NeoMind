@@ -262,11 +262,7 @@ impl HexAnalyzer {
         let display_hint = if let Some(int_val) = decoded_integer {
             format!("0x{} ({})", clean_hex, int_val)
         } else if let Some(bytes) = &as_bytes {
-            if bytes.len() <= 16 {
-                format!("0x{} ({} bytes)", clean_hex, bytes.len())
-            } else {
-                format!("0x{} ({} bytes)", clean_hex, bytes.len())
-            }
+            format!("0x{} ({} bytes)", clean_hex, bytes.len())
         } else {
             format!("0x{} (invalid hex)", clean_hex)
         };

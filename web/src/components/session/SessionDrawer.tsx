@@ -380,9 +380,9 @@ const SessionDrawerMemo = memo(function SessionDrawer({
         {/* Footer */}
         <div className="p-4 border-t border-[var(--session-drawer-border)]">
           <p className="text-xs text-muted-foreground text-center">
-            共 {totalSessions} 个会话
+            {t('totalSessions', { count: totalSessions })}
             <span className="mx-2">•</span>
-            自动清理30天前的会话
+            {t('autoCleanup')}
           </p>
         </div>
       </div>

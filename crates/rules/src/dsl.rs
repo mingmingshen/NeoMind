@@ -402,10 +402,9 @@ impl RuleDslParser {
     /// Parse WHEN clause - now supports complex conditions with AND/OR/NOT/BETWEEN.
     fn parse_when_clause(lines: &mut Vec<&str>) -> Result<RuleCondition, RuleError> {
         for (i, line) in lines.iter().enumerate() {
-            if line.starts_with("WHEN") {
-                let condition_str = line[4..].trim(); // Skip "WHEN"
+            if let Some(condition_str) = line.strip_prefix("WHEN") {
                 lines.remove(i);
-                return Self::parse_condition(condition_str);
+                return Self::parse_condition(condition_str.trim());
             }
         }
         Err(RuleError::Parse("WHEN clause not found".to_string()))
@@ -416,15 +415,16 @@ impl RuleDslParser {
         let input = input.trim();
 
         // Handle NOT first (highest precedence)
-        let upper = input.to_uppercase();
-        if upper.starts_with("NOT ") {
-            let inner = &input[4..].trim();
-            let condition = Self::parse_condition(inner)?;
-            return Ok(RuleCondition::Not(Box::new(condition)));
+        if let Some(inner) = input.strip_prefix("NOT").or_else(|| input.strip_prefix("not")) {
+            let inner = inner.trim();
+            if !inner.is_empty() {
+                let condition = Self::parse_condition(inner)?;
+                return Ok(RuleCondition::Not(Box::new(condition)));
+            }
         }
 
         // Handle BETWEEN ... AND ... (before AND/OR, since it contains AND)
-        if let Some(between_pos) = upper.find(" BETWEEN ") {
+        if let Some(between_pos) = input.to_uppercase().find(" BETWEEN ") {
             let left_part = &input[..between_pos];
             let after_between = &input[between_pos + 9..].trim();
 
@@ -644,8 +644,8 @@ impl RuleDslParser {
         }
 
         // NOTIFY "message" [channel1, channel2, ...]
-        if line.starts_with("NOTIFY") {
-            let rest = &line[6..].trim(); // Skip "NOTIFY"
+        if let Some(rest) = line.strip_prefix("NOTIFY") {
+            let rest = rest.trim();
             if let Some((message, remainder)) = Self::extract_quoted_string_with_remainder(rest) {
                 // Parse optional channels from remainder
                 let channels = if remainder.starts_with('[') {
@@ -661,8 +661,8 @@ impl RuleDslParser {
         }
 
         // EXECUTE device.command(params...)
-        if line.starts_with("EXECUTE") {
-            let rest = line[7..].trim(); // Skip "EXECUTE"
+        if let Some(rest) = line.strip_prefix("EXECUTE") {
+            let rest = rest.trim();
             if let Some((device_cmd, params_part)) = rest.split_once('(') {
                 let parts: Vec<&str> = device_cmd.trim().split('.').collect();
                 if parts.len() == 2 {
@@ -682,8 +682,8 @@ impl RuleDslParser {
         }
 
         // SET device.property = value (supports nested properties like device.fan.speed)
-        if line.starts_with("SET") {
-            let rest = line[3..].trim(); // Skip "SET"
+        if let Some(rest) = line.strip_prefix("SET") {
+            let rest = rest.trim();
             if let Some(eq_pos) = rest.find('=') {
                 let left_part = &rest[..eq_pos].trim();
                 let value_str = &rest[eq_pos + 1..].trim();
@@ -720,16 +720,16 @@ impl RuleDslParser {
         }
 
         // DELAY duration
-        if line.starts_with("DELAY") {
-            let rest = line[5..].trim(); // Skip "DELAY"
+        if let Some(rest) = line.strip_prefix("DELAY") {
+            let rest = rest.trim();
             if let Some(duration) = Self::parse_duration(rest) {
                 return Ok(Some(RuleAction::Delay { duration }));
             }
         }
 
         // ALERT "title" "message" severity
-        if line.starts_with("ALERT") {
-            let rest = line[5..].trim(); // Skip "ALERT"
+        if let Some(rest) = line.strip_prefix("ALERT") {
+            let rest = rest.trim();
             let parts = Self::extract_all_quoted_strings(rest);
 
             if parts.len() >= 2 {
@@ -760,8 +760,8 @@ impl RuleDslParser {
         }
 
         // HTTP GET/POST/PUT/DELETE/PATCH url
-        if line.starts_with("HTTP") {
-            let rest = line[4..].trim(); // Skip "HTTP"
+        if let Some(rest) = line.strip_prefix("HTTP") {
+            let rest = rest.trim();
             let parts: Vec<&str> = rest.split_whitespace().collect();
 
             if parts.len() >= 2 {

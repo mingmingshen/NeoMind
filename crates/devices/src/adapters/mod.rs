@@ -126,8 +126,9 @@ pub fn create_adapter(
 /// let adapters = available_adapters();
 /// println!("Available adapters: {:?}", adapters);
 /// ```
+#[allow(clippy::vec_init_then_push)]
 pub fn available_adapters() -> Vec<&'static str> {
-    let mut adapters = Vec::new();
+    let mut adapters = vec![];
 
     #[cfg(feature = "mqtt")]
     adapters.push("mqtt");

@@ -38,21 +38,25 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn('flex items-center justify-between', variantStyles[variant], className)}>
+    <div className={cn(variantStyles[variant], className)}>
       <div className="flex items-center gap-3">
         {icon && (
-          <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500/10 to-purple-500/10">
+          <div className="shrink-0 rounded-xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 p-2">
             {icon}
           </div>
         )}
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{title}</h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl md:text-3xl">{title}</h1>
           {description && (
-            <p className="text-sm text-muted-foreground mt-2">{description}</p>
+            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground sm:mt-2">{description}</p>
           )}
         </div>
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="mt-3 flex shrink-0 flex-wrap gap-2">
+          {actions}
+        </div>
+      )}
     </div>
   )
 }

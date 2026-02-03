@@ -11,9 +11,12 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import type { DataSourceOrList, DataSource, TelemetryAggregate } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
+import type { Device } from '@/types'
+import type { NeoTalkStore } from '@/store'
 import { useEvents } from '@/hooks/useEvents'
 import { useStore } from '@/store'
 import { toNumberArray, isEmpty, isValidNumber } from '@/design-system/utils/format'
+import { logError } from '@/lib/errors'
 
 // ============================================================================
 // Types
@@ -87,7 +90,7 @@ async function fetchDeviceTelemetry(deviceId: string): Promise<{ success: boolea
  * Cache for historical telemetry data
  * Key: deviceId|metric|timeRange|limit|aggregate
  */
-const telemetryCache = new Map<string, { data: number[]; raw?: any[]; timestamp: number }>()
+const telemetryCache = new Map<string, { data: number[]; raw?: unknown[]; timestamp: number }>()
 const TELEMETRY_CACHE_TTL = 5000 // 5 seconds cache
 
 /**
@@ -164,7 +167,7 @@ async function fetchSystemStats(
 
     return { data: value, success: true }
   } catch (error) {
-    console.error('[fetchSystemStats] Error:', error)
+    logError(error, { operation: 'Fetch system stats' })
     return { data: null, success: false }
   }
 }
@@ -181,7 +184,7 @@ async function fetchHistoricalTelemetry(
   aggregate: TelemetryAggregate = 'raw',
   includeRawPoints: boolean = false,
   bypassCache: boolean = false
-): Promise<{ data: number[]; raw?: any[]; success: boolean }> {
+): Promise<{ data: number[]; raw?: unknown[]; success: boolean }> {
   const cacheKey = `${deviceId}|${metricId}|${timeRange}|${limit}|${aggregate}`
   const cached = telemetryCache.get(cacheKey)
 
@@ -240,7 +243,7 @@ async function fetchHistoricalTelemetry(
         // Apply aggregation
         // NOTE: API returns data in DESCENDING order (newest first: index 0 = newest)
         let values: number[]
-        let rawPoints: any[] | undefined
+        let rawPoints: unknown[] | undefined
 
         if (aggregate === 'latest') {
           // Return only the newest value (index 0 in descending order)
@@ -329,7 +332,7 @@ async function fetchHistoricalTelemetry(
 
     return { data: [], success: false }
   } catch (error) {
-    console.error('[fetchHistoricalTelemetry] Error:', error)
+    logError(error, { operation: 'Fetch historical telemetry' })
     return { data: [], success: false }
   }
 }
@@ -471,12 +474,13 @@ function extractValueFromData(data: unknown, property: string): unknown {
  * Helper function to create stable JSON key for memoization
  * Handles objects with potentially different property order
  */
-function createStableKey(obj: any): string {
+function createStableKey(obj: unknown): string {
   if (obj === null || obj === undefined) return ''
   if (typeof obj !== 'object') return String(obj)
   if (Array.isArray(obj)) return '[' + obj.map(createStableKey).join(',') + ']'
   const sortedKeys = Object.keys(obj).sort()
-  return '{' + sortedKeys.map(k => `"${k}":${createStableKey(obj[k])}`).join(',') + '}'
+  const recordObj = obj as Record<string, unknown>
+  return '{' + sortedKeys.map(k => `"${k}":${createStableKey(recordObj[k])}`).join(',') + '}'
 }
 
 export function useDataSource<T = unknown>(
@@ -617,7 +621,7 @@ export function useDataSource<T = unknown>(
           case 'device': {
             const deviceId = ds.deviceId!
             const property = ds.property as string | undefined
-            const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+            const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
             // If no property specified, return full device object (for map markers, etc.)
             if (!property) {
@@ -702,7 +706,7 @@ export function useDataSource<T = unknown>(
           case 'command': {
             const deviceId = ds.deviceId
             const property = ds.property || 'state'
-            const device = currentDevices.find((d: any) => d.id === deviceId)
+            const device = currentDevices.find((d: Device) => d.id === deviceId)
 
             if (device?.current_values && typeof device.current_values === 'object') {
               const extracted = extractValueFromData(device.current_values, property)
@@ -718,7 +722,7 @@ export function useDataSource<T = unknown>(
           case 'device-info': {
             const deviceId = ds.deviceId
             const infoProperty = ds.infoProperty || 'name'
-            const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+            const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
             if (!device) {
               result = fallbackVal ?? '-'
@@ -832,7 +836,7 @@ export function useDataSource<T = unknown>(
     readDataFromStore()
 
     let unsubscribed = false
-    const unsubscribe = useStore.subscribe((state: any, prevState: any) => {
+    const unsubscribe = useStore.subscribe((state: NeoTalkStore, prevState: NeoTalkStore) => {
       // Guard against cleanup
       if (unsubscribed) return
 
@@ -848,8 +852,8 @@ export function useDataSource<T = unknown>(
         )
 
         for (const deviceId of sourceDeviceIds) {
-          const device = state.devices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
-          const prevDevice = prevState.devices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+          const device = state.devices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
+          const prevDevice = prevState.devices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
           if (device && prevDevice) {
             const currentJson = JSON.stringify(device.current_values)
@@ -1029,7 +1033,7 @@ export function useDataSource<T = unknown>(
 
               // If no property specified, return full device object
               if (!property) {
-                result = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId) ?? null
+                result = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId) ?? null
                 break
               }
 
@@ -1045,7 +1049,7 @@ export function useDataSource<T = unknown>(
                 }
               }
 
-              const device = currentDevices.find((d: any) => d.id === deviceId)
+              const device = currentDevices.find((d: Device) => d.id === deviceId)
               if (device?.current_values && typeof device.current_values === 'object') {
                 const extracted = extractValueFromData(device.current_values, property)
                 result = extracted !== undefined ? extracted : '-'
@@ -1104,7 +1108,7 @@ export function useDataSource<T = unknown>(
                 }
               }
 
-              const device = currentDevices.find((d: any) => d.id === deviceId)
+              const device = currentDevices.find((d: Device) => d.id === deviceId)
               if (device?.current_values && typeof device.current_values === 'object') {
                 const extracted = extractValueFromData(device.current_values, property)
                 result = extracted !== undefined ? extracted : false
@@ -1118,7 +1122,7 @@ export function useDataSource<T = unknown>(
             case 'device-info': {
               const deviceId = ds.deviceId
               const infoProperty = ds.infoProperty || 'name'
-              const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+              const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
 
               if (!device) {
                 result = optionsRef.current.fallback ?? '-'
@@ -1173,7 +1177,7 @@ export function useDataSource<T = unknown>(
               }
 
               // If not found in event, try to get from store (latest device state)
-              const device = currentDevices.find((d: any) => d.id === deviceId || d.device_id === deviceId)
+              const device = currentDevices.find((d: Device) => d.id === deviceId || d.device_id === deviceId)
               if (device?.current_values && typeof device.current_values === 'object') {
                 const extracted = extractValueFromData(device.current_values, metricId)
                 if (extracted !== undefined) {
@@ -1294,26 +1298,26 @@ export function useDataSource<T = unknown>(
           // If preserveMultiple is true, keep each source's data separate
           if (optionsRef.current.preserveMultiple) {
             // Return array of data arrays, one per source
-            const hasRawData = results.some((r: any) => r.raw)
+            const hasRawData = results.some((r) => r.raw !== undefined)
             if (hasRawData) {
-              finalData = results.map((r: any) => r.raw ?? [])
+              finalData = results.map((r) => r.raw ?? [])
             } else {
-              finalData = results.map((r: any) => r.data ?? [])
+              finalData = results.map((r) => r.data ?? [])
             }
           } else {
             // Original behavior: merge all data
-            const hasRawData = results.some((r: any) => r.raw)
+            const hasRawData = results.some((r) => r.raw !== undefined)
             if (hasRawData) {
               // Combine raw data from all sources
-              const allRawData = results.flatMap((r: any) => r.raw ?? [])
+              const allRawData = results.flatMap((r) => r.raw ?? [])
               finalData = allRawData
             } else {
-              finalData = results.map((r: any) => r.data ?? []).flat()
+              finalData = results.map((r) => r.data ?? []).flat()
             }
           }
         } else {
-          const singleResult = results[0] as any
-          finalData = singleResult.raw ?? singleResult.data ?? []
+          const singleResult = results[0]
+          finalData = (singleResult?.raw ?? singleResult?.data) ?? []
         }
 
         // CRITICAL: Always merge with latest values from store for real-time updates
@@ -1377,10 +1381,10 @@ export function useDataSource<T = unknown>(
 
           // 5. Try nested path like "values.image"
           const parts = metricId.split('.')
-          let nested: any = currentValues
+          let nested: unknown = currentValues
           for (const part of parts) {
             if (nested && typeof nested === 'object' && part in nested) {
-              nested = nested[part]
+              nested = (nested as Record<string, unknown>)[part]
             } else {
               nested = undefined
               break
@@ -1394,7 +1398,7 @@ export function useDataSource<T = unknown>(
         }
 
         const telemetryDataSourcesWithStore = telemetryDataSources.map((ds) => {
-          const device = storeState.devices.find((d: any) => d.id === ds.deviceId || d.device_id === ds.deviceId)
+          const device = storeState.devices.find((d: Device) => d.id === ds.deviceId || d.device_id === ds.deviceId)
           if (!device?.current_values) return { dataSource: ds, latestValue: undefined }
 
           // Get the latest value for this metric from store with fuzzy matching
@@ -1448,7 +1452,7 @@ export function useDataSource<T = unknown>(
         setLastUpdate(Date.now())
         initialTelemetryFetchDoneRef.current = true
       } catch (err) {
-        console.error('[useDataSource] Telemetry fetch error:', err)
+        logError(err, { operation: 'Fetch telemetry data' })
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch telemetry'
         setError(errorMessage)
         const fallbackData = optionsRef.current.fallback ?? []
@@ -1546,7 +1550,7 @@ export function useDataSource<T = unknown>(
         setLastUpdate(Date.now())
         initialSystemFetchDoneRef.current = true
       } catch (err) {
-        console.error('[useDataSource] System fetch error:', err)
+        logError(err, { operation: 'Fetch system data' })
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch system data'
         setError(errorMessage)
         const fallbackData = optionsRef.current.fallback ?? null

@@ -215,7 +215,7 @@ impl DecisionAction {
 /// LLM decision engine for generating recommendations.
 pub struct DecisionEngine {
     /// LLM interface for generating decisions
-    llm: Arc<RwLock<LlmInterface>>,
+    _llm: Arc<RwLock<LlmInterface>>,
     /// Event bus for publishing decision events
     event_bus: Arc<EventBus>,
     /// Decision history
@@ -249,7 +249,7 @@ impl DecisionEngine {
     /// Create a new decision engine.
     pub fn new(llm: Arc<RwLock<LlmInterface>>, event_bus: Arc<EventBus>) -> Self {
         Self {
-            llm,
+            _llm: llm,
             event_bus,
             history: Arc::new(RwLock::new(HashMap::new())),
             config: DecisionEngineConfig::default(),
@@ -263,7 +263,7 @@ impl DecisionEngine {
         config: DecisionEngineConfig,
     ) -> Self {
         Self {
-            llm,
+            _llm: llm,
             event_bus,
             history: Arc::new(RwLock::new(HashMap::new())),
             config,

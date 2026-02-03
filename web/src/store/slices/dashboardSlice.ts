@@ -14,6 +14,7 @@ import type {
   DashboardLayout,
 } from '@/types/dashboard'
 import { createDashboardStorage, type DashboardStorage } from '../persistence'
+import { logError } from '@/lib/errors'
 
 // ============================================================================
 // Default Layout
@@ -289,7 +290,7 @@ export const createDashboardSlice: StateCreator<
           set({ dashboards: [] })
         }
       } catch (err) {
-        console.error('[DashboardSlice] Unexpected error loading dashboards:', err)
+        logError(err, { operation: 'Load dashboards' })
         // Only update state if this is still the latest fetch
         const currentState = get()
         if (currentState._fetchId === fetchId) {
@@ -321,11 +322,36 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: localDashboard,
       }))
 
-      // Persist to storage (localStorage + try API in background)
-      storage.sync(localDashboard).catch((err) => {
-        // Sync failed - but dashboard is already saved locally
-        console.warn('[DashboardSlice] Background sync failed:', err)
-      })
+      // Persist to storage (localStorage + try API)
+      // For local dashboards, we wait for API to get the server ID
+      const isLocalDashboard = !localDashboard.id.startsWith('dashboard_')
+      if (isLocalDashboard) {
+        try {
+          const result = await storage.sync(localDashboard)
+          if (result.data && result.data.id !== localDashboard.id) {
+            // Server assigned a new ID - update state
+            console.log('[DashboardSlice] Dashboard ID changed from', localDashboard.id, 'to', result.data.id)
+            const { dashboards: currentDashboards } = get()
+            const newDashboards = currentDashboards.map((d) =>
+              d.id === localDashboard.id ? result.data : d
+            ).filter((d): d is Dashboard => d !== null)
+            set({
+              dashboards: newDashboards,
+              currentDashboard: result.data,
+              currentDashboardId: result.data?.id,
+            })
+            return result.data.id
+          }
+        } catch (err) {
+          // Sync failed - but dashboard is already saved locally
+          console.warn('[DashboardSlice] Background sync failed:', err)
+        }
+      } else {
+        // For server dashboards, sync in background
+        storage.sync(localDashboard).catch((err) => {
+          console.warn('[DashboardSlice] Background sync failed:', err)
+        })
+      }
 
       return localDashboard.id
     },
@@ -428,7 +454,10 @@ export const createDashboardSlice: StateCreator<
 
     addComponent(component) {
       const { currentDashboard, dashboards, currentDashboardId } = get()
-      if (!currentDashboard) return
+      if (!currentDashboard) {
+        console.error('[DashboardSlice] addComponent: No current dashboard')
+        return
+      }
 
       const newComponent = { ...component, id: generateId() }
       const updatedDashboard = {
@@ -446,15 +475,39 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      storage.sync(updatedDashboard).catch(() => {})
+      // Sync to storage and handle ID change if dashboard was just created on server
+      storage.sync(updatedDashboard).then((result) => {
+        if (result.data && result.data.id !== updatedDashboard.id) {
+          // Server assigned a new ID - update state
+          console.log('[DashboardSlice] Dashboard ID changed from', updatedDashboard.id, 'to', result.data.id)
+          const { dashboards: currentDashboards, currentDashboardId: currId } = get()
+          const newDashboards = currentDashboards.map((d) =>
+            d.id === updatedDashboard.id ? result.data : d
+          ).filter((d): d is Dashboard => d !== null)
+          set({
+            dashboards: newDashboards,
+            currentDashboard: result.data,
+            currentDashboardId: result.data?.id,
+          })
+        }
+      }).catch((err) => {
+        console.warn('[DashboardSlice] Failed to sync after addComponent:', err)
+      })
     },
 
     updateComponent(id, updates, persist = true) {
       const { currentDashboard, dashboards } = get()
-      if (!currentDashboard) return
+      if (!currentDashboard) {
+        console.error('[DashboardSlice] updateComponent: No current dashboard')
+        return
+      }
 
-      console.log('[DashboardSlice] updateComponent called:', { id, updates })
-      console.log('[DashboardSlice] currentDashboard.components before:', currentDashboard.components.find(c => c.id === id))
+      // Validate component exists
+      const componentExists = currentDashboard.components.some((c) => c.id === id)
+      if (!componentExists) {
+        console.warn('[DashboardSlice] updateComponent: Component not found:', id)
+        return
+      }
 
       const updatedDashboard = {
         ...currentDashboard,
@@ -463,9 +516,6 @@ export const createDashboardSlice: StateCreator<
         ),
         updatedAt: Date.now(),
       }
-
-      const updatedComponent = updatedDashboard.components.find(c => c.id === id)
-      console.log('[DashboardSlice] updatedDashboard.components after:', updatedComponent)
 
       const updatedDashboards = dashboards.map((d) =>
         d.id === currentDashboard.id ? updatedDashboard : d
@@ -476,9 +526,25 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      // Only persist to localStorage if persist=true (default for backward compatibility)
+      // Only persist if persist=true (default for backward compatibility)
       if (persist) {
-        storage.sync(updatedDashboard).catch(() => {})
+        storage.sync(updatedDashboard).then((result) => {
+          if (result.data && result.data.id !== updatedDashboard.id) {
+            // Server assigned a new ID - update state
+            console.log('[DashboardSlice] Dashboard ID changed from', updatedDashboard.id, 'to', result.data.id)
+            const { dashboards: currentDashboards } = get()
+            const newDashboards = currentDashboards.map((d) =>
+              d.id === updatedDashboard.id ? result.data : d
+            ).filter((d): d is Dashboard => d !== null)
+            set({
+              dashboards: newDashboards,
+              currentDashboard: result.data,
+              currentDashboardId: result.data?.id,
+            })
+          }
+        }).catch((err) => {
+          console.warn('[DashboardSlice] Failed to sync after updateComponent:', err)
+        })
       }
     },
 
@@ -507,12 +573,37 @@ export const createDashboardSlice: StateCreator<
         configComponentId: newConfigComponentId,
       })
 
-      storage.sync(updatedDashboard).catch(() => {})
+      // Sync and handle ID change if dashboard was just created on server
+      storage.sync(updatedDashboard).then((result) => {
+        if (result.data && result.data.id !== updatedDashboard.id) {
+          // Server assigned a new ID - update state
+          console.log('[DashboardSlice] Dashboard ID changed from', updatedDashboard.id, 'to', result.data.id)
+          const { dashboards: currentDashboards } = get()
+          const newDashboards = currentDashboards.map((d) =>
+            d.id === updatedDashboard.id ? result.data : d
+          ).filter((d): d is Dashboard => d !== null)
+          set({
+            dashboards: newDashboards,
+            currentDashboard: result.data,
+            currentDashboardId: result.data?.id,
+          })
+        }
+      }).catch(() => {})
     },
 
     moveComponent(id, position) {
       const { currentDashboard, dashboards } = get()
-      if (!currentDashboard) return
+      if (!currentDashboard) {
+        console.error('[DashboardSlice] moveComponent: No current dashboard')
+        return
+      }
+
+      // Validate component exists
+      const componentExists = currentDashboard.components.some((c) => c.id === id)
+      if (!componentExists) {
+        console.warn('[DashboardSlice] moveComponent: Component not found:', id)
+        return
+      }
 
       const updatedDashboard = {
         ...currentDashboard,
@@ -533,7 +624,24 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      storage.sync(updatedDashboard).catch(() => {})
+      // Sync and handle ID change if dashboard was just created on server
+      storage.sync(updatedDashboard).then((result) => {
+        if (result.data && result.data.id !== updatedDashboard.id) {
+          // Server assigned a new ID - update state
+          console.log('[DashboardSlice] Dashboard ID changed from', updatedDashboard.id, 'to', result.data.id)
+          const { dashboards: currentDashboards } = get()
+          const newDashboards = currentDashboards.map((d) =>
+            d.id === updatedDashboard.id ? result.data : d
+          ).filter((d): d is Dashboard => d !== null)
+          set({
+            dashboards: newDashboards,
+            currentDashboard: result.data,
+            currentDashboardId: result.data?.id,
+          })
+        }
+      }).catch((err) => {
+        console.warn('[DashboardSlice] Failed to sync after moveComponent:', err)
+      })
     },
 
     duplicateComponent(id) {
@@ -567,7 +675,22 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: updatedDashboard,
       })
 
-      storage.sync(updatedDashboard).catch(() => {})
+      // Sync and handle ID change if dashboard was just created on server
+      storage.sync(updatedDashboard).then((result) => {
+        if (result.data && result.data.id !== updatedDashboard.id) {
+          // Server assigned a new ID - update state
+          console.log('[DashboardSlice] Dashboard ID changed from', updatedDashboard.id, 'to', result.data.id)
+          const { dashboards: currentDashboards } = get()
+          const newDashboards = currentDashboards.map((d) =>
+            d.id === updatedDashboard.id ? result.data : d
+          ).filter((d): d is Dashboard => d !== null)
+          set({
+            dashboards: newDashboards,
+            currentDashboard: result.data,
+            currentDashboardId: result.data?.id,
+          })
+        }
+      }).catch(() => {})
     },
 
     // ========================================================================
@@ -647,7 +770,22 @@ export const createDashboardSlice: StateCreator<
         currentDashboard: newDashboard,
       }))
 
-      storage.sync(newDashboard).catch(() => {})
+      // Sync and handle ID change if dashboard was created on server
+      storage.sync(newDashboard).then((result) => {
+        if (result.data && result.data.id !== newDashboard.id) {
+          // Server assigned a new ID - update state
+          console.log('[DashboardSlice] Dashboard ID changed from', newDashboard.id, 'to', result.data.id)
+          const { dashboards: currentDashboards } = get()
+          const newDashboards = currentDashboards.map((d) =>
+            d.id === newDashboard.id ? result.data : d
+          ).filter((d): d is Dashboard => d !== null)
+          set({
+            dashboards: newDashboards,
+            currentDashboard: result.data,
+            currentDashboardId: result.data?.id,
+          })
+        }
+      }).catch(() => {})
     },
   }
 }

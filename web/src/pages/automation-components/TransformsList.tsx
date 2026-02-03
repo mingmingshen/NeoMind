@@ -1,29 +1,12 @@
 /**
- * Transforms List - Unified card-based table design
+ * Transforms List - Using ResponsiveTable for consistent styling
  */
 
 import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
-import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { EmptyStateInline } from "@/components/shared"
-import { Edit, Trash2, MoreVertical, Code, Database, Globe, Cpu, HardDrive, CheckCircle2 } from "lucide-react"
+import { ResponsiveTable } from "@/components/shared"
+import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import type { TransformAutomation } from "@/types"
@@ -124,154 +107,143 @@ export function TransformsList({
   }
 
   return (
-    <>
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b bg-muted/30">
-              <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <ResponsiveTable
+      columns={[
+        {
+          key: 'index',
+          label: '#',
+          width: 'w-10',
+          align: 'center',
+        },
+        {
+          key: 'name',
+          label: t('automation:name'),
+        },
+        {
+          key: 'scope',
+          label: t('automation:scope'),
+        },
+        {
+          key: 'transformCode',
+          label: t('automation:transformBuilder.transformCode'),
+        },
+        {
+          key: 'outputPrefix',
+          label: t('automation:outputPrefix'),
+        },
+        {
+          key: 'status',
+          label: t('automation:status'),
+          align: 'center',
+        },
+      ]}
+      data={paginatedTransforms as unknown as Record<string, unknown>[]}
+      rowKey={(transform) => (transform as unknown as TransformAutomation).id}
+      loading={loading}
+      getRowClassName={(rowData) => {
+        const transform = rowData as unknown as TransformAutomation
+        return cn(!transform.enabled && "opacity-50")
+      }}
+      renderCell={(columnKey, rowData) => {
+        const transform = rowData as unknown as TransformAutomation
+        const index = paginatedTransforms.indexOf(transform)
+        const scopeInfo = getScopeInfo(transform.scope)
+        const ScopeIcon = scopeInfo.icon
+
+        switch (columnKey) {
+          case 'index':
+            return (
+              <span className="text-xs text-muted-foreground font-medium">
+                {startIndex + index + 1}
+              </span>
+            )
+
+          case 'name':
+            return (
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
+                  transform.enabled ? "bg-cyan-500/10 text-cyan-600" : "bg-muted text-muted-foreground"
+                )}>
                   <Code className="h-4 w-4" />
-                  {t('automation:name')}
                 </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Globe className="h-4 w-4" />
-                  {t('automation:scope')}
+                <div>
+                  <div className="font-medium text-sm">{transform.name}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-1">
+                    {transform.description || '-'}
+                  </div>
                 </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Code className="h-4 w-4" />
-                  {t('automation:transformBuilder.transformCode')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Database className="h-4 w-4" />
-                  {t('automation:outputPrefix')}
-                </div>
-              </TableHead>
-              <TableHead className="text-center">
-                <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('automation:status')}
-                </div>
-              </TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <EmptyStateInline title={t('common:loading')} colSpan={7} />
-            ) : transforms.length === 0 ? (
-              <EmptyStateInline title={t('automation:noTransforms')} colSpan={7} />
-            ) : (
-              paginatedTransforms.map((transform, index) => {
-                const scopeInfo = getScopeInfo(transform.scope)
-                const ScopeIcon = scopeInfo.icon
+              </div>
+            )
 
-                return (
-                  <TableRow
-                    key={transform.id}
-                    className={cn(
-                      "group transition-colors hover:bg-muted/50",
-                      !transform.enabled && "opacity-50"
-                    )}
-                  >
-                    <TableCell className="text-center">
-                      <span className="text-xs text-muted-foreground font-medium">{startIndex + index + 1}</span>
-                    </TableCell>
+          case 'scope':
+            return (
+              <Badge variant="outline" className={cn("text-xs gap-1.5", scopeInfo.color)}>
+                <ScopeIcon className="h-3 w-3" />
+                {getScopeLabel(transform.scope)}
+              </Badge>
+            )
 
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
-                          transform.enabled ? "bg-cyan-500/10 text-cyan-600" : "bg-muted text-muted-foreground"
-                        )}>
-                          <Code className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-sm">{transform.name}</div>
-                          <div className="text-xs text-muted-foreground line-clamp-1 max-w-[180px]">
-                            {transform.description || '-'}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
+          case 'transformCode':
+            return (
+              <code className="text-xs bg-muted px-2 py-1 rounded-md font-mono truncate block max-w-[200px]">
+                {getCodeSummary(transform.js_code || '')}
+              </code>
+            )
 
-                    <TableCell>
-                      <Badge variant="outline" className={cn("text-xs gap-1.5", scopeInfo.color)}>
-                        <ScopeIcon className="h-3 w-3" />
-                        {getScopeLabel(transform.scope)}
-                      </Badge>
-                    </TableCell>
+          case 'outputPrefix':
+            return (
+              <div className="flex items-center gap-1.5">
+                <Database className="h-3 w-3 text-muted-foreground" />
+                <code className="text-xs bg-muted px-2 py-0.5 rounded">
+                  {(transform.output_prefix || 'transform') + '.'}
+                </code>
+              </div>
+            )
 
-                    <TableCell>
-                      <code className="text-xs bg-muted px-2 py-1 rounded-md font-mono truncate block max-w-[200px]">
-                        {getCodeSummary(transform.js_code || '')}
-                      </code>
-                    </TableCell>
+          case 'status':
+            return (
+              <div className="flex items-center justify-start gap-2">
+                <Switch
+                  checked={transform.enabled}
+                  onCheckedChange={() => onToggleStatus(transform)}
+                  className="scale-90"
+                />
+                <Badge variant="outline" className={cn(
+                  "text-xs gap-1 hidden sm:flex",
+                  transform.enabled
+                    ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
+                    : "text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700"
+                )}>
+                  <CheckCircle2 className="h-3 w-3" />
+                  {transform.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
+                </Badge>
+              </div>
+            )
 
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <Database className="h-3 w-3 text-muted-foreground" />
-                        <code className="text-xs bg-muted px-2 py-0.5 rounded">
-                          {(transform.output_prefix || 'transform') + '.'}
-                        </code>
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Switch
-                          checked={transform.enabled}
-                          onCheckedChange={() => onToggleStatus(transform)}
-                          className="scale-90"
-                        />
-                        <Badge variant="outline" className={cn(
-                          "text-xs gap-1 hidden sm:flex",
-                          transform.enabled
-                            ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
-                            : "text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700"
-                        )}>
-                          <CheckCircle2 className="h-3 w-3" />
-                          {transform.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
-                        </Badge>
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem onClick={() => onEdit(transform)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            {t('common:edit')}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => onDelete(transform)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t('common:delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </Card>
-    </>
+          default:
+            return null
+        }
+      }}
+      actions={[
+        {
+          label: t('common:edit'),
+          icon: <Edit className="h-4 w-4" />,
+          onClick: (rowData) => {
+            const transform = rowData as unknown as TransformAutomation
+            onEdit(transform)
+          },
+        },
+        {
+          label: t('common:delete'),
+          icon: <Trash2 className="h-4 w-4" />,
+          variant: 'destructive',
+          onClick: (rowData) => {
+            const transform = rowData as unknown as TransformAutomation
+            onDelete(transform)
+          },
+        },
+      ]}
+    />
   )
 }

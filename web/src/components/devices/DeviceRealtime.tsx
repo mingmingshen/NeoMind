@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useDeviceEvents } from "@/hooks/useEvents"
 import type { NeoMindEvent, DeviceMetricEvent } from "@/lib/events"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -119,6 +120,7 @@ export function DeviceRealtime({
   onMetricAlert,
 }: DeviceRealtimeProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const { handleError } = useErrorHandler()
   const [selectedDevice, setSelectedDevice] = useState<string | null>(deviceId || null)
   const [eventFilter, setEventFilter] = useState<"all" | "metrics" | "status" | "alerts">("all")
   // Reserved for future threshold configuration
@@ -134,7 +136,7 @@ export function DeviceRealtime({
       // Connection state changed
     },
     onError: (error) => {
-      console.error("[DeviceRealtime] Event stream error:", error)
+      handleError(error, { operation: 'Event stream', showToast: false })
     },
   })
 

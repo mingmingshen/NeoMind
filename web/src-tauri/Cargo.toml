@@ -3,8 +3,8 @@ name = "neomind-tauri"
 version = "0.1.0"
 description = "NeoMind Edge AI Platform"
 authors = ["NeoMind Team"]
-license = ""
-repository = ""
+license = "MIT"
+repository = "https://github.com/neomind/neomind"
 edition = "2021"
 
 [build-dependencies]

@@ -9,7 +9,7 @@ import { UnifiedLLMBackendsTab } from "@/components/llm/UnifiedLLMBackendsTab"
 import { UnifiedDeviceConnectionsTab } from "@/components/connections"
 import { UnifiedAlertChannelsTab } from "@/components/alerts/UnifiedAlertChannelsTab"
 import { useToast } from "@/hooks/use-toast"
-import { RefreshCw, Plus } from "lucide-react"
+import { RefreshCw, Plus, Cpu, Plug, BellRing, Puzzle } from "lucide-react"
 import { ExtensionUploadDialog } from "@/components/extensions"
 
 type PluginTabValue = "llm" | "connections" | "alert-channels" | "extensions"
@@ -82,10 +82,10 @@ export function PluginsPage() {
   }, [fetchExtensions, activeTab])
 
   const tabs = [
-    { value: "llm" as PluginTabValue, label: t("plugins:llmBackends") },
-    { value: "connections" as PluginTabValue, label: t("plugins:deviceConnections") },
-    { value: "alert-channels" as PluginTabValue, label: t("plugins:alertChannels") },
-    { value: "extensions" as PluginTabValue, label: t("plugins:extensionPlugins") },
+    { value: "llm" as PluginTabValue, label: t("plugins:llmBackends"), icon: <Cpu className="h-4 w-4" /> },
+    { value: "connections" as PluginTabValue, label: t("plugins:deviceConnections"), icon: <Plug className="h-4 w-4" /> },
+    { value: "alert-channels" as PluginTabValue, label: t("plugins:alertChannels"), icon: <BellRing className="h-4 w-4" /> },
+    { value: "extensions" as PluginTabValue, label: t("plugins:extensionPlugins"), icon: <Puzzle className="h-4 w-4" /> },
   ]
 
   // Extension action handlers

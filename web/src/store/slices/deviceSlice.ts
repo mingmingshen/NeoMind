@@ -17,6 +17,7 @@ import type {
   AddDeviceRequest,
 } from '@/types'
 import { api } from '@/lib/api'
+import { logError } from '@/lib/errors'
 
 export interface DeviceSlice extends DeviceState, TelemetryState {
   // Device Adapter State
@@ -120,7 +121,7 @@ export const createDeviceSlice: StateCreator<
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
       }
-      console.error('Failed to fetch devices:', error)
+      logError(error, { operation: 'Fetch devices' })
       set({ devices: [] })
     } finally {
       set({ devicesLoading: false })
@@ -142,7 +143,7 @@ export const createDeviceSlice: StateCreator<
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
       }
-      console.error('Failed to fetch device types:', error)
+      logError(error, { operation: 'Fetch device types' })
     } finally {
       set({ deviceTypesLoading: false })
     }
@@ -161,7 +162,7 @@ export const createDeviceSlice: StateCreator<
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
       }
-      console.error('Failed to add device:', error)
+      logError(error, { operation: 'Add device' })
       return false
     }
   },
@@ -186,7 +187,7 @@ export const createDeviceSlice: StateCreator<
       }
       return false
     } catch (error) {
-      console.error('Failed to send command:', error)
+      logError(error, { operation: 'Send command' })
       return false
     }
   },
@@ -208,7 +209,7 @@ export const createDeviceSlice: StateCreator<
     try {
       return await api.validateDeviceType(definition)
     } catch (error) {
-      console.error('Failed to validate device type:', error)
+      logError(error, { operation: 'Validate device type' })
       return {
         valid: false,
         errors: [`验证失败: ${(error as Error).message}`],
@@ -221,7 +222,7 @@ export const createDeviceSlice: StateCreator<
     try {
       return await api.generateMDL(req)
     } catch (error) {
-      console.error('Failed to generate MDL:', error)
+      logError(error, { operation: 'Generate MDL' })
       throw error
     }
   },
@@ -233,7 +234,7 @@ export const createDeviceSlice: StateCreator<
       set({ deviceDetails: details })
       return details
     } catch (error) {
-      console.error('Failed to fetch device details:', error)
+      logError(error, { operation: 'Fetch device details' })
       return null
     }
   },
@@ -244,7 +245,7 @@ export const createDeviceSlice: StateCreator<
       set({ deviceTypeDetails: details })
       return details
     } catch (error) {
-      console.error('Failed to fetch device type details:', error)
+      logError(error, { operation: 'Fetch device type details' })
       return null
     }
   },
@@ -256,7 +257,7 @@ export const createDeviceSlice: StateCreator<
       const result = await api.discoverDevices(host, ports, timeoutMs)
       set({ discoveredDevices: result.devices || [] })
     } catch (error) {
-      console.error('Failed to discover devices:', error)
+      logError(error, { operation: 'Discover devices' })
       set({ discoveredDevices: [] })
     } finally {
       set({ discovering: false })
@@ -272,7 +273,7 @@ export const createDeviceSlice: StateCreator<
       const data = await api.getDeviceTelemetry(deviceId, metric, start, end, limit)
       set({ telemetryData: data })
     } catch (error) {
-      console.error('Failed to fetch telemetry data:', error)
+      logError(error, { operation: 'Fetch telemetry data' })
       set({ telemetryData: null })
     } finally {
       set({ telemetryLoading: false })
@@ -285,7 +286,7 @@ export const createDeviceSlice: StateCreator<
       const data = await api.getDeviceTelemetrySummary(deviceId, hours)
       set({ telemetrySummary: data })
     } catch (error) {
-      console.error('Failed to fetch telemetry summary:', error)
+      logError(error, { operation: 'Fetch telemetry summary' })
       set({ telemetrySummary: null })
     } finally {
       set({ telemetryLoading: false })
@@ -334,7 +335,7 @@ export const createDeviceSlice: StateCreator<
         ),
       }))
     } catch (error) {
-      console.error('Failed to fetch device current state:', error)
+      logError(error, { operation: 'Fetch device current state' })
       set({ deviceCurrentState: null })
     } finally {
       set({ telemetryLoading: false })
@@ -347,7 +348,7 @@ export const createDeviceSlice: StateCreator<
       const data = await api.getDeviceCommandHistory(deviceId, limit)
       set({ commandHistory: data })
     } catch (error) {
-      console.error('Failed to fetch command history:', error)
+      logError(error, { operation: 'Fetch command history' })
       set({ commandHistory: null })
     } finally {
       set({ telemetryLoading: false })
@@ -404,7 +405,7 @@ export const createDeviceSlice: StateCreator<
         // Endpoint not implemented in backend - skip silently
         return
       }
-      console.error('Failed to fetch devices current batch:', error)
+      logError(error, { operation: 'Fetch devices current batch' })
     }
   },
 
@@ -418,7 +419,7 @@ export const createDeviceSlice: StateCreator<
       if ((error as Error).message === 'UNAUTHORIZED') {
         // Will be handled by auth slice
       }
-      console.error('Failed to fetch device adapters:', error)
+      logError(error, { operation: 'Fetch device adapters' })
       set({ deviceAdapters: [] })
     } finally {
       set({ deviceAdaptersLoading: false })

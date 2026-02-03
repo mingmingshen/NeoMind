@@ -120,6 +120,13 @@
   "no": "No",
   "unsupportedFieldType": "Unsupported field type: {{type}}",
   "llm": {
+    "providers": {
+      "ollama": "Ollama",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "google": "Google",
+      "xai": "xAI"
+    },
     "deleteConfirm": "Are you sure you want to delete backend \"{{name}}\"?",
     "active": "Active",
     "currentActive": "Currently Active",

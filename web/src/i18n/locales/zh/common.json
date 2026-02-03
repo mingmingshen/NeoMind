@@ -286,6 +286,20 @@
       "settings": "系统设置"
     }
   },
+  "llm": {
+    "providers": {
+      "ollama": "本地模型",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "google": "Google",
+      "xai": "xAI",
+      "default": "默认模型"
+    },
+    "providerTypes": {
+      "local": "本地",
+      "cloud": "云端"
+    }
+  },
   "inputSuggestions": {
     "greeting": {
       "morning": "早上好",

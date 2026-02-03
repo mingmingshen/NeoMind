@@ -37,7 +37,7 @@ pub mod intent_classifier;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use tokio::sync::RwLock;
 
 // Re-export error types
@@ -53,6 +53,16 @@ use edge_ai_core::{
     config::agent_env_vars,
 };
 use edge_ai_llm::{CloudConfig, CloudRuntime, OllamaConfig, OllamaRuntime};
+
+// Type aliases to reduce complexity
+pub type SharedToolRegistry = Arc<edge_ai_tools::ToolRegistry>;
+pub type SharedLlmInterface = Arc<LlmInterface>;
+pub type SharedSessionState = Arc<RwLock<SessionState>>;
+pub type SharedResourceIndex = Arc<RwLock<ResourceIndex>>;
+pub type SharedSmartConversation = Arc<tokio::sync::RwLock<crate::smart_conversation::SmartConversationManager>>;
+pub type SharedSemanticMapper = Arc<semantic_mapper::SemanticToolMapper>;
+pub type EventStream = Pin<Box<dyn Stream<Item = AgentEvent> + Send>>;
+pub type MessageStream = Pin<Box<dyn Stream<Item = (String, bool)> + Send>>;
 
 pub use fallback::{FallbackRule, default_fallback_rules, process_fallback};
 pub use formatter::{format_summary, format_tool_result};
@@ -91,6 +101,7 @@ pub use model_selection::{
 
 /// Maximum number of tool calls allowed per request to prevent infinite loops
 /// Note: This constant is kept for backward compatibility. Config values take precedence.
+#[allow(dead_code)]
 const MAX_TOOL_CALLS_PER_REQUEST_DEFAULT: usize = 5;
 
 /// === ANTHROPIC-STYLE IMPROVEMENT: Tool Result Clearing ===
@@ -189,6 +200,7 @@ fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<Age
 
 /// Default context window size to use when model capacity is unknown.
 /// This is a conservative value that works for most models.
+#[allow(dead_code)]
 const DEFAULT_CONTEXT_TOKENS: usize = 8_000;
 
 /// AI Agent that orchestrates components.
@@ -214,6 +226,8 @@ pub struct Agent {
     semantic_mapper: Arc<semantic_mapper::SemanticToolMapper>,
     /// Conversation context - enables continuous dialogue with entity references
     conversation_context: Arc<tokio::sync::RwLock<ConversationContext>>,
+    /// Last injected context summary hash (for deduplication)
+    last_injected_context_hash: Arc<tokio::sync::RwLock<u64>>,
 }
 
 impl Agent {
@@ -257,6 +271,7 @@ impl Agent {
             )),
             semantic_mapper,
             conversation_context: Arc::new(tokio::sync::RwLock::new(ConversationContext::new())),
+            last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
         }
     }
 
@@ -1072,16 +1087,17 @@ impl Agent {
 
         // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
         // Query the LLM backend for the actual context window size.
+        // Use 90% of model capacity for history, reserve 10% for generation.
         // This allows us to use the full capability of models like qwen3-vl:2b (32k)
-        // while respecting the limits of smaller models like llama3:8b (8k).
+        // without artificial limits.
         let max_context = self.llm_interface.max_context_length().await;
-        // For models with large context (32k+), allow up to 16k for better long conversations
-        // For smaller models (8k), use their full capacity
-        let effective_max = if max_context >= 32000 {
-            max_context.min(16_384) // Large models: cap at 16k
-        } else {
-            max_context.min(DEFAULT_CONTEXT_TOKENS) // Small models: use full capability
-        };
+        let effective_max = (max_context * 90) / 100;
+
+        tracing::debug!(
+            "Context window: model_capacity={}, effective_max={} (90% for history)",
+            max_context,
+            effective_max
+        );
 
         // === ANTHROPIC-STYLE IMPROVEMENT: Apply context window with tool result clearing ===
         // This prevents context bloat from old tool calls while maintaining conversation continuity
@@ -1097,7 +1113,9 @@ impl Agent {
         let mut core_history: Vec<Message> =
             compacted_history.iter().map(|msg| msg.to_core()).collect();
 
-        // === CONVERSATION CONTEXT: Inject context summary before user message ===
+        // === CONVERSATION CONTEXT: Inject context summary ONLY if it changed ===
+        // This prevents repeatedly injecting the same context which can cause
+        // the LLM to generate repetitive responses
         let context_summary = {
             let ctx = self.conversation_context.read().await;
             let summary = ctx.get_context_summary();
@@ -1108,11 +1126,31 @@ impl Agent {
             }
         };
 
-        // If there's context, add it as a system message before the user message
+        // Only inject context if it has changed since last time
+        // Use a simple hash to detect changes
         if let Some(summary) = context_summary {
-            use edge_ai_core::message::{Content, MessageRole};
-            core_history.push(Message::new(MessageRole::System, Content::text(&summary)));
-            tracing::debug!("Injected conversation context into LLM history");
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            let summary_hash = {
+                let mut h = DefaultHasher::new();
+                summary.hash(&mut h);
+                h.finish()
+            };
+
+            let mut last_hash = self.last_injected_context_hash.write().await;
+            if *last_hash != summary_hash {
+                // Context has changed, inject it
+                *last_hash = summary_hash;
+                drop(last_hash); // Release lock before proceeding
+
+                use edge_ai_core::message::{Content, MessageRole};
+                core_history.push(Message::new(MessageRole::System, Content::text(&summary)));
+                tracing::debug!("Injected conversation context into LLM history (changed from previous)");
+            } else {
+                drop(last_hash); // Release lock
+                tracing::debug!("Skipping context injection - unchanged from previous");
+            }
         }
 
         // Call LLM with conversation history (user message will be added by LLM interface)
@@ -1157,10 +1195,14 @@ impl Agent {
             } else {
                 AgentMessage::assistant(&content)
             };
-            self.internal_state
-                .write()
-                .await
-                .push_message(assistant_msg.clone());
+
+            // === SAFEGUARD: Register response for cross-turn repetition detection ===
+            {
+                let mut state = self.internal_state.write().await;
+                state.register_response(&content);
+                state.push_message(assistant_msg.clone());
+            }
+
             return Ok(AgentResponse {
                 message: assistant_msg,
                 tool_calls: vec![],

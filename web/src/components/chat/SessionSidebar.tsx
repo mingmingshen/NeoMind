@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { useState } from "react"
 import { cn } from "@/lib/utils"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 interface SessionSidebarProps {
   onNewChat?: () => void
@@ -29,6 +30,7 @@ interface SessionSidebarProps {
 export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFromIcon }: SessionSidebarProps) {
   const { t } = useTranslation(['common', 'dashboard'])
   const navigate = useNavigate()
+  const { handleError } = useErrorHandler()
   const {
     sessions,
     sessionId,
@@ -91,7 +93,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
         // - Switching to the first available session
         // - Creating a new session if needed
       } catch (error) {
-        console.error('Failed to delete session:', error)
+        handleError(error, { operation: 'Delete session', showToast: false })
       }
 
       setLoading(false)
@@ -124,7 +126,7 @@ export function SessionSidebar({ onNewChat, onClose, mode = 'full', onNewChatFro
       await clearAllSessions()
       setClearAllDialogOpen(false)
     } catch (error) {
-      console.error('Failed to clear all sessions:', error)
+      handleError(error, { operation: 'Clear all sessions', showToast: false })
     } finally {
       setLoading(false)
     }

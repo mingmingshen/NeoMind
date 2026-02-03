@@ -175,7 +175,7 @@ impl LlmConfig {
     /// Get the backend type (deprecated, use backend_id instead).
     #[deprecated(note = "Use backend_id instead")]
     pub fn backend_type(&self) -> String {
-        self.backend.backend_type()
+        self.backend.backend_id().as_str().to_string()
     }
 }
 

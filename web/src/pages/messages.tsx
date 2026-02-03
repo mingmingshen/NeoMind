@@ -5,11 +5,37 @@ import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { PageLayout } from '@/components/layout/PageLayout'
-import { PageTabs, PageTabsContent, EmptyStateInline, Pagination } from '@/components/shared'
+import { PageTabs, PageTabsContent, EmptyStateInline, Pagination, ResponsiveTable } from '@/components/shared'
+import { MessageSquare, Network } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/use-toast'
 import { confirm } from '@/hooks/use-confirm'
-import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory } from '@/types'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
+import type { NotificationMessage, MessageSeverity, MessageStatus, MessageCategory, MessageChannel } from '@/types'
+import type { StandardError } from '@/lib/errors'
+
+// Raw API response types
+interface RawNotificationMessage {
+  id?: string
+  category?: string
+  severity?: MessageSeverity
+  title?: string
+  message?: string
+  source?: string
+  source_type?: string
+  timestamp?: string
+  created_at?: string
+  status?: MessageStatus
+  tags?: string[]
+  metadata?: Record<string, unknown>
+}
+
+interface MessagesApiResponse {
+  messages?: RawNotificationMessage[]
+  data?: {
+    messages?: RawNotificationMessage[]
+  } | RawNotificationMessage[]
+}
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -95,12 +121,13 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: typeof Bell }> = {
 
 export default function MessagesPage() {
   const { t } = useTranslation()
+  const { handleError } = useErrorHandler()
   const navigate = useNavigate()
   const location = useLocation()
 
   // Helper to get API base URL for Tauri environment
   const getApiUrl = (path: string) => {
-    const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+    const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
     return `${apiBase}${path}`
   }
 
@@ -190,8 +217,8 @@ export default function MessagesPage() {
       } else {
         throw new Error(result.message || 'Test failed')
       }
-    } catch (error: any) {
-      const errorMsg = error?.message || String(error)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
       setTestResults(prev => ({ ...prev, [channelName]: { success: false, message: errorMsg } }))
       toast({ title: t('common.failed'), description: errorMsg, variant: 'destructive' })
     } finally {
@@ -206,7 +233,7 @@ export default function MessagesPage() {
   )
 
   // Channels state
-  const [channels, setChannels] = useState<any[]>([])
+  const [channels, setChannels] = useState<MessageChannel[]>([])
 
   // Dialogs
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -237,25 +264,31 @@ export default function MessagesPage() {
           'Authorization': `Bearer ${localStorage.getItem('neomind_token') || sessionStorage.getItem('neomind_token_session') || ''}`,
         },
       })
-      const rawData = await response.json() as any
+      const rawData: unknown = await response.json()
       console.log('Messages API response:', rawData)
 
       // Handle different response formats from messages endpoint
-      let messagesArray: any[] = []
+      let messagesArray: RawNotificationMessage[] = []
       if (Array.isArray(rawData)) {
-        messagesArray = rawData
-      } else if (rawData?.messages && Array.isArray(rawData.messages)) {
-        messagesArray = rawData.messages
-      } else if (rawData?.data?.messages && Array.isArray(rawData.data.messages)) {
-        messagesArray = rawData.data.messages
-      } else if (rawData?.data && Array.isArray(rawData.data)) {
-        messagesArray = rawData.data
+        messagesArray = rawData as RawNotificationMessage[]
+      } else {
+        // Try to extract messages from various response formats
+        const apiResponse = rawData as MessagesApiResponse & { data?: RawNotificationMessage[] | { messages?: RawNotificationMessage[] } }
+        if (apiResponse.messages && Array.isArray(apiResponse.messages)) {
+          messagesArray = apiResponse.messages
+        } else if (apiResponse.data) {
+          if (Array.isArray(apiResponse.data)) {
+            messagesArray = apiResponse.data
+          } else if (apiResponse.data.messages && Array.isArray(apiResponse.data.messages)) {
+            messagesArray = apiResponse.data.messages
+          }
+        }
       }
 
       // Convert to NotificationMessage format
-      let messages: NotificationMessage[] = messagesArray.map((msg: any) => ({
+      let messages: NotificationMessage[] = messagesArray.map((msg: RawNotificationMessage) => ({
         id: msg.id || '',
-        category: msg.category || 'alert',
+        category: (msg.category || 'alert') as MessageCategory,
         severity: msg.severity || 'info',
         title: msg.title || '',
         message: msg.message || '',
@@ -291,7 +324,7 @@ export default function MessagesPage() {
       setMessages(messages)
       setMessagePage(1) // Reset to first page when data changes
     } catch (error) {
-      console.error('Failed to fetch messages:', error)
+      handleError(error, { operation: 'Fetch messages', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -304,7 +337,7 @@ export default function MessagesPage() {
       const response = await api.listMessageChannels()
       setChannels(response.channels || [])
     } catch (error) {
-      console.error('Failed to fetch channels:', error)
+      handleError(error, { operation: 'Fetch channels', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -338,7 +371,7 @@ export default function MessagesPage() {
         throw new Error('Failed to acknowledge')
       }
     } catch (error) {
-      console.error('Failed to acknowledge:', error)
+      handleError(error, { operation: 'Acknowledge message', showToast: true })
       toast({ title: t('messages.acknowledgeError', 'Failed'), variant: 'destructive' })
     }
   }
@@ -361,7 +394,7 @@ export default function MessagesPage() {
         throw new Error('Failed to resolve')
       }
     } catch (error) {
-      console.error('Failed to resolve:', error)
+      handleError(error, { operation: 'Resolve message', showToast: true })
       toast({ title: t('messages.resolveError', 'Failed'), variant: 'destructive' })
     }
   }
@@ -384,7 +417,7 @@ export default function MessagesPage() {
         throw new Error('Failed to archive')
       }
     } catch (error) {
-      console.error('Failed to archive:', error)
+      handleError(error, { operation: 'Archive message', showToast: true })
       toast({ title: t('messages.archiveError', 'Failed'), variant: 'destructive' })
     }
   }
@@ -413,14 +446,14 @@ export default function MessagesPage() {
         throw new Error('Failed to delete')
       }
     } catch (error) {
-      console.error('Failed to delete:', error)
+      handleError(error, { operation: 'Delete message', showToast: true })
       toast({ title: t('messages.deleteError', 'Failed to delete'), variant: 'destructive' })
     }
   }
 
   const tabs = [
-    { value: 'messages' as TabValue, label: t('messages.tabs.messages') },
-    { value: 'channels' as TabValue, label: t('messages.tabs.channels') },
+    { value: 'messages' as TabValue, label: t('messages.tabs.messages'), icon: <MessageSquare className="h-4 w-4" /> },
+    { value: 'channels' as TabValue, label: t('messages.tabs.channels'), icon: <Network className="h-4 w-4" /> },
   ]
 
   return (
@@ -592,162 +625,159 @@ export default function MessagesPage() {
             )}
           </div>
 
-          {/* Messages Table - Scrollable Area */}
-          <Card className="overflow-hidden flex-1 min-h-0">
-            <div className="overflow-auto h-full">
-              <Table>
-                <TableHeader className="sticky top-0 bg-background/95 backdrop-blur-sm z-10">
-                  <TableRow className="hover:bg-transparent border-b bg-muted/30">
-                    <TableHead className="w-[50px]"></TableHead>
-                    <TableHead>
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t('messages.formTitle.label')}
-                      </div>
-                    </TableHead>
-                    <TableHead>
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t('messages.content.label')}
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-[90px]">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t('messages.severity.label')}
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-[90px]">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t('messages.category.label')}
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-[90px]">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t('messages.status.label')}
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-[130px]">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t('common.createdAt')}
-                      </div>
-                    </TableHead>
-                    <TableHead className="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="py-8">
-                        <div className="flex items-center justify-center gap-2">
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                          <span className="text-sm text-muted-foreground">{t('loading')}</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : messages.length === 0 ? (
-                    <EmptyStateInline
-                      title={t('messages.empty.title')}
-                      colSpan={8}
-                    />
-                  ) : (
-                    paginatedMessages.map((message) => {
-                      const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
-                      const categoryConfig = CATEGORY_CONFIG[message.category] || CATEGORY_CONFIG.system
-                      const statusConfig = STATUS_CONFIG[message.status] || STATUS_CONFIG.active
-                      const SeverityIcon = severityConfig.icon
-                      const CategoryIcon = categoryConfig.icon
+          {/* Messages Table - Responsive (Desktop: Table, Mobile: Cards) */}
+          <div className="overflow-auto h-full">
+            <ResponsiveTable
+              columns={[
+                {
+                  key: 'severity',
+                  label: '',
+                  width: 'w-[50px]',
+                  className: 'text-center',
+                },
+                {
+                  key: 'title',
+                  label: t('messages.formTitle.label'),
+                },
+                {
+                  key: 'message',
+                  label: t('messages.content.label'),
+                },
+                {
+                  key: 'severityBadge',
+                  label: t('messages.severity.label'),
+                  width: 'w-[90px]',
+                  align: 'center',
+                },
+                {
+                  key: 'category',
+                  label: t('messages.category.label'),
+                  width: 'w-[90px]',
+                },
+                {
+                  key: 'status',
+                  label: t('messages.status.label'),
+                  width: 'w-[90px]',
+                  align: 'center',
+                },
+                {
+                  key: 'timestamp',
+                  label: t('common.createdAt'),
+                  width: 'w-[130px]',
+                },
+              ]}
+              data={paginatedMessages as unknown as Record<string, unknown>[]}
+              rowKey={(msg) => (msg as unknown as NotificationMessage).id}
+              renderCell={(columnKey, rowData) => {
+                const message = rowData as unknown as NotificationMessage
+                const severityConfig = SEVERITY_CONFIG[message.severity] || SEVERITY_CONFIG.info
+                const categoryConfig = CATEGORY_CONFIG[message.category] || CATEGORY_CONFIG.system
+                const statusConfig = STATUS_CONFIG[message.status] || STATUS_CONFIG.active
+                const SeverityIcon = severityConfig.icon
+                const CategoryIcon = categoryConfig.icon
 
-                      return (
-                        <TableRow
-                          key={message.id}
-                          className={cn(
-                            "group transition-colors hover:bg-muted/50",
-                            (message.status === 'resolved' || message.status === 'archived') && "opacity-60"
-                          )}
-                        >
-                          <TableCell className="text-center">
-                            <SeverityIcon className={cn("h-4 w-4 mx-auto", severityConfig.color)} />
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium text-sm truncate pr-4" title={message.title}>
-                              {message.title}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-muted-foreground line-clamp-2">
-                              {message.message}
-                            </div>
-                            {message.tags.length > 0 && (
-                              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                                {message.tags.slice(0, 4).map((tag, i) => (
-                                  <Badge key={i} variant="secondary" className="text-xs h-5 px-1.5">
-                                    {tag}
-                                  </Badge>
-                                ))}
-                                {message.tags.length > 4 && (
-                                  <span className="text-xs text-muted-foreground">+{message.tags.length - 4}</span>
-                                )}
-                              </div>
+                switch (columnKey) {
+                  case 'severity':
+                    return <SeverityIcon className={cn("h-4 w-4", severityConfig.color)} />
+                  case 'title':
+                    return (
+                      <div className="font-medium text-sm truncate" title={message.title}>
+                        {message.title}
+                      </div>
+                    )
+                  case 'message':
+                    return (
+                      <div className="text-sm">
+                        <div className="text-muted-foreground line-clamp-2">{message.message}</div>
+                        {message.tags.length > 0 && (
+                          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                            {message.tags.slice(0, 4).map((tag, i) => (
+                              <Badge key={i} variant="secondary" className="text-xs h-5 px-1.5">
+                                {tag}
+                              </Badge>
+                            ))}
+                            {message.tags.length > 4 && (
+                              <span className="text-xs text-muted-foreground">+{message.tags.length - 4}</span>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("text-xs", severityConfig.bgColor, severityConfig.color)}>
-                              {t(`messages.severity.${message.severity}`)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5">
-                              <CategoryIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span className="text-xs">{t(categoryConfig.label)}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={statusConfig.variant} className="text-xs">
-                              {t(statusConfig.label)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs text-muted-foreground">
-                              {formatTimestamp(message.timestamp, false)}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-40">
-                                {message.status === 'active' && (
-                                  <DropdownMenuItem onClick={() => handleAcknowledge(message.id)}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    {t('messages.acknowledge')}
-                                  </DropdownMenuItem>
-                                )}
-                                {message.status !== 'resolved' && message.status !== 'archived' && (
-                                  <DropdownMenuItem onClick={() => handleResolve(message.id)}>
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    {t('messages.resolve')}
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleDelete(message.id)}
-                                  className="text-destructive"
-                                >
-                                  <Trash2 className="mr-2 h-4 w-4" />
-                                  {t('delete')}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  case 'severityBadge':
+                    return (
+                      <Badge variant="outline" className={cn("text-xs", severityConfig.bgColor, severityConfig.color)}>
+                        {t(`messages.severity.${message.severity}`)}
+                      </Badge>
+                    )
+                  case 'category':
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <CategoryIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-xs">{t(categoryConfig.label)}</span>
+                      </div>
+                    )
+                  case 'status':
+                    return (
+                      <Badge variant={statusConfig.variant} className="text-xs">
+                        {t(statusConfig.label)}
+                      </Badge>
+                    )
+                  case 'timestamp':
+                    return (
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimestamp(message.timestamp, false)}
+                      </span>
+                    )
+                  default:
+                    return null
+                }
+              }}
+              getRowClassName={(rowData) => {
+                const message = rowData as unknown as NotificationMessage
+                return (message.status === 'resolved' || message.status === 'archived') ? 'opacity-60' : ''
+              }}
+              actions={[
+                {
+                  label: t('messages.acknowledge'),
+                  icon: <Eye className="h-4 w-4" />,
+                  show: (rowData) => (rowData as unknown as NotificationMessage).status === 'active',
+                  onClick: (rowData) => {
+                    const message = rowData as unknown as NotificationMessage
+                    handleAcknowledge(message.id)
+                  },
+                },
+                {
+                  label: t('messages.resolve'),
+                  icon: <Eye className="h-4 w-4" />,
+                  show: (rowData) => {
+                    const status = (rowData as unknown as NotificationMessage).status
+                    return status !== 'resolved' && status !== 'archived'
+                  },
+                  onClick: (rowData) => {
+                    const message = rowData as unknown as NotificationMessage
+                    handleResolve(message.id)
+                  },
+                },
+                {
+                  label: t('delete'),
+                  icon: <Trash2 className="h-4 w-4" />,
+                  variant: 'destructive',
+                  onClick: (rowData) => {
+                    const message = rowData as unknown as NotificationMessage
+                    handleDelete(message.id)
+                  },
+                },
+              ]}
+              loading={loading}
+              emptyState={
+                !loading && messages.length === 0 ? (
+                  <EmptyStateInline
+                    title={t('messages.empty.title')}
+                  />
+                ) : undefined
+              }
+            />
+          </div>
         </PageTabsContent>
 
         {/* Channels Tab */}
@@ -757,135 +787,116 @@ export default function MessagesPage() {
             {channels.filter(c => c.enabled).length} {t('enabled')} channels
           </div>
 
-          <Card className="overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent border-b bg-muted/30">
-                  <TableHead>
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      <Bell className="h-4 w-4" />
-                      {t('messages.channels.name')}
-                    </div>
-                  </TableHead>
-                  <TableHead>
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('messages.channels.type')}
-                    </div>
-                  </TableHead>
-                  <TableHead align="center">
-                    <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {t('status')}
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="py-8">
-                      <div className="flex items-center justify-center gap-2">
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">{t('loading')}</span>
+          {/* Channels Responsive Table */}
+          <ResponsiveTable
+            columns={[
+              {
+                key: 'channel',
+                label: (
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    {t('messages.channels.name')}
+                  </div>
+                ),
+              },
+              {
+                key: 'type',
+                label: t('messages.channels.type'),
+                align: 'center',
+              },
+              {
+                key: 'status',
+                label: t('status'),
+                align: 'center',
+              },
+            ]}
+            data={channels as unknown as Record<string, unknown>[]}
+            rowKey={(ch) => (ch as unknown as MessageChannel).name}
+            renderCell={(columnKey, rowData) => {
+              const channel = rowData as unknown as MessageChannel
+              const config: Record<string, { icon: typeof Bell; color: string }> = {
+                console: { icon: Bell, color: 'bg-gray-500/10 text-gray-500' },
+                memory: { icon: RefreshCw, color: 'bg-blue-500/10 text-blue-500' },
+                webhook: { icon: Megaphone, color: 'bg-green-500/10 text-green-500' },
+                email: { icon: Bell, color: 'bg-purple-500/10 text-purple-500' },
+              }
+              const channelConfig = config[channel.channel_type] || config.console
+              const ChannelIcon = channelConfig.icon
+              const testResult = testResults[channel.name]
+
+              switch (columnKey) {
+                case 'channel':
+                  return (
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${channelConfig.color}`}>
+                        <ChannelIcon className="h-4 w-4" />
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ) : channels.length === 0 ? (
-                  <EmptyStateInline
-                    title={t('messages.channels.empty.title')}
-                    colSpan={4}
-                  />
-                ) : (
-                  channels.map((channel) => {
-                    const config: Record<string, { icon: any; color: string }> = {
-                      console: { icon: Bell, color: 'bg-gray-500/10 text-gray-500' },
-                      memory: { icon: RefreshCw, color: 'bg-blue-500/10 text-blue-500' },
-                      webhook: { icon: Megaphone, color: 'bg-green-500/10 text-green-500' },
-                      email: { icon: Bell, color: 'bg-purple-500/10 text-purple-500' },
-                    }
-                    const channelConfig = config[channel.channel_type] || config.console
-                    const ChannelIcon = channelConfig.icon
-
-                    const testResult = testResults[channel.name]
-
-                    return (
-                      <TableRow key={channel.name} className="group transition-colors hover:bg-muted/50">
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${channelConfig.color}`}>
-                              <ChannelIcon className="h-4 w-4" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium text-sm">{channel.name}</span>
-                                {(channel.channel_type === 'webhook' || channel.channel_type === 'email') && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-2 text-xs"
-                                    onClick={() => handleTestChannel(channel.name)}
-                                    disabled={testingChannel === channel.name}
-                                  >
-                                    <TestTube className="h-3 w-3 mr-1" />
-                                    {testingChannel === channel.name ? 'Testing...' : 'Test'}
-                                  </Button>
-                                )}
-                              </div>
-                              <div className="text-xs text-muted-foreground">{channel.channel_type}</div>
-                              {testResult && (
-                                <div className={`text-xs mt-1 ${testResult.success ? 'text-green-500' : 'text-red-500'}`}>
-                                  {testResult.success ? '✓ ' : '✗ '}
-                                  {testResult.message}
-                                </div>
-                              )}
-                            </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{channel.name}</span>
+                          {(channel.channel_type === 'webhook' || channel.channel_type === 'email') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => handleTestChannel(channel.name)}
+                              disabled={testingChannel === channel.name}
+                            >
+                              <TestTube className="h-3 w-3 mr-1" />
+                              {testingChannel === channel.name ? 'Testing...' : 'Test'}
+                            </Button>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{channel.channel_type}</div>
+                        {testResult && (
+                          <div className={`text-xs mt-1 ${testResult.success ? 'text-green-500' : 'text-red-500'}`}>
+                            {testResult.success ? '✓ ' : '✗ '}
+                            {testResult.message}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {channel.channel_type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Badge variant={channel.enabled ? 'default' : 'secondary'} className="text-xs">
-                            {channel.enabled ? t('enabled') : t('disabled')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-40">
-                              <DropdownMenuItem>
-                                <Eye className="mr-2 h-4 w-4" />
-                                {t('common.view')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem>
-                                {channel.enabled ? (
-                                  <>
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    {t('common.disable')}
-                                  </>
-                                ) : (
-                                  <>
-                                    <RefreshCw className="mr-2 h-4 w-4" />
-                                    {t('common.enable')}
-                                  </>
-                                )}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </Card>
+                        )}
+                      </div>
+                    </div>
+                  )
+                case 'type':
+                  return (
+                    <Badge variant="outline" className="text-xs">
+                      {channel.channel_type}
+                    </Badge>
+                  )
+                case 'status':
+                  return (
+                    <Badge variant={channel.enabled ? 'default' : 'secondary'} className="text-xs">
+                      {channel.enabled ? t('enabled') : t('disabled')}
+                    </Badge>
+                  )
+                default:
+                  return null
+              }
+            }}
+            actions={[
+              {
+                label: t('common.view'),
+                icon: <Eye className="h-4 w-4" />,
+                onClick: () => {
+                  // Handle view
+                },
+              },
+              {
+                label: t('common.enable'),
+                icon: <RefreshCw className="h-4 w-4" />,
+                onClick: (rowData) => {
+                  const channel = rowData as unknown as MessageChannel
+                  // Handle enable/disable
+                },
+              },
+            ]}
+            loading={loading}
+            emptyState={
+              !loading && channels.length === 0 ? (
+                <EmptyStateInline title={t('messages.channels.empty.title')} />
+              ) : undefined
+            }
+          />
         </PageTabsContent>
       </PageTabs>
 

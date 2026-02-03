@@ -8,6 +8,7 @@ use tokio::time::{Instant, interval};
 
 use edge_ai_core::event::NeoTalkEvent;
 use edge_ai_core::eventbus::EventBus;
+use crate::error::NeoTalkError;
 
 use super::config::{AutonomousConfig, ReviewType};
 use super::review::{
@@ -88,18 +89,18 @@ impl AutonomousAgent {
     }
 
     /// Start the autonomous agent.
-    pub async fn start(&self) -> Result<(), AgentError> {
+    pub async fn start(&self) -> crate::error::Result<()> {
         let mut state = self.state.write().await;
 
         if !state.can_start() {
-            return Err(NeoTalkError::InvalidState(format!(
+            return Err(NeoTalkError::Validation(format!(
                 "Cannot start agent in state: {:?}",
                 state
             )));
         }
 
         if !self.config.enabled {
-            return Err(NeoTalkError::Disabled(
+            return Err(NeoTalkError::Config(
                 "Agent is disabled in config".to_string(),
             ));
         }
@@ -117,11 +118,11 @@ impl AutonomousAgent {
     }
 
     /// Stop the autonomous agent.
-    pub async fn stop(&self) -> Result<(), AgentError> {
+    pub async fn stop(&self) -> crate::error::Result<()> {
         let mut state = self.state.write().await;
 
         if !state.is_running() {
-            return Err(NeoTalkError::InvalidState(format!(
+            return Err(NeoTalkError::Validation(format!(
                 "Cannot stop agent in state: {:?}",
                 state
             )));
@@ -137,9 +138,9 @@ impl AutonomousAgent {
     pub async fn trigger_review(
         &self,
         review_type: ReviewType,
-    ) -> Result<ReviewResult, AgentError> {
+    ) -> crate::error::Result<ReviewResult> {
         if !self.state.read().await.is_running() {
-            return Err(NeoTalkError::InvalidState(
+            return Err(NeoTalkError::Validation(
                 "Agent must be running to trigger reviews".to_string(),
             ));
         }
@@ -199,7 +200,7 @@ impl AutonomousAgent {
     }
 
     /// Perform a single review.
-    async fn perform_review(&self, review_type: ReviewType) -> Result<ReviewResult, AgentError> {
+    async fn perform_review(&self, review_type: ReviewType) -> crate::error::Result<ReviewResult> {
         let start = Instant::now();
 
         // Publish review start event
@@ -211,7 +212,7 @@ impl AutonomousAgent {
             .reviews
             .iter()
             .find(|r| r.review_type() == review_type)
-            .ok_or(NeoTalkError::ReviewNotFound(review_type))?;
+            .ok_or(NeoTalkError::NotFound(format!("{:?}", review_type)))?;
 
         // Create review context
         let mut context = ReviewContext::new(review_type);
@@ -314,26 +315,6 @@ impl AutonomousAgent {
             reviews,
         }
     }
-}
-
-/// Errors that can occur in the autonomous agent.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum AgentError {
-    /// Invalid state for the requested operation
-    #[error("Invalid state: {0}")]
-    InvalidState(String),
-
-    /// Agent is disabled
-    #[error("Agent disabled: {0}")]
-    Disabled(String),
-
-    /// Review implementation not found
-    #[error("Review not found: {0:?}")]
-    ReviewNotFound(ReviewType),
-
-    /// Review timed out
-    #[error("Review timed out: {0}")]
-    Timeout(String),
 }
 
 #[cfg(test)]

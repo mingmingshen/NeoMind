@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import {
   ArrowLeft,
   Server,
@@ -32,37 +33,45 @@ interface UnifiedLLMBackendsTabProps {
   onTestBackend: (id: string) => Promise<BackendTestResult>
 }
 
-// LLM Provider info
-const LLM_PROVIDER_INFO: Record<string, {
-  name: string
+// LLM Provider icon and color config (names are internationalized via getLlmProviderInfo)
+const LLM_PROVIDER_CONFIG: Record<string, {
   icon: React.ReactNode
   iconBg: string
 }> = {
   ollama: {
-    name: 'Ollama',
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400',
   },
   openai: {
-    name: 'OpenAI',
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400',
   },
   anthropic: {
-    name: 'Anthropic',
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
   },
   google: {
-    name: 'Google',
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
   },
   xai: {
-    name: 'xAI',
     icon: <Server className="h-6 w-6" />,
     iconBg: 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400',
   },
+}
+
+/**
+ * Get LLM provider info with internationalized name
+ */
+function getLlmProviderInfo(providerType: string, t: (key: string) => string) {
+  const config = LLM_PROVIDER_CONFIG[providerType] || LLM_PROVIDER_CONFIG.ollama
+  const i18nKey = `llm.providers.${providerType}`
+
+  return {
+    name: t(i18nKey),
+    icon: config.icon,
+    iconBg: config.iconBg,
+  }
 }
 
 // Fields to exclude from config schema (managed by the system)
@@ -71,8 +80,8 @@ const EXCLUDED_LLM_CONFIG_FIELDS = ['id', 'name', 'backend_type']
 /**
  * Convert BackendTypeDefinition to UnifiedPluginType
  */
-function toUnifiedPluginType(type: BackendTypeDefinition): UnifiedPluginType {
-  const info = LLM_PROVIDER_INFO[type.id] || LLM_PROVIDER_INFO.ollama
+function toUnifiedPluginType(type: BackendTypeDefinition, t: (key: string) => string): UnifiedPluginType {
+  const info = getLlmProviderInfo(type.id, t)
 
   // Filter out system-managed fields from config schema
   const filteredSchema: PluginConfigSchema = type.config_schema
@@ -155,6 +164,7 @@ export function UnifiedLLMBackendsTab({
   onTestBackend,
 }: UnifiedLLMBackendsTabProps) {
   const { t } = useTranslation(['plugins', 'common'])
+  const { handleError } = useErrorHandler()
   const [view, setView] = useState<View>('list')
   const [loading, setLoading] = useState(true)
   const [backendTypes, setBackendTypes] = useState<BackendTypeDefinition[]>([])
@@ -185,7 +195,7 @@ export function UnifiedLLMBackendsTab({
       setInstances(instancesResponse.backends || [])
       setActiveBackendId(instancesResponse.active_id || null)
     } catch (error) {
-      console.error('Failed to load LLM data:', error)
+      handleError(error, { operation: 'Load LLM data', showToast: false })
       setBackendTypes([])
       setInstances([])
       setActiveBackendId(null)
@@ -270,7 +280,7 @@ export function UnifiedLLMBackendsTab({
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {backendTypes.map((type) => {
             const typeInstances = getInstancesForType(type.id)
-            const info = LLM_PROVIDER_INFO[type.id] || LLM_PROVIDER_INFO.ollama
+            const info = getLlmProviderInfo(type.id, t)
             const activeInstance = typeInstances.find(i => i.id === activeBackendId)
             const hasActive = !!activeInstance
 
@@ -282,7 +292,7 @@ export function UnifiedLLMBackendsTab({
                   hasActive && "border-green-500 border-2"
                 )}
                 onClick={() => {
-                  setSelectedType(toUnifiedPluginType(type))
+                  setSelectedType(toUnifiedPluginType(type, t))
                   setView('detail')
                 }}
               >
@@ -318,7 +328,7 @@ export function UnifiedLLMBackendsTab({
   // ========== DETAIL VIEW ==========
   if (view === 'detail' && selectedType) {
     const typeInstances = getInstancesForType(selectedType.id)
-    const info = LLM_PROVIDER_INFO[selectedType.id] || LLM_PROVIDER_INFO.ollama
+    const info = getLlmProviderInfo(selectedType.id, t)
     const pluginInstances = typeInstances.map(i => toPluginInstance(i, activeBackendId))
 
     return (

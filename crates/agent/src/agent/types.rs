@@ -611,6 +611,8 @@ pub struct AgentInternalState {
     pub session: SessionState,
     /// Message history for this session
     pub memory: Vec<AgentMessage>,
+    /// Recent assistant response hashes (for cross-turn repetition detection)
+    pub recent_response_hashes: Vec<u64>,
 }
 
 impl AgentInternalState {
@@ -622,6 +624,54 @@ impl AgentInternalState {
             llm_ready: false,
             session,
             memory: Vec::new(),
+            recent_response_hashes: Vec::new(),
+        }
+    }
+
+    /// Calculate similarity hash for a response content.
+    pub fn hash_response(content: &str) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Normalize content for hashing:
+        // - Remove extra whitespace
+        // - Convert to lowercase for case-insensitive comparison
+        // - Remove common filler phrases
+        let normalized = content
+            .to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        let mut h = DefaultHasher::new();
+        normalized.hash(&mut h);
+        h.finish()
+    }
+
+    /// Check if a response is too similar to recent responses.
+    pub fn is_response_repetitive(&self, content: &str, _threshold: f64) -> bool {
+        if self.recent_response_hashes.is_empty() {
+            return false;
+        }
+
+        let new_hash = Self::hash_response(content);
+
+        // Check for exact hash match (exact same response)
+        if self.recent_response_hashes.contains(&new_hash) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Register a new assistant response for repetition detection.
+    pub fn register_response(&mut self, content: &str) {
+        let hash = Self::hash_response(content);
+        self.recent_response_hashes.push(hash);
+
+        // Keep only the last 10 response hashes
+        if self.recent_response_hashes.len() > 10 {
+            self.recent_response_hashes.remove(0);
         }
     }
 

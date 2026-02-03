@@ -131,7 +131,7 @@ pub async fn process_fallback(
                 let result = tools.execute(&rule.tool, rule.arguments.clone()).await;
 
                 let tools_used = vec![rule.tool.clone()];
-                let mut response_content = String::new();
+                let response_content;
 
                 if let Ok(ref output) = result {
                     let data = &output.data;

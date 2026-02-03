@@ -156,6 +156,35 @@ export interface RootState
 // Page Titles Mapping
 // ============================================================================
 
+/**
+ * Get page title with internationalization support.
+ * This function should be used within React components where useTranslation is available.
+ *
+ * Usage:
+ *   const { t } = useTranslation('nav')
+ *   const title = getPageTitle('dashboard', t)
+ */
+export function getPageTitle(page: PageName, t: (key: string) => string): string {
+  const titles: Record<PageName, string> = {
+    dashboard: t('nav.dashboard'),
+    'visual-dashboard': t('nav.visual-dashboard'),
+    devices: t('nav.devices'),
+    alerts: t('nav.alerts'),
+    automation: t('nav.automation'),
+    commands: t('nav.commands'),
+    decisions: t('nav.decisions'),
+    plugins: t('nav.plugins'),
+    settings: t('nav.settings'),
+    events: t('nav.events'),
+    agents: t('nav.agents'),
+  }
+  return titles[page] || page
+}
+
+/**
+ * @deprecated Use getPageTitle(page, t) instead for internationalization support.
+ * This constant is kept for backward compatibility but will be removed in future versions.
+ */
 export const pageTitles: Record<PageName, string> = {
   dashboard: '对话',
   'visual-dashboard': '可视化仪表板',

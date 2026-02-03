@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Settings, FileCode, Info, Loader2 } from "lucide-react"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { useStore } from "@/store"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { Extension, ExtensionStatsDto } from "@/types"
@@ -27,6 +28,7 @@ export function ExtensionConfigDialog({
   open,
   onOpenChange,
 }: ExtensionConfigDialogProps) {
+  const { handleError } = useErrorHandler()
   const getExtensionStats = useStore((state) => state.getExtensionStats)
   const getExtensionHealth = useStore((state) => state.getExtensionHealth)
 
@@ -47,7 +49,7 @@ export function ExtensionConfigDialog({
       setStats(statsData)
       setHealth(healthData)
     } catch (error) {
-      console.error("Failed to load extension details:", error)
+      handleError(error, { operation: 'Load extension details', showToast: false })
     } finally {
       setLoading(false)
     }

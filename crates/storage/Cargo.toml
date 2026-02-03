@@ -23,7 +23,6 @@ lru = "0.12"
 bincode = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 chrono = { workspace = true, features = ["serde"] }
-async-trait = "0.1"
 rand = { workspace = true }
 
 [features]

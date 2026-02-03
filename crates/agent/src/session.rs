@@ -12,7 +12,7 @@ use uuid::Uuid;
 use edge_ai_storage::SessionStore;
 
 use super::agent::{Agent, AgentConfig, AgentEvent, AgentMessage, LlmBackend};
-use super::error::{AgentError, Result};
+use super::error::{NeoTalkError, Result};
 
 // Re-export instance manager for convenience
 pub use edge_ai_llm::instance_manager::{

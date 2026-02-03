@@ -6,16 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { ActionBar, EmptyState } from '@/components/shared'
+import { ActionBar, EmptyState, ResponsiveTable } from '@/components/shared'
 import { confirm } from '@/hooks/use-confirm'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import { formatTimestamp } from '@/lib/utils/format'
 import { TransformBuilder as TransformBuilderSplit } from './TransformBuilderSplit'
 import { TransformTestDialog } from './TransformTestDialog'
@@ -27,6 +20,7 @@ interface TransformsTabContentProps {
 
 export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
   const { t } = useTranslation(['automation', 'common'])
+  const { handleError } = useErrorHandler()
   const [transforms, setTransforms] = useState<TransformAutomation[]>([])
   const [loading, setLoading] = useState(true)
   const [builderOpen, setBuilderOpen] = useState(false)
@@ -42,7 +36,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
       const result = await api.listTransforms()
       setTransforms(result.transforms || [])
     } catch (error) {
-      console.error('Failed to fetch transforms:', error)
+      handleError(error, { operation: 'Fetch transforms', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -97,24 +91,16 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
 
   const handleSaveTransform = async (data: Partial<TransformAutomation>) => {
     try {
-      // Build the transform definition matching backend TransformAutomation structure
-      const now = Math.floor(Date.now() / 1000)
+      // Build the transform definition with only transform-specific fields
       const definition = {
-        id: editingTransform?.id || crypto.randomUUID(),
-        name: data.name || '',
-        description: data.description || '',
-        enabled: data.enabled ?? true,
         scope: data.scope || 'global',
         js_code: data.js_code || '',
         output_prefix: data.output_prefix || '',
         complexity: data.complexity || 2,
-        execution_count: 0,
-        created_at: now,
-        updated_at: now,
-        last_executed: null as number | null,
       }
 
       if (editingTransform) {
+        // Update existing transform - send name, description, enabled and definition
         await api.updateAutomation(editingTransform.id, {
           name: data.name,
           description: data.description,
@@ -122,6 +108,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
           definition,
         })
       } else {
+        // Create new transform - include type
         await api.createAutomation({
           name: data.name || '',
           description: data.description,
@@ -135,7 +122,8 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
       setEditingTransform(null)
       onRefresh?.()
     } catch (error) {
-      console.error('Failed to save transform:', error)
+      handleError(error, { operation: 'Save transform', showToast: true })
+      throw error
     }
   }
 
@@ -230,75 +218,257 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
             }}
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[30px]" />
-                <TableHead>{t('automation:name', { defaultValue: 'Name' })}</TableHead>
-                <TableHead>{t('automation:scope', { defaultValue: 'Scope' })}</TableHead>
-                <TableHead>{t('automation:operations', { defaultValue: 'Operations' })}</TableHead>
-                <TableHead>{t('automation:complexity', { defaultValue: 'Complexity' })}</TableHead>
-                <TableHead>{t('common:status', { defaultValue: 'Status' })}</TableHead>
-                <TableHead className="text-right">{t('common:actions', { defaultValue: 'Actions' })}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transforms.map((transform) => (
-                <>
-                  <TableRow>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() => toggleRowExpanded(transform.id)}
-                      >
-                        {expandedRows.has(transform.id) ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{transform.name}</div>
-                      <div className="text-sm text-muted-foreground">{transform.description}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={getScopeBadgeVariant(transform.scope)}>
-                        {getScopeLabel(transform.scope)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {transform.js_code ? (
-                          <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
-                            {t('automation:jsCode', { defaultValue: 'JavaScript' })}
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full caption-bottom text-sm">
+                <thead className="[&_tr]:border-b">
+                  <tr>
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground w-[30px]" />
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('automation:name', { defaultValue: 'Name' })}</th>
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('automation:scope', { defaultValue: 'Scope' })}</th>
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('automation:operations', { defaultValue: 'Operations' })}</th>
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('automation:complexity', { defaultValue: 'Complexity' })}</th>
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('common:status', { defaultValue: 'Status' })}</th>
+                    <th className="h-11 px-4 align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground text-right">{t('common:actions', { defaultValue: 'Actions' })}</th>
+                  </tr>
+                </thead>
+                <tbody className="[&_tr:last-child]:border-0">
+                  {transforms.map((transform) => (
+                    <>
+                      <tr key={transform.id} className="border-b transition-colors hover:bg-muted/50">
+                        <td className="p-4 align-middle">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            onClick={() => toggleRowExpanded(transform.id)}
+                          >
+                            {expandedRows.has(transform.id) ? (
+                              <ChevronUp className="h-4 w-4" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </td>
+                        <td className="p-4 align-middle">
+                          <div className="font-medium">{transform.name}</div>
+                          <div className="text-sm text-muted-foreground">{transform.description}</div>
+                        </td>
+                        <td className="p-4 align-middle">
+                          <Badge variant={getScopeBadgeVariant(transform.scope)}>
+                            {getScopeLabel(transform.scope)}
                           </Badge>
-                        ) : transform.operations && transform.operations.length > 0 ? (
-                          transform.operations.map((op, idx) => (
-                            <Badge key={idx} variant="outline" className="text-xs">
-                              {op.op_type}
-                            </Badge>
-                          ))
-                        ) : (
-                          <Badge variant="outline" className="text-xs text-muted-foreground">
-                            {t('automation:noCode', { defaultValue: 'No code' })}
-                          </Badge>
-                        )}
+                        </td>
+                        <td className="p-4 align-middle">
+                          <div className="flex flex-wrap gap-1">
+                            {transform.js_code ? (
+                              <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+                                {t('automation:jsCode', { defaultValue: 'JavaScript' })}
+                              </Badge>
+                            ) : transform.operations && transform.operations.length > 0 ? (
+                              transform.operations.map((op, idx) => (
+                                <Badge key={idx} variant="outline" className="text-xs">
+                                  {op.op_type}
+                                </Badge>
+                              ))
+                            ) : (
+                              <Badge variant="outline" className="text-xs text-muted-foreground">
+                                {t('automation:noCode', { defaultValue: 'No code' })}
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 align-middle">
+                          <div className="flex gap-1">{getComplexityDots(transform.complexity)}</div>
+                        </td>
+                        <td className="p-4 align-middle">
+                          <Switch
+                            checked={transform.enabled}
+                            onCheckedChange={() => handleToggleTransform(transform)}
+                          />
+                        </td>
+                        <td className="p-4 align-middle text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setTestingTransformId(transform.id)
+                                setTestDialogOpen(true)
+                              }}
+                              title={t('automation:testTransform', { defaultValue: 'Test Transform' })}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setEditingTransform(transform)
+                                setBuilderOpen(true)
+                              }}
+                              title={t('common:edit', { defaultValue: 'Edit' })}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteTransform(transform.id)}
+                              title={t('common:delete', { defaultValue: 'Delete' })}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Expanded Details */}
+                      {expandedRows.has(transform.id) && (
+                        <tr>
+                          <td colSpan={7} className="bg-muted/50">
+                            <div className="space-y-4 py-4">
+                              {/* Intent or Operations */}
+                              <div>
+                                <h4 className="font-medium mb-2">{t('automation:intent', { defaultValue: 'Intent' })}</h4>
+                                <p className="text-sm text-muted-foreground">
+                                  {transform.intent || t('automation:noIntent', { defaultValue: 'No intent description' })}
+                                </p>
+                              </div>
+
+                              {/* JavaScript Code */}
+                              {transform.js_code && (
+                                <div>
+                                  <h4 className="font-medium mb-2">{t('automation:generatedCode', { defaultValue: 'Generated Code' })}</h4>
+                                  <Card className="p-3 bg-muted">
+                                    <pre className="text-xs overflow-x-auto font-mono whitespace-pre-wrap">
+                                      <code>{transform.js_code}</code>
+                                    </pre>
+                                  </Card>
+                                </div>
+                              )}
+
+                              {/* Legacy Operations */}
+                              {transform.operations && transform.operations.length > 0 && (
+                                <div>
+                                  <h4 className="font-medium mb-2">{t('automation:operations', { defaultValue: 'Operations (Legacy)' })}</h4>
+                                  <div className="space-y-2">
+                                    {transform.operations.map((op, idx) => (
+                                      <div key={idx} className="pl-4 border-l-2 border-blue-500">
+                                        <div className="text-sm font-medium">{op.op_type}</div>
+                                        <pre className="text-xs text-muted-foreground mt-1 overflow-x-auto">
+                                          {JSON.stringify(op, null, 2)}
+                                        </pre>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div>
+                                  <span className="text-muted-foreground">{t('automation:created', { defaultValue: 'Created' })}: </span>
+                                  {formatTimestamp(transform.created_at)}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">{t('automation:updated', { defaultValue: 'Updated' })}: </span>
+                                  {formatTimestamp(transform.updated_at)}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">{t('automation:executions', { defaultValue: 'Executions' })}: </span>
+                                  {transform.execution_count}
+                                </div>
+                                <div>
+                                  <span className="text-muted-foreground">{t('automation:lastExecuted', { defaultValue: 'Last Executed' })}: </span>
+                                  {transform.last_executed
+                                    ? formatTimestamp(transform.last_executed)
+                                    : t('common:never', { defaultValue: 'Never' })}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card List */}
+            <div className="md:hidden p-4 space-y-3">
+              {transforms.map((transform) => {
+                const isExpanded = expandedRows.has(transform.id)
+                return (
+                  <Card key={transform.id} className="overflow-hidden">
+                    {/* Card Header */}
+                    <div className="bg-muted/30 px-4 py-3 border-b">
+                      <div className="flex items-center gap-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 shrink-0"
+                          onClick={() => toggleRowExpanded(transform.id)}
+                        >
+                          {isExpanded ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </Button>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate">{transform.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">{transform.description}</div>
+                        </div>
+                        <Switch
+                          checked={transform.enabled}
+                          onCheckedChange={() => handleToggleTransform(transform)}
+                          className="shrink-0"
+                        />
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">{getComplexityDots(transform.complexity)}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={transform.enabled}
-                        onCheckedChange={() => handleToggleTransform(transform)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                    </div>
+
+                    {/* Card Body */}
+                    <div className="p-4 space-y-3">
+                      {/* Scope */}
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">{t('automation:scope', { defaultValue: 'Scope' })}</span>
+                        <Badge variant={getScopeBadgeVariant(transform.scope)} className="text-xs">
+                          {getScopeLabel(transform.scope)}
+                        </Badge>
+                      </div>
+
+                      {/* Operations */}
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">{t('automation:operations', { defaultValue: 'Operations' })}</span>
+                        <div className="flex flex-wrap gap-1 justify-end">
+                          {transform.js_code ? (
+                            <Badge variant="outline" className="text-xs bg-purple-100 dark:bg-purple-900">
+                              {t('automation:jsCode', { defaultValue: 'JavaScript' })}
+                            </Badge>
+                          ) : transform.operations && transform.operations.length > 0 ? (
+                            transform.operations.map((op, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">
+                                {op.op_type}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline" className="text-xs text-muted-foreground">
+                              {t('automation:noCode', { defaultValue: 'No code' })}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Complexity */}
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">{t('automation:complexity', { defaultValue: 'Complexity' })}</span>
+                        <div className="flex gap-0.5">{getComplexityDots(transform.complexity)}</div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -330,17 +500,13 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
 
-                  {/* Expanded Details */}
-                  {expandedRows.has(transform.id) && (
-                    <TableRow>
-                      <TableCell colSpan={7} className="bg-muted/50">
-                        <div className="space-y-4 py-4">
-                          {/* Intent or Operations */}
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="pt-3 border-t space-y-4">
+                          {/* Intent */}
                           <div>
-                            <h4 className="font-medium mb-2">{t('automation:intent', { defaultValue: 'Intent' })}</h4>
+                            <h4 className="font-medium mb-2 text-xs">{t('automation:intent', { defaultValue: 'Intent' })}</h4>
                             <p className="text-sm text-muted-foreground">
                               {transform.intent || t('automation:noIntent', { defaultValue: 'No intent description' })}
                             </p>
@@ -349,7 +515,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                           {/* JavaScript Code */}
                           {transform.js_code && (
                             <div>
-                              <h4 className="font-medium mb-2">{t('automation:generatedCode', { defaultValue: 'Generated Code' })}</h4>
+                              <h4 className="font-medium mb-2 text-xs">{t('automation:generatedCode', { defaultValue: 'Generated Code' })}</h4>
                               <Card className="p-3 bg-muted">
                                 <pre className="text-xs overflow-x-auto font-mono whitespace-pre-wrap">
                                   <code>{transform.js_code}</code>
@@ -361,7 +527,7 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                           {/* Legacy Operations */}
                           {transform.operations && transform.operations.length > 0 && (
                             <div>
-                              <h4 className="font-medium mb-2">{t('automation:operations', { defaultValue: 'Operations (Legacy)' })}</h4>
+                              <h4 className="font-medium mb-2 text-xs">{t('automation:operations', { defaultValue: 'Operations (Legacy)' })}</h4>
                               <div className="space-y-2">
                                 {transform.operations.map((op, idx) => (
                                   <div key={idx} className="pl-4 border-l-2 border-blue-500">
@@ -375,7 +541,8 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                             </div>
                           )}
 
-                          <div className="grid grid-cols-2 gap-4 text-sm">
+                          {/* Metadata */}
+                          <div className="grid grid-cols-2 gap-3 text-xs">
                             <div>
                               <span className="text-muted-foreground">{t('automation:created', { defaultValue: 'Created' })}: </span>
                               {formatTimestamp(transform.created_at)}
@@ -396,13 +563,13 @@ export function TransformsTabContent({ onRefresh }: TransformsTabContentProps) {
                             </div>
                           </div>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </>
-              ))}
-            </TableBody>
-          </Table>
+                      )}
+                    </div>
+                  </Card>
+                )
+              })}
+            </div>
+          </>
         )}
       </Card>
 

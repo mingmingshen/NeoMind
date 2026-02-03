@@ -465,6 +465,8 @@ export type ServerMessage =
   | { type: 'Plan'; step: string; stage: string; sessionId: string }
   // Heartbeat to keep connection alive (not displayed)
   | { type: 'Heartbeat'; timestamp: number; sessionId: string }
+  // Ping from server - client auto-responds with pong
+  | { type: 'ping'; timestamp: number }
   // Error occurred - sessionId is always included when sent from backend
   | { type: 'Error'; message: string; sessionId: string }
   // Stream ended

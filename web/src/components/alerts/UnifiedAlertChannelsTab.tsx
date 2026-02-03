@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from "@/components/plugins/UniversalPluginConfigDialog"
 import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema } from "@/types"
 
@@ -147,6 +148,7 @@ export function UnifiedAlertChannelsTab({
   onTestChannel,
 }: UnifiedAlertChannelsTabProps) {
   const { t } = useTranslation(['plugins', 'alerts', 'common'])
+  const { handleError } = useErrorHandler()
   const [view, setView] = useState<View>('list')
   const [loading, setLoading] = useState(true)
   const [schemaLoading, setSchemaLoading] = useState(false)
@@ -183,7 +185,7 @@ export function UnifiedAlertChannelsTab({
         setChannels(response.channels || [])
       }
     } catch (error) {
-      console.error('Failed to load alert channels data:', error)
+      handleError(error, { operation: 'Load alert channels data', showToast: false })
       setChannelTypes([])
       setChannels([])
     } finally {
@@ -203,7 +205,7 @@ export function UnifiedAlertChannelsTab({
       setSelectedType(toUnifiedPluginType(schema))
       setView('detail')
     } catch (error) {
-      console.error('Failed to load channel schema:', error)
+      handleError(error, { operation: 'Load channel schema', showToast: false })
     } finally {
       setSchemaLoading(false)
     }

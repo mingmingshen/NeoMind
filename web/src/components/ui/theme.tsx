@@ -12,7 +12,13 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("system")
-  const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">("light")
+  const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">(() => {
+    // Detect system theme immediately to prevent flash
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+    }
+    return "light"
+  })
   const [mounted, setMounted] = useState(false)
 
   // Get the actual theme (resolve "system" to dark or light)
@@ -29,6 +35,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (stored) {
       setTheme(stored)
     }
+
+    // Apply theme immediately on mount to prevent flash
+    const actualTheme = getActualTheme(stored || "system")
+    const root = document.documentElement
+    root.classList.remove("light", "dark")
+    root.classList.add(actualTheme)
   }, [])
 
   // Update resolved theme when theme changes or system preference changes
@@ -60,8 +72,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("theme", theme)
   }, [resolvedTheme, theme, mounted])
 
-  if (!mounted) return null
-
+  // Don't block rendering - always show children with current theme
   return (
     <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>
       {children}

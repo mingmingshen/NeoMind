@@ -17,6 +17,7 @@ import { api } from "@/lib/api"
 import { formatTimestamp } from "@/lib/utils/format"
 import type { AgentMemory } from "@/types"
 import { confirm } from "@/hooks/use-confirm"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 interface AgentMemoryDialogProps {
   open: boolean
@@ -32,6 +33,7 @@ export function AgentMemoryDialog({
   agentName,
 }: AgentMemoryDialogProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const { handleError } = useErrorHandler()
   const [memory, setMemory] = useState<AgentMemory | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -47,7 +49,7 @@ export function AgentMemoryDialog({
       const data = await api.getAgentMemory(agentId)
       setMemory(data)
     } catch (error) {
-      console.error('Failed to load agent memory:', error)
+      handleError(error, { operation: 'Load agent memory', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -68,7 +70,7 @@ export function AgentMemoryDialog({
       await api.clearAgentMemory(agentId)
       await loadMemory()
     } catch (error) {
-      console.error('Failed to clear memory:', error)
+      handleError(error, { operation: 'Clear memory', showToast: false })
     } finally {
       setLoading(false)
     }

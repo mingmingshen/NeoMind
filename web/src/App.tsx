@@ -83,13 +83,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     const checkSetup = async () => {
       try {
         // Use correct API base for Tauri environment
-        const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+        const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
         const response = await fetch(`${apiBase}/setup/status`)
         if (response.ok) {
           const data = await response.json()
           setSetupRequired(data.setup_required)
         } else {
-          // If API returns error, assume setup is not required and let login handle it
+          // If API returns error, check setup_required status to be safe
           setSetupRequired(false)
         }
       } catch {
@@ -112,7 +112,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // Setup is required - redirect to setup page
+  // Setup is required - redirect to setup page (even if authenticated!)
+  // This handles the case where setup was completed but the user hasn't created an account yet
   if (setupRequired === true) {
     return <Navigate to="/setup" replace />
   }
@@ -126,10 +127,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 // Setup Route component
-// Only accessible when:
-// 1. Setup is required (not completed)
-// 2. User is NOT authenticated
-// Otherwise redirects appropriately
+// Only accessible when setup is required (not completed)
+// Users can be authenticated during setup (after account step) - that's fine
 function SetupRoute({ children }: { children: React.ReactNode }) {
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
@@ -137,7 +136,7 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+        const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
         const response = await fetch(`${apiBase}/setup/status`)
         if (response.ok) {
           const data = await response.json()
@@ -155,8 +154,6 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
     checkSetup()
   }, [])
 
-  const token = tokenManager.getToken()
-
   // Show loading state
   if (loading) {
     return (
@@ -171,12 +168,7 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  // Already authenticated - redirect to home
-  if (token) {
-    return <Navigate to="/" replace />
-  }
-
-  // Show setup page
+  // Show setup page (allow authenticated users to continue setup)
   return <>{children}</>
 }
 
@@ -190,7 +182,7 @@ function SetupCheckRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+        const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
         const response = await fetch(`${apiBase}/setup/status`)
         if (response.ok) {
           const data = await response.json()
@@ -310,9 +302,10 @@ function App() {
           path="/*"
           element={
             <ProtectedRoute>
-              <div className="flex flex-col h-screen bg-background">
+              <div className="flex flex-col h-screen h-[100dvh] bg-background">
                 <TopNav />
-                <main className="flex-1 min-h-0 overflow-hidden">
+                <main className="flex flex-1 flex-col min-h-0 overflow-hidden">
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <Routes>
                     <Route path="/" element={<ChatPage />} />
                     <Route path="/chat" element={<ChatPage />} />
@@ -348,6 +341,7 @@ function App() {
                     {/* Catch all - redirect to chat */}
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
+                  </div>
                 </main>
                 <Toaster />
                 <Confirmer />

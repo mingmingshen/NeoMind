@@ -137,9 +137,9 @@ impl Default for MqttAdapterConfig {
 /// Single MQTT broker connection
 struct MqttClientInner {
     /// Unique broker identifier
-    broker_id: String,
+    _broker_id: String,
     /// Broker address (host:port)
-    broker_addr: String,
+    _broker_addr: String,
     /// MQTT client
     client: rumqttc::AsyncClient,
     /// Running flag for the event loop task
@@ -184,6 +184,7 @@ pub struct MqttAdapter {
     extractor: Arc<UnifiedExtractor>,
 }
 
+#[allow(dead_code)]
 impl MqttAdapter {
     /// Create a new MQTT adapter.
     pub fn new(config: MqttAdapterConfig) -> Self {
@@ -357,8 +358,8 @@ impl MqttAdapter {
 
         // Store the client
         let inner = MqttClientInner {
-            broker_id: broker_id.clone(),
-            broker_addr: broker_addr.clone(),
+            _broker_id: broker_id.clone(),
+            _broker_addr: broker_addr.clone(),
             client,
             running: running.clone(),
             subscribed_topics,

@@ -1,10 +1,15 @@
 import { useState, useEffect, useCallback, useRef, DependencyList } from 'react'
+import { logError, isAuthError } from '@/lib/errors'
 
 export interface UseApiDataOptions<T> {
   deps?: DependencyList
   immediate?: boolean
   onSuccess?: (data: T) => void
   onError?: (error: Error) => void
+  /** Operation name for better error logging */
+  operationName?: string
+  /** Whether to log errors (default: true) */
+  logErrors?: boolean
 }
 
 export interface UseApiDataReturn<T> {
@@ -30,7 +35,7 @@ export function useApiData<T>(
   apiCall: () => Promise<T>,
   options: UseApiDataOptions<T> = {}
 ): UseApiDataReturn<T> {
-  const { deps = [], immediate = true, onSuccess, onError } = options
+  const { deps = [], immediate = true, onSuccess, onError, operationName = 'API Call', logErrors = true } = options
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -39,13 +44,15 @@ export function useApiData<T>(
   const apiCallRef = useRef(apiCall)
   const onSuccessRef = useRef(onSuccess)
   const onErrorRef = useRef(onError)
+  const optionsRef = useRef(options)
 
   // Update refs when callbacks change
   useEffect(() => {
     apiCallRef.current = apiCall
     onSuccessRef.current = onSuccess
     onErrorRef.current = onError
-  }, [apiCall, onSuccess, onError])
+    optionsRef.current = options
+  }, [apiCall, onSuccess, onError, options])
 
   // fetch function only depends on refs, so it stays stable
   const fetch = useCallback(async () => {
@@ -58,11 +65,17 @@ export function useApiData<T>(
     } catch (err) {
       const error = err instanceof Error ? err : new Error('请求失败')
       setError(error)
+
+      // Log error with operation context
+      if (logErrors) {
+        logError(err, { operation: operationName })
+      }
+
       onErrorRef.current?.(error)
     } finally {
       setLoading(false)
     }
-  }, []) // Empty deps array - fetch function is stable
+  }, [logErrors])
 
   useEffect(() => {
     if (immediate) {

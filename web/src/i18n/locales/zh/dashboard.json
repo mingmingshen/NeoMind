@@ -77,5 +77,7 @@
   "hoursAgo": "{{count}}小时前",
   "daysAgo": "{{count}}天前",
   "confirmDelete": "确定",
-  "cancel": "取消"
+  "cancel": "取消",
+  "totalSessions": "共 {{count}} 个会话",
+  "autoCleanup": "自动清理30天前的会话"
 }

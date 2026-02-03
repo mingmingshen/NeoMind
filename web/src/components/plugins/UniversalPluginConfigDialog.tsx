@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TestTube, Check, X, Plus, Trash2, RefreshCw, Eye, Brain, Wrench } from "lucide-react"
 import { ConfigFormBuilder } from "@/components/plugins/ConfigFormBuilder"
 import { useToast } from "@/hooks/use-toast"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { confirm } from "@/hooks/use-confirm"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -125,6 +126,7 @@ export function UniversalPluginConfigDialog({
 }: UniversalPluginConfigDialogProps) {
   const { t } = useTranslation(["common", "plugins", "devices"])
   const { toast } = useToast()
+  const { handleError } = useErrorHandler()
 
   const [saving, setSaving] = useState(false)
   const [testingId, setTestingId] = useState<string | null>(null)
@@ -181,7 +183,7 @@ export function UniversalPluginConfigDialog({
         }
       }
     } catch (error) {
-      console.error("Failed to fetch Ollama models:", error)
+      handleError(error, { operation: 'Fetch Ollama models', showToast: false })
       // Don't show toast for this error - it's optional functionality
     } finally {
       setLoadingModels(false)

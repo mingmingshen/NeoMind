@@ -66,7 +66,7 @@ struct BackendPool {
     /// Busy runtime instances (currently in use)
     busy: Vec<PooledRuntime>,
     /// Semaphore for limiting concurrent creation/acquisition
-    semaphore: Arc<Semaphore>,
+    _semaphore: Arc<Semaphore>,
 }
 
 impl BackendPool {
@@ -74,7 +74,7 @@ impl BackendPool {
         Self {
             available: Vec::new(),
             busy: Vec::new(),
-            semaphore: Arc::new(Semaphore::new(max_instances)),
+            _semaphore: Arc::new(Semaphore::new(max_instances)),
         }
     }
 

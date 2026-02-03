@@ -40,6 +40,12 @@ pub use mock_devices::{generate_mock_devices, generate_large_scale_devices, get_
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+// Type aliases to reduce complexity
+pub type SharedDeviceRegistry = Arc<DeviceRegistry>;
+pub type SharedStateProvider = Arc<RwLock<StateProvider>>;
+pub type SharedResourceIndex = Arc<RwLock<ResourceIndex>>;
+pub type SharedBusinessContext = Arc<RwLock<BusinessContext>>;
+
 /// Business context manager - aggregates all context sources.
 #[derive(Clone)]
 pub struct ContextManager {

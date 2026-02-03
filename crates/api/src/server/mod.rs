@@ -78,6 +78,27 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
         crate::rate_limit::cleanup_task(rate_limiter, Duration::from_secs(300)).await;
     });
 
+    // P0: Spawn pending stream cleanup task (runs every 5 minutes)
+    // Cleans up stale pending stream states that weren't properly cleared
+    let state_for_cleanup_task = state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            let session_store = state_for_cleanup_task.session_manager.session_store();
+            match session_store.cleanup_stale_pending_streams() {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Cleaned up {} stale pending stream states", count);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to cleanup stale pending streams: {}", e);
+                }
+            }
+        }
+    });
+
     let app = create_router_with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind).await?;
@@ -101,7 +122,9 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
 /// Start the server with default configuration.
 /// This function is designed to be called from Tauri or other embedded contexts.
 /// It starts the server in the background and returns immediately.
+///
+/// Uses port 9375 to avoid conflicts with common applications.
 pub async fn start_server() -> anyhow::Result<()> {
-    let bind: SocketAddr = "127.0.0.1:3000".parse()?;
+    let bind: SocketAddr = "127.0.0.1:9375".parse()?;
     run(bind).await
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import {
   Dialog,
   DialogContent,
@@ -44,7 +45,8 @@ export function DeviceTransformsDialog({
   deviceName,
   onTransformCreated,
 }: DeviceTransformsDialogProps) {
-  const { t } = useTranslation(['automation', 'common'])
+  const { t } = useTranslation('automation')
+  const { handleError } = useErrorHandler()
   const [transforms, setTransforms] = useState<TransformAutomation[]>([])
   const [loading, setLoading] = useState(true)
   const [builderOpen, setBuilderOpen] = useState(false)
@@ -89,7 +91,7 @@ export function DeviceTransformsDialog({
 
       setTransforms(filtered)
     } catch (error) {
-      console.error('Failed to fetch transforms:', error)
+      handleError(error, { operation: 'Fetch transforms', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -130,24 +132,16 @@ export function DeviceTransformsDialog({
 
   const handleSaveTransform = async (data: Partial<TransformAutomation>) => {
     try {
-      // Build the transform definition matching backend TransformAutomation structure
-      const now = Math.floor(Date.now() / 1000)
+      // Build the transform definition with only transform-specific fields
       const definition = {
-        id: editingTransform?.id || crypto.randomUUID(),
-        name: data.name || '',
-        description: data.description || '',
-        enabled: data.enabled ?? true,
         scope: data.scope || 'global',
         js_code: data.js_code || '',
         output_prefix: data.output_prefix || '',
         complexity: data.complexity || 2,
-        execution_count: 0,
-        created_at: now,
-        updated_at: now,
-        last_executed: null as number | null,
       }
 
       if (editingTransform) {
+        // Update existing transform - send name, description, enabled and definition
         await api.updateAutomation(editingTransform.id, {
           name: data.name || '',
           description: data.description,
@@ -155,6 +149,7 @@ export function DeviceTransformsDialog({
           definition,
         })
       } else {
+        // Create new transform - include type
         await api.createAutomation({
           name: data.name || '',
           description: data.description,
@@ -168,7 +163,8 @@ export function DeviceTransformsDialog({
       setEditingTransform(null)
       onTransformCreated?.()
     } catch (error) {
-      console.error('Failed to save transform:', error)
+      handleError(error, { operation: 'Save transform', showToast: true })
+      throw error
     }
   }
 

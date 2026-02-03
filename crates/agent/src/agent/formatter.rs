@@ -171,7 +171,6 @@ fn translate_key(key: &str) -> String {
         "duration_ms" => "耗时(ms)".to_string(),
         "workflow_id" => "工作流ID".to_string(),
         "execution_id" => "执行ID".to_string(),
-        "execution_id" => "执行ID".to_string(),
         "started_at" | "start_time" => "开始时间".to_string(),
         "completed_at" | "end_time" => "完成时间".to_string(),
         "current_step" => "当前步骤".to_string(),

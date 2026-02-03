@@ -25,6 +25,7 @@ import { api } from "@/lib/api"
 import type { Message, ServerMessage, ChatImage } from "@/types"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 /** Image gallery component for user messages */
 function MessageImages({ images }: { images: ChatImage[] }) {
@@ -144,6 +145,7 @@ export function ChatPage() {
   const { t } = useTranslation(['common', 'chat'])
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>()
   const navigate = useNavigate()
+  const { handleError } = useErrorHandler()
   const llmBackends = useStore((state) => state.llmBackends)
   const activeBackendId = useStore((state) => state.activeBackendId)
   const activateBackend = useStore((state) => state.activateBackend)
@@ -215,10 +217,10 @@ export function ChatPage() {
     if (urlSessionId && urlSessionId !== sessionId) {
       // Only switch if it's a different session
       switchSession(urlSessionId).catch((err) => {
-        console.error('Failed to load session from URL:', err)
+        handleError(err, { operation: 'Load session from URL', showToast: false })
       })
     }
-  }, [urlSessionId, sessionId, switchSession])
+  }, [urlSessionId, sessionId, switchSession, handleError])
 
   // Auto-navigate to latest session when on /chat without sessionId
   // Also redirect to /chat when current session is deleted or no sessions exist
@@ -444,7 +446,7 @@ export function ChatPage() {
     if (isWelcomeMode) {
       const newSessionId = await createSession()
       if (!newSessionId) {
-        console.error('Failed to create session')
+        handleError(new Error('Failed to create session'), { operation: 'Create session', showToast: false })
         return
       }
       // Navigate to the new session URL
@@ -503,7 +505,7 @@ export function ChatPage() {
         setAttachedImages(prev => [...prev, ...newImages])
       }
     } catch (error) {
-      console.error('Failed to process images:', error)
+      handleError(error, { operation: 'Process images', showToast: false })
       alert(t('imageProcessFailed'))
     } finally {
       setIsUploadingImage(false)
@@ -601,7 +603,7 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Pending stream recovery dialog */}
       {pendingStream?.hasPending && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -724,11 +726,13 @@ export function ChatPage() {
         {/* Chat Content Area */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {isWelcomeMode ? (
-          /* Welcome Area - shown on /chat (no sessionId) */
-          <WelcomeArea onQuickAction={handleQuickAction} />
+          /* Welcome Area - shown on /chat (no sessionId), scrollable on mobile */
+          <div className="touch-scroll flex min-h-0 flex-1 flex-col overflow-y-auto pt-4 pb-6">
+            <WelcomeArea className="min-h-full" onQuickAction={handleQuickAction} />
+          </div>
         ) : hasMessages ? (
           /* Chat Messages - shown on /chat/:sessionId with messages */
-          <div className="flex-1 overflow-y-auto px-2 sm:px-4 py-4 sm:py-6">
+          <div className="touch-scroll flex-1 overflow-y-auto px-2 sm:px-4 py-4 sm:py-6">
             <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
               {displayMessages.map((message) => (
                 <div

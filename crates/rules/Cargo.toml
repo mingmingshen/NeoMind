@@ -5,7 +5,6 @@ edition.workspace = true
 
 [dependencies]
 edge-ai-core = { path = "../core" }
-edge-ai-sandbox = { path = "../sandbox" }
 edge-ai-devices = { path = "../devices" }
 edge-ai-messages = { path = "../messages" }
 
@@ -16,21 +15,13 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-# DSL parsing
-pest = "2.7"
-pest_derive = "2.7"
-
 # Utils
 uuid = { workspace = true, features = ["v4", "serde"] }
 chrono = { workspace = true, features = ["serde"] }
-async-trait = "0.1"
 url = "2.5"
 
 # HTTP client
 reqwest = { version = "0.12", features = ["json"] }
-
-# Expression evaluation
-evalexpr = "11"
 
 # Storage
 redb = "2.1"

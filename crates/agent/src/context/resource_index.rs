@@ -50,6 +50,7 @@ impl ResourceId {
     }
 
     /// String representation "type:id".
+    #[allow(clippy::inherent_to_string_shadow_display)]
     pub fn to_string(&self) -> String {
         format!("{}:{}", self.resource_type, self.id)
     }

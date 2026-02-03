@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Plus, Trash2, TestTube, Check, X, RefreshCw } from 'lucide-react'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
 import type {
   MessageChannel,
   ChannelTypeInfo,
@@ -66,6 +67,7 @@ export function MessageChannelsTab({
   onRefresh,
 }: MessageChannelsTabProps) {
   const { t } = useTranslation()
+  const { handleError } = useErrorHandler()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
   const [newChannelType, setNewChannelType] = useState('console')
@@ -91,7 +93,7 @@ export function MessageChannelsTab({
       setNewChannelType('console')
       setNewChannelConfig({})
     } catch (err) {
-      console.error('Failed to create channel:', err)
+      handleError(err, { operation: 'Create channel', showToast: false })
     }
   }
 
@@ -121,7 +123,7 @@ export function MessageChannelsTab({
         return next
       })
     } catch (err) {
-      console.error('Failed to delete channel:', err)
+      handleError(err, { operation: 'Delete channel', showToast: false })
     }
   }
 

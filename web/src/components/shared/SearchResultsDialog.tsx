@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Search, Loader2, FileText, Wrench, AlertTriangle } from "lucide-react"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { SearchResult } from "@/types"
 import { useNavigate } from "react-router-dom"
 
@@ -22,6 +23,7 @@ interface SearchResultsDialogProps {
 }
 
 export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: SearchResultsDialogProps) {
+  const { handleError } = useErrorHandler()
   const [query, setQuery] = useState(initialQuery)
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
@@ -48,7 +50,7 @@ export function SearchResultsDialog({ open, onOpenChange, initialQuery = "" }: S
       const response = await api.globalSearch(searchQuery)
       setResults(response.results)
     } catch (error) {
-      console.error("Search failed:", error)
+      handleError(error, { operation: 'Global search', showToast: false })
     } finally {
       setLoading(false)
     }

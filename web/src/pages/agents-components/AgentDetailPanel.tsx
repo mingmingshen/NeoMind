@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -79,6 +80,7 @@ export function AgentDetailPanel({
   inlineMode = false,
 }: AgentDetailPanelProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const { handleError } = useErrorHandler()
   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
   const [executions, setExecutions] = useState<any[]>([])
   const [executionsLoading, setExecutionsLoading] = useState(false)
@@ -134,10 +136,12 @@ export function AgentDetailPanel({
             // Clear realtime status - agent's original status will be used
             setRealtimeStatus(null)
             // Reload agent data to get updated stats
-            api.getAgent(agent.id).then(updatedAgent => {
+            api.getAgent(agent.id).then(() => {
               // Notify parent to refresh if needed
               onRefresh()
-            }).catch(console.error)
+            }).catch(err => {
+              handleError(err, { operation: 'Switch agent status', showToast: false })
+            })
           }
           break
         }
@@ -152,7 +156,7 @@ export function AgentDetailPanel({
       const data = await api.getAgentExecutions(agent.id)
       setExecutions(data.executions || [])
     } catch (error) {
-      console.error('Failed to load executions:', error)
+      handleError(error, { operation: 'Load agent executions', showToast: false })
     } finally {
       setExecutionsLoading(false)
     }
@@ -165,7 +169,7 @@ export function AgentDetailPanel({
       const data = await api.getAgentMemory(agent.id)
       setMemory(data)
     } catch (error) {
-      console.error('Failed to load memory:', error)
+      handleError(error, { operation: 'Load agent memory', showToast: false })
     } finally {
       setMemoryLoading(false)
     }

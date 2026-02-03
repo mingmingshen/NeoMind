@@ -938,13 +938,13 @@ impl SemanticInference {
             confidence += 0.2;
 
             // Check if statistics pattern matches semantic type
-            let matches_pattern = match (&semantic_type, &stats_result.pattern) {
-                (SemanticType::Temperature, ValuePattern::TemperatureCelsius | ValuePattern::TemperatureFahrenheit) => true,
-                (SemanticType::Humidity, ValuePattern::Percentage) => true,
-                (SemanticType::Battery, ValuePattern::Percentage) => true,
-                (SemanticType::Switch, ValuePattern::BooleanLike) => true,
-                _ => false,
-            };
+            let matches_pattern = matches!(
+                (&semantic_type, &stats_result.pattern),
+                (SemanticType::Temperature, ValuePattern::TemperatureCelsius | ValuePattern::TemperatureFahrenheit)
+                    | (SemanticType::Humidity, ValuePattern::Percentage)
+                    | (SemanticType::Battery, ValuePattern::Percentage)
+                    | (SemanticType::Switch, ValuePattern::BooleanLike)
+            );
 
             if matches_pattern {
                 confidence += 0.15;

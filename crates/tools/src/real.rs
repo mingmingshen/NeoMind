@@ -1562,10 +1562,7 @@ impl Tool for DeviceAnalyzeTool {
         } else {
             // Get available metrics from device template (async call)
             // For now, just list metrics from storage
-            match self.storage.list_metrics(&device.device_id).await {
-                Ok(metrics) => metrics,
-                Err(_) => vec![],
-            }
+            self.storage.list_metrics(&device.device_id).await.unwrap_or_default()
         };
 
         if metrics_to_analyze.is_empty() {

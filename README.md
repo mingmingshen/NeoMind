@@ -318,7 +318,7 @@ cargo fmt
 # Lint
 cargo clippy
 
-# Run the API server (default port: 3000)
+# Run the API server (default port: 9375)
 cargo run -p edge-ai-api
 
 # Run with custom config

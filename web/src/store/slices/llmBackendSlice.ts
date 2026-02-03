@@ -14,6 +14,7 @@ import type {
   BackendTestResult,
 } from '@/types'
 import { api } from '@/lib/api'
+import { logError } from '@/lib/errors'
 
 export interface LlmBackendState {
   // State
@@ -84,7 +85,7 @@ export const createLlmBackendSlice: StateCreator<
       const data = await api.listLlmBackendTypes()
       set({ backendTypes: data.types })
     } catch (err) {
-      console.error('Failed to load backend types:', err)
+      logError(err, { operation: 'Load backend types' })
       // Don't set error state for this - it's not critical
     }
   },

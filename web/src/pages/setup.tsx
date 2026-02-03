@@ -13,6 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { BrandName, BrandLogoHorizontal } from "@/components/shared/BrandName"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { logError } from '@/lib/errors'
 
 const languages = [
   { code: 'en', name: 'English' },
@@ -100,6 +102,7 @@ export function SetupPage() {
   const { t, i18n } = useTranslation(['common', 'auth', 'setup'])
   const navigate = useNavigate()
   const { login } = useStore()
+  const { withErrorHandling } = useErrorHandler()
 
   const [step, setStep] = useState<SetupStep>('welcome')
   const [isLoading, setIsLoading] = useState(false)
@@ -144,26 +147,25 @@ export function SetupPage() {
 
   // Helper to get API base URL for current environment
   const getApiUrl = (path: string) => {
-    const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+    const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
     return `${apiBase}${path}`
   }
 
   const checkSetupStatus = async () => {
-    try {
-      const response = await fetch(getApiUrl('/setup/status'))
+    const result = await withErrorHandling(
+      async () => {
+        const response = await fetch(getApiUrl('/setup/status'))
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        return await response.json() as { setup_required: boolean }
+      },
+      { operation: 'Check setup status', showToast: false }
+    )
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (!data.setup_required) {
-        // Setup already completed, redirect to dashboard
-        navigate('/dashboard')
-      }
-    } catch (err) {
-      console.error('Failed to check setup status:', err)
+    if (result && !result.setup_required) {
+      // Setup already completed, redirect to dashboard
+      navigate('/dashboard')
     }
   }
 
@@ -231,7 +233,7 @@ export function SetupPage() {
           body: JSON.stringify({ timezone: selectedTimezone }),
         })
       } catch (tzError) {
-        console.warn('Failed to save timezone:', tzError)
+        logError(tzError, { operation: 'Save timezone' })
         // Continue even if timezone save fails
       }
 
@@ -699,22 +701,22 @@ export function SetupPage() {
               <div className="space-y-4">
                 <div>
                   <Label className="text-sm">{t('setup:selectTimezone')}</Label>
-                  <div className="grid grid-cols-1 gap-2 mt-3 max-h-[300px] overflow-y-auto">
+                  <div className="grid grid-cols-2 gap-2 mt-3 max-h-[180px] overflow-y-auto">
                     {timezoneOptions.map((tz) => (
                       <button
                         key={tz.id}
                         type="button"
                         onClick={() => setSelectedTimezone(tz.id)}
                         className={`
-                          flex items-center justify-between p-3 rounded-lg border text-left transition-colors
+                          flex flex-col items-start gap-1 p-2 rounded-lg border text-left transition-colors
                           ${selectedTimezone === tz.id
                             ? 'border-primary bg-primary/5 dark:bg-primary/10'
                             : 'border-border hover:bg-muted/50'
                           }
                         `}
                       >
-                        <span className="font-medium text-sm">{tz.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">
+                        <span className="font-medium text-xs">{tz.name}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">
                           {formatTimeInTimezone(tz.id)}
                         </span>
                       </button>

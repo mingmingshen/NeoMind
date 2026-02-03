@@ -11,9 +11,11 @@ import { useTranslation } from "react-i18next"
 import { useNavigate, useLocation } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent, Pagination } from "@/components/shared"
+import { Sparkles, GitBranch } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { TransformAutomation, Rule } from "@/types"
 
 // Import split-pane builder components
@@ -30,6 +32,7 @@ export function AutomationPage() {
   const { t: tCommon } = useTranslation('common')
   const { t: tAuto } = useTranslation('automation')
   const { toast } = useToast()
+  const { handleError } = useErrorHandler()
 
   // Router integration
   const navigate = useNavigate()
@@ -107,7 +110,7 @@ export function AutomationPage() {
         const resourcesData = await api.getRuleResources()
         setRuleDevices(resourcesData.devices || [])
       } catch (err) {
-        console.error('Failed to load rule resources:', err)
+        handleError(err, { operation: 'Load rule resources', showToast: false })
         setRuleDevices([])
       }
 
@@ -126,7 +129,7 @@ export function AutomationPage() {
         setTransforms((data.transforms || []).sort((a, b) => b.created_at - a.created_at))
       }
     } catch (error) {
-      console.error(`Failed to load ${activeTab}:`, error)
+      handleError(error, { operation: `Load ${activeTab}`, showToast: false })
     } finally {
       setLoading(false)
     }
@@ -178,7 +181,7 @@ export function AutomationPage() {
       setEditingRule(detail.rule)
       setShowRuleDialog(true)
     } catch (error) {
-      console.error('Failed to load rule details:', error)
+      handleError(error, { operation: 'Load rule details', showToast: false })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -205,7 +208,7 @@ export function AutomationPage() {
         description: tAuto('itemDeleted'),
       })
     } catch (error) {
-      console.error('Failed to delete rule:', error)
+      handleError(error, { operation: 'Delete rule', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -223,7 +226,7 @@ export function AutomationPage() {
       }
       await loadItems()
     } catch (error) {
-      console.error('Failed to toggle rule:', error)
+      handleError(error, { operation: 'Toggle rule', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -247,7 +250,7 @@ export function AutomationPage() {
         })
       }
     } catch (error) {
-      console.error('Failed to execute rule:', error)
+      handleError(error, { operation: 'Execute rule', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -280,7 +283,7 @@ export function AutomationPage() {
         description: tAuto('itemDeleted'),
       })
     } catch (error) {
-      console.error('Failed to delete transform:', error)
+      handleError(error, { operation: 'Delete transform', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -294,7 +297,7 @@ export function AutomationPage() {
       await api.setAutomationStatus(transform.id, !transform.enabled)
       await loadItems()
     } catch (error) {
-      console.error('Failed to toggle transform:', error)
+      handleError(error, { operation: 'Toggle transform', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -319,7 +322,7 @@ export function AutomationPage() {
         description: tAuto('ruleSaved'),
       })
     } catch (error) {
-      console.error('Failed to save rule:', error)
+      handleError(error, { operation: 'Save rule', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -331,41 +334,30 @@ export function AutomationPage() {
 
   const handleSaveTransform = async (data: Partial<TransformAutomation>) => {
     try {
-      // Build the transform definition matching backend TransformAutomation structure
-      // Backend requires: id, name, description, enabled, scope, js_code, output_prefix, complexity, execution_count, created_at, updated_at, last_executed
-      const now = Math.floor(Date.now() / 1000)
-      const buildDefinition = () => {
-        const baseFields = {
-          id: editingTransform?.id || crypto.randomUUID(),
-          name: data.name || '',
-          description: data.description || '',
-          enabled: data.enabled ?? true,
-          scope: data.scope || 'global',
-          js_code: data.js_code || '',
-          output_prefix: data.output_prefix || '',
-          complexity: data.complexity || 2,
-          execution_count: 0,
-          created_at: now,
-          updated_at: now,
-          last_executed: null as number | null,
-        }
-        return baseFields
+      // Build the transform definition with only transform-specific fields
+      const definition = {
+        scope: data.scope || 'global',
+        js_code: data.js_code || '',
+        output_prefix: data.output_prefix || '',
+        complexity: data.complexity || 2,
       }
 
       if (editingTransform?.id) {
+        // Update existing transform - send name, description, enabled and definition
         await api.updateAutomation(editingTransform.id, {
           name: data.name,
           description: data.description,
           enabled: data.enabled,
-          definition: buildDefinition(),
+          definition,
         })
       } else {
+        // Create new transform - include type
         await api.createAutomation({
           name: data.name || '',
           description: data.description,
           type: 'transform',
           enabled: data.enabled ?? true,
-          definition: buildDefinition(),
+          definition,
         })
       }
       setShowTransformDialog(false)
@@ -376,7 +368,7 @@ export function AutomationPage() {
         description: tAuto('transformSaved'),
       })
     } catch (error) {
-      console.error('Failed to save transform:', error)
+      handleError(error, { operation: 'Save transform', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -411,8 +403,8 @@ export function AutomationPage() {
       {/* Tabs with Actions */}
       <PageTabs
         tabs={[
-          { value: 'rules', label: tAuto('tabs.rules') },
-          { value: 'transforms', label: tAuto('tabs.transforms') },
+          { value: 'rules', label: tAuto('tabs.rules'), icon: <Sparkles className="h-4 w-4" /> },
+          { value: 'transforms', label: tAuto('tabs.transforms'), icon: <GitBranch className="h-4 w-4" /> },
         ]}
         activeTab={activeTab}
         onTabChange={(v) => handleTabChange(v as AutomationTab)}

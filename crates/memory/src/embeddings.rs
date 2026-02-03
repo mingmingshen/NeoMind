@@ -306,9 +306,7 @@ impl LocalEmbedding {
             384
         } else if name_lower.contains("nomic-embed") {
             768
-        } else if name_lower.contains("multilingual-e5-large") {
-            1024
-        } else if name_lower.contains("bge-large") {
+        } else if name_lower.contains("multilingual-e5-large") || name_lower.contains("bge-large") {
             1024
         } else {
             384 // Default for most small models

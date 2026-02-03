@@ -33,7 +33,7 @@ interface SessionTabsProps {
 }
 
 export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
-  const { t } = useTranslation("common")
+  const { t } = useTranslation(["common", "dashboard"])
   const navigate = useNavigate()
   const {
     sessions,
@@ -119,13 +119,14 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
   }
 
   // Format session title
+  const defaultTitle = t('dashboard.defaultTitle')
   const getSessionTitle = (session: ChatSession): string => {
-    if (session.title && session.title !== "新对话") {
+    if (session.title && session.title !== defaultTitle) {
       return session.title.length > 16
         ? session.title.slice(0, 16) + "..."
         : session.title
     }
-    return "新对话"
+    return defaultTitle
   }
 
   // Sort sessions by update time (newest first)
@@ -159,7 +160,7 @@ export function SessionTabs({ className, onSessionChange }: SessionTabsProps) {
         )}
       >
         <Plus className="h-4 w-4" />
-        <span className="text-xs hidden sm:inline">新对话</span>
+        <span className="text-xs hidden sm:inline">{t('dashboard.newChat')}</span>
       </Button>
 
       {/* Separator */}

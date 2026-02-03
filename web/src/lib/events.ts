@@ -279,16 +279,16 @@ export class EventsWebSocket {
     }
 
     // Build WebSocket URL
-    // In Tauri, connect to the backend server running on port 3000
-    // In development, use direct connection to backend server (port 3000)
+    // In Tauri, connect to the backend server running on port 9375
+    // In development, use direct connection to backend server
     // In production web, use the same host as the frontend
     let wsHost = window.location.host
     if ((window as any).__TAURI__) {
-      // Tauri: backend runs on localhost:3000
-      wsHost = 'localhost:3000'
+      // Tauri: backend runs on localhost:9375
+      wsHost = 'localhost:9375'
     } else if (window.location.port === '5173' || window.location.hostname === 'localhost') {
       // Development: connect directly to backend server
-      wsHost = 'localhost:3000'
+      wsHost = 'localhost:9375'
     }
 
     const wsUrl = `${protocol}//${wsHost}/api/events/ws?${params.toString()}`

@@ -354,13 +354,13 @@ pub trait SystemReview: Send + Sync {
 
 /// Device health review implementation.
 pub struct DeviceHealthReview {
-    event_bus: Arc<EventBus>,
+    _event_bus: Arc<EventBus>,
 }
 
 impl DeviceHealthReview {
     /// Create a new device health review.
     pub fn new(event_bus: Arc<EventBus>) -> Self {
-        Self { event_bus }
+        Self { _event_bus: event_bus }
     }
 }
 
@@ -460,13 +460,13 @@ impl SystemReview for DeviceHealthReview {
 
 /// Trend analysis review implementation.
 pub struct TrendAnalysisReview {
-    event_bus: Arc<EventBus>,
+    _event_bus: Arc<EventBus>,
 }
 
 impl TrendAnalysisReview {
     /// Create a new trend analysis review.
     pub fn new(event_bus: Arc<EventBus>) -> Self {
-        Self { event_bus }
+        Self { _event_bus: event_bus }
     }
 }
 
@@ -488,13 +488,13 @@ impl SystemReview for TrendAnalysisReview {
 
 /// Anomaly detection review implementation.
 pub struct AnomalyDetectionReview {
-    event_bus: Arc<EventBus>,
+    _event_bus: Arc<EventBus>,
 }
 
 impl AnomalyDetectionReview {
     /// Create a new anomaly detection review.
     pub fn new(event_bus: Arc<EventBus>) -> Self {
-        Self { event_bus }
+        Self { _event_bus: event_bus }
     }
 }
 
@@ -513,13 +513,13 @@ impl SystemReview for AnomalyDetectionReview {
 
 /// Energy optimization review implementation.
 pub struct EnergyOptimizationReview {
-    event_bus: Arc<EventBus>,
+    _event_bus: Arc<EventBus>,
 }
 
 impl EnergyOptimizationReview {
     /// Create a new energy optimization review.
     pub fn new(event_bus: Arc<EventBus>) -> Self {
-        Self { event_bus }
+        Self { _event_bus: event_bus }
     }
 }
 

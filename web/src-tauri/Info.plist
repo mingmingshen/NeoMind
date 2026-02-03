@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Camera access description (if needed in future) -->
+  <key>NSCameraUsageDescription</key>
+  <string>This app may need camera access for future video features.</string>
+
+  <!-- Microphone access description (if needed in future) -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>This app may need microphone access for future voice features.</string>
+
+  <!-- Local network access description -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>NeoMind needs access to local network to connect to IoT devices and backend services.</string>
+
+  <!-- File access documentation -->
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright © 2025 NeoMind. All rights reserved.</string>
+
+  <!-- Prevent app from being migrated off Apple Silicon -->
+  <key>LSRequiresNativeArchitecture</key>
+  <true/>
+
+  <!-- High DPI capable -->
+  <key>NSHighResolutionCapable</key>
+  <true/>
+
+  <!-- Disable iCloud features (not used) -->
+  <key>NSCloudKitUsageDescription</key>
+  <string>NeoMind does not use iCloud sync.</string>
+
+  <!-- Sets the app as a foreground application (activatable) -->
+  <key>LSUIElement</key>
+  <false/>
+</dict>
+</plist>

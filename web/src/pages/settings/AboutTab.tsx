@@ -18,6 +18,7 @@ import {
   Monitor,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 interface GpuInfo {
   name: string
@@ -41,6 +42,7 @@ interface SystemInfo {
 
 export function AboutTab() {
   const { t } = useTranslation(["common", "settings"])
+  const { handleError } = useErrorHandler()
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -51,7 +53,7 @@ export function AboutTab() {
       const response = await api.getSystemStats()
       setSystemInfo(response)
     } catch (e) {
-      console.error("Failed to load system info:", e)
+      handleError(e, { operation: 'Load system info', showToast: false })
     } finally {
       setLoading(false)
       if (showRefreshing) setRefreshing(false)

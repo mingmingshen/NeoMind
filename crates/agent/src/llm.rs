@@ -19,6 +19,10 @@ use edge_ai_core::{
 
 // Import intent classifier for staged processing
 use crate::agent::staged::{IntentCategory, IntentClassifier, IntentResult, ToolFilter};
+// Import the unified error type
+use crate::error::NeoTalkError;
+// Import the Result type alias
+use crate::error::Result as AgentResult;
 
 /// Re-export the instance manager types for convenience
 pub use edge_ai_llm::instance_manager::{
@@ -338,13 +342,13 @@ impl LlmInterface {
 
     /// Load global timezone from settings store and apply it.
     /// Returns the loaded timezone or default if not found.
-    pub async fn load_global_timezone(&self) -> Result<String, AgentError> {
+    pub async fn load_global_timezone(&self) -> AgentResult<String> {
         use edge_ai_storage::SettingsStore;
 
         const SETTINGS_DB_PATH: &str = "data/settings.redb";
 
         let settings_store = SettingsStore::open(SETTINGS_DB_PATH)
-            .map_err(|e| NeoTalkError::Generation(format!("Failed to open settings store: {}", e)))?;
+            .map_err(|e| NeoTalkError::Llm(format!("Failed to open settings store: {}", e)))?;
 
         let timezone = settings_store.get_global_timezone();
         self.set_global_timezone(timezone.clone()).await;
@@ -380,14 +384,14 @@ impl LlmInterface {
     }
 
     /// Get the current LLM runtime, using instance manager if enabled.
-    async fn get_runtime(&self) -> Result<Arc<dyn LlmRuntime>, AgentError> {
+    async fn get_runtime(&self) -> AgentResult<Arc<dyn LlmRuntime>> {
         // Try instance manager first if enabled
         if self.uses_instance_manager()
             && let Some(manager) = &self.instance_manager {
                 return manager
                     .get_active_runtime()
                     .await
-                    .map_err(|e| NeoTalkError::Generation(e.to_string()));
+                    .map_err(|e| NeoTalkError::Llm(e.to_string()));
             }
 
         // Fall back to direct runtime
@@ -395,7 +399,7 @@ impl LlmInterface {
         llm_guard
             .as_ref()
             .map(Arc::clone)
-            .ok_or(NeoTalkError::LlmNotReady)
+            .ok_or(NeoTalkError::Llm("LLM backend not ready".to_string()))
     }
 
     /// Get effective generation parameters.
@@ -439,15 +443,15 @@ impl LlmInterface {
         let mut llm_guard = self.llm.write().await;
         *llm_guard = None;
     }
-    pub async fn switch_backend(&self, backend_id: &str) -> Result<(), AgentError> {
+    pub async fn switch_backend(&self, backend_id: &str) -> AgentResult<()> {
         if let Some(manager) = &self.instance_manager {
             manager
                 .set_active(backend_id)
                 .await
-                .map_err(|e| NeoTalkError::Generation(e.to_string()))?;
+                .map_err(|e| NeoTalkError::Llm(e.to_string()))?;
             Ok(())
         } else {
-            Err(NeoTalkError::Generation(
+            Err(NeoTalkError::Llm(
                 "No instance manager configured".to_string(),
             ))
         }
@@ -529,9 +533,9 @@ impl LlmInterface {
     /// // During application startup
     /// llm_interface.warmup().await?;
     /// ```
-    pub async fn warmup(&self) -> Result<(), AgentError> {
+    pub async fn warmup(&self) -> AgentResult<()> {
         match self.get_runtime().await {
-            Ok(runtime) => runtime.warmup().await.map_err(|e| NeoTalkError::Generation(e.to_string())),
+            Ok(runtime) => runtime.warmup().await.map_err(|e| NeoTalkError::Llm(e.to_string())),
             Err(e) => Err(e),
         }
     }
@@ -851,6 +855,7 @@ impl LlmInterface {
     }
 
     /// Filter simplified tools based on intent.
+    #[allow(dead_code)]
     fn filter_simplified_tools(
         &self,
         tools: &[edge_ai_tools::simplified::LlmToolDefinition],
@@ -921,7 +926,7 @@ impl LlmInterface {
     }
 
     /// Send a chat message and get a response.
-    pub async fn chat(&self, user_message: impl Into<String>) -> Result<ChatResponse, AgentError> {
+    pub async fn chat(&self, user_message: impl Into<String>) -> AgentResult<ChatResponse> {
         self.chat_internal(user_message, None).await
     }
 
@@ -930,7 +935,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<ChatResponse, AgentError> {
+    ) -> AgentResult<ChatResponse> {
         self.chat_internal(user_message, Some(history)).await
     }
 
@@ -939,7 +944,7 @@ impl LlmInterface {
     pub async fn chat_without_tools(
         &self,
         user_message: impl Into<String>,
-    ) -> Result<ChatResponse, AgentError> {
+    ) -> AgentResult<ChatResponse> {
         self.chat_internal(user_message, None).await
     }
 
@@ -948,7 +953,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<ChatResponse, AgentError> {
+    ) -> AgentResult<ChatResponse> {
         self.chat_internal(user_message, Some(history)).await
     }
 
@@ -958,7 +963,7 @@ impl LlmInterface {
         &self,
         user_message: Message,  // Can contain text + images
         history: &[Message],
-    ) -> Result<ChatResponse, AgentError> {
+    ) -> AgentResult<ChatResponse> {
         self.chat_internal_message(user_message, Some(history)).await
     }
 
@@ -967,7 +972,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: Option<&[Message]>,
-    ) -> Result<ChatResponse, AgentError> {
+    ) -> AgentResult<ChatResponse> {
         let user_message = user_message.into();
 
         // === FAST PATH: Simple greetings ===
@@ -1127,7 +1132,7 @@ impl LlmInterface {
         let output = llm
             .generate(input)
             .await
-            .map_err(|e| NeoTalkError::Generation(e.to_string()))?;
+            .map_err(|e| NeoTalkError::Llm(e.to_string()))?;
 
         let duration = start.elapsed();
         let tokens_used = output
@@ -1149,7 +1154,7 @@ impl LlmInterface {
         &self,
         user_message: Message,  // Can contain text + images
         history: Option<&[Message]>,
-    ) -> Result<ChatResponse, AgentError> {
+    ) -> AgentResult<ChatResponse> {
         // Acquire permit for concurrency limiting
         let _permit = self.limiter.acquire().await;
 
@@ -1280,7 +1285,7 @@ impl LlmInterface {
         let output = llm
             .generate(input)
             .await
-            .map_err(|e| NeoTalkError::Generation(e.to_string()))?;
+            .map_err(|e| NeoTalkError::Llm(e.to_string()))?;
 
         let duration = start.elapsed();
         let tokens_used = output
@@ -1301,7 +1306,7 @@ impl LlmInterface {
     pub async fn chat_stream(
         &self,
         user_message: impl Into<String>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         self.chat_stream_internal(user_message, None, true).await
     }
@@ -1311,7 +1316,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         // Enable thinking for complex queries (default behavior)
         *self.thinking_enabled.write().await = Some(true);
@@ -1324,7 +1329,7 @@ impl LlmInterface {
     pub async fn chat_stream_without_tools(
         &self,
         user_message: impl Into<String>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         self.chat_stream_internal(user_message, None, false).await
     }
@@ -1335,7 +1340,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         self.chat_stream_internal(user_message, Some(history), false)
             .await
@@ -1347,7 +1352,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         // Set thinking to false for this call
         *self.thinking_enabled.write().await = Some(false);
@@ -1365,7 +1370,7 @@ impl LlmInterface {
         &self,
         user_message: impl Into<String>,
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         // Temporarily disable thinking for this call
         let old_value = *self.thinking_enabled.read().await;
@@ -1383,7 +1388,7 @@ impl LlmInterface {
         &self,
         user_message: Message,  // Can contain text + images via Content::Parts
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         self.chat_stream_internal_message(user_message, Some(history), true, false)
             .await
@@ -1395,7 +1400,7 @@ impl LlmInterface {
         &self,
         user_message: Message,  // Can contain text + images via Content::Parts
         history: &[Message],
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         // Temporarily disable thinking for this call
         *self.thinking_enabled.write().await = Some(false);
@@ -1410,7 +1415,7 @@ impl LlmInterface {
         history: Option<&[Message]>,
         include_tools: bool,
         _restore_thinking: bool,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         let model_arc = Arc::clone(&self.model);
 
@@ -1574,7 +1579,7 @@ impl LlmInterface {
         let stream = llm
             .generate_stream(input)
             .await
-            .map_err(|e| NeoTalkError::Generation(e.to_string()))?;
+            .map_err(|e| NeoTalkError::Llm(e.to_string()))?;
 
         // Acquire permit for concurrency limiting and wrap stream
         let permit = self.limiter.acquire().await;
@@ -1586,7 +1591,7 @@ impl LlmInterface {
             while let Some(result) = futures::StreamExt::next(&mut stream).await {
                 match result {
                     Ok(chunk) => yield Ok(chunk),
-                    Err(e) => yield Err(NeoTalkError::Generation(e.to_string())),
+                    Err(e) => yield Err(NeoTalkError::Llm(e.to_string())),
                 }
             }
         }))
@@ -1598,7 +1603,7 @@ impl LlmInterface {
         user_message: impl Into<String>,
         history: Option<&[Message]>,
         include_tools: bool,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<(String, bool), AgentError>> + Send>>, AgentError>
+    ) -> AgentResult<Pin<Box<dyn Stream<Item = AgentResult<(String, bool)>> + Send>>>
     {
         let user_message = user_message.into();
 
@@ -1753,7 +1758,7 @@ impl LlmInterface {
         let stream = llm
             .generate_stream(input)
             .await
-            .map_err(|e| NeoTalkError::Generation(e.to_string()))?;
+            .map_err(|e| NeoTalkError::Llm(e.to_string()))?;
 
         // Acquire permit for concurrency limiting and wrap stream
         let permit = self.limiter.acquire().await;
@@ -1765,7 +1770,7 @@ impl LlmInterface {
             while let Some(result) = futures::StreamExt::next(&mut stream).await {
                 match result {
                     Ok(chunk) => yield Ok(chunk),
-                    Err(e) => yield Err(NeoTalkError::Generation(e.to_string())),
+                    Err(e) => yield Err(NeoTalkError::Llm(e.to_string())),
                 }
             }
         }))
@@ -1821,29 +1826,6 @@ pub struct ChatResponse {
     pub finish_reason: String,
     /// Thinking content (if the model generated any).
     pub thinking: Option<String>,
-}
-
-/// Agent error type.
-#[derive(Debug, thiserror::Error)]
-pub enum AgentError {
-    /// LLM not ready
-    #[error("LLM backend not ready")]
-    LlmNotReady,
-    /// Generation error
-    #[error("Generation error: {0}")]
-    Generation(String),
-}
-
-/// Convert AgentError to the crate's Result type.
-impl From<AgentError> for crate::error::NeoTalkError {
-    fn from(err: AgentError) -> Self {
-        match err {
-            NeoTalkError::LlmNotReady => {
-                super::error::NeoTalkError::Llm("LLM backend not ready".to_string())
-            }
-            NeoTalkError::Generation(msg) => super::error::NeoTalkError::Llm(msg),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -2092,7 +2074,7 @@ mod tests {
         let err = NeoTalkError::LlmNotReady;
         assert!(err.to_string().contains("not ready"));
 
-        let err = NeoTalkError::Generation("test error".to_string());
+        let err = NeoTalkError::Llm("test error".to_string());
         assert!(err.to_string().contains("test error"));
     }
 }

@@ -42,14 +42,14 @@ struct SessionUsage {
     /// Current number of active requests
     current: AtomicUsize,
     /// Maximum allowed for this session
-    max: usize,
+    _max: usize,
 }
 
 impl SessionUsage {
     fn new(max: usize) -> Self {
         Self {
             current: AtomicUsize::new(0),
-            max,
+            _max: max,
         }
     }
 }

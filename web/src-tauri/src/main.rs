@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{AppHandle, Listener, Manager, RunEvent};
+use tauri::{AppHandle, Listener, Manager};
 use tauri::tray::TrayIconEvent;
 use std::env;
 use std::fs;
@@ -30,7 +30,7 @@ impl ServerState {
 
     fn check_server_health(&self) -> bool {
         match std::net::TcpStream::connect_timeout(
-            &std::net::SocketAddr::from(([127, 0, 0, 1], 3000)),
+            &std::net::SocketAddr::from(([127, 0, 0, 1], 9375)),
             Duration::from_millis(100),
         ) {
             Ok(_) => true,
@@ -143,7 +143,15 @@ fn start_axum_server(state: tauri::State<ServerState>) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let rt = Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e)).unwrap();
+    // Create runtime with proper error handling
+    let rt = match Runtime::new() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("Failed to create runtime: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     let server_state = ServerState {
         runtime: Arc::new(Mutex::new(Some(rt))),
         server_thread: Mutex::new(None),
@@ -153,64 +161,67 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .manage(server_state)
-        .setup(|app| {
-            // Get and set up data directory
-            let app_data_dir = get_app_data_dir(&app.handle());
-            let _ = fs::create_dir_all(&app_data_dir);
-
-            // Change to data directory for relative paths
-            let data_dir = app_data_dir.join("data");
-            let _ = fs::create_dir_all(&data_dir);
-
-            // Try to change to data directory, but don't fail if we can't
-            let _ = env::set_current_dir(&data_dir);
-
-            // Create tray menu (don't fail if tray creation fails)
-            if let Ok(tray) = create_tray_menu(app) {
-                app.manage(TrayState { _tray: Some(tray) });
-            }
-
-            // Handle window close event
-            if let Some(window) = app.get_webview_window("main") {
-                let window_clone = window.clone();
-                window.on_window_event(move |event| match event {
-                    tauri::WindowEvent::CloseRequested { api, .. } => {
-                        api.prevent_close();
-                        let _ = window_clone.hide();
-                    }
-                    _ => {}
-                });
-            }
-
-            // Listen for Dock/taskbar clicks
-            let app_handle = app.handle().clone();
-            let handle_for_focus = app_handle.clone();
-            let _ = app.listen("tauri://focus", move |_| {
-                show_main_window(&handle_for_focus);
-            });
-
-            // Start server
-            let state = app.state::<ServerState>();
-            if let Err(e) = start_axum_server(state) {
-                eprintln!("Failed to start server: {}", e);
-            }
-
-            // Wait for server ready
-            let state = app.state::<ServerState>();
-            if !state.wait_for_server_ready(10) {
-                eprintln!("Server did not become ready in time");
-            }
-
-            Ok(())
-        })
+        .setup(setup_app)
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
+        .expect("Failed to build Tauri application")
         .run(|app_handle, event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 show_main_window(app_handle);
             }
         });
+}
+
+/// Application setup function
+fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Get and set up data directory
+    let app_data_dir = get_app_data_dir(&app.handle());
+    fs::create_dir_all(&app_data_dir)?;
+
+    // Change to data directory for relative paths
+    let data_dir = app_data_dir.join("data");
+    fs::create_dir_all(&data_dir)?;
+
+    // Try to change to data directory, but don't fail if we can't
+    let _ = env::set_current_dir(&data_dir);
+
+    // Create tray menu (don't fail if tray creation fails)
+    if let Ok(tray) = create_tray_menu(app) {
+        app.manage(TrayState { _tray: Some(tray) });
+    }
+
+    // Handle window close event
+    if let Some(window) = app.get_webview_window("main") {
+        let window_clone = window.clone();
+        window.on_window_event(move |event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = window_clone.hide();
+            }
+            _ => {}
+        });
+    }
+
+    // Listen for Dock/taskbar clicks
+    let app_handle = app.handle().clone();
+    let handle_for_focus = app_handle.clone();
+    let _ = app.listen("tauri://focus", move |_| {
+        show_main_window(&handle_for_focus);
+    });
+
+    // Start server
+    let state = app.state::<ServerState>();
+    if let Err(e) = start_axum_server(state) {
+        eprintln!("Failed to start server: {}", e);
+    }
+
+    // Wait for server ready
+    let state = app.state::<ServerState>();
+    if !state.wait_for_server_ready(10) {
+        eprintln!("Server did not become ready in time");
+    }
+
+    Ok(())
 }
 
 fn main() {

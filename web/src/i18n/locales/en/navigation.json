@@ -6,6 +6,9 @@
   "agents": "AI Agents",
   "decisions": "AI Decisions",
   "messages": "Messages",
+  "alerts": "Alerts",
+  "commands": "Commands",
+  "events": "Events",
   "plugins": "Plugins",
   "settings": "Settings"
 }

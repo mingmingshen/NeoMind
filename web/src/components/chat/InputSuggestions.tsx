@@ -24,6 +24,7 @@ import {
   Clock,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 // Icon mapping for backend icon names
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -87,6 +88,7 @@ interface InputSuggestionsProps {
 
 export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsProps) {
   const { t } = useTranslation(["common", "chat"])
+  const { handleError } = useErrorHandler()
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [backendSuggestions, setBackendSuggestions] = useState<BackendSuggestion[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -103,7 +105,7 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
     setApiError(false)
     try {
       // Use correct API base for Tauri environment
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
       const response = await fetch(`${apiBase}/suggestions?input=${encodeURIComponent(searchInput)}&limit=20`)
       if (response.ok) {
         const data: SuggestionsResponse = await response.json()
@@ -113,7 +115,7 @@ export function InputSuggestions({ input, onSelect, visible }: InputSuggestionsP
         throw new Error('API request failed')
       }
     } catch (error) {
-      console.error('Failed to fetch suggestions:', error)
+      handleError(error, { operation: 'Fetch input suggestions', showToast: false })
       setApiError(true)
       setBackendSuggestions(FALLBACK_SUGGESTIONS)
     } finally {

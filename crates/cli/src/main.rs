@@ -37,7 +37,7 @@ enum Command {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
         /// Port to bind to.
-        #[arg(short, long, default_value_t = 3000)]
+        #[arg(short, long, default_value_t = 9375)]
         port: u16,
     },
     /// Run a single prompt and exit.

@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { CreateMessageRequest, MessageSeverity, MessageCategory } from '@/types'
+import { useFormSubmit } from '@/hooks/useErrorHandler'
 
 interface CreateMessageDialogProps {
   open: boolean
@@ -40,23 +41,9 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
   const [source, setSource] = useState('')
   const [sourceType, setSourceType] = useState('')
   const [tags, setTags] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
 
-  const handleSubmit = async () => {
-    if (!title.trim() || !message.trim()) return
-
-    setIsCreating(true)
-    try {
-      await onCreate({
-        category,
-        severity,
-        title: title.trim(),
-        message: message.trim(),
-        source: source || undefined,
-        source_type: sourceType || undefined,
-        tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
-      })
-
+  const { isSubmitting, handleSubmit: wrapSubmit } = useFormSubmit({
+    onSuccess: () => {
       // Reset form
       setTitle('')
       setMessage('')
@@ -66,11 +53,24 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
       setSeverity('info')
       setCategory('alert')
       onOpenChange(false)
-    } catch (err) {
-      console.error('Failed to create message:', err)
-    } finally {
-      setIsCreating(false)
-    }
+    },
+    errorOperation: 'Create message',
+  })
+
+  const handleSubmit = () => {
+    if (!title.trim() || !message.trim()) return
+
+    wrapSubmit(async () => {
+      await onCreate({
+        category,
+        severity,
+        title: title.trim(),
+        message: message.trim(),
+        source: source || undefined,
+        source_type: sourceType || undefined,
+        tags: tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : undefined,
+      })
+    })()
   }
 
   const isValid = title.trim() && message.trim()
@@ -180,11 +180,11 @@ export function CreateMessageDialog({ open, onOpenChange, onCreate }: CreateMess
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCreating}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={!isValid || isCreating}>
-            {isCreating ? t('common.creating') : t('common.create')}
+          <Button onClick={handleSubmit} disabled={!isValid || isSubmitting}>
+            {isSubmitting ? t('common.creating') : t('common.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

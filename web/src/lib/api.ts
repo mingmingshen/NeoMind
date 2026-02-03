@@ -91,9 +91,9 @@ import type {
 import { notifyFromError, notifySuccess } from './notify'
 import { tokenManager as unifiedTokenManager } from './auth'
 
-// In Tauri, we need to use the full URL since the backend runs on port 3000
+// In Tauri, we need to use the full URL since the backend runs on port 9375
 // In development/web, we can use relative path
-const API_BASE = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+const API_BASE = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
 
 // ============================================================================
 // 401 Handling Callback Registry

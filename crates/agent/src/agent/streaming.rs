@@ -18,8 +18,13 @@ use tokio::sync::RwLock;
 use super::staged::{IntentCategory, IntentClassifier};
 use super::tool_parser::parse_tool_calls;
 use super::types::{AgentEvent, AgentInternalState, AgentMessage, AgentMessageImage, ToolCall};
-use crate::error::{AgentError, Result};
+use crate::error::{NeoTalkError, Result};
 use crate::llm::LlmInterface;
+
+// Type aliases to reduce complexity
+pub type SharedLlm = Arc<RwLock<LlmInterface>>;
+pub type ToolResultStream = Pin<Box<dyn Stream<Item = (String, String)> + Send>>;
+pub type EventChannel = tokio::sync::mpsc::UnboundedSender<AgentEvent>;
 
 // Re-export compaction types for use in other modules
 pub use edge_ai_core::llm::compaction::{
@@ -420,6 +425,7 @@ impl ToolResultCache {
     }
 
     /// Get current cache size (for monitoring)
+    #[allow(dead_code)]
     fn len(&self) -> usize {
         self.entries.len()
     }
@@ -458,6 +464,7 @@ const NON_CACHEABLE_TOOLS: &[&str] = &[
 /// 1. Reduces latency (no second LLM call)
 /// 2. Eliminates unnecessary thinking content
 /// 3. Provides exact data from tools without LLM reformatting
+#[allow(dead_code)]
 const SIMPLE_QUERY_TOOLS: &[&str] = &[
     "list_devices",
     "list_rules",
@@ -474,6 +481,7 @@ fn is_tool_cacheable(name: &str) -> bool {
 
 /// Check if all tools in the result set are simple query tools
 /// that can return results directly without LLM follow-up
+#[allow(dead_code)]
 fn should_return_directly(tool_results: &[(String, String)]) -> bool {
     if tool_results.is_empty() {
         return false;
@@ -733,7 +741,7 @@ pub fn format_tool_results(tool_results: &[(String, String)]) -> String {
 
 /// Result of a single tool execution with metadata
 struct ToolExecutionResult {
-    name: String,
+    _name: String,
     result: std::result::Result<edge_ai_tools::ToolOutput, edge_ai_tools::ToolError>,
 }
 
@@ -756,6 +764,7 @@ fn estimate_tokens(text: &str) -> usize {
 ///
 /// Compacts old tool result messages into concise summaries.
 /// This follows Anthropic's guidance for context engineering.
+#[allow(dead_code)]
 fn compact_tool_results_stream(messages: &[AgentMessage]) -> Vec<AgentMessage> {
     let mut result = Vec::new();
     let mut tool_result_count = 0;
@@ -880,14 +889,18 @@ fn message_priority(role: &str) -> MessagePriority {
     }
 }
 
-/// Estimate tokens for an AgentMessage including thinking and tool calls.
+/// Estimate tokens for an AgentMessage for LLM context.
+///
+/// IMPORTANT: Thinking content is NOT counted because:
+/// 1. to_core() does NOT include thinking when sending to LLM
+/// 2. Thinking is only for frontend display, not for model context
+/// 3. Counting thinking would incorrectly consume the context budget
 fn estimate_message_tokens(msg: &AgentMessage) -> usize {
     let mut tokens = estimate_tokens(&msg.content);
 
-    // Add tokens for thinking content
-    if let Some(thinking) = &msg.thinking {
-        tokens += estimate_tokens(thinking);
-    }
+    // NOTE: Thinking is intentionally NOT counted here
+// Even though it's stored in AgentMessage, it's not sent to LLM via to_core()
+// Only count content, tool_calls, and images
 
     // Add tokens for tool calls
     if let Some(tool_calls) = &msg.tool_calls {
@@ -1138,14 +1151,16 @@ pub async fn process_stream_events_with_safeguards(
 
     // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
     let max_context = llm_interface.max_context_length().await;
-    // For models with large context (32k+), allow up to 16k for better long conversations
-    // For smaller models (8k), use their full capacity
-    const DEFAULT_MAX_CONTEXT: usize = 8_000;
-    let effective_max = if max_context >= 32000 {
-        max_context.min(16_384) // Large models: cap at 16k
-    } else {
-        max_context.min(DEFAULT_MAX_CONTEXT) // Small models: use full capability
-    };
+    // Use 90% of model capacity for history, reserve 10% for generation
+    // This allows us to use the full capability of models like qwen3-vl:2b (32k)
+    // without artificial limits while ensuring space for response generation
+    let effective_max = (max_context * 90) / 100;
+
+    tracing::debug!(
+        "Context window: model_capacity={}, effective_max={} (90% for history)",
+        max_context,
+        effective_max
+    );
 
     let history_for_llm: Vec<edge_ai_core::Message> =
         build_context_window(&history_messages, effective_max)
@@ -1243,8 +1258,10 @@ pub async fn process_stream_events_with_safeguards(
         let stream_start = Instant::now();
 
         // === KEEPALIVE: Track last event time for heartbeat ===
+        #[allow(unused_assignments)]
         let mut last_event_time = Instant::now();
         let mut last_progress_time = Instant::now();
+        #[allow(unused_assignments)]
         let mut current_stage = "thinking";
 
         // === TIMEOUT WARNING FLAGS ===
@@ -1256,7 +1273,58 @@ pub async fn process_stream_events_with_safeguards(
         const RECENT_CHUNK_WINDOW: usize = 10;
 
         // === SAFEGUARD: Track recently executed tools to prevent loops ===
-        let mut recently_executed_tools: VecDeque<String> = VecDeque::new();
+        // Store both tool name and a hash of arguments for better loop detection
+        let mut recently_executed_tools: VecDeque<(String, u64)> = VecDeque::new();
+
+        /// Calculate a simple hash of tool arguments for similarity detection
+        fn hash_tool_args(args: &serde_json::Value) -> u64 {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            let mut h = DefaultHasher::new();
+            // Normalize the arguments for hashing:
+            // - Sort object keys for consistent hashing
+            // - Skip values that might vary (like timestamps)
+            if let Some(obj) = args.as_object() {
+                let mut sorted_pairs: Vec<_> = obj.iter().collect();
+                sorted_pairs.sort_by(|a, b| a.0.cmp(b.0));
+
+                for (key, value) in sorted_pairs {
+                    // Skip dynamic fields that change every call
+                    if key.contains("time") || key.contains("timestamp") || key.contains("id") {
+                        continue;
+                    }
+                    key.hash(&mut h);
+                    value.to_string().hash(&mut h);
+                }
+            } else {
+                args.to_string().hash(&mut h);
+            }
+            h.finish()
+        }
+
+        /// Check if a tool call is too similar to a recent one (potential loop)
+        fn is_tool_call_similar(
+            name: &str,
+            args_hash: u64,
+            recent: &VecDeque<(String, u64)>,
+        ) -> bool {
+            // First check exact same tool with same args
+            for (recent_name, recent_hash) in recent.iter() {
+                if recent_name == name && *recent_hash == args_hash {
+                    return true; // Exact duplicate
+                }
+            }
+
+            // Then check for same tool called multiple times recently
+            // (even with different args, calling the same tool 3+ times is suspicious)
+            let same_tool_count = recent.iter().filter(|(n, _)| n == name).count();
+            if same_tool_count >= 3 {
+                return true; // Same tool called 3+ times
+            }
+
+            false
+        }
 
         // === SAFEGUARD: Track multi-round tool calling iterations ===
         let mut tool_iteration_count = 0usize;
@@ -1282,12 +1350,8 @@ pub async fn process_stream_events_with_safeguards(
                 let state_guard = internal_state.read().await;
 
                 let max_context = llm_interface.max_context_length().await;
-                const DEFAULT_MAX_CONTEXT: usize = 8_000;
-                let effective_max = if max_context >= 32000 {
-                    max_context.min(16_384) // Large models: cap at 16k
-                } else {
-                    max_context.min(DEFAULT_MAX_CONTEXT) // Small models: use full capability
-                };
+                // Use 90% of model capacity for history
+                let effective_max = (max_context * 90) / 100;
 
                 let history_for_round = build_context_window(&state_guard.memory, effective_max);
                 drop(state_guard);
@@ -1298,7 +1362,7 @@ pub async fn process_stream_events_with_safeguards(
                     .collect::<Vec<_>>();
 
                 // Build context for subsequent rounds - tell LLM what happened before
-                let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|s| s.as_str()).collect();
+                let recently_executed: Vec<&str> = recently_executed_tools.iter().map(|(name, _)| name.as_str()).collect();
                 let context_msg = if recently_executed.is_empty() {
                     format!(
                         "这是处理用户请求的第 {} 轮。请继续处理，如果需要更多信息请使用工具，如果已完成请给出最终回复。",
@@ -1449,7 +1513,8 @@ pub async fn process_stream_events_with_safeguards(
                                     if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
                                         let mut duplicate_found = false;
                                         for call in &calls {
-                                            if recently_executed_tools.contains(&call.name) {
+                                            let args_hash = hash_tool_args(&call.arguments);
+                                            if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
                                                 tracing::warn!(
                                                     "Tool '{}' was recently executed - potential loop detected",
                                                     call.name
@@ -1482,7 +1547,8 @@ pub async fn process_stream_events_with_safeguards(
                                 && let Ok((_, calls)) = parse_tool_calls(&tool_json) {
                                     let mut duplicate_found = false;
                                     for call in &calls {
-                                        if recently_executed_tools.contains(&call.name) {
+                                        let args_hash = hash_tool_args(&call.arguments);
+                                        if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
                                             tracing::warn!(
                                                 "Tool '{}' was recently executed - potential loop detected",
                                                 call.name
@@ -1551,7 +1617,8 @@ pub async fn process_stream_events_with_safeguards(
                             if let Ok((_, calls)) = parse_tool_calls(&tool_json) {
                                 let mut duplicate_found = false;
                                 for call in &calls {
-                                    if recently_executed_tools.contains(&call.name) {
+                                    let args_hash = hash_tool_args(&call.arguments);
+                                    if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
                                         tracing::warn!(
                                             "Tool '{}' was recently executed - potential loop detected",
                                             call.name
@@ -1590,7 +1657,8 @@ pub async fn process_stream_events_with_safeguards(
                                     if let Ok((_, calls)) = parse_tool_calls(&tool_content) {
                                         let mut duplicate_found = false;
                                         for call in &calls {
-                                            if recently_executed_tools.contains(&call.name) {
+                                            let args_hash = hash_tool_args(&call.arguments);
+                                            if is_tool_call_similar(&call.name, args_hash, &recently_executed_tools) {
                                                 tracing::warn!(
                                                     "Tool '{}' was recently executed - potential loop detected",
                                                     call.name
@@ -1660,7 +1728,7 @@ pub async fn process_stream_events_with_safeguards(
 
                     async move {
                         (name.clone(), ToolExecutionResult {
-                            name: name_clone,
+                            _name: name_clone,
                             result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, arguments.clone()).await,
                         })
                     }
@@ -1726,11 +1794,21 @@ pub async fn process_stream_events_with_safeguards(
                     }
                 }
 
-                // Update recently executed tools list
+                // Update recently executed tools list (with argument hashes for better loop detection)
                 for (name, _result) in &tool_call_results {
-                    if !recently_executed_tools.contains(name) {
-                        recently_executed_tools.push_back(name.clone());
-                        if recently_executed_tools.len() > 5 {
+                    // Get the arguments hash from the original tool calls
+                    let args_hash = tool_calls_with_results
+                        .iter()
+                        .find(|tc| &tc.name == name)
+                        .map(|tc| hash_tool_args(&tc.arguments))
+                        .unwrap_or(0);
+
+                    let tool_entry = (name.clone(), args_hash);
+
+                    // Check if this exact tool+args combination is already tracked
+                    if !recently_executed_tools.iter().any(|(n, h)| n == name && h == &args_hash) {
+                        recently_executed_tools.push_back(tool_entry);
+                        if recently_executed_tools.len() > 10 {
                             recently_executed_tools.pop_front();
                         }
                         tracing::debug!("Added '{}' to recently executed tools (now: {:?})", name, recently_executed_tools);
@@ -1907,6 +1985,8 @@ pub async fn process_stream_events_with_safeguards(
                 // has both tool_calls and content in one place.
                 {
                     let mut state = internal_state.write().await;
+                    // Register response for cross-turn repetition detection
+                    state.register_response(&final_response_content);
                     if let Some(last_msg) = state.memory.last_mut() {
                         if last_msg.role == "assistant" && last_msg.tool_calls.is_some() {
                             // Update the last assistant message (which has tool_calls) with the content
@@ -1939,7 +2019,12 @@ pub async fn process_stream_events_with_safeguards(
                 } else {
                     AgentMessage::assistant(&response_to_save)
                 };
-                internal_state.write().await.push_message(initial_msg);
+                {
+                    let mut state = internal_state.write().await;
+                    // Register response for cross-turn repetition detection
+                    state.register_response(&response_to_save);
+                    state.push_message(initial_msg);
+                }
 
                 // Yield any remaining content
                 if !buffer.is_empty() {
@@ -2020,12 +2105,8 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
     // Build context window
     let max_context = llm_interface.max_context_length().await;
-    const DEFAULT_MAX_CONTEXT: usize = 8_000;
-    let effective_max = if max_context >= 32000 {
-        max_context.min(16_384)
-    } else {
-        max_context.min(DEFAULT_MAX_CONTEXT)
-    };
+    // Use 90% of model capacity for history
+    let effective_max = (max_context * 90) / 100;
 
     let history_for_llm: Vec<edge_ai_core::Message> =
         build_context_window(&history_messages, effective_max)
@@ -2194,7 +2275,7 @@ pub async fn process_multimodal_stream_events_with_safeguards(
 
                 async move {
                     (name.clone(), ToolExecutionResult {
-                        name: name_clone,
+                        _name: name_clone,
                         result: execute_tool_with_retry(&tools_clone, &cache_clone, &name, tool_call.arguments.clone()).await,
                     })
                 }

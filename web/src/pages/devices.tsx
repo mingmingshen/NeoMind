@@ -7,7 +7,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent, Pagination } from "@/components/shared"
-import { Upload, Download, Settings } from "lucide-react"
+import { Upload, Download, Settings, Server, Layers, FileEdit } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -34,12 +34,14 @@ import {
 } from "./devices/index"
 import { DeviceTypeGeneratorDialog } from "@/components/devices/DeviceTypeGeneratorDialog"
 import { PendingDevicesList } from "./devices/PendingDevicesList"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 
 type DeviceTabValue = "devices" | "types" | "drafts"
 
 export function DevicesPage() {
   const { t } = useTranslation(['common', 'devices'])
   const { toast } = useToast()
+  const { handleError, withErrorHandling } = useErrorHandler()
   const { deviceId: urlDeviceId } = useParams<{ deviceId?: string }>()
   const devices = useStore((state) => state.devices)
   const devicesLoading = useStore((state) => state.devicesLoading)
@@ -95,12 +97,13 @@ export function DevicesPage() {
 
   // Fetch auto-onboarding configuration
   const fetchOnboardConfig = async () => {
-    try {
-      const config = await api.getOnboardConfig()
-      setOnboardConfig(config)
-      setPendingOnboardConfig(config)
-    } catch (error) {
-      console.error('Failed to fetch onboard config:', error)
+    const result = await withErrorHandling(
+      () => api.getOnboardConfig(),
+      { operation: 'Fetch onboard config', showToast: false }
+    )
+    if (result) {
+      setOnboardConfig(result)
+      setPendingOnboardConfig(result)
     }
   }
 
@@ -231,12 +234,11 @@ export function DevicesPage() {
         // If not found in list, try to fetch directly from API
         const loadDevice = async () => {
           if (!device && !devicesLoading) {
-            try {
-              device = await api.getDevice(urlDeviceId)
-            } catch (error) {
-              console.error('Failed to load device from URL:', error)
-              return urlDeviceId // Still set the view even if API fails (will show error)
-            }
+            device = await withErrorHandling(
+              () => api.getDevice(urlDeviceId),
+              { operation: 'Load device from URL', showToast: false }
+            ) ?? device
+            if (!device) return urlDeviceId // Still set the view even if API fails (will show error)
           }
 
           if (device) {
@@ -553,12 +555,14 @@ export function DevicesPage() {
       let errorCount = 0
 
       for (const type of typesToImport) {
-        try {
-          await addDeviceType(type)
+        const result = await withErrorHandling(
+          () => addDeviceType(type),
+          { operation: `Import ${type.device_type}`, showToast: false }
+        )
+        if (result) {
           successCount++
-        } catch (err) {
+        } else {
           errorCount++
-          console.error(`Failed to import ${type.device_type}:`, err)
         }
       }
 
@@ -665,9 +669,9 @@ export function DevicesPage() {
         // Tabbed View
         <PageTabs
           tabs={[
-            { value: 'devices', label: t('devices:deviceList') },
-            { value: 'types', label: t('devices:deviceTypes') },
-            { value: 'drafts', label: t('devices:pending.tab') },
+            { value: 'devices', label: t('devices:deviceList'), icon: <Server className="h-4 w-4" /> },
+            { value: 'types', label: t('devices:deviceTypes'), icon: <Layers className="h-4 w-4" /> },
+            { value: 'drafts', label: t('devices:pending.tab'), icon: <FileEdit className="h-4 w-4" /> },
           ]}
           activeTab={activeTab}
           onTabChange={(v) => handleTabChange(v as DeviceTabValue)}

@@ -4,7 +4,7 @@
   "tabs": {
     "agents": "AI 智能体",
     "rules": "规则",
-    "transforms": "Transforms Data"
+    "transforms": "数据转换"
   },
   "searchPlaceholder": "搜索自动化...",
   "filter": "筛选",

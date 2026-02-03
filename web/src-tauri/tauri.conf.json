@@ -28,11 +28,11 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset:",
-        "connect-src": "ipc: http://ipc.localhost https://localhost:3000 ws://localhost:3000 ws://localhost:5173 tauri://*",
+        "connect-src": "ipc: http://ipc.localhost https://localhost:9375 ws://localhost:9375 ws://localhost:5173 tauri://*",
         "font-src": "'self' https://fonts.gstatic.com",
         "img-src": "'self' asset: http://asset.localhost blob: data: https:",
-        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
-        "script-src": "'self' 'unsafe-inline' 'unsafe-eval'"
+        "style-src": "'self' https://fonts.googleapis.com",
+        "script-src": "'self' 'wasm-unsafe-eval'"
       }
     },
     "withGlobalTauri": true
@@ -52,9 +52,11 @@
     "longDescription": "NeoMind - Edge-deployed LLM agent platform for IoT automation",
     "macOS": {
       "frameworks": [],
-      "minimumSystemVersion": "10.15",
-      "entitlements": null,
+      "minimumSystemVersion": "12.0",
+      "entitlements": "./Entitlements.plist",
       "providerShortName": null,
+      "signingIdentity": null,
+      "hardenedRuntime": true,
       "dmg": {
         "windowSize": {
           "width": 660,

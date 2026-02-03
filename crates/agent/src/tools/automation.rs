@@ -18,7 +18,7 @@ use crate::agent::intent_classifier::{
 /// Create automation tool - uses intent classification and NL2Automation
 pub struct CreateAutomationTool {
     llm: Arc<dyn LlmRuntime>,
-    store: Option<Arc<MutexAutomationStore>>,
+    _store: Option<Arc<MutexAutomationStore>>,
     intent_classifier: Arc<IntentClassifier>,
 }
 
@@ -44,7 +44,7 @@ impl CreateAutomationTool {
         store: Option<Arc<MutexAutomationStore>>,
         intent_classifier: Arc<IntentClassifier>,
     ) -> Self {
-        Self { llm, store, intent_classifier }
+        Self { llm, _store: store, intent_classifier }
     }
 
     /// Build automation DSL from intent classification

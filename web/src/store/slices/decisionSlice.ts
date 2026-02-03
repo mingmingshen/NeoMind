@@ -7,6 +7,7 @@
 import type { StateCreator } from 'zustand'
 import type { DecisionState } from '../types'
 import { api } from '@/lib/api'
+import { logError } from '@/lib/errors'
 
 export interface DecisionSlice extends DecisionState {
   // Actions
@@ -30,7 +31,7 @@ export const createDecisionSlice: StateCreator<
       const data = await api.listDecisions()
       set({ decisions: data.decisions || [] })
     } catch (error) {
-      console.error('Failed to fetch decisions:', error)
+      logError(error, { operation: 'Fetch decisions' })
       set({ decisions: [] })
     } finally {
       set({ decisionsLoading: false })

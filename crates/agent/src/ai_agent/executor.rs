@@ -1,6 +1,6 @@
 //! AI Agent executor - runs agents and records decision processes.
 
-use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, ContentPart, Message, MessageRole}, error::Error as NeoTalkError};
+use edge_ai_core::{EventBus, MetricValue, NeoTalkEvent, message::{Content, ContentPart, Message, MessageRole}};
 use edge_ai_storage::{
     AgentMemory, AgentStore, AgentExecutionRecord, AiAgent, DataCollected,
     Decision, DecisionProcess, ExecutionResult as StorageExecutionResult, ExecutionStatus,
@@ -19,13 +19,14 @@ use std::collections::HashMap;
 use futures::future::join_all;
 
 use crate::LlmBackend;
-use crate::error::NeoTalkError;
+use crate::error::{NeoTalkError, Result as AgentResult};
 use crate::prompts::CONVERSATION_CONTEXT_ZH;
 
 /// Internal representation of image content for multimodal LLM messages.
+#[allow(dead_code)]
 enum ImageContent {
     Url(String),
-    Base64(String, String), // (data, mime_type)
+    Base64(String, String), // (_data, _mime_type)
 }
 
 /// Extract command name from decision description.
@@ -390,6 +391,7 @@ fn extract_semantic_description(decision: &Decision, symptom: &str) -> String {
 }
 
 /// Build medium-term summary for 24h context compression.
+#[allow(dead_code)]
 fn build_medium_term_summary(
     memory: &AgentMemory,
     _current_analysis: &str,
@@ -431,6 +433,7 @@ fn build_medium_term_summary(
 }
 
 /// Check if context needs compaction based on token estimation.
+#[allow(dead_code)]
 fn should_compact_context(history_context: &str, threshold_chars: usize) -> bool {
     // Rough estimation: 1 token ≈ 3 characters for Chinese/English mixed
     let estimated_tokens = history_context.chars().count() / 3;
@@ -521,6 +524,7 @@ fn clean_and_truncate_text(text: &str, max_chars: usize) -> String {
 /// 4. Selective retention - only most relevant info
 ///
 /// Target: < 200 characters for small models (qwen3:1.7b)
+#[allow(dead_code)]
 fn compact_history_context(
     _history_context: &str,
     memory: &AgentMemory,
@@ -675,7 +679,7 @@ pub struct AgentExecutor {
     /// Message manager for sending notifications (replaces AlertManager)
     message_manager: Option<Arc<MessageManager>>,
     /// Configuration
-    config: AgentExecutorConfig,
+    _config: AgentExecutorConfig,
     /// LLM runtime (default)
     llm_runtime: Option<Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>>,
     /// LLM backend store for per-agent backend lookup
@@ -760,7 +764,7 @@ fn score_turn_relevance(
 
 impl AgentExecutor {
     /// Create a new agent executor.
-    pub async fn new(config: AgentExecutorConfig) -> Result<Self, AgentError> {
+    pub async fn new(config: AgentExecutorConfig) -> AgentResult<Self> {
         let llm_runtime = config.llm_runtime.clone();
         let llm_backend_store = config.llm_backend_store.clone();
         let message_manager = config.message_manager.clone();
@@ -770,7 +774,7 @@ impl AgentExecutor {
             device_service: config.device_service.clone(),
             event_bus: config.event_bus.clone(),
             message_manager,
-            config,
+            _config: config,
             llm_runtime,
             llm_backend_store,
             event_agents: Arc::new(RwLock::new(HashMap::new())),
@@ -986,7 +990,7 @@ impl AgentExecutor {
     }
 
     /// Parse user intent from natural language using LLM or keyword-based fallback.
-    pub async fn parse_intent(&self, user_prompt: &str) -> Result<edge_ai_storage::ParsedIntent, AgentError> {
+    pub async fn parse_intent(&self, user_prompt: &str) -> AgentResult<edge_ai_storage::ParsedIntent> {
         // Try LLM-based parsing if available
         if let Some(ref llm) = self.llm_runtime
             && let Ok(intent) = self.parse_intent_with_llm(llm, user_prompt).await {
@@ -1002,7 +1006,7 @@ impl AgentExecutor {
         &self,
         llm: &Arc<dyn edge_ai_core::llm::backend::LlmRuntime + Send + Sync>,
         user_prompt: &str,
-    ) -> Result<edge_ai_storage::ParsedIntent, AgentError> {
+    ) -> AgentResult<edge_ai_storage::ParsedIntent> {
         use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
 
         // Get current time context for temporal understanding
@@ -1087,7 +1091,7 @@ Respond in JSON format:
     }
 
     /// Parse intent using keyword-based fallback.
-    async fn parse_intent_keywords(&self, user_prompt: &str) -> Result<edge_ai_storage::ParsedIntent, AgentError> {
+    async fn parse_intent_keywords(&self, user_prompt: &str) -> AgentResult<edge_ai_storage::ParsedIntent> {
         let prompt_lower = user_prompt.to_lowercase();
 
         let (intent_type, confidence) = if prompt_lower.contains("报告") || prompt_lower.contains("汇总") || prompt_lower.contains("每天") {
@@ -1119,7 +1123,7 @@ Respond in JSON format:
         device_id: String,
         metric: &str,
         value: &MetricValue,
-    ) -> Result<(), AgentError> {
+    ) -> AgentResult<()> {
         // Refresh event-triggered agents cache
         self.refresh_event_agents().await;
 
@@ -1347,7 +1351,7 @@ Respond in JSON format:
     }
 
     /// Execute an agent and record the full decision process.
-    pub async fn execute_agent(&self, agent: AiAgent) -> Result<AgentExecutionRecord, AgentError> {
+    pub async fn execute_agent(&self, agent: AiAgent) -> AgentResult<AgentExecutionRecord> {
         let agent_id = agent.id.clone();
         let agent_name = agent.name.clone();
         let execution_id = uuid::Uuid::new_v4().to_string();
@@ -1512,7 +1516,7 @@ Respond in JSON format:
         &self,
         agent: AiAgent,
         event_data: EventTriggerData,
-    ) -> Result<AgentExecutionRecord, AgentError> {
+    ) -> AgentResult<AgentExecutionRecord> {
         let agent_id = agent.id.clone();
         let agent_name = agent.name.clone();
         let execution_id = uuid::Uuid::new_v4().to_string();
@@ -1695,7 +1699,7 @@ Respond in JSON format:
     pub async fn execute_agents_parallel(
         &self,
         agents: Vec<AiAgent>,
-    ) -> Result<Vec<AgentExecutionRecord>, AgentError> {
+    ) -> AgentResult<Vec<AgentExecutionRecord>> {
         use futures::future::join_all;
 
         // Sort agents by priority (higher priority first)
@@ -1743,7 +1747,7 @@ Respond in JSON format:
     async fn execute_with_retry(
         &self,
         context: ExecutionContext,
-    ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
+    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let max_retries = 3u32;
         let mut last_error = None;
 
@@ -1778,7 +1782,7 @@ Respond in JSON format:
         &self,
         context: ExecutionContext,
         event_data: EventTriggerData,
-    ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
+    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let max_retries = 3u32;
         let mut last_error = None;
 
@@ -1812,7 +1816,7 @@ Respond in JSON format:
     async fn execute_internal(
         &self,
         context: ExecutionContext,
-    ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
+    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let mut agent = context.agent;
         let agent_id = agent.id.clone();
         let execution_id = context.execution_id.clone();
@@ -2001,7 +2005,7 @@ Respond in JSON format:
         &self,
         context: ExecutionContext,
         event_data: EventTriggerData,
-    ) -> Result<(DecisionProcess, StorageExecutionResult), AgentError> {
+    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
         let mut agent = context.agent;
         let agent_id = agent.id.clone();
         let execution_id = context.execution_id.clone();
@@ -2187,7 +2191,7 @@ Respond in JSON format:
 
     /// Collect real data from time series storage.
     /// Uses parallel queries for improved performance when collecting multiple metrics.
-    async fn collect_data(&self, agent: &AiAgent) -> Result<Vec<DataCollected>, AgentError> {
+    async fn collect_data(&self, agent: &AiAgent) -> AgentResult<Vec<DataCollected>> {
         let timestamp = chrono::Utc::now().timestamp();
 
         // Split resources by type for parallel processing
@@ -2236,7 +2240,7 @@ Respond in JSON format:
         _agent: &AiAgent,  // Reserved for future use
         resources: Vec<AgentResource>,
         timestamp: i64,
-    ) -> Result<Vec<DataCollected>, AgentError> {
+    ) -> AgentResult<Vec<DataCollected>> {
         let storage = self.time_series_storage.clone().ok_or(NeoTalkError::validation(
             "Time series storage not available".to_string()
         ))?;
@@ -2346,7 +2350,7 @@ Respond in JSON format:
         _include_trend: bool,  // Reserved for future use
         _include_baseline: bool,  // Reserved for future use
         timestamp: i64,
-    ) -> Result<Option<DataCollected>, AgentError> {
+    ) -> AgentResult<Option<DataCollected>> {
         let end_time = chrono::Utc::now().timestamp();
         let start_time = end_time - ((time_range_minutes * 60) as i64);
 
@@ -2433,7 +2437,7 @@ Respond in JSON format:
         _agent: &AiAgent,  // Reserved for future use
         device_ids: Vec<String>,
         timestamp: i64,
-    ) -> Result<Vec<DataCollected>, AgentError> {
+    ) -> AgentResult<Vec<DataCollected>> {
         let device_service = self.device_service.as_ref()
             .ok_or(NeoTalkError::validation("Device service not available".to_string()))?;
 
@@ -2476,7 +2480,7 @@ Respond in JSON format:
         storage: Arc<edge_ai_storage::TimeSeriesStore>,
         device_id: &str,
         timestamp: i64,
-    ) -> Result<Vec<DataCollected>, AgentError> {
+    ) -> AgentResult<Vec<DataCollected>> {
         let mut data = Vec::new();
 
         // Get device info
@@ -2547,7 +2551,7 @@ Respond in JSON format:
         &self,
         agent: &AiAgent,
         timestamp: i64,
-    ) -> Result<Option<DataCollected>, AgentError> {
+    ) -> AgentResult<Option<DataCollected>> {
         if agent.memory.state_variables.is_empty() {
             return Ok(None);
         }
@@ -2598,7 +2602,7 @@ Respond in JSON format:
         &self,
         agent: &AiAgent,
         event_data: &EventTriggerData,
-    ) -> Result<Vec<DataCollected>, AgentError> {
+    ) -> AgentResult<Vec<DataCollected>> {
         let mut data = Vec::new();
         let _timestamp = chrono::Utc::now().timestamp();  // Reserved for future use
 
@@ -2684,7 +2688,7 @@ Respond in JSON format:
         data: &[DataCollected],
         parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
         execution_id: &str,
-    ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
+    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
         tracing::info!(
             agent_id = %agent.id,
             agent_name = %agent.name,
@@ -2743,7 +2747,7 @@ Respond in JSON format:
         data: &[DataCollected],
         parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
         execution_id: &str,
-    ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
+    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
         use edge_ai_core::llm::backend::{LlmInput, GenerationParams};
 
         let current_time = chrono::Utc::now();
@@ -3530,7 +3534,7 @@ Respond in JSON format:
         agent: &AiAgent,
         data: &[DataCollected],
         parsed_intent: Option<&edge_ai_storage::ParsedIntent>,
-    ) -> Result<(String, Vec<ReasoningStep>, Vec<Decision>, String), AgentError> {
+    ) -> AgentResult<(String, Vec<ReasoningStep>, Vec<Decision>, String)> {
         let mut reasoning_steps = Vec::new();
         let mut decisions = Vec::new();
 
@@ -3629,7 +3633,7 @@ Respond in JSON format:
         &self,
         agent: &AiAgent,
         decisions: &[Decision],
-    ) -> Result<(Vec<edge_ai_storage::ActionExecuted>, Vec<edge_ai_storage::NotificationSent>), AgentError> {
+    ) -> AgentResult<(Vec<edge_ai_storage::ActionExecuted>, Vec<edge_ai_storage::NotificationSent>)> {
         let mut actions_executed = Vec::new();
         let mut notifications_sent = Vec::new();
 
@@ -3953,7 +3957,7 @@ Respond in JSON format:
         &self,
         agent: &AiAgent,
         data: &[DataCollected],
-    ) -> Result<Option<GeneratedReport>, AgentError> {
+    ) -> AgentResult<Option<GeneratedReport>> {
         // Only generate reports for report generation agents
         if let Some(ref intent) = agent.parsed_intent
             && matches!(
@@ -3982,7 +3986,7 @@ Respond in JSON format:
     }
 
     /// Generate report content.
-    async fn generate_report_content(&self, agent: &AiAgent, data: &[DataCollected]) -> Result<String, AgentError> {
+    async fn generate_report_content(&self, agent: &AiAgent, data: &[DataCollected]) -> AgentResult<String> {
         let mut report = format!("# {} - 报告\n\n", agent.name);
         report.push_str(&format!("生成时间: {}\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")));
 
@@ -4017,7 +4021,7 @@ Respond in JSON format:
         conclusion: &str,
         execution_id: &str,
         success: bool,
-    ) -> Result<AgentMemory, AgentError> {
+    ) -> AgentResult<AgentMemory> {
         let mut memory = agent.memory.clone();
 
         // === HIERARCHICAL MEMORY UPDATE ===

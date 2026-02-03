@@ -3,6 +3,7 @@
 //! 此模块整合了分散在多个文件中的工具名称映射逻辑，确保:
 //! - agent/mod.rs 中的 resolve_tool_name
 //! - agent/streaming.rs 中的 resolve_tool_name
+//!
 //! 使用同一套映射规则
 
 use serde_json::Value;

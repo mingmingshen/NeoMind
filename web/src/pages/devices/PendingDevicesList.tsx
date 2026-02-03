@@ -1,18 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useTranslation } from "react-i18next"
-import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { EmptyStateInline } from "@/components/shared"
-import { Card } from "@/components/ui/card"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Badge } from "@/components/ui/badge"
-import { Eye, MoreVertical, Check, ChevronDown, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Zap } from "lucide-react"
+import { ResponsiveTable } from "@/components/shared"
+import { Eye, Cpu, Globe, Badge as BadgeIcon, Clock, Activity, Check, ChevronDown } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -24,6 +15,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import { useToast } from "@/hooks/use-toast"
@@ -37,6 +29,7 @@ interface PendingDevicesListProps {
 
 export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const { handleError } = useErrorHandler()
   const { toast } = useToast()
 
   const [drafts, setDrafts] = useState<DraftDevice[]>([])
@@ -122,7 +115,7 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
         }
       }
     } catch (error) {
-      console.error('Failed to fetch draft devices:', error)
+      handleError(error, { operation: 'Fetch draft devices', showToast: false })
       // Don't show error toast - endpoint might not be implemented yet
       setDrafts([])
     } finally {
@@ -223,7 +216,7 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
         }
       }
     } catch (error) {
-      console.error('Failed to fetch suggested types:', error)
+      handleError(error, { operation: 'Fetch suggested types', showToast: false })
       // Show empty state on error
       setSuggestedTypes([])
     } finally {
@@ -378,160 +371,194 @@ export function PendingDevicesList({ onRefresh }: PendingDevicesListProps) {
 
   return (
     <>
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b bg-muted/30">
-              <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Cpu className="h-4 w-4" />
-                  {t('devices:pending.headers.deviceId')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Globe className="h-4 w-4" />
-                  {t('devices:pending.headers.source')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Activity className="h-4 w-4" />
-                  {t('devices:pending.deviceType')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <BadgeIcon className="h-4 w-4" />
-                  {t('devices:pending.headers.status')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Zap className="h-4 w-4" />
-                  {t('devices:pending.metrics')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  {t('devices:pending.headers.discoveredAt')}
-                </div>
-              </TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <EmptyStateInline title={t('common:loading')} colSpan={8} />
-            ) : activeDrafts.length === 0 ? (
-              <EmptyStateInline
-                title={t('devices:pending.noPending')}
-                colSpan={8}
-              />
-            ) : (
-              paginatedDrafts.map((draft, index) => {
-                const hasGeneratedType = draft.generated_type && draft.status === 'waiting_processing'
-                const confidence = draft.generated_type?.confidence
-                return (
-                  <TableRow key={draft.id} className="group transition-colors hover:bg-muted/50">
-                    <TableCell className="text-center">
-                      <span className="text-xs text-muted-foreground font-medium">{index + 1}</span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
-                          draft.status === 'waiting_processing'
-                            ? "bg-amber-500/10 text-amber-600"
-                            : draft.status === 'analyzing'
-                              ? "bg-purple-500/10 text-purple-600"
-                              : "bg-muted text-muted-foreground"
-                        )}>
-                          <Cpu className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <code className="text-xs text-muted-foreground font-mono block truncate">
-                            {draft.device_id}
-                          </code>
-                          {draft.user_name && (
-                            <div className="text-xs font-medium text-foreground truncate">
-                              {draft.user_name}
-                            </div>
-                          )}
-                        </div>
+      <ResponsiveTable
+        columns={[
+          {
+            key: 'index',
+            label: '#',
+            width: 'w-10',
+            align: 'center',
+          },
+          {
+            key: 'deviceId',
+            label: (
+              <div className="flex items-center gap-2">
+                <Cpu className="h-4 w-4" />
+                {t('devices:pending.headers.deviceId')}
+              </div>
+            ),
+          },
+          {
+            key: 'source',
+            label: (
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                {t('devices:pending.headers.source')}
+              </div>
+            ),
+          },
+          {
+            key: 'deviceType',
+            label: (
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4" />
+                {t('devices:pending.deviceType')}
+              </div>
+            ),
+          },
+          {
+            key: 'status',
+            label: (
+              <div className="flex items-center gap-2">
+                <BadgeIcon className="h-4 w-4" />
+                {t('devices:pending.headers.status')}
+              </div>
+            ),
+            align: 'center',
+          },
+          {
+            key: 'metrics',
+            label: (
+              <div className="flex items-center gap-2">
+                <BadgeIcon className="h-4 w-4" />
+                {t('devices:pending.metrics')}
+              </div>
+            ),
+            align: 'center',
+          },
+          {
+            key: 'discoveredAt',
+            label: (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                {t('devices:pending.headers.discoveredAt')}
+              </div>
+            ),
+            align: 'center',
+          },
+        ]}
+        data={paginatedDrafts as unknown as Record<string, unknown>[]}
+        rowKey={(draft) => (draft as unknown as DraftDevice).id}
+        loading={loading}
+        emptyState={
+          <div className="flex items-center justify-center py-12">
+            <p className="text-muted-foreground">{t('devices:pending.noPending')}</p>
+          </div>
+        }
+        renderCell={(columnKey, rowData) => {
+          const draft = rowData as unknown as DraftDevice
+          const index = paginatedDrafts.indexOf(draft)
+          const hasGeneratedType = draft.generated_type && draft.status === 'waiting_processing'
+          const confidence = draft.generated_type?.confidence
+
+          switch (columnKey) {
+            case 'index':
+              return (
+                <span className="text-xs text-muted-foreground font-medium">
+                  {index + 1}
+                </span>
+              )
+
+            case 'deviceId':
+              return (
+                <div className="flex items-center gap-3">
+                  <div className={cn(
+                    "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
+                    draft.status === 'waiting_processing'
+                      ? "bg-amber-500/10 text-amber-600"
+                      : draft.status === 'analyzing'
+                        ? "bg-purple-500/10 text-purple-600"
+                        : "bg-muted text-muted-foreground"
+                  )}>
+                    <Cpu className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <code className="text-xs text-muted-foreground font-mono block truncate">
+                      {draft.device_id}
+                    </code>
+                    {draft.user_name && (
+                      <div className="text-xs font-medium text-foreground truncate">
+                        {draft.user_name}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {draft.source.includes(':') ? draft.source.split(':')[0] : draft.source}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {hasGeneratedType ? (
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium truncate max-w-[150px]">
-                              {draft.generated_type?.name}
-                            </span>
-                            {confidence !== undefined && (
-                              <Badge
-                                variant={confidence >= 80 ? "default" : "outline"}
-                                className={cn(
-                                  "text-xs",
-                                  confidence >= 80
-                                    ? "bg-green-500/20 text-green-700 border-green-200"
-                                    : "bg-amber-500/20 text-amber-700 border-amber-200"
-                                )}
-                              >
-                                {confidence}%
-                              </Badge>
-                            )}
-                          </div>
-                          <code className="text-xs text-muted-foreground font-mono truncate block">
-                            {draft.generated_type?.device_type}
-                          </code>
-                        </div>
-                      ) : draft.status === 'analyzing' ? (
-                        <span className="text-xs text-muted-foreground">{t('devices:pending.analyzing')}</span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(draft.status)}</TableCell>
-                    <TableCell>
-                      {hasGeneratedType ? (
-                        <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800">
-                          {draft.generated_type?.metrics?.length || 0}
-                        </Badge>
-                      ) : (
-                        <span className="text-sm">{draft.sample_count} / {draft.max_samples}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-muted-foreground">
-                        {formatTimestamp(draft.discovered_at, false)}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleApproveClick(draft)}
-                        title={t('devices:pending.process')}
+                    )}
+                  </div>
+                </div>
+              )
+
+            case 'source':
+              return (
+                <Badge variant="outline" className="text-xs">
+                  {draft.source.includes(':') ? draft.source.split(':')[0] : draft.source}
+                </Badge>
+              )
+
+            case 'deviceType':
+              return hasGeneratedType ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">
+                      {draft.generated_type?.name}
+                    </span>
+                    {confidence !== undefined && (
+                      <Badge
+                        variant={confidence >= 80 ? "default" : "outline"}
+                        className={cn(
+                          "text-xs",
+                          confidence >= 80
+                            ? "bg-green-500/20 text-green-700 border-green-200"
+                            : "bg-amber-500/20 text-amber-700 border-amber-200"
+                        )}
                       >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+                        {confidence}%
+                      </Badge>
+                    )}
+                  </div>
+                  <code className="text-xs text-muted-foreground font-mono truncate block">
+                    {draft.generated_type?.device_type}
+                  </code>
+                </div>
+              ) : draft.status === 'analyzing' ? (
+                <span className="text-xs text-muted-foreground">{t('devices:pending.analyzing')}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">-</span>
+              )
+
+            case 'status':
+              return getStatusBadge(draft.status)
+
+            case 'metrics':
+              return hasGeneratedType ? (
+                <div className="flex justify-center">
+                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800">
+                    {draft.generated_type?.metrics?.length || 0}
+                  </Badge>
+                </div>
+              ) : (
+                <span className="text-sm">{draft.sample_count} / {draft.max_samples}</span>
+              )
+
+            case 'discoveredAt':
+              return (
+                <span className="text-xs text-muted-foreground">
+                  {formatTimestamp(draft.discovered_at, false)}
+                </span>
+              )
+
+            default:
+              return null
+          }
+        }}
+        actions={[
+          {
+            label: t('devices:pending.process'),
+            icon: <Eye className="h-4 w-4" />,
+            onClick: (rowData) => {
+              const draft = rowData as unknown as DraftDevice
+              handleApproveClick(draft)
+            },
+          },
+        ]}
+      />
 
       {/* Summary footer showing registered count */}
       {registeredCount > 0 && (

@@ -35,7 +35,7 @@ use crate::telemetry::TimeSeriesStorage;
 use crate::unified_extractor::UnifiedExtractor;
 use async_trait::async_trait;
 use edge_ai_core::EventBus;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

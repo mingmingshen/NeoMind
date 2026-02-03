@@ -11,6 +11,7 @@ import { shallow } from "zustand/shallow"
 import { ws } from "@/lib/websocket"
 import type { Message, ServerMessage } from "@/types"
 import type { StreamProgress as StreamProgressType } from "@/types"
+import { filterPartialMessages } from "@/lib/messageUtils"
 import {
   selectSessionId,
   selectMessages,
@@ -63,6 +64,12 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   // Actions are stable functions, no need for shallow comparison
   const { addMessage, createSession, switchSession, activateBackend } = useStore(selectChatActions)
 
+  // Store reference for WebSocket handlers (avoids dependency issues)
+  const storeRef = useRef(useStore())
+  useEffect(() => {
+    storeRef.current = useStore()
+  }, [])
+
   // Local state
   const [input, setInput] = useState("")
   const [isStreaming, setIsStreaming] = useState(false)
@@ -71,7 +78,10 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   const [streamingToolCalls, setStreamingToolCalls] = useState<any[]>([])
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
-  // Track the ID of the last assistant message for tool call result updates
+
+  // Track the ID of the current streaming message (generated once per stream)
+  const [currentStreamMessageId, setCurrentStreamMessageId] = useState<string | null>(null)
+  // Track the ID of the last completed assistant message for tool call result updates
   const [lastAssistantMessageId, setLastAssistantMessageId] = useState<string | null>(null)
 
   // Stream progress state (P0.1: Progress tracking)
@@ -88,7 +98,6 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const streamingMessageIdRef = useRef<string | null>(null)
   const streamingContentRef = useRef("")
   const streamingThinkingRef = useRef("")
   const streamingToolCallsRef = useRef<any[]>([])
@@ -227,9 +236,11 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
         }
 
         case "end":
-          // Save the complete message
+          // Save the complete message using the ID generated at stream start
           if (streamingContentRef.current || streamingThinkingRef.current || streamingToolCallsRef.current.length > 0) {
-            const messageId = streamingMessageIdRef.current || crypto.randomUUID()
+            // Use the message ID generated at stream start (not a new random UUID)
+            // This ensures the same message is not added multiple times
+            const messageId = currentStreamMessageId || crypto.randomUUID()
             const completeMessage: Message = {
               id: messageId,
               role: "assistant",
@@ -250,7 +261,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
           streamingContentRef.current = ""
           streamingThinkingRef.current = ""
           streamingToolCallsRef.current = []
-          streamingMessageIdRef.current = null
+          setCurrentStreamMessageId(null)  // Reset for next stream
           // Reset progress state
           setStreamProgress({
             elapsed: 0,
@@ -268,7 +279,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
         case "session_created":
         case "session_switched":
           if (data.sessionId) {
-            switchSession(data.sessionId)
+            // Use storeRef to avoid dependency on switchSession function
+            storeRef.current.switchSession(data.sessionId)
           }
           break
       }
@@ -277,7 +289,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     // ws.onMessage returns an unsubscribe function - we MUST call it in cleanup
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, switchSession, lastAssistantMessageId])  // Removed: messages (now using messagesRef)
+  }, [lastAssistantMessageId])  // Stable dependencies only - storeRef avoids needing addMessage/switchSession
 
   // Initialize session if none exists
   useEffect(() => {
@@ -309,9 +321,10 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     setInput("")
     setShowSuggestions(false)
 
-    // Start streaming
+    // Start streaming - generate message ID once for the entire stream
     setIsStreaming(true)
-    streamingMessageIdRef.current = crypto.randomUUID()
+    const newMessageId = crypto.randomUUID()
+    setCurrentStreamMessageId(newMessageId)
     streamStartRef.current = Date.now()  // Reset stream start time
     // Reset progress state
     setStreamProgress({
@@ -363,7 +376,8 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
   }
 
   // Filter out partial messages - they're handled separately during streaming
-  const filteredMessages = messages.filter(msg => !msg.isPartial)
+  // Use shared utility for consistency
+  const filteredMessages = filterPartialMessages(messages)
 
   return (
     <div className={`flex flex-col h-screen bg-[var(--background)] ${className}`}>

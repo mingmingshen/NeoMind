@@ -43,6 +43,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetClose,
+} from "@/components/ui/sheet"
 import { ThemeToggle } from "./ThemeToggle"
 import { useState, useEffect } from "react"
 
@@ -130,8 +136,8 @@ export function TopNav() {
   return (
     <TooltipProvider delayDuration={500}>
       <nav className="h-16 bg-background/95 backdrop-blur flex items-center px-4 sm:px-6 shadow-sm z-50 relative">
-        {/* Logo */}
-        <Link to="/chat" className="flex items-center gap-2.5 mr-6">
+        {/* Logo - vertically centered in nav */}
+        <Link to="/chat" className="flex shrink-0 items-center justify-center mr-4 md:mr-6">
           <BrandLogoWithName />
         </Link>
 
@@ -170,61 +176,107 @@ export function TopNav() {
           })}
         </div>
 
-        {/* Mobile Hamburger Menu */}
+        {/* Mobile Hamburger Menu - Left Side Drawer */}
         <div className="md:hidden">
-          <DropdownMenu open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-            <DropdownMenuTrigger asChild>
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
                 className="w-10 h-10 rounded-lg"
               >
-                {mobileMenuOpen ? (
-                  <X className="h-5 w-5" />
-                ) : (
-                  <Menu className="h-5 w-5" />
-                )}
+                <Menu className="h-5 w-5" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48">
-              {navItems.map((item) => {
-                const Icon = item.icon
-                // Check active with prefix match for nested routes (e.g., /devices/types matches /devices)
-                const isActive = currentPath === item.path ||
-                  (item.path === '/chat' && currentPath === '/') ||
-                  currentPath.startsWith(`${item.path}/`)
+            </SheetTrigger>
+            <SheetContent side="left" className="w-64 p-0">
+              <div className="flex flex-col h-full">
+                {/* Header */}
+                <div className="px-6 py-4 border-b">
+                  <Link to="/chat" onClick={handleNavClick}>
+                    <BrandLogoWithName />
+                  </Link>
+                </div>
 
-                return (
-                  <DropdownMenuItem
-                    key={item.id}
-                    asChild
-                  >
-                    <Link
-                      to={item.path}
-                      onClick={handleNavClick}
-                      className={cn(
-                        "gap-2",
-                        isActive && "bg-muted"
-                      )}
+                {/* Navigation Items */}
+                <nav className="flex-1 overflow-y-auto py-4 px-2">
+                  {navItems.map((item) => {
+                    const Icon = item.icon
+                    // Check active with prefix match for nested routes (e.g., /devices/types matches /devices)
+                    const isActive = currentPath === item.path ||
+                      (item.path === '/chat' && currentPath === '/') ||
+                      currentPath.startsWith(`${item.path}/`)
+
+                    return (
+                      <SheetClose asChild key={item.id}>
+                        <Link
+                          to={item.path}
+                          onClick={handleNavClick}
+                          className={cn(
+                            "flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors",
+                            isActive
+                              ? "bg-foreground text-background"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          )}
+                        >
+                          <Icon className="h-5 w-5" />
+                          <span>{t(item.labelKey)}</span>
+                        </Link>
+                      </SheetClose>
+                    )
+                  })}
+                </nav>
+
+                {/* Footer - User info */}
+                {user && (
+                  <div className="px-4 py-4 border-t">
+                    <div className="flex items-center gap-3 px-2">
+                      <Avatar className="h-9 w-9 rounded-lg">
+                        <AvatarFallback className="bg-muted text-muted-foreground text-xs font-medium">
+                          {getUserInitials(user.username)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{user.username}</p>
+                        <p className="text-xs text-muted-foreground truncate">{t('user')}</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        handleLogout()
+                        setMobileMenuOpen(false)
+                      }}
+                      className="w-full mt-3 justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                     >
-                      <Icon className={cn(
-                        "h-4 w-4",
-                        isActive ? "text-foreground" : "text-muted-foreground"
-                      )} />
-                      <span>{t(item.labelKey)}</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                      <LogOut className="h-4 w-4" />
+                      {t('logout')}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Settings - Language & Theme */}
+                <div className="px-4 py-3 border-t">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      toggleLanguage()
+                    }}
+                    className="w-full justify-start gap-2"
+                  >
+                    <span className="text-sm font-medium">{i18n.language === 'zh' ? 'English' : '中文'}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{i18n.language === 'zh' ? 'EN' : '中'}</span>
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* Spacer - limit on mobile to keep logo and right icons closer */}
+        <div className="flex-1 max-md:max-w-8" />
 
-        {/* Right side: Status + Language + Theme + User */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Right side: Status + Language + Theme + User - ml-auto pushes to right when spacer is limited on mobile */}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2.5">
           {/* Connection status - icon only on mobile */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -372,27 +424,29 @@ export function TopNav() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* User avatar with dropdown */}
+          {/* User avatar with dropdown - desktop only */}
           {user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Avatar className="h-10 w-10 cursor-pointer rounded-lg">
-                  <AvatarFallback className="bg-muted text-muted-foreground text-xs font-medium">
-                    {getUserInitials(user.username)}
-                  </AvatarFallback>
-                </Avatar>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <div className="px-3 py-2">
-                  <p className="text-sm font-medium">{user.username}</p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  {t('logout')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="hidden md:block">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Avatar className="h-10 w-10 cursor-pointer rounded-lg">
+                    <AvatarFallback className="bg-muted text-muted-foreground text-xs font-medium">
+                      {getUserInitials(user.username)}
+                    </AvatarFallback>
+                  </Avatar>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <div className="px-3 py-2">
+                    <p className="text-sm font-medium">{user.username}</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+                    <LogOut className="h-4 w-4 mr-2" />
+                    {t('logout')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
         </div>
       </nav>

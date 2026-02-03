@@ -12,7 +12,7 @@ use crate::command::{
     CommandId, CommandPriority, CommandRequest, CommandResult, CommandSource, CommandStatus,
     DeviceId, RetryPolicy,
 };
-use crate::state::{CommandManager, CommandStateStore};
+use crate::state::CommandManager;
 
 /// API request for submitting a command.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -466,6 +466,7 @@ impl Default for EventPublisher {
 mod tests {
     use super::*;
     use crate::queue::CommandQueue;
+    use crate::state::CommandStateStore;
     use std::sync::Arc;
 
     #[test]

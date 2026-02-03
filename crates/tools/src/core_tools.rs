@@ -2277,7 +2277,7 @@ impl Tool for DeviceAnalyzeTool {
         let result = match analysis_type {
             "trend" => self.analyze_trend(&data_points, metrics_to_analyze.first().unwrap()),
             "anomaly" => self.analyze_anomaly(&data_points, metrics_to_analyze.first().unwrap()),
-            "summary" | _ => self.analyze_summary(&data_points, metrics_to_analyze.first().unwrap()),
+            _ => self.analyze_summary(&data_points, metrics_to_analyze.first().unwrap()),
         };
 
         let mut result = result;

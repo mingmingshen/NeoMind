@@ -8,6 +8,8 @@
 import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useStore } from '@/store'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
+import { logError } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
@@ -812,7 +814,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
       )
   }
   } catch (error) {
-    console.error(`Error rendering component ${(component as any).type}:`, error)
+    logError(error, { operation: 'Render dashboard component' })
     return (
       <div className="p-4 text-center text-destructive h-full flex flex-col items-center justify-center bg-destructive/10 rounded-lg">
         <p className="text-sm font-medium">{(component as any).type}</p>
@@ -899,6 +901,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
   const { dashboardId } = useParams<{ dashboardId?: string }>()
   const navigate = useNavigate()
   const { t } = useTranslation('dashboardComponents')
+  const { handleError } = useErrorHandler()
 
   const {
     currentDashboard,
@@ -1204,7 +1207,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           console.log('[AgentMonitorWidget] Agents loaded:', data.agents?.length || 0)
           setAgents(data.agents || [])
         } catch (error) {
-          console.error('[AgentMonitorWidget] Failed to load agents:', error)
+          handleError(error, { operation: 'Load agents for dashboard', showToast: false })
           setAgents([])
         } finally {
           setAgentsLoading(false)

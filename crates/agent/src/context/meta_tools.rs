@@ -200,7 +200,7 @@ struct VaguePattern {
     /// Pattern regex (simplified as keyword list)
     keywords: Vec<String>,
     /// Expected missing information
-    missing_info: String,
+    _missing_info: String,
     /// Suggested follow-up question
     follow_up: String,
 }
@@ -212,22 +212,22 @@ impl VagueQueryHandler {
             vague_patterns: vec![
                 VaguePattern {
                     keywords: vec!["温度".to_string(), "是多少".to_string()],
-                    missing_info: "device".to_string(),
+                    _missing_info: "device".to_string(),
                     follow_up: "您想查询哪个设备的温度？".to_string(),
                 },
                 VaguePattern {
                     keywords: vec!["湿度".to_string(), "是多少".to_string()],
-                    missing_info: "device".to_string(),
+                    _missing_info: "device".to_string(),
                     follow_up: "您想查询哪个设备的湿度？".to_string(),
                 },
                 VaguePattern {
                     keywords: vec!["打开".to_string(), "灯".to_string()],
-                    missing_info: "location".to_string(),
+                    _missing_info: "location".to_string(),
                     follow_up: "您想打开哪个位置的灯？".to_string(),
                 },
                 VaguePattern {
                     keywords: vec!["关闭".to_string(), "灯".to_string()],
-                    missing_info: "location".to_string(),
+                    _missing_info: "location".to_string(),
                     follow_up: "您想关闭哪个位置的灯？".to_string(),
                 },
             ],

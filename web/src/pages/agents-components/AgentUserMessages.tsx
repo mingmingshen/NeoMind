@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -32,6 +33,7 @@ interface AgentUserMessagesProps {
 
 export function AgentUserMessages({ agentId, onMessageAdded }: AgentUserMessagesProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const { handleError } = useErrorHandler()
   const [messages, setMessages] = useState<UserMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
@@ -46,7 +48,7 @@ export function AgentUserMessages({ agentId, onMessageAdded }: AgentUserMessages
       const data = await api.getAgentUserMessages(agentId)
       setMessages(data)
     } catch (error) {
-      console.error('Failed to load user messages:', error)
+      handleError(error, { operation: 'Load user messages', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -78,7 +80,7 @@ export function AgentUserMessages({ agentId, onMessageAdded }: AgentUserMessages
       setMessages(prev => [...prev, message])
       onMessageAdded?.()
     } catch (error) {
-      console.error('Failed to send message:', error)
+      handleError(error, { operation: 'Send message to agent', showToast: false })
       // Restore message on error
       setNewMessage(content)
     } finally {
@@ -92,7 +94,7 @@ export function AgentUserMessages({ agentId, onMessageAdded }: AgentUserMessages
       await api.deleteAgentUserMessage(agentId, messageId)
       setMessages(prev => prev.filter(m => m.id !== messageId))
     } catch (error) {
-      console.error('Failed to delete message:', error)
+      handleError(error, { operation: 'Delete user message', showToast: false })
     }
   }
 

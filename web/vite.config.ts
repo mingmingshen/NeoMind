@@ -48,7 +48,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://localhost:9375',
         changeOrigin: true,
         ws: true,
         // Only proxy /api requests, not static files

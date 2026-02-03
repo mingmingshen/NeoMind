@@ -28,9 +28,11 @@ use edge_ai_core::EventBus;
 fn discovery_subscription_patterns(_components: Option<Vec<String>>) -> Vec<String> {
     vec![]
 }
-fn is_discovery_topic(topic: &str) -> bool {
+#[allow(dead_code)]
+fn _is_discovery_topic(topic: &str) -> bool {
     topic.starts_with("homeassistant/") && topic.contains("/+/config/")
 }
+#[allow(dead_code)]
 fn parse_discovery_message(_topic: &str, _payload: &[u8]) -> Result<serde_json::Value, String> {
     Err("HASS discovery deprecated".to_string())
 }
@@ -227,13 +229,27 @@ impl Default for MqttManagerConfig {
 /// Manages MQTT-based devices with MDL support for device type definitions.
 /// Can be used for both embedded and external MQTT brokers.
 ///
-/// ⚠️ **DEPRECATED**: This manager is now primarily used internally by `MqttManagerAdapter`.
-/// For new code, use `DeviceService` and `DeviceAdapter` instead.
-/// Direct access to `MqttDeviceManager` is only needed for HASS discovery and other MQTT-specific features.
-/// See `MqttManagerAdapter` in `adapters/mqtt_manager_adapter.rs` for the adapter interface.
-#[deprecated(
-    note = "Use DeviceService and MqttManagerAdapter instead. MqttDeviceManager is now primarily an internal implementation detail. Only access directly for HASS discovery and other MQTT-specific features."
-)]
+/// MQTT Device Manager - Core MQTT device management implementation.
+///
+/// # Architecture
+///
+/// This crate provides two MQTT implementation layers:
+///
+/// ## 1. High-Level Adapter API (Recommended for new code)
+/// - `MqttAdapter` - Implements `DeviceAdapter` trait for unified device management
+/// - Use via `DeviceService` for consistent device operations across protocols
+///
+/// ## 2. Core MQTT Manager (This struct)
+/// - `MqttDeviceManager` - Direct MQTT device management with protocol-specific features
+/// - Used internally by `MqttDevice` for MQTT-specific operations
+/// - Supports Home Assistant Discovery, custom telemetry topics, and direct MQTT operations
+///
+/// # Usage Guidelines
+///
+/// - **New code**: Use `DeviceService` with `MqttAdapter` for unified device management
+/// - **HASS Discovery**: Direct `MqttDeviceManager` access is required for HASS auto-discovery
+/// - **Custom MQTT Protocols**: Use `MqttDeviceManager` for non-standard topic patterns
+/// - **Internal Device Implementations**: `MqttDevice` uses this internally for MQTT operations
 pub struct MqttDeviceManager {
     /// Broker identifier (e.g., "internal-mqtt", "broker-1", etc.)
     broker_id: String,
@@ -507,7 +523,7 @@ impl MqttDeviceManager {
         *self.connection_status.write().await = ConnectionStatus::Connecting;
 
         // Load saved HASS discovery state
-        let saved_enabled = self.load_hass_discovery_state().await;
+        let saved_enabled = self._load_hass_discovery_state().await;
         *self.hass_discovery_enabled.write().await = saved_enabled;
         if saved_enabled {
             tracing::info!("HASS discovery state loaded: enabled");
@@ -1552,7 +1568,8 @@ impl MqttDeviceManager {
 
     /// Handle metric message from device
     /// Topic format: device/{device_type}/{device_id}/uplink or /downlink
-    async fn handle_metric_message(
+    #[allow(dead_code)]
+    async fn _handle_metric_message(
         topic: &str,
         payload: &[u8],
         devices: &Arc<RwLock<HashMap<String, DeviceInstance>>>,
@@ -2139,12 +2156,14 @@ impl MqttDeviceManager {
     }
 
     /// Save HASS discovery enabled state to storage (stub)
-    async fn save_hass_discovery_state(&self, _enabled: bool) {
+    #[allow(dead_code)]
+    async fn _save_hass_discovery_state(&self, _enabled: bool) {
         // HASS discovery deprecated - stub
     }
 
     /// Load HASS discovery enabled state from storage (stub)
-    async fn load_hass_discovery_state(&self) -> bool {
+    #[allow(dead_code)]
+    async fn _load_hass_discovery_state(&self) -> bool {
         false
     }
 
@@ -2185,11 +2204,11 @@ impl MqttDeviceManager {
 
 /// Device implementation for MQTT devices
 pub struct MqttDevice {
-    id: DeviceId,
-    name: String,
-    device_type: String,
-    device_id: String,
-    manager: Arc<MqttDeviceManager>,
+    _id: DeviceId,
+    _name: String,
+    _device_type: String,
+    _device_id: String,
+    _manager: Arc<MqttDeviceManager>,
 }
 
 impl MqttDevice {
@@ -2200,11 +2219,11 @@ impl MqttDevice {
         manager: Arc<MqttDeviceManager>,
     ) -> Self {
         Self {
-            id: DeviceId::new(),
-            name,
-            device_type,
-            device_id,
-            manager,
+            _id: DeviceId::new(),
+            _name: name,
+            _device_type: device_type,
+            _device_id: device_id,
+            _manager: manager,
         }
     }
 }

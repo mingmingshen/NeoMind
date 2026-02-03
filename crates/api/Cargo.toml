@@ -35,8 +35,6 @@ reqwest = { version = "0.12", features = ["json"] }
 
 # Web framework
 axum = { workspace = true, features = ["ws"] }
-tokio-tungstenite = { workspace = true }
-tower = { workspace = true }
 tower-http = { workspace = true }
 
 # Utils
@@ -50,15 +48,12 @@ base64 = { workspace = true }
 async-stream = "0.3"
 utoipa = "5"
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
-headers = "0.4"
 atty = "0.2"
-regex = "1.11"
 sysinfo = "0.32"
 
 # Encryption
 aes-gcm = { workspace = true }
 sha2 = { workspace = true }
-rand = { workspace = true }
 pbkdf2 = { workspace = true }
 hmac = { workspace = true }
 bcrypt = { workspace = true }

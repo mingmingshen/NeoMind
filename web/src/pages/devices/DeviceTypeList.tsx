@@ -1,23 +1,6 @@
 import { useTranslation } from "react-i18next"
-import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { EmptyStateInline } from "@/components/shared"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { ResponsiveTable } from "@/components/shared"
 import { Eye, Pencil, Trash2, Download, MoreVertical, Cpu, Database, Activity } from "lucide-react"
 import type { DeviceType } from "@/types"
 import { api } from "@/lib/api"
@@ -80,116 +63,126 @@ export function DeviceTypeList({
       {/* Dialogs - addTypeDialog is controlled by parent PageTabs actions */}
       {addTypeDialog}
 
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b bg-muted/30">
-              <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Database className="h-4 w-4" />
-                  {t('devices:types.headers.name')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Activity className="h-4 w-4" />
-                  {t('devices:types.headers.metrics')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Cpu className="h-4 w-4" />
-                  {t('devices:types.headers.commands')}
-                </div>
-              </TableHead>
-              <TableHead align="center">
-                <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('automation:transforms', { defaultValue: 'Transforms' })}
-                </div>
-              </TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <EmptyStateInline title={t('common:loading')} colSpan={6} />
-            ) : deviceTypes.length === 0 ? (
-              <EmptyStateInline title={t('devices:types.noTypes')} colSpan={6} />
-            ) : (
-              paginatedDeviceTypes.map((type, index) => (
-                <TableRow key={type.device_type} className="group transition-colors hover:bg-muted/50">
-                  <TableCell className="text-center">
-                    <span className="text-xs text-muted-foreground font-medium">{index + 1}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-600">
-                        <Database className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm">{type.name}</div>
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs text-muted-foreground font-mono">{type.device_type}</code>
-                          {type.description && (
-                            <span className="text-xs text-muted-foreground line-clamp-1 max-w-[200px]">
-                              {type.description}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+      <ResponsiveTable
+        columns={[
+          {
+            key: 'index',
+            label: '#',
+            width: 'w-10',
+            align: 'center',
+          },
+          {
+            key: 'name',
+            label: t('devices:types.headers.name'),
+          },
+          {
+            key: 'metrics',
+            label: t('devices:types.headers.metrics'),
+            align: 'center',
+          },
+          {
+            key: 'commands',
+            label: t('devices:types.headers.commands'),
+            align: 'center',
+          },
+          {
+            key: 'transforms',
+            label: t('automation:transforms', { defaultValue: 'Transforms' }),
+            align: 'center',
+          },
+        ]}
+        data={paginatedDeviceTypes as unknown as Record<string, unknown>[]}
+        rowKey={(type) => (type as unknown as DeviceType).device_type}
+        loading={loading}
+        renderCell={(columnKey, rowData) => {
+          const type = rowData as unknown as DeviceType
+          const index = paginatedDeviceTypes.indexOf(type)
+
+          switch (columnKey) {
+            case 'index':
+              return (
+                <span className="text-xs text-muted-foreground font-medium">
+                  {index + 1}
+                </span>
+              )
+
+            case 'name':
+              return (
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-600">
+                    <Database className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-sm">{type.name}</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs text-muted-foreground font-mono">{type.device_type}</code>
+                      {type.description && (
+                        <span className="text-xs text-muted-foreground line-clamp-1">
+                          {type.description}
+                        </span>
+                      )}
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800">
-                      {type.metrics?.length ?? type.metric_count ?? 0}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800">
-                      {type.commands?.length ?? type.command_count ?? 0}
-                    </Badge>
-                  </TableCell>
-                  <TableCell align="center">
-                    <TransformsBadge deviceTypeId={type.device_type} onRefresh={onRefresh} />
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem onClick={() => onViewDetails(type)}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          {t('devices:types.actions.view')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleExport(type)}>
-                          <Download className="mr-2 h-4 w-4" />
-                          {t('devices:types.actions.export')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onEdit(type)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          {t('common:edit')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => onDelete(type.device_type)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          {t('common:delete')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+                  </div>
+                </div>
+              )
+
+            case 'metrics':
+              return (
+                <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800">
+                  {type.metrics?.length ?? type.metric_count ?? 0}
+                </Badge>
+              )
+
+            case 'commands':
+              return (
+                <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800">
+                  {type.commands?.length ?? type.command_count ?? 0}
+                </Badge>
+              )
+
+            case 'transforms':
+              return <TransformsBadge deviceTypeId={type.device_type} onRefresh={onRefresh} />
+
+            default:
+              return null
+          }
+        }}
+        actions={[
+          {
+            label: t('devices:types.actions.view'),
+            icon: <Eye className="h-4 w-4" />,
+            onClick: (rowData) => {
+              const type = rowData as unknown as DeviceType
+              onViewDetails(type)
+            },
+          },
+          {
+            label: t('devices:types.actions.export'),
+            icon: <Download className="h-4 w-4" />,
+            onClick: (rowData) => {
+              const type = rowData as unknown as DeviceType
+              handleExport(type)
+            },
+          },
+          {
+            label: t('common:edit'),
+            icon: <Pencil className="h-4 w-4" />,
+            onClick: (rowData) => {
+              const type = rowData as unknown as DeviceType
+              onEdit(type)
+            },
+          },
+          {
+            label: t('common:delete'),
+            icon: <Trash2 className="h-4 w-4" />,
+            variant: 'destructive',
+            onClick: (rowData) => {
+              const type = rowData as unknown as DeviceType
+              onDelete(type.device_type)
+            },
+          },
+        ]}
+      />
     </>
   )
 }

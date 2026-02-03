@@ -242,7 +242,7 @@ impl IntegrationRegistry {
 
                 // Convert integration event to NeoTalk event and publish
                 if let Ok(neotalk_event) = Self::integration_to_neotalk_event(event, &id_for_task) {
-                    let _ = event_bus.publish(neotalk_event);
+                    let _ = event_bus.publish(neotalk_event).await;
                 }
             }
 

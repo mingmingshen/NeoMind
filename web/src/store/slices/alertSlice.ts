@@ -8,6 +8,7 @@
 import type { StateCreator } from 'zustand'
 import type { AlertState } from '../types'
 import { api } from '@/lib/api'
+import { logError } from '@/lib/errors'
 
 // Get auth token
 const getToken = (): string | null => {
@@ -37,7 +38,7 @@ export const createAlertSlice: StateCreator<
     try {
       const token = getToken()
       // Use correct API base for Tauri environment
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:3000/api' : '/api'
+      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
       // Use the messages API instead of alerts
       const response = await fetch(`${apiBase}/messages`, {
         headers: {
@@ -82,7 +83,7 @@ export const createAlertSlice: StateCreator<
 
       set({ alerts: alertsArray as any })
     } catch (error) {
-      console.error('Failed to fetch alerts:', error)
+      logError(error, { operation: 'Fetch alerts' })
       set({ alerts: [] })
     } finally {
       set({ alertsLoading: false })
@@ -105,7 +106,7 @@ export const createAlertSlice: StateCreator<
       }
       return false
     } catch (error) {
-      console.error('Failed to acknowledge alert:', error)
+      logError(error, { operation: 'Acknowledge alert' })
       return false
     }
   },
@@ -124,7 +125,7 @@ export const createAlertSlice: StateCreator<
       await get().fetchAlerts()
       return true
     } catch (error) {
-      console.error('Failed to create alert:', error)
+      logError(error, { operation: 'Create alert' })
       return false
     }
   },

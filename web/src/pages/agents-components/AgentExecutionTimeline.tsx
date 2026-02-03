@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils"
 import { formatTimestamp } from "@/lib/utils/format"
 import { api } from "@/lib/api"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import type { AgentExecution, AgentExecutionDetail, DataCollected, ReasoningStep, Decision } from "@/types"
 
 interface AgentExecutionTimelineProps {
@@ -38,6 +39,7 @@ export function AgentExecutionTimeline({
   onViewExecutionDetail,
 }: AgentExecutionTimelineProps) {
   const { t } = useTranslation(['common', 'agents'])
+  const { handleError } = useErrorHandler()
   const [expandedExecutions, setExpandedExecutions] = useState<Set<string>>(new Set())
   const [executionDetails, setExecutionDetails] = useState<Record<string, AgentExecutionDetail>>({})
   const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set())
@@ -64,7 +66,7 @@ export function AgentExecutionTimeline({
       const data = await api.getExecution(agentId, executionId)
       setExecutionDetails(prev => ({ ...prev, [executionId]: data }))
     } catch (error) {
-      console.error('Failed to load execution detail:', error)
+      handleError(error, { operation: 'Load execution detail', showToast: false })
     } finally {
       setLoadingDetails(prev => {
         const next = new Set(prev)

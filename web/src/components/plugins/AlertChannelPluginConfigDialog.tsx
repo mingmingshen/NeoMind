@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Terminal, Database, Webhook, Mail, Check, X, Plus, Trash2, TestTube } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { confirm } from "@/hooks/use-confirm"
 import { ConfigFormBuilder } from "@/components/plugins/ConfigFormBuilder"
 import type { PluginConfigSchema } from "@/types"
@@ -91,6 +92,7 @@ export function AlertChannelPluginConfigDialog({
   pluginName,
 }: AlertChannelPluginConfigDialogProps) {
   const { t } = useTranslation(['common', 'alerts', 'plugins'])
+  const { handleError } = useErrorHandler()
   const { toast } = useToast()
 
   const [loading, setLoading] = useState(false)
@@ -121,7 +123,7 @@ export function AlertChannelPluginConfigDialog({
       const typeChannels = response.channels.filter((ch: AlertChannel) => ch.channel_type === channelType)
       setChannels(typeChannels)
     } catch (error) {
-      console.error("Failed to fetch channels:", error)
+      handleError(error, { operation: 'Fetch channels', showToast: false })
     }
   }
 
@@ -130,7 +132,7 @@ export function AlertChannelPluginConfigDialog({
       const schema = await api.getChannelSchema(channelType)
       setChannelSchema(schema)
     } catch (error) {
-      console.error("Failed to fetch channel schema:", error)
+      handleError(error, { operation: 'Fetch channel schema', showToast: false })
     }
   }
 

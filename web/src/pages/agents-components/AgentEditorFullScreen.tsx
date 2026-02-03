@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next"
 import { useStore } from "@/store"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -159,6 +160,7 @@ export function AgentEditorFullScreen({
   onSave,
 }: AgentEditorFullScreenProps) {
   const { toast } = useToast()
+  const { handleError } = useErrorHandler()
   const { t: tCommon } = useTranslation('common')
   const { t: tAgent } = useTranslation('agents')
   const { llmBackends, activeBackendId, loadBackends } = useStore()
@@ -290,7 +292,7 @@ export function AgentEditorFullScreen({
                 }
                 setEventDeviceId(eventFilter.device_id || 'all')
               } catch (e) {
-                console.error('[AgentEditor] Failed to parse event_filter:', e)
+                handleError(e, { operation: 'Parse event filter', showToast: false })
                 setEventType('manual')
                 setEventDeviceId('all')
               }

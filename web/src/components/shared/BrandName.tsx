@@ -137,6 +137,8 @@ export function StyledBrandName({
 
 /**
  * Combined brand logo and name
+ * - Mobile: horizontal logo (logo-light/logo-dark) with theme switching, scaled down
+ * - Desktop: horizontal logo (logo-light/logo-dark) with theme switching
  *
  * @example
  * ```tsx
@@ -154,8 +156,16 @@ export function BrandLogoWithName({
   showLogo?: boolean
   styled?: boolean
 }) {
-  // Use horizontal logo image by default (auto theme switching)
   return (
-    <BrandLogoHorizontal className={cn('h-7', logoClassName)} />
+    <>
+      {/* Mobile: horizontal logo with theme switching, smaller size */}
+      <span className="md:hidden">
+        <BrandLogoHorizontal className={cn('h-5', logoClassName)} />
+      </span>
+      {/* Desktop: horizontal logo with theme switching, normal size */}
+      <span className="hidden md:inline-block">
+        <BrandLogoHorizontal className={cn('h-7', logoClassName)} />
+      </span>
+    </>
   )
 }

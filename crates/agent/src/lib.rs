@@ -75,7 +75,10 @@ pub use concurrency::{
     ConcurrencyStats, DEFAULT_GLOBAL_LIMIT, DEFAULT_PER_SESSION_LIMIT, GlobalConcurrencyLimiter,
     GlobalPermit, SessionConcurrencyLimiter, SessionPermit,
 };
-pub use error::{AgentError, NeoTalkError, Result};
+// Re-export AgentError for backward compatibility (deprecated, use NeoTalkError)
+#[allow(deprecated)]
+pub use error::AgentError;
+pub use error::{NeoTalkError, Result};
 pub use session::SessionManager;
 // TODO: Uncomment when session_sync module is implemented
 // pub use session_sync::{

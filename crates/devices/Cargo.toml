@@ -20,16 +20,11 @@ chrono = { workspace = true, features = ["serde"] }
 reqwest = { version = "0.12", optional = true, features = ["json"] }
 
 # Storage
-bincode = { workspace = true }
 redb = { workspace = true }
 
 # MQTT
 rumqttc = { version = "0.24", optional = true }
 rumqttd = { version = "0.19", optional = true }
-
-# Discovery
-mdns-sd = { version = "0.11", optional = true }
-socket2 = "0.5"
 
 # Utils
 futures = { workspace = true }
@@ -43,8 +38,7 @@ default = ["mqtt", "http"]
 mqtt = ["rumqttc"]
 http = ["reqwest"]
 embedded-broker = ["rumqttd"]
-discovery = ["mdns-sd"]
-all = ["mqtt", "http", "embedded-broker", "discovery"]
+all = ["mqtt", "http", "embedded-broker"]
 
 [dev-dependencies]
 base64 = { workspace = true }

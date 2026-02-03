@@ -5,17 +5,11 @@ edition.workspace = true
 
 [dependencies]
 edge-ai-core = { path = "../core" }
-edge-ai-llm = { path = "../llm" }
 edge-ai-rules = { path = "../rules" }
-edge-ai-devices = { path = "../devices" }
-
-# Force axum 0.7 to avoid conflicts with rumqttd's axum 0.6
-axum = { version = "0.7", default-features = false }
 
 tokio = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
@@ -32,7 +26,6 @@ urlencoding = { workspace = true }
 
 # JavaScript execution - use Boa for cross-platform support
 boa_engine = "0.17"
-boa_gc = "0.17"
 
 # Storage
 redb = { workspace = true }

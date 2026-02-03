@@ -13,13 +13,15 @@ import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { useEvents } from "@/hooks/useEvents"
-import { Loader2, Bot } from "lucide-react"
+import { useErrorHandler } from "@/hooks/useErrorHandler"
+import { Loader2, Bot, Plus } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
 import type { AiAgent, AiAgentDetail } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
 
 // Import components
-import { AgentCard, CreateCard } from "./agents-components/AgentCard"
+import { AgentCard } from "./agents-components/AgentCard"
 import { AgentEditorFullScreen } from "./agents-components/AgentEditorFullScreen"
 import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog"
 import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
@@ -32,6 +34,7 @@ export function AgentsPage() {
   const { t: tCommon } = useTranslation('common')
   const { t: tAgent } = useTranslation('agents')
   const { toast } = useToast()
+  const { handleError } = useErrorHandler()
 
   // Dialog states
   const [showAgentDialog, setShowAgentDialog] = useState(false)
@@ -82,7 +85,7 @@ export function AgentsPage() {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ))
     } catch (error) {
-      console.error('Failed to load agents:', error)
+      handleError(error, { operation: 'Load agents', showToast: false })
     } finally {
       setLoading(false)
     }
@@ -215,7 +218,7 @@ export function AgentsPage() {
       setEditingAgent(detail)
       setShowAgentDialog(true)
     } catch (error) {
-      console.error('Failed to load agent details:', error)
+      handleError(error, { operation: 'Load agent details', showToast: false })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -245,7 +248,7 @@ export function AgentsPage() {
         description: tAgent('agentDeleted'),
       })
     } catch (error) {
-      console.error('Failed to delete agent:', error)
+      handleError(error, { operation: 'Delete agent', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -260,7 +263,7 @@ export function AgentsPage() {
       await api.setAgentStatus(agent.id, newStatus)
       await loadItems()
     } catch (error) {
-      console.error('Failed to toggle agent status:', error)
+      handleError(error, { operation: 'Toggle agent status', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -282,7 +285,7 @@ export function AgentsPage() {
       ))
       setExecutingAgents(prev => new Map(prev).set(agent.id, Date.now()))
     } catch (error) {
-      console.error('Failed to execute agent:', error)
+      handleError(error, { operation: 'Execute agent', showToast: true })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -306,7 +309,7 @@ export function AgentsPage() {
         description: editingAgent ? tAgent('agentUpdated') : tAgent('agentCreated'),
       })
     } catch (error) {
-      console.error('Failed to save agent:', error)
+      handleError(error, { operation: 'Save agent', showToast: false })
       throw error
     }
   }
@@ -325,7 +328,7 @@ export function AgentsPage() {
       setSelectedAgent(detail)
       setDetailSheetOpen(true)
     } catch (error) {
-      console.error('Failed to load agent details:', error)
+      handleError(error, { operation: 'Load agent details for panel', showToast: false })
       toast({
         title: tCommon('failed'),
         description: (error as Error).message,
@@ -337,9 +340,11 @@ export function AgentsPage() {
   // Refresh detail when sheet is open
   useEffect(() => {
     if (detailSheetOpen && selectedAgent) {
-      api.getAgent(selectedAgent.id).then(setSelectedAgent).catch(console.error)
+      api.getAgent(selectedAgent.id).then(setSelectedAgent).catch(err =>
+        handleError(err, { operation: 'Refresh agent details', showToast: false })
+      )
     }
-  }, [agents, detailSheetOpen, selectedAgent?.id])
+  }, [agents, detailSheetOpen, selectedAgent?.id, handleError])
 
   // Merge executing state from WebSocket with agent data
   // Only show Executing if agent is currently executing AND not paused/error in database
@@ -364,6 +369,17 @@ export function AgentsPage() {
       title={tAgent('title')}
       subtitle={tAgent('description')}
     >
+      {/* Top action button */}
+      <div className="mb-4 flex justify-start">
+        <Button
+          size="sm"
+          onClick={handleCreate}
+          className="h-9"
+        >
+          <Plus className="h-4 w-4 mr-1.5" />
+          <span className="text-sm">{tAgent('createAgent')}</span>
+        </Button>
+      </div>
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -382,7 +398,6 @@ export function AgentsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          <CreateCard onClick={handleCreate} />
           {agentsWithExecutingStatus.map((agent) => (
             <AgentCard
               key={agent.id}

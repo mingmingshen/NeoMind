@@ -94,7 +94,7 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
 // Re-export page titles
 // ============================================================================
 
-export { pageTitles } from './types'
+export { pageTitles, getPageTitle } from './types'
 
 // ============================================================================
 // Global 401 Handler Registration

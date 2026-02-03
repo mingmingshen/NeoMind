@@ -1,29 +1,12 @@
 /**
- * Rules List - Unified card-based table design
+ * Rules List - Using ResponsiveTable for consistent styling
  */
 
 import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
-import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { EmptyStateInline } from "@/components/shared"
-import { Zap, Edit, Play, Trash2, MoreVertical, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Clock, CheckCircle2, Timer } from "lucide-react"
+import { ResponsiveTable } from "@/components/shared"
+import { Edit, Play, Trash2, Bell, FileText, FlaskConical, AlertTriangle, Sparkles, Clock, CheckCircle2, Timer, Zap } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import type { Rule, RuleAction } from "@/types"
 import { cn } from "@/lib/utils"
@@ -177,188 +160,183 @@ export function RulesList({
   const paginatedRules = propsPaginatedRules ?? rules.slice(startIndex, endIndex)
 
   return (
-    <>
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-b bg-muted/30">
-              <TableHead className="w-10 text-center">#</TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <ResponsiveTable
+      columns={[
+        {
+          key: 'index',
+          label: '#',
+          width: 'w-10',
+          align: 'center',
+        },
+        {
+          key: 'name',
+          label: t('automation:ruleName'),
+        },
+        {
+          key: 'trigger',
+          label: t('automation:trigger'),
+        },
+        {
+          key: 'actions',
+          label: t('automation:ruleBuilder.executeActions'),
+          align: 'center',
+        },
+        {
+          key: 'lastTriggered',
+          label: t('automation:lastTriggered'),
+          align: 'center',
+        },
+        {
+          key: 'status',
+          label: t('automation:status'),
+          align: 'center',
+        },
+      ]}
+      data={paginatedRules as unknown as Record<string, unknown>[]}
+      rowKey={(rule) => (rule as unknown as Rule).id}
+      loading={loading}
+      getRowClassName={(rowData) => {
+        const rule = rowData as unknown as Rule
+        return cn(!rule.enabled && "opacity-50")
+      }}
+      renderCell={(columnKey, rowData) => {
+        const rule = rowData as unknown as Rule
+        const index = paginatedRules.indexOf(rule)
+
+        switch (columnKey) {
+          case 'index':
+            return (
+              <span className="text-xs text-muted-foreground font-medium">
+                {startIndex + index + 1}
+              </span>
+            )
+
+          case 'name':
+            return (
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
+                  rule.enabled ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"
+                )}>
                   <Sparkles className="h-4 w-4" />
-                  {t('automation:ruleName')}
                 </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Zap className="h-4 w-4" />
-                  {t('automation:trigger')}
+                <div>
+                  <div className="font-medium text-sm">{rule.name}</div>
+                  <div className="text-xs text-muted-foreground line-clamp-1">
+                    {rule.description || '-'}
+                  </div>
                 </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {t('automation:ruleBuilder.executeActions')}
-                </div>
-              </TableHead>
-              <TableHead>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  {t('automation:lastTriggered')}
-                </div>
-              </TableHead>
-              <TableHead className="text-center">
-                <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t('automation:status')}
-                </div>
-              </TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <EmptyStateInline title={t('common:loading')} colSpan={7} />
-            ) : rules.length === 0 ? (
-              <EmptyStateInline title={t('automation:noRules')} colSpan={7} />
+              </div>
+            )
+
+          case 'trigger':
+            return (
+              <div className="space-y-1.5">
+                <code className="text-xs bg-muted px-2 py-1 rounded-md block font-mono truncate">
+                  {formatConditionDisplay(rule)}
+                </code>
+                {hasForClause(rule) && (
+                  <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-200">
+                    <Timer className="h-3 w-3" />
+                    {t('automation:ruleBuilder.duration')}
+                  </Badge>
+                )}
+              </div>
+            )
+
+          case 'actions': {
+            const actions = rule.actions && rule.actions.length > 0
+              ? rule.actions
+              : parseActionsFromDSL(rule.dsl)
+            const actionsCount = actions.length
+            const firstActions = actions.slice(0, 2)
+
+            return actionsCount === 0 ? (
+              <span className="text-muted-foreground text-sm">-</span>
             ) : (
-              paginatedRules.map((rule, index) => {
-                const actions = rule.actions && rule.actions.length > 0
-                  ? rule.actions
-                  : parseActionsFromDSL(rule.dsl)
-                const actionsCount = actions.length
-                const firstActions = actions.slice(0, 2)
+              <div className="flex flex-wrap gap-1 justify-start">
+                {firstActions.map((action, i) => {
+                  const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
+                  const Icon = config.icon
+                  return (
+                    <Badge
+                      key={i}
+                      variant="outline"
+                      className={cn("text-xs gap-1", config.color)}
+                    >
+                      <Icon className="h-3 w-3" />
+                      {t(config.label)}
+                    </Badge>
+                  )
+                })}
+                {actionsCount > 2 && (
+                  <Badge variant="outline" className="text-xs bg-muted">
+                    +{actionsCount - 2}
+                  </Badge>
+                )}
+              </div>
+            )
+          }
 
-                return (
-                  <TableRow
-                    key={rule.id}
-                    className={cn(
-                      "group transition-colors hover:bg-muted/50",
-                      !rule.enabled && "opacity-50"
-                    )}
-                  >
-                    <TableCell className="text-center">
-                      <span className="text-xs text-muted-foreground font-medium">{startIndex + index + 1}</span>
-                    </TableCell>
+          case 'lastTriggered':
+            return (
+              <div className="flex items-center gap-2 text-xs justify-start">
+                <span className="text-muted-foreground">{formatTimestamp(rule.last_triggered)}</span>
+                <span className="text-muted-foreground">({rule.trigger_count || 0})</span>
+              </div>
+            )
 
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className={cn(
-                          "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
-                          rule.enabled ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"
-                        )}>
-                          <Sparkles className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <div className="font-medium text-sm">{rule.name}</div>
-                          <div className="text-xs text-muted-foreground line-clamp-1 max-w-[180px]">
-                            {rule.description || '-'}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
+          case 'status':
+            return (
+              <div className="flex items-center justify-start gap-2">
+                <Switch
+                  checked={rule.enabled}
+                  onCheckedChange={() => onToggleStatus(rule)}
+                  className="scale-90"
+                />
+                <Badge variant="outline" className={cn(
+                  "text-xs gap-1 hidden sm:flex",
+                  rule.enabled
+                    ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
+                    : "text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700"
+                )}>
+                  <CheckCircle2 className="h-3 w-3" />
+                  {rule.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
+                </Badge>
+              </div>
+            )
 
-                    <TableCell>
-                      <div className="space-y-1.5">
-                        <code className="text-xs bg-muted px-2 py-1 rounded-md block max-w-[200px] truncate font-mono">
-                          {formatConditionDisplay(rule)}
-                        </code>
-                        {hasForClause(rule) && (
-                          <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-200">
-                            <Timer className="h-3 w-3" />
-                            {t('automation:ruleBuilder.duration')}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      {actionsCount === 0 ? (
-                        <span className="text-muted-foreground text-sm">-</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {firstActions.map((action, i) => {
-                            const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
-                            const Icon = config.icon
-                            return (
-                              <Badge
-                                key={i}
-                                variant="outline"
-                                className={cn("text-xs gap-1", config.color)}
-                              >
-                                <Icon className="h-3 w-3" />
-                                {t(config.label)}
-                              </Badge>
-                            )
-                          })}
-                          {actionsCount > 2 && (
-                            <Badge variant="outline" className="text-xs bg-muted">
-                              +{actionsCount - 2}
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">{formatTimestamp(rule.last_triggered)}</span>
-                        <span className="text-muted-foreground">({rule.trigger_count || 0})</span>
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <Switch
-                          checked={rule.enabled}
-                          onCheckedChange={() => onToggleStatus(rule)}
-                          className="scale-90"
-                        />
-                        <Badge variant="outline" className={cn(
-                          "text-xs gap-1 hidden sm:flex",
-                          rule.enabled
-                            ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800"
-                            : "text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-800 dark:border-gray-700"
-                        )}>
-                          <CheckCircle2 className="h-3 w-3" />
-                          {rule.enabled ? t('automation:statusEnabled') : t('automation:statusDisabled')}
-                        </Badge>
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem onClick={() => onEdit(rule)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            {t('common:edit')}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onExecute(rule)}>
-                            <Play className="mr-2 h-4 w-4" />
-                            {t('automation:execute')}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => onDelete(rule)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t('common:delete')}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
-      </Card>
-    </>
+          default:
+            return null
+        }
+      }}
+      actions={[
+        {
+          label: t('common:edit'),
+          icon: <Edit className="h-4 w-4" />,
+          onClick: (rowData) => {
+            const rule = rowData as unknown as Rule
+            onEdit(rule)
+          },
+        },
+        {
+          label: t('automation:execute'),
+          icon: <Play className="h-4 w-4" />,
+          onClick: (rowData) => {
+            const rule = rowData as unknown as Rule
+            onExecute(rule)
+          },
+        },
+        {
+          label: t('common:delete'),
+          icon: <Trash2 className="h-4 w-4" />,
+          variant: 'destructive',
+          onClick: (rowData) => {
+            const rule = rowData as unknown as Rule
+            onDelete(rule)
+          },
+        },
+      ]}
+    />
   )
 }
