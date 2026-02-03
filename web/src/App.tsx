@@ -5,6 +5,8 @@ import { TopNav } from "@/components/layout/TopNav"
 import { Toaster } from "@/components/ui/toaster"
 import { Confirmer } from "@/components/ui/confirmer"
 import { tokenManager } from "@/lib/api"
+import { StartupLoading } from "@/components/StartupLoading"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 
 // Performance optimization: Lazy load route components to reduce initial bundle size
 // Each page is loaded on-demand, reducing Time to Interactive by ~70%
@@ -269,6 +271,13 @@ function PageLoading() {
 
 function App() {
   const { isAuthenticated, checkAuthStatus, setWsConnected } = useStore()
+  const [backendReady, setBackendReady] = useState(false)
+  const [isTauri, setIsTauri] = useState(false)
+
+  // Check if running in Tauri environment
+  useEffect(() => {
+    setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window)
+  }, [])
 
   // Check authentication status on mount
   useEffect(() => {
@@ -302,6 +311,11 @@ function App() {
       ws.connect()
     })
   }, [isAuthenticated])
+
+  // Show loading screen in Tauri until backend is ready
+  if (isTauri && !backendReady) {
+    return <StartupLoading onReady={() => setBackendReady(true)} />
+  }
 
   return (
     <>

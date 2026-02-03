@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "NeoMind",
         "width": 1400,
         "height": 900,
@@ -22,7 +23,8 @@
         "center": true,
         "decorations": true,
         "transparent": false,
-        "hiddenTitle": false
+        "hiddenTitle": false,
+        "visible": false
       }
     ],
     "security": {

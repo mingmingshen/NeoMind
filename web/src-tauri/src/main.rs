@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tauri::{AppHandle, Listener, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use tokio::runtime::Runtime;
 
 use tauri::tray::TrayIconEvent;
@@ -262,8 +262,33 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Wait for server ready - increased timeout for Windows/older machines
     let state = app.state::<ServerState>();
-    if !state.wait_for_server_ready(30) {
-        eprintln!("Server did not become ready in time");
+    let server_ready = state.wait_for_server_ready(30);
+
+    if server_ready {
+        println!("Server is ready - showing main window");
+        // Show the main window after backend is ready
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        // Emit event to let frontend know backend is ready
+        let app_handle = app.handle();
+        let _ = app_handle.emit_to("main", "backend-ready", serde_json::json!({
+            "status": "ready",
+            "port": 9375
+        }));
+    } else {
+        eprintln!("Server did not become ready in time - showing window anyway");
+        // Show window even if server isn't ready (frontend has retry logic)
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+        }
+        // Emit event with error status
+        let app_handle = app.handle();
+        let _ = app_handle.emit_to("main", "backend-ready", serde_json::json!({
+            "status": "timeout",
+            "port": 9375
+        }));
     }
 
     Ok(())
