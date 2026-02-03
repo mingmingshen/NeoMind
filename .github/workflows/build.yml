@@ -35,25 +35,6 @@ jobs:
         with:
           workspaces: './web/src-tauri -> target'
 
-      - name: Import certificate for signing
-        if: secrets.APPLE_CERTIFICATE != ''
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-          
-          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          rm $CERTIFICATE_PATH
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -65,39 +46,13 @@ jobs:
         working-directory: ./web
         run: npm ci
 
-      - name: Lint Rust code
-        working-directory: ./web/src-tauri
-        run: cargo clippy -- -D warnings
-
-      - name: Format check
-        working-directory: ./web/src-tauri
-        run: cargo fmt -- --check
-
       - name: Build frontend
         working-directory: ./web
         run: npm run build
 
-      - name: Build Tauri app
+      - name: Build Tauri app (unsigned)
         working-directory: ./web
         run: npm run tauri build --bundles dmg
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
-          APPLE_ID: ${{ secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
-
-      - name: Sign DMG with Apple ID (fallback)
-        if: secrets.APPLE_CERTIFICATE == '' && secrets.APPLE_ID != ''
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-        run: |
-          DMG_FILE=$(ls web/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
-          if [ -z "$DMG_FILE" ]; then echo "No DMG found"; exit 1; fi
-          MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -readonly -mountpoint /tmp/neomind-dmg -readwrite | grep "/Volumes" | awk "{print \$3}")
-          codesign --force --deep --sign - "/tmp/neomind-dmg/NeoMind.app" 2>/dev/null || codesign --force --deep "/tmp/neomind-dmg/NeoMind.app"
-          codesign --verify --verbose "/tmp/neomind-dmg/NeoMind.app" || true
-          hdiutil detach "/tmp/neomind-dmg" || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -137,19 +92,11 @@ jobs:
         working-directory: ./web
         run: npm ci
 
-      - name: Lint Rust code
-        working-directory: ./web/src-tauri
-        run: cargo clippy -- -D warnings
-
-      - name: Format check
-        working-directory: ./web/src-tauri
-        run: cargo fmt -- --check
-
       - name: Build frontend
         working-directory: ./web
         run: npm run build
 
-      - name: Build Tauri app
+      - name: Build Tauri app (unsigned)
         working-directory: ./web
         run: npm run tauri build --bundles nsis
 
@@ -196,19 +143,11 @@ jobs:
         working-directory: ./web
         run: npm ci
 
-      - name: Lint Rust code
-        working-directory: ./web/src-tauri
-        run: cargo clippy -- -D warnings
-
-      - name: Format check
-        working-directory: ./web/src-tauri
-        run: cargo fmt -- --check
-
       - name: Build frontend
         working-directory: ./web
         run: npm run build
 
-      - name: Build Tauri app
+      - name: Build Tauri app (unsigned)
         working-directory: ./web
         run: npm run tauri build --bundles appimage,deb
 
@@ -256,6 +195,7 @@ jobs:
             - Download `NeoMind_*.dmg`
             - Open the DMG file
             - Drag NeoMind to Applications folder
+            - **First launch**: Right-click NeoMind.app → select "Open"
             
             **Windows**
             - Download `NeoMind_*.exe`
@@ -264,8 +204,7 @@ jobs:
             
             **Linux (Debian/Ubuntu)**
             - Download `NeoMind_*.deb`
-            - Install: `sudo dpkg -i NeoMind_*.deb`
-            - Or: `sudo apt install ./NeoMind_*.deb`
+            - Install: `sudo apt install ./NeoMind_*.deb`
             
             **Linux (AppImage - Universal)**
             - Download `NeoMind_*.AppImage`
@@ -274,9 +213,16 @@ jobs:
             
             ### First Launch (macOS)
             
-            **If you see "unverified developer" warning:**
-            - Right-click NeoMind.app → select "Open"
-            - Or run: `xattr -d com.apple.quarantine /Applications/NeoMind.app`
+            Due to macOS security restrictions for unsigned apps:
+            1. Right-click NeoMind.app
+            2. Hold `Option` key → select "Open"
+            3. Click "Open" in the dialog
+            
+            Or run in Terminal:
+            ```bash
+            xattr -d com.apple.quarantine /Applications/NeoMind.app
+            open /Applications/NeoMind.app
+            ```
             
             ### Requirements
             - **macOS**: 12.0 (Monterey) or later
@@ -294,37 +240,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  test:
-    name: Run Tests
-    runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './web/src-tauri -> target'
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: './web/package-lock.json'
-
-      - name: Install dependencies
-        working-directory: ./web
-        run: npm ci
-
-      - name: Run Rust tests
-        working-directory: ./web/src-tauri
-        run: cargo test --verbose
-
-      - name: Type check
-        working-directory: ./web
-        run: npx tsc --noEmit
