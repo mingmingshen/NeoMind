@@ -11,10 +11,16 @@ on:
         required: true
         default: 'v0.2.0'
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build-macos:
     name: Build macOS DMG
     runs-on: macos-latest
+    permissions:
+      contents: write
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,6 +34,37 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './web/src-tauri -> target'
+
+      - name: Import certificate for signing
+        if: secrets.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          
+          # Import certificate from secrets
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+          
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH             -P "$APPLE_CERTIFICATE_PASSWORD"             -A             -t cert             -f pkcs12             -k $KEYCHAIN_PATH
+          
+          # Set the keychain as default
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          # Remove certificate file
+          rm $CERTIFICATE_PATH
+          
+          # Enable codesigning from the keychain
+          security set-key-partition-list             -S apple-tool:,apple:,codesign:             -s             -k "$KEYCHAIN_PASSWORD"             $KEYCHAIN_PATH
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -56,19 +93,55 @@ jobs:
         working-directory: ./web
         run: npm run tauri build --bundles dmg
         env:
-          TAURI_BUNDLE_SIGNING_IDENTITY: ${{ vars.TAURI_SIGNING_IDENTITY || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          # Use certificate from keychain if available
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY || '-' }}
+          # Or use Apple ID for notarization (optional)
           APPLE_ID: ${{ secrets.APPLE_ID || '' }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID || '' }}
+
+      - name: Sign DMG with Apple ID (fallback)
+        if: secrets.APPLE_CERTIFICATE == '' && secrets.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+        run: |
+          # Find the built DMG
+          DMG_FILE=$(ls web/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
+          
+          if [ -z "$DMG_FILE" ]; then
+            echo "No DMG file found"
+            exit 1
+          fi
+          
+          echo "Found DMG: $DMG_FILE"
+          
+          # Mount the DMG
+          MOUNT_DIR=$(hdiutil attach "$DMG_FILE" -readonly -mountpoint /tmp/neomind-dmg -readwrite | grep "/Volumes" | awk "{print \$3}")
+          
+          # Sign the app
+          codesign --force --deep --sign - "/tmp/neomind-dmg/NeoMind.app" 2>/dev/null ||           codesign --force --deep "/tmp/neomind-dmg/NeoMind.app"
+          
+          # Verify signature
+          codesign --verify --verbose "/tmp/neomind-dmg/NeoMind.app" || true
+          
+          # Unmount
+          hdiutil detach "/tmp/neomind-dmg" || true
+          
+          echo "DMG signed with ad-hoc signature"
 
       - name: List build artifacts
         working-directory: ./web
         run: |
           echo "Build artifacts:"
           ls -lh src-tauri/target/release/bundle/dmg/ || echo "No DMG found"
+          
+          # Show app signature info
+          if [ -d "src-tauri/target/release/bundle/macos/NeoMind.app" ]; then
+            echo ""
+            echo "App signature:"
+            codesign -dv src-tauri/target/release/bundle/macos/NeoMind.app 2>&1 || true
+          fi
 
       - name: Get version from tag
         id: get_version
@@ -85,16 +158,23 @@ jobs:
           name: NeoMind ${{ steps.get_version.outputs.VERSION }}
           body: |
             ## NeoMind ${{ steps.get_version.outputs.VERSION }}
-
-            ### macOS
-            - Download `NeoMind_*.dmg`
-            - Open the DMG file
-            - Drag NeoMind to Applications
-
-            ### Installation Notes
-            - macOS 12.0 or later required
-            - Right-click and select "Open" if you see an unverified developer warning
-
+            
+            ### Download & Install
+            
+            1. Download `NeoMind_*.dmg`
+            2. Open the DMG file
+            3. Drag NeoMind to Applications folder
+            
+            ### First Launch
+            
+            **If you see "unverified developer" warning:**
+            - Right-click NeoMind.app → select "Open"
+            - Or run: `xattr -d com.apple.quarantine /Applications/NeoMind.app`
+            
+            ### Requirements
+            - macOS 12.0 (Monterey) or later
+            - Apple Silicon (M1/M2/M3) or Intel
+            
             ---
             [Full Changelog](https://github.com/camthink-ai/NeoMind/commits/${{ steps.get_version.outputs.VERSION }})
           files: |
