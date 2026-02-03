@@ -52,7 +52,7 @@ jobs:
 
       - name: Build Tauri app (unsigned)
         working-directory: ./web
-        run: npm run tauri build --bundles dmg
+        run: npx tauri build -- --bundle-format dmg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -98,7 +98,7 @@ jobs:
 
       - name: Build Tauri app (unsigned)
         working-directory: ./web
-        run: npm run tauri build --bundles nsis
+        run: npx tauri build -- --bundle-format nsis
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -149,7 +149,7 @@ jobs:
 
       - name: Build Tauri app (unsigned)
         working-directory: ./web
-        run: npm run tauri build --bundles appimage,deb
+        run: npx tauri build -- --bundle-format appimage --bundle-format deb
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
