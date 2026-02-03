@@ -43,13 +43,15 @@ jobs:
       - name: Install Zig (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
         run: |
-          # Use install action or download with retry
+          # Download and install Zig
           curl -sSfL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o zig.tar.xz || \
           curl -sSfL https://github.com/ziglang/zig/releases/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o zig.tar.xz
           tar -xf zig.tar.xz
           sudo mv zig-linux-x86_64-0.13.0 /opt/zig
+          # Add to PATH for current and future steps
+          echo "/opt/zig" >> $GITHUB_ENV
           echo "/opt/zig" >> $GITHUB_PATH
-          zig version
+          /opt/zig/zig version
 
       - name: Install cargo-zigbuild (Ubuntu only)
         if: matrix.platform == 'ubuntu-latest'
