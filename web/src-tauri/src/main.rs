@@ -1,14 +1,16 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{AppHandle, Listener, Manager};
-use tauri::tray::TrayIconEvent;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use tauri::{AppHandle, Listener, Manager};
 use tokio::runtime::Runtime;
+
+use tauri::tray::TrayIconEvent;
 
 // Global state for the Axum server
 struct ServerState {
@@ -128,7 +130,9 @@ struct TrayState {
 fn start_axum_server(state: tauri::State<ServerState>) -> Result<(), String> {
     let runtime_arc = Arc::clone(&state.runtime);
     let thread_handle = std::thread::spawn(move || {
-        let rt = runtime_arc.lock().unwrap()
+        let rt = runtime_arc
+            .lock()
+            .unwrap()
             .take()
             .expect("Runtime not available");
         rt.block_on(async {
