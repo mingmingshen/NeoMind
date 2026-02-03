@@ -48,8 +48,7 @@ jobs:
           curl -sSfL https://github.com/ziglang/zig/releases/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o zig.tar.xz
           tar -xf zig.tar.xz
           sudo mv zig-linux-x86_64-0.13.0 /opt/zig
-          # Add to PATH for current and future steps
-          echo "/opt/zig" >> $GITHUB_ENV
+          # Add to PATH for future steps
           echo "/opt/zig" >> $GITHUB_PATH
           /opt/zig/zig version
 
