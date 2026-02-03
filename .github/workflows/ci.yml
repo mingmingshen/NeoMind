@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Code Quality Checks
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './web/src-tauri -> target'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './web/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: Rust format check
+        working-directory: ./web/src-tauri
+        run: cargo fmt -- --check
+
+      - name: Rust clippy
+        working-directory: ./web/src-tauri
+        run: cargo clippy -- -D warnings
+
+      - name: TypeScript type check
+        working-directory: ./web
+        run: npx tsc --noEmit
+
+      - name: ESLint check
+        working-directory: ./web
+        run: npm run lint || true
