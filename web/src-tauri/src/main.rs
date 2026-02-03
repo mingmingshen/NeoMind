@@ -38,7 +38,10 @@ impl ServerState {
             // Try HTTP health check first
             if let Ok(response) = client.get("http://127.0.0.1:9375/api/health").send() {
                 if response.status().is_success() {
-                    println!("Server health check passed via HTTP (attempt {})", attempt + 1);
+                    println!(
+                        "Server health check passed via HTTP (attempt {})",
+                        attempt + 1
+                    );
                     return true;
                 }
             }
@@ -47,7 +50,10 @@ impl ServerState {
             if self.check_tcp_health() {
                 // If TCP is ready but HTTP isn't, give it a bit more time
                 if attempt > 5 {
-                    println!("Server TCP ready, waiting for HTTP handler (attempt {})", attempt + 1);
+                    println!(
+                        "Server TCP ready, waiting for HTTP handler (attempt {})",
+                        attempt + 1
+                    );
                 }
             }
 
@@ -273,10 +279,14 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
         // Emit event to let frontend know backend is ready
         let app_handle = app.handle();
-        let _ = app_handle.emit_to("main", "backend-ready", serde_json::json!({
-            "status": "ready",
-            "port": 9375
-        }));
+        let _ = app_handle.emit_to(
+            "main",
+            "backend-ready",
+            serde_json::json!({
+                "status": "ready",
+                "port": 9375
+            }),
+        );
     } else {
         eprintln!("Server did not become ready in time - showing window anyway");
         // Show window even if server isn't ready (frontend has retry logic)
@@ -285,10 +295,14 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
         // Emit event with error status
         let app_handle = app.handle();
-        let _ = app_handle.emit_to("main", "backend-ready", serde_json::json!({
-            "status": "timeout",
-            "port": 9375
-        }));
+        let _ = app_handle.emit_to(
+            "main",
+            "backend-ready",
+            serde_json::json!({
+                "status": "timeout",
+                "port": 9375
+            }),
+        );
     }
 
     Ok(())
