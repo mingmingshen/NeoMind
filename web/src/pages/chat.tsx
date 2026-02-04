@@ -658,13 +658,15 @@ export function ChatPage() {
 
       {/* Desktop Sidebar - always show when there are sessions or in chat mode */}
       {isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
-        <SessionSidebar
-          open={true}
-          onClose={() => {}}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-          isDesktop={true}
-        />
+        <div className={sidebarCollapsed ? "w-12" : "w-64"}>
+          <SessionSidebar
+            open={true}
+            onClose={() => {}}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            isDesktop={true}
+          />
+        </div>
       )}
 
       {/* Mobile Sidebar - drawer */}
