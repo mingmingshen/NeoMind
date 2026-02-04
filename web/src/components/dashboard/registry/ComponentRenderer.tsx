@@ -5,7 +5,7 @@
  * Uses component metadata to determine how to render each component type.
  */
 
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, memo, useMemo } from 'react'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -149,8 +149,12 @@ export interface RenderComponentProps {
 /**
  * Render a dashboard component based on its type
  * Uses the component registry to determine the appropriate component to render
+ *
+ * Memoized to prevent unnecessary re-renders when parent updates.
+ * Only re-renders when component.id, component.type, component.dataSource,
+ * component.config, component.title, component.display, className, or style changes.
  */
-export default function ComponentRenderer({
+const ComponentRenderer = memo(function ComponentRenderer({
   component,
   className,
   style,
@@ -158,43 +162,49 @@ export default function ComponentRenderer({
 }: RenderComponentProps) {
   const meta = getComponentMeta(component.type)
 
-  // Handle unknown component types
-  if (!meta) {
-    return <UnknownComponent type={component.type} className={className} />
-  }
-
   // Try to get component from generic or business component map
   const Component = componentMap[component.type as GenericComponentType] || businessComponentMap[component.type]
 
-  if (!Component) {
+  // Extract specific values for stable dependencies
+  // Use individual properties instead of entire component object to prevent unnecessary re-creates
+  const componentId = component.id
+  const componentType = component.type
+  const componentTitle = component.title
+  const componentConfig = (component as any).config || {}
+  const componentDataSource = (component as any).dataSource
+  const componentDisplay = (component as any).display
+
+  // Memoize props to prevent unnecessary re-renders of child components
+  // Only recreate when actual component data changes
+  // IMPORTANT: Must be before any early returns to follow React Hooks rules
+  const props = useMemo(() => {
+    const { editMode, ...restConfig } = componentConfig
+
+    // Build props for the component (NOT including key - key must be passed directly)
+    const builtProps: Record<string, any> = {
+      dataSource: componentDataSource,
+      editMode, // Pass editMode as a separate prop for components that need it
+      ...restConfig,
+      ...componentDisplay,
+      title: componentTitle || componentConfig.title,
+      className: cn(
+        'w-full h-full',
+        className
+      ),
+      style,
+    }
+
+    // Special handling for agent-monitor-widget: extract agentId from dataSource
+    if (componentType === 'agent-monitor-widget' && componentDataSource?.agentId) {
+      builtProps.agentId = componentDataSource.agentId
+    }
+
+    return builtProps
+  }, [componentId, componentType, componentTitle, componentConfig, componentDataSource, componentDisplay, className, style])
+
+  // Handle unknown component types (after hooks to follow React Hooks rules)
+  if (!meta || !Component) {
     return <UnknownComponent type={component.type} className={className} />
-  }
-
-  // Extract common props from component config
-  const config = (component as any).config || {}
-  const dataSource = (component as any).dataSource
-  const display = (component as any).display
-
-  // Extract editMode from config (for preview mode) but don't spread it with other config props
-  const { editMode, ...restConfig } = config
-
-  // Build props for the component (NOT including key - key must be passed directly)
-  const props = {
-    dataSource,
-    editMode, // Pass editMode as a separate prop for components that need it
-    ...restConfig,
-    ...display,
-    title: component.title || config.title,
-    className: cn(
-      'w-full h-full',
-      className
-    ),
-    style,
-  }
-
-  // Special handling for agent-monitor-widget: extract agentId from dataSource
-  if (component.type === 'agent-monitor-widget' && dataSource?.agentId) {
-    (props as any).agentId = dataSource.agentId
   }
 
   return (
@@ -202,7 +212,49 @@ export default function ComponentRenderer({
       <Component key={component.id} {...props} />
     </Suspense>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison for more precise re-render control
+  const prevComp = prevProps.component as any
+  const nextComp = nextProps.component as any
+
+  // Quick primitive checks
+  if (prevProps.component.id !== nextProps.component.id) return false
+  if (prevProps.component.type !== nextProps.component.type) return false
+  if (prevProps.component.title !== nextProps.component.title) return false
+  if (prevProps.className !== nextProps.className) return false
+  if (prevProps.style !== nextProps.style) return false
+
+  // Helper for stable deep comparison of objects
+  const deepEqual = (a: unknown, b: unknown): boolean => {
+    // Reference equality
+    if (a === b) return true
+    // Both null/undefined
+    if (a == null || b == null) return a === b
+    // Type mismatch
+    if (typeof a !== typeof b) return false
+    // One is array, other isn't
+    if (Array.isArray(a) !== Array.isArray(b)) return false
+
+    // For arrays and objects, use JSON.stringify with sorted keys
+    // This handles property order differences
+    try {
+      return JSON.stringify(a) === JSON.stringify(b)
+    } catch {
+      // Fallback for circular references or non-serializable values
+      return false
+    }
+  }
+
+  // Deep compare complex objects
+  if (!deepEqual(prevComp.dataSource, nextComp.dataSource)) return false
+  if (!deepEqual(prevComp.config, nextComp.config)) return false
+  if (!deepEqual(prevComp.display, nextComp.display)) return false
+
+  // All checks passed - props are equal
+  return true
+})
+
+export default ComponentRenderer
 
 /**
  * Render multiple components

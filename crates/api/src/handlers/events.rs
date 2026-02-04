@@ -12,8 +12,34 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::handlers::ServerState;
-use edge_ai_core::eventbus::{EventBus, EventBusReceiver};
+use edge_ai_core::eventbus::{EventBus, EventBusReceiver, FilteredReceiver};
+use edge_ai_core::event::EventMetadata;
 use edge_ai_core::NeoTalkEvent;
+
+/// Wrapper for either filtered or unfiltered event receiver.
+enum EventBusReceiverWrapper {
+    Unfiltered(EventBusReceiver),
+    FilteredDevice(FilteredReceiver<fn(&NeoTalkEvent) -> bool>),
+    FilteredRule(FilteredReceiver<fn(&NeoTalkEvent) -> bool>),
+    FilteredWorkflow(FilteredReceiver<fn(&NeoTalkEvent) -> bool>),
+    FilteredAgent(FilteredReceiver<fn(&NeoTalkEvent) -> bool>),
+    FilteredLlm(FilteredReceiver<fn(&NeoTalkEvent) -> bool>),
+    FilteredAlert(FilteredReceiver<fn(&NeoTalkEvent) -> bool>),
+}
+
+impl EventBusReceiverWrapper {
+    async fn recv(&mut self) -> Option<(NeoTalkEvent, EventMetadata)> {
+        match self {
+            EventBusReceiverWrapper::Unfiltered(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredDevice(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredRule(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredWorkflow(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredAgent(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredLlm(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredAlert(rx) => rx.recv().await,
+        }
+    }
+}
 
 /// Extract event data without the nested `type` field for frontend compatibility.
 ///
@@ -75,6 +101,17 @@ fn extract_event_data(event: &NeoTalkEvent) -> Value {
                 "stage_label": stage_label,
                 "progress": progress,
                 "details": details,
+            })
+        }
+        // DeviceMetric: payload must match frontend expectation (device_id, metric, value).
+        // MetricValue serializes untagged (String => plain string, Float => number, etc.).
+        NeoTalkEvent::DeviceMetric { device_id, metric, value, timestamp, quality, .. } => {
+            serde_json::json!({
+                "device_id": device_id,
+                "metric": metric,
+                "value": value,
+                "timestamp": timestamp,
+                "quality": quality,
             })
         }
         // For other event types, serialize the full event (they may have the type field, but frontend handles them)
@@ -172,45 +209,20 @@ pub async fn event_stream_handler(
 }
 
 /// Create a filtered receiver based on category.
-fn create_filtered_receiver(event_bus: &EventBus, category: &Option<String>) -> EventBusReceiver {
+fn create_filtered_receiver(event_bus: &EventBus, category: &Option<String>) -> EventBusReceiverWrapper {
     match category.as_deref() {
-        Some("device") => {
-            let filtered = event_bus.filter().device_events();
-            // Convert to regular receiver by using the underlying broadcast
-            drop(filtered);
-            event_bus.subscribe()
-        }
-        Some("rule") => {
-            let filtered = event_bus.filter().rule_events();
-            drop(filtered);
-            event_bus.subscribe()
-        }
-        Some("workflow") => {
-            let filtered = event_bus.filter().workflow_events();
-            drop(filtered);
-            event_bus.subscribe()
-        }
-        Some("agent") => {
-            let filtered = event_bus.filter().agent_events();
-            drop(filtered);
-            event_bus.subscribe()
-        }
-        Some("llm") => {
-            let filtered = event_bus.filter().llm_events();
-            drop(filtered);
-            event_bus.subscribe()
-        }
-        Some("alert") => {
-            let filtered = event_bus.filter().alert_events();
-            drop(filtered);
-            event_bus.subscribe()
-        }
+        Some("device") => EventBusReceiverWrapper::FilteredDevice(event_bus.filter().device_events()),
+        Some("rule") => EventBusReceiverWrapper::FilteredRule(event_bus.filter().rule_events()),
+        Some("workflow") => EventBusReceiverWrapper::FilteredWorkflow(event_bus.filter().workflow_events()),
+        Some("agent") => EventBusReceiverWrapper::FilteredAgent(event_bus.filter().agent_events()),
+        Some("llm") => EventBusReceiverWrapper::FilteredLlm(event_bus.filter().llm_events()),
+        Some("alert") => EventBusReceiverWrapper::FilteredAlert(event_bus.filter().alert_events()),
         Some("tool") => {
-            let filtered = event_bus.filter().custom(|e| e.is_tool_event());
-            drop(filtered);
-            event_bus.subscribe()
+            // Custom filter for tool events - use the FilteredDevice variant as they have the same type
+            EventBusReceiverWrapper::FilteredDevice(event_bus.filter().custom(|e| e.is_tool_event()))
         }
-        _ => event_bus.subscribe(),
+        Some("all") | None => EventBusReceiverWrapper::Unfiltered(event_bus.subscribe()),
+        _ => EventBusReceiverWrapper::Unfiltered(event_bus.subscribe()),
     }
 }
 
@@ -307,9 +319,10 @@ pub async fn event_websocket_handler(
                 }
             }
 
+            let event_type = event.type_name();
             let payload = serde_json::json!({
                 "id": metadata.event_id,
-                "type": event.type_name(),
+                "type": event_type,
                 "timestamp": event.timestamp(),
                 "source": metadata.source,
                 "data": extract_event_data(&event),
@@ -317,7 +330,10 @@ pub async fn event_websocket_handler(
 
             let msg = match serde_json::to_string(&payload) {
                 Ok(json) => Message::Text(json),
-                Err(_) => continue,
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to serialize event for WebSocket");
+                    continue;
+                }
             };
 
             if socket.send(msg).await.is_err() {

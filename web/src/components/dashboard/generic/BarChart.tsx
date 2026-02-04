@@ -114,8 +114,25 @@ function toTelemetrySource(
     }
   }
 
-  // Convert to telemetry for historical data
-  if (dataSource.type === 'device' || dataSource.type === 'metric') {
+  // Convert device type to telemetry for historical data
+  if (dataSource.type === 'device' && dataSource.deviceId) {
+    return {
+      type: 'telemetry' as const,
+      deviceId: dataSource.deviceId,
+      metricId: dataSource.metricId ?? dataSource.property ?? 'value',
+      timeRange: timeWindowToHours(effectiveTimeWindow.type),
+      limit: limit,
+      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
+      params: {
+        includeRawPoints: true,
+      },
+      transform: 'raw' as const,
+    }
+  }
+
+  // Convert metric type with deviceId to telemetry
+  // Metric type without deviceId will be handled by useDataSource's dynamic lookup
+  if (dataSource.type === 'metric' && dataSource.deviceId) {
     return {
       type: 'telemetry' as const,
       deviceId: dataSource.deviceId,
@@ -163,9 +180,13 @@ function transformTelemetryToBarData(
     let telemetryPoints = data as Array<{ timestamp?: number; value: unknown }>
 
     // Sort by timestamp ascending (oldest first) for proper time series display
-    // API returns data descending (newest first), so we need to reverse it
-    if (telemetryPoints.length > 1 && telemetryPoints[0].timestamp && telemetryPoints[telemetryPoints.length - 1].timestamp) {
-      telemetryPoints = [...telemetryPoints].reverse()
+    // Use explicit sort instead of reverse to handle any data order correctly
+    if (telemetryPoints.length > 1) {
+      telemetryPoints = [...telemetryPoints].sort((a, b) => {
+        const at = a.timestamp ?? 0
+        const bt = b.timestamp ?? 0
+        return at - bt  // ascending: oldest first
+      })
     }
 
     // Check if values are categorical (strings) OR if aggregate is 'count' - group and count for distribution

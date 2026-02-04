@@ -433,7 +433,9 @@ export function ImageDisplay({
   const rawSrc = error ? propSrc : (extractImageValue(data) ?? propSrc ?? '')
 
   // Track last update timestamp for cache-busting
-  const lastUpdate = useRef(Date.now())
+  const [lastUpdate, setLastUpdate] = useState(Date.now())
+  const lastUpdateRef = useRef(Date.now())
+  lastUpdateRef.current = lastUpdate
 
   // Normalize the image source (for metadata extraction)
   const normalizedImage = useMemo(() => normalizeImageUrl(rawSrc), [rawSrc])
@@ -442,7 +444,7 @@ export function ImageDisplay({
   // Update lastUpdate timestamp when rawSrc changes
   useEffect(() => {
     if (rawSrc && rawSrc !== propSrc) {
-      lastUpdate.current = Date.now()
+      setLastUpdate(Date.now())
     }
   }, [rawSrc, propSrc])
 
@@ -454,14 +456,14 @@ export function ImageDisplay({
     // Add cache-busting for base64 images and data URLs
     if (baseSrc.startsWith('data:') || baseSrc.startsWith('blob:')) {
       // Use the last update timestamp as cache buster
-      const cacheBuster = lastUpdate.current
+      const cacheBuster = lastUpdateRef.current
       // Append a fragment identifier with timestamp
       // The browser will treat it as a "different" URL
       return `${baseSrc}#${cacheBuster}`
     }
 
     return baseSrc
-  }, [baseSrc])
+  }, [baseSrc, lastUpdate])
 
   // Keep originalSrc without cache-buster for download/fullscreen
   const originalSrc = baseSrc

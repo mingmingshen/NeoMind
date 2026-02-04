@@ -96,6 +96,18 @@ export class ChatWebSocket {
       wsUrl += `?token=${encodeURIComponent(token)}`
     }
 
+    // Don't create a new WebSocket if we're already connected with the same token
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      // Already connected, no need to reconnect
+      return
+    }
+
+    // Close existing WebSocket if it's in a bad state
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+
     this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {

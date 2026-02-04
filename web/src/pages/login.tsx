@@ -150,6 +150,9 @@ export function LoginPage() {
           // Ignore localStorage errors
         }
       }
+
+      // Navigate to dashboard after successful login
+      navigate('/', { replace: true })
     } catch (err) {
       setError(translateError(err instanceof Error ? err.message : String(t('auth:loginFailed')), t))
     } finally {

@@ -85,8 +85,25 @@ function toTelemetrySource(
     }
   }
 
-  // Convert device/metric to telemetry for historical data
-  if (dataSource.type === 'device' || dataSource.type === 'metric') {
+  // Convert device type to telemetry for historical data
+  if (dataSource.type === 'device' && dataSource.deviceId) {
+    return {
+      type: 'telemetry',
+      deviceId: dataSource.deviceId,
+      metricId: dataSource.metricId ?? dataSource.property ?? 'value',
+      timeRange: timeWindowToHours(effectiveTimeWindow.type),
+      limit: limit,
+      aggregate: effectiveAggregate === 'raw' ? 'raw' : 'avg',
+      params: {
+        includeRawPoints: true,
+      },
+      transform: 'raw',
+    }
+  }
+
+  // Convert metric type with deviceId to telemetry
+  // Metric type without deviceId will be handled by useDataSource's dynamic lookup
+  if (dataSource.type === 'metric' && dataSource.deviceId) {
     return {
       type: 'telemetry',
       deviceId: dataSource.deviceId,
@@ -139,9 +156,13 @@ function transformTelemetryToChartData(
     let timeSeriesPoints = DataMapper.mapToTimeSeries(data, dataMapping)
 
     // Sort by timestamp ascending (oldest first) for proper time series display
-    // API returns data descending (newest first), so we need to reverse it
-    if (timeSeriesPoints.length > 0) {
-      timeSeriesPoints = timeSeriesPoints.reverse()
+    // Use explicit sort instead of reverse to handle any data order correctly
+    if (timeSeriesPoints.length > 1) {
+      timeSeriesPoints = [...timeSeriesPoints].sort((a, b) => {
+        const at = a.timestamp ?? 0
+        const bt = b.timestamp ?? 0
+        return at - bt  // ascending: oldest first
+      })
     }
 
     // Extract values and format labels from timestamps
@@ -269,30 +290,31 @@ export function LineChart({
   const { t } = useTranslation('dashboardComponents')
   const config = dashboardComponentSize[size]
 
+  // Normalize data sources once - reuse across all memoized calculations
+  // This prevents repeated normalizeDataSource calls
+  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+
   // Get effective aggregate from dataSource or props
   const effectiveAggregate = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt
     }
     return aggregate
-  }, [dataSource, aggregate])
+  }, [sources, aggregate])
 
   // Get effective chart view mode
   const effectiveViewMode = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].chartViewMode) {
       return sources[0].chartViewMode
     }
     return chartViewMode
-  }, [dataSource, chartViewMode])
+  }, [sources, chartViewMode])
 
   // Normalize data sources for historical data
   // Convert single DataSource or DataSource[] to array of telemetry sources
   const telemetrySources = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [dataSource, limit, timeRange])
+  }, [sources, limit, timeRange])
 
   const { data, loading, error } = useDataSource<any>(
     telemetrySources.length > 0 ? (telemetrySources.length === 1 ? telemetrySources[0] : telemetrySources) : undefined,
@@ -303,13 +325,13 @@ export function LineChart({
   )
 
   // Get device names for series labels
-  const getDeviceName = (deviceId?: string): string => {
+  const getDeviceName = useCallback((deviceId?: string): string => {
     if (!deviceId) return t('chart.value')
     return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  }
+  }, [t])
 
   // Get property name for series labels
-  const getPropertyDisplayName = (property?: string): string => {
+  const getPropertyDisplayName = useCallback((property?: string): string => {
     if (!property) return t('chart.value')
     const propertyNames: Record<string, string> = {
       temperature: t('chart.temperature'),
@@ -318,11 +340,10 @@ export function LineChart({
       value: t('chart.value'),
     }
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
-  }
+  }, [t])
 
   // Transform data to series format
   const normalizedSeries: SeriesData[] = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
 
     // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
     if (sources.length > 1 && Array.isArray(data) && data.length === sources.length) {
@@ -396,8 +417,6 @@ export function LineChart({
   // Extract raw labels from telemetry data before any transformation
   // This must be computed before normalizedSeries to access raw timestamps
   const rawChartLabels = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
-
     // Multi-source case - extract labels from first series raw telemetry data
     if (sources.length > 1 && Array.isArray(data) && data.length > 0) {
       const firstSeriesData = data[0]
@@ -430,7 +449,7 @@ export function LineChart({
     }
 
     return null // Signal that we couldn't extract raw labels
-  }, [data, dataSource, dataMapping])
+  }, [data, sources, dataMapping])
 
   // Generate labels from telemetry or use provided labels
   const chartLabels = useMemo(() => {
@@ -623,29 +642,30 @@ export function AreaChart({
   const config = dashboardComponentSize[size]
   const effectiveSeries = propSeries || DEFAULT_AREA_DATA
 
+  // Normalize data sources once - reuse across all memoized calculations
+  // This prevents repeated normalizeDataSource calls
+  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+
   // Get effective aggregate from dataSource or props
   const effectiveAggregate = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].aggregateExt) {
       return sources[0].aggregateExt
     }
     return aggregate
-  }, [dataSource, aggregate])
+  }, [sources, aggregate])
 
   // Get effective chart view mode
   const effectiveViewMode = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     if (sources.length > 0 && sources[0].chartViewMode) {
       return sources[0].chartViewMode
     }
     return chartViewMode
-  }, [dataSource, chartViewMode])
+  }, [sources, chartViewMode])
 
   // Normalize data sources for historical data
   const telemetrySources = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
     return sources.map(ds => toTelemetrySource(ds, limit, timeRange)).filter((ds): ds is DataSource => ds !== undefined)
-  }, [dataSource, limit, timeRange])
+  }, [sources, limit, timeRange])
 
   const shouldFetch = telemetrySources.length > 0
   const { data: sourceData, loading, error } = useDataSource<SeriesData[] | number | number[]>(
@@ -655,12 +675,12 @@ export function AreaChart({
   const rawData = shouldFetch ? sourceData : effectiveSeries
 
   // Get device names for series labels
-  const getDeviceName = (deviceId?: string): string => {
+  const getDeviceName = useCallback((deviceId?: string): string => {
     if (!deviceId) return t('chart.value')
     return deviceId.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-  }
+  }, [t])
 
-  const getPropertyDisplayName = (property?: string): string => {
+  const getPropertyDisplayName = useCallback((property?: string): string => {
     if (!property) return t('chart.value')
     const propertyNames: Record<string, string> = {
       temperature: t('chart.temperature'),
@@ -669,11 +689,9 @@ export function AreaChart({
       value: t('chart.value'),
     }
     return propertyNames[property] || property.replace(/[-_]/g, ' ')
-  }
+  }, [t])
 
   const normalizedSeries: SeriesData[] = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
-
     // Multi-source case - data should be array of arrays from useDataSource with preserveMultiple
     if (sources.length > 1 && Array.isArray(rawData) && rawData.length === sources.length) {
       return sources.map((ds, idx) => {
@@ -732,14 +750,12 @@ export function AreaChart({
     }
 
     return DEFAULT_AREA_DATA
-  }, [rawData, propSeries, dataSource, dataMapping])
+  }, [rawData, propSeries, sources, dataMapping, getDeviceName, getPropertyDisplayName])
 
   const series = normalizedSeries
 
   // Extract raw labels from telemetry data before any transformation
   const rawChartLabels = useMemo(() => {
-    const sources = normalizeDataSource(dataSource)
-
     // Multi-source case - extract labels from first series raw telemetry data
     if (sources.length > 1 && Array.isArray(rawData) && rawData.length > 0) {
       const firstSeriesData = rawData[0]
@@ -772,7 +788,7 @@ export function AreaChart({
     }
 
     return null // Signal that we couldn't extract raw labels
-  }, [rawData, dataSource, dataMapping])
+  }, [rawData, sources, dataMapping])
 
   // Generate labels
   const chartLabels = useMemo(() => {
@@ -791,13 +807,15 @@ export function AreaChart({
     return Array.from({ length: maxDataLength }, (_, i) => `${i}`)
   }, [rawChartLabels, labels, series, dataSource])
 
-  const chartData = chartLabels.map((label, idx) => {
-    const point: any = { name: label }
-    series.forEach((s, i) => {
-      point[`series${i}`] = s.data[idx] ?? null
+  const chartData = useMemo(() => {
+    return chartLabels.map((label, idx) => {
+      const point: any = { name: label }
+      series.forEach((s, i) => {
+        point[`series${i}`] = s.data[idx] ?? null
+      })
+      return point
     })
-    return point
-  })
+  }, [chartLabels, series])
 
   // Loading state
   if (loading) {

@@ -679,7 +679,9 @@
       "900": "15分钟",
       "1800": "30分钟",
       "3600": "1小时"
-    }
+    },
+    "appliesToAll": "应用于全部 {{count}} 个数据源",
+    "mixedValues": "不同值"
   },
   "formatConfig": {
     "title": "格式",

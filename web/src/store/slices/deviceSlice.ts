@@ -430,19 +430,24 @@ export const createDeviceSlice: StateCreator<
   updateDeviceStatus: (deviceId: string, status: 'online' | 'offline') => {
     set((state) => ({
       devices: state.devices.map((device) =>
-        device.id === deviceId ? { ...device, status } : device
+        device.id === deviceId || device.device_id === deviceId
+          ? { ...device, status }
+          : device
       ),
     }))
     // Also update selectedDevice if it matches
     set((state) => ({
-      selectedDevice: state.selectedDevice?.id === deviceId
-        ? { ...state.selectedDevice, status }
-        : state.selectedDevice,
+      selectedDevice:
+        state.selectedDevice?.id === deviceId ||
+        state.selectedDevice?.device_id === deviceId
+          ? { ...state.selectedDevice, status }
+          : state.selectedDevice,
     }))
   },
 
   // Update device metric from real-time events
   // Supports nested property paths like "values.battery" or "temperature"
+  // If device doesn't exist in store, silently skip (will be added by fetchDevices)
   updateDeviceMetric: (deviceId: string, property: string, value: unknown) => {
     // Helper function to set nested property
     const setNestedProperty = (obj: Record<string, unknown>, path: string, value: unknown) => {
@@ -461,7 +466,16 @@ export const createDeviceSlice: StateCreator<
 
     // Single atomic update for both devices array and selectedDevice
     set((state) => {
-      // Update device in devices array
+      // Check if device exists
+      const existingDevice = state.devices.find((d) => d.id === deviceId || d.device_id === deviceId)
+
+      // If device doesn't exist, skip update (don't create placeholder)
+      // This prevents accumulating invalid devices in the store
+      if (!existingDevice) {
+        return state
+      }
+
+      // Update existing device in devices array
       const updatedDevices = state.devices.map((device) => {
         if (device.id === deviceId || device.device_id === deviceId) {
           const currentValues = device.current_values || {}
@@ -471,6 +485,8 @@ export const createDeviceSlice: StateCreator<
             ...device,
             current_values: updatedValues,
             last_seen: new Date().toISOString(),
+            status: 'online',  // Update status to online when receiving metrics
+            online: true,
           }
         }
         return device

@@ -1271,39 +1271,47 @@ Respond in JSON format:
         metric: &str,
         _value: &MetricValue,
     ) -> bool {
-        // Check if agent has this device in its resources
-        let has_device = agent.resources.iter().any(|r| {
-            r.resource_type == ResourceType::Device && r.resource_id == device_id
-        });
+        // Build the expected resource IDs for this event
+        let device_metric_id = format!("{}:{}", device_id, metric);
 
-        // Check if agent has this metric in its resources
-        // Metric resource_id format is typically "device_id:metric_name"
-        let has_metric = agent.resources.iter().any(|r| {
-            r.resource_type == ResourceType::Metric && (
-                r.resource_id.contains(metric) ||          // metric name match
-                r.resource_id.contains(&format!("{}:{}", device_id, metric)) ||  // "device_id:metric" match
-                r.resource_id == format!("{}:{}", device_id, metric)  // exact match
-            )
+        // Check each resource to see if it matches this event
+        let has_matching_resource = agent.resources.iter().any(|r| {
+            match r.resource_type {
+                ResourceType::Device => {
+                    // Device resource matches if device_id matches exactly
+                    r.resource_id == device_id
+                }
+                ResourceType::Metric => {
+                    // Metric resource matches if:
+                    // 1. Exact "device_id:metric" match, OR
+                    // 2. Metric-only resource (no colon) matches metric name exactly
+                    if r.resource_id.contains(':') {
+                        // Resource has device prefix - require exact match
+                        r.resource_id == device_metric_id
+                    } else {
+                        // Resource is metric-only - match if metric name matches exactly
+                        r.resource_id == metric
+                    }
+                }
+                _ => false,
+            }
         });
 
         // Agent matches if:
-        // 1. It has the device in resources, OR
-        // 2. It has the metric in resources (in device_id:metric format), OR
-        // 3. Resources are empty (trigger on all events)
-        let matches = has_device || has_metric || agent.resources.is_empty();
+        // 1. It has a matching resource, OR
+        // 2. Resources are empty (trigger on all events)
+        let matches = has_matching_resource || agent.resources.is_empty();
 
         tracing::trace!(
             agent_name = %agent.name,
             device_id = %device_id,
             metric = %metric,
-            has_device = has_device,
-            has_metric = has_metric,
+            has_matching_resource = has_matching_resource,
             resources_empty = agent.resources.is_empty(),
             matches = matches,
-            "[EVENT] Agent {} event filter check: has_device={}, has_metric={}, matches={}",
+            "[EVENT] Agent {} event filter check: has_matching_resource={}, matches={}",
             agent.name,
-            has_device,
-            has_metric,
+            has_matching_resource,
             matches
         );
 

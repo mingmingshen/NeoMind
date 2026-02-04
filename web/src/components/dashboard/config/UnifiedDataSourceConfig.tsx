@@ -133,8 +133,8 @@ function selectedItemsToDataSource(
           type: 'telemetry',
           deviceId: parts[1],
           metricId: parts.slice(2).join(':'),
-          timeRange: 24,  // 24 hours to match availability check
-          limit: 100,
+          timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
+          limit: 50,     // Reduced from 100 for better performance
           aggregate: 'raw',
           params: { includeRawPoints: true },
           transform: 'raw',
@@ -181,8 +181,8 @@ function selectedItemsToDataSource(
           type: 'telemetry',
           deviceId: parts[1],
           metricId: parts.slice(2).join(':'),
-          timeRange: 24,  // 24 hours to match availability check
-          limit: 100,
+          timeRange: 1,  // 1 hour for real-time dashboards (was 24, too large)
+          limit: 50,     // Reduced from 100 for better performance
           aggregate: 'raw',
           params: { includeRawPoints: true },
           transform: 'raw',

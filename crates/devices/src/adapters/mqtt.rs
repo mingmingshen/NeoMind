@@ -721,7 +721,7 @@ impl MqttAdapter {
         }
 
         // Publish discovery event
-        let _ = self.event_tx.send(DeviceEvent::Discovery {
+        if let Err(e) = self.event_tx.send(DeviceEvent::Discovery {
             device: DiscoveredDeviceInfo {
                 device_id: device_id.clone(),
                 device_type: announcement.device_type.clone(),
@@ -731,7 +731,9 @@ impl MqttAdapter {
                 timestamp: now.timestamp(),
                 metadata: serde_json::json!({}),
             },
-        });
+        }) {
+            error!("Failed to send discovery event to channel: {} - no receivers?", e);
+        }
 
         // Publish to EventBus if available
         if let Some(bus) = &self.event_bus {
@@ -790,7 +792,21 @@ impl MqttAdapter {
         // Use UnifiedExtractor for consistent data processing
         let result = self.extractor.extract(&device_id, &device_type, &json_value).await;
 
-        trace!(
+        // Log extracted metrics for debugging
+        for metric in &result.metrics {
+            let value_preview = match &metric.value {
+                MetricValue::String(s) => format!("String(len={})", s.len()),
+                MetricValue::Float(f) => format!("Float({})", f),
+                MetricValue::Integer(i) => format!("Integer({})", i),
+                MetricValue::Boolean(b) => format!("Boolean({})", b),
+                MetricValue::Null => "Null".to_string(),
+                MetricValue::Binary(b) => format!("Binary(len={})", b.len()),
+                MetricValue::Array(a) => format!("Array(len={})", a.len()),
+            };
+            debug!("Extracted metric for device '{}': {} = {}", device_id, metric.name, value_preview);
+        }
+
+        debug!(
             "Extraction result for device '{}': mode={:?}, metrics={}",
             device_id,
             result.mode,
@@ -832,6 +848,18 @@ impl MqttAdapter {
         value: MetricValue,
         timestamp: chrono::DateTime<chrono::Utc>,
     ) {
+        // Log event emission for debugging
+        let value_type = match &value {
+            MetricValue::String(s) => format!("String(len={})", s.len()),
+            MetricValue::Float(f) => format!("Float({})", f),
+            MetricValue::Integer(i) => format!("Integer({})", i),
+            MetricValue::Boolean(b) => format!("Boolean({})", b),
+            MetricValue::Null => "Null".to_string(),
+            MetricValue::Binary(b) => format!("Binary(len={})", b.len()),
+            MetricValue::Array(a) => format!("Array(len={})", a.len()),
+        };
+        debug!("Emitting metric event: device_id={}, metric={}, value={}", device_id, metric_name, value_type);
+
         // Update metric cache
         {
             let mut cache = self.metric_cache.write().await;
@@ -842,12 +870,19 @@ impl MqttAdapter {
         }
 
         // Emit to device event channel - event forwarding task will publish to EventBus
-        let _ = self.event_tx.send(DeviceEvent::Metric {
+        match self.event_tx.send(DeviceEvent::Metric {
             device_id: device_id.clone(),
             metric: metric_name.clone(),
             value: value.clone(),
             timestamp: timestamp.timestamp(),
-        });
+        }) {
+            Ok(_) => {
+                trace!("Sent metric event to channel: {}/{}", device_id, metric_name);
+            }
+            Err(_e) => {
+                error!("Failed to send metric event to channel: {}/{} - no receivers?", device_id, metric_name);
+            }
+        }
 
         // Store to time series storage
         {
@@ -1338,12 +1373,14 @@ impl MqttAdapter {
                                     }
 
                                     // Emit to device event channel - event forwarding task will publish to EventBus
-                                    let _ = event_tx.send(DeviceEvent::Metric {
+                                    if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric.name.clone(),
                                         value: metric.value.clone(),
                                         timestamp: now.timestamp(),
-                                    });
+                                    }) {
+                                        error!("Failed to send metric event to channel: {}/{} - {}", device_id, metric.name, e);
+                                    }
 
                                     // Note: Do NOT publish to EventBus here - the event forwarding task
                                     // in create_mqtt_adapter handles all EventBus publishing to avoid duplicates
@@ -1398,12 +1435,14 @@ impl MqttAdapter {
                             }
 
                             // Emit event to device event channel - event forwarding task will publish to EventBus
-                            let _ = event_tx.send(DeviceEvent::Metric {
+                            if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                 device_id: device_id.clone(),
                                 metric: metric_name.clone(),
                                 value: value.clone(),
                                 timestamp: now.timestamp(),
-                            });
+                            }) {
+                                error!("Failed to send metric event to channel: {}/{} - {}", device_id, metric_name, e);
+                            }
 
                             // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task
                             // in create_mqtt_adapter handles all EventBus publishing to avoid duplicates
@@ -1492,13 +1531,15 @@ impl MqttAdapter {
                                     }
 
                                     // Emit to device event channel - event forwarding task will publish to EventBus
-                                    let _ = event_tx.send(DeviceEvent::Metric {
+                                    // This ensures single publish path to avoid duplicate events
+                                    if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric.name.clone(),
                                         value: metric.value.clone(),
                                         timestamp: now.timestamp(),
-                                    });
-                                    // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task handles it
+                                    }) {
+                                        error!("Failed to send metric event to channel: {}/{} - {}", device_id, metric.name, e);
+                                    }
                                 }
                             } else {
                                 // No device type - try simple value extraction
@@ -1525,12 +1566,14 @@ impl MqttAdapter {
                                     }
 
                                     // Emit to device event channel - event forwarding task will publish to EventBus
-                                    let _ = event_tx.send(DeviceEvent::Metric {
+                                    if let Err(e) = event_tx.send(DeviceEvent::Metric {
                                         device_id: device_id.clone(),
                                         metric: metric_name.to_string(),
                                         value: value.clone(),
                                         timestamp: now.timestamp(),
-                                    });
+                                    }) {
+                                        error!("Failed to send metric event to channel: {}/{} - {}", device_id, metric_name, e);
+                                    }
                                     // Note: Do NOT publish DeviceMetric to EventBus here - the event forwarding task handles it
                                 }
                             }

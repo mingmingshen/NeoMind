@@ -116,6 +116,12 @@ export function AgentDetailPanel({
   useEvents({
     enabled: !!agent?.id,
     eventTypes: ['AgentExecutionStarted', 'AgentExecutionCompleted'],
+    onConnected: (connected) => {
+      if (!connected) {
+        // Connection lost - clear realtime executing status
+        setRealtimeStatus(null)
+      }
+    },
     onEvent: (event) => {
       if (!agent) return
 

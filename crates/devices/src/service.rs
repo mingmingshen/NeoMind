@@ -362,7 +362,13 @@ impl DeviceService {
                         let entry = status.entry(device_id.clone()).or_default();
                         entry.update(ConnectionStatus::Disconnected);
                     }
-                    edge_ai_core::NeoTalkEvent::DeviceMetric { device_id, metric, value, timestamp: _, quality: _ } => {
+                    edge_ai_core::NeoTalkEvent::DeviceMetric {
+                        device_id,
+                        metric,
+                        value,
+                        timestamp,
+                        quality: _,
+                    } => {
                         // Update last_seen when receiving metrics
                         let mut status = device_status.write().await;
                         let entry = status.entry(device_id.clone()).or_default();
@@ -380,12 +386,17 @@ impl DeviceService {
                                     device_type,
                                     timestamp: chrono::Utc::now().timestamp(),
                                 }
-                            ).await;
+                            )
+                            .await;
                         } else {
                             drop(status);
                         }
 
-                        // Write to telemetry storage if available
+                        // Write to telemetry storage if available.
+                        // Use the event's timestamp (not Utc::now()) so we don't create duplicate
+                        // data points. Adapters (MQTT, HTTP, Webhook) already write with their
+                        // receive time; using the same timestamp here causes the second write to
+                        // overwrite the first (same key), avoiding duplicate entries with ~2s gap.
                         let ts_storage = telemetry_storage.read().await;
                         if let Some(storage) = ts_storage.as_ref() {
                             // Convert core MetricValue to devices MetricValue
@@ -411,7 +422,7 @@ impl DeviceService {
                             };
 
                             let data_point = super::telemetry::DataPoint {
-                                timestamp: chrono::Utc::now().timestamp(),
+                                timestamp,
                                 value: metric_value,
                                 quality: None,
                             };
@@ -420,7 +431,11 @@ impl DeviceService {
                                 tracing::warn!("Failed to write telemetry to storage: {}", e);
                             }
                         } else {
-                            tracing::warn!("DeviceService telemetry_storage is None, cannot write metric {} for device {}", metric, device_id);
+                            tracing::warn!(
+                                "DeviceService telemetry_storage is None, cannot write metric {} for device {}",
+                                metric,
+                                device_id
+                            );
                         }
                     }
                     _ => {}

@@ -126,10 +126,31 @@ export interface ImageHistoryProps {
 type ImageLoadState = 'loading' | 'loaded' | 'error'
 
 /**
+ * Helper to extract timestamp from an object
+ * Returns timestamp in milliseconds for consistency with JavaScript Date
+ */
+function extractTimestamp(obj: Record<string, unknown>): number | undefined {
+  const ts = obj.timestamp ?? obj.time ?? obj.t
+  if (ts === undefined || ts === null) return undefined
+  if (typeof ts === 'number') {
+    // Assume milliseconds if > 10000000000 (year 2286+), otherwise seconds
+    return ts > 10000000000 ? ts : ts * 1000
+  }
+  if (typeof ts === 'string') {
+    const parsed = Date.parse(ts)
+    if (!isNaN(parsed)) return parsed  // Date.parse returns milliseconds
+  }
+  return undefined
+}
+
+/**
  * Transform telemetry points to ImageHistoryItem array
+ * Sorts by timestamp descending (newest first)
  */
 function transformTelemetryToImages(data: unknown): ImageHistoryItem[] {
-  if (!Array.isArray(data)) return []
+  if (!Array.isArray(data)) {
+    return []
+  }
 
   const result: ImageHistoryItem[] = []
 
@@ -155,17 +176,12 @@ function transformTelemetryToImages(data: unknown): ImageHistoryItem[] {
       )
 
       const normalizedSrc = normalizeImageUrl(rawSrc)
-      if (!normalizedSrc) continue
+      if (!normalizedSrc) {
+        continue
+      }
 
       // Extract timestamp
-      let timestamp: string | number | undefined = undefined
-      if (obj.timestamp) {
-        timestamp = typeof obj.timestamp === 'number' ? obj.timestamp : String(obj.timestamp)
-      } else if (obj.time) {
-        timestamp = typeof obj.time === 'number' ? obj.time : String(obj.time)
-      } else if (obj.t) {
-        timestamp = typeof obj.t === 'number' ? obj.t : String(obj.t)
-      }
+      const timestamp = extractTimestamp(obj)
 
       // Extract label
       const label = typeof obj.label === 'string' ? obj.label :
@@ -179,6 +195,14 @@ function transformTelemetryToImages(data: unknown): ImageHistoryItem[] {
       })
     }
   }
+
+  // Sort by timestamp descending (newest first), items without timestamp go to the end
+  result.sort((a, b) => {
+    if (a.timestamp === undefined && b.timestamp === undefined) return 0
+    if (a.timestamp === undefined) return 1
+    if (b.timestamp === undefined) return -1
+    return (b.timestamp as number) - (a.timestamp as number)
+  })
 
   return result
 }
@@ -204,7 +228,7 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
         }
       } else if (typeof item === 'object' && item !== null) {
         const obj = item as Record<string, unknown>
-        const timestamp = obj.timestamp ?? obj.time
+        const timestamp = extractTimestamp(obj)
         const label = obj.label ?? obj.name
         const rawSrc = String(obj.src || obj.url || obj.image || obj.value || '')
         const normalizedSrc = normalizeImageUrl(rawSrc)
@@ -212,7 +236,7 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
         if (normalizedSrc) {
           result.push({
             src: normalizedSrc,
-            timestamp: (typeof timestamp === 'string' || typeof timestamp === 'number') ? timestamp : undefined,
+            timestamp,
             label: (typeof label === 'string') ? label : undefined,
             alt: (typeof obj.alt === 'string') ? obj.alt : `Image ${index + 1}`,
           })
@@ -227,6 +251,14 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
         }
       }
     }
+
+    // Sort by timestamp descending (newest first), items without timestamp go to the end
+    result.sort((a, b) => {
+      if (a.timestamp === undefined && b.timestamp === undefined) return 0
+      if (a.timestamp === undefined) return 1
+      if (b.timestamp === undefined) return -1
+      return (b.timestamp as number) - (a.timestamp as number)
+    })
 
     return result
   }
@@ -272,7 +304,9 @@ function normalizeImageData(data: unknown): ImageHistoryItem[] {
 function formatTimestamp(timestamp: string | number | undefined): string {
   if (!timestamp) return ''
 
-  const date = new Date(typeof timestamp === 'number' ? timestamp * 1000 : timestamp)
+  // timestamp is already in milliseconds from extractTimestamp
+  const ts = typeof timestamp === 'number' ? timestamp : timestamp
+  const date = new Date(ts)
   if (isNaN(date.getTime())) return String(timestamp)
 
   return date.toLocaleTimeString('zh-CN', {
@@ -286,31 +320,39 @@ function formatTimestamp(timestamp: string | number | undefined): string {
 
 /**
  * Convert device data source to telemetry for historical data
- * Uses a larger time range (24 hours) for image data since images are sent infrequently
+ * Uses a larger time range (48 hours) for image data since images are sent infrequently
  */
 function normalizeDataSourceForImages(
   ds: DataSource | undefined,
-  limit: number = 50,
+  limit: number = 200,
   timeRange: number = 1
 ): DataSource | undefined {
   if (!ds) return undefined
 
-  // Use 24 hours as the default time range for images (override if explicitly set larger)
-  const imageTimeRange = timeRange > 1 ? timeRange : 24
+  // Use 48 hours as the default time range for images (override if explicitly set larger)
+  const imageTimeRange = timeRange > 1 ? timeRange : 48
 
   // If it's already telemetry, return as-is with raw transform and custom limits
   if (ds.type === 'telemetry') {
-    return {
+    const originalLimit = ds.limit
+    const newLimit = Math.max(ds.limit ?? 0, limit)
+    const originalTimeRange = ds.timeRange
+    const newTimeRange = ds.timeRange && ds.timeRange > 48 ? ds.timeRange : imageTimeRange
+
+    const result = {
       ...ds,
-      limit: ds.limit ?? limit,
-      // Use image-specific time range (24 hours) unless data source has larger value
-      timeRange: ds.timeRange && ds.timeRange > 24 ? ds.timeRange : imageTimeRange,
+      // Use the larger of: config limit or component default limit
+      limit: newLimit,
+      // Use image-specific time range (48 hours) unless data source has larger value
+      timeRange: newTimeRange,
       params: {
         ...ds.params,
         includeRawPoints: true,
       },
       transform: 'raw',
     }
+
+    return result
   }
 
   // If it's a device type, convert to telemetry for historical data
@@ -318,7 +360,7 @@ function normalizeDataSourceForImages(
     return {
       type: 'telemetry',
       deviceId: ds.deviceId,
-      metricId: ds.property || 'image',
+      metricId: ds.metricId ?? ds.property ?? 'image',
       timeRange: imageTimeRange,
       limit: limit,
       aggregate: 'raw',
@@ -326,6 +368,14 @@ function normalizeDataSourceForImages(
         includeRawPoints: true,
       },
       transform: 'raw',
+    }
+  }
+
+  // For static or other types, add image-friendly limit and time range
+  if (ds.type === 'static' || ds.type === 'api') {
+    return {
+      ...ds,
+      limit: Math.max(ds.limit ?? 0, limit),
     }
   }
 
@@ -340,7 +390,7 @@ export function ImageHistory({
   fit = 'fill',
   rounded = true,
   showTitle = true,
-  limit = 50,
+  limit = 200,
   timeRange = 1,
   className,
 }: ImageHistoryProps) {
@@ -348,17 +398,39 @@ export function ImageHistory({
   const sizeConfig = dashboardComponentSize[size]
 
   // Normalize data source for image history (convert device to telemetry)
-  const normalizedDataSource = useMemo(() => normalizeDataSourceForImages(dataSource, limit, timeRange), [dataSource, limit, timeRange])
+  const normalizedDataSource = useMemo(() => {
+    return normalizeDataSourceForImages(dataSource, limit, timeRange)
+  }, [dataSource, limit, timeRange])
 
   const { data, loading } = useDataSource<ImageHistoryItem[] | string[]>(normalizedDataSource, {
     fallback: propImages,
   })
 
   // Memoize images to prevent unnecessary recalculation
+  // Use a more reliable change detection that works for base64 images
+  // Base64 images have the same prefix, so we use length + timestamp of last item
   const dataKey = useMemo(() => {
     if (!data) return 'no-data'
     if (Array.isArray(data)) {
-      return `array-${data.length}-${JSON.stringify(data).slice(0, 100)}`
+      const lastItem = data.length > 0 ? data[data.length - 1] : null
+      // For base64 images, use length + timestamp instead of string content
+      // since all base64 images start with similar prefix (data:image/jpeg;base64,...)
+      let lastItemKey = ''
+      if (lastItem) {
+        if (typeof lastItem === 'object' && lastItem !== null) {
+          const obj = lastItem as unknown as Record<string, unknown>
+          const ts = obj.timestamp ?? obj.time ?? obj.t ?? 0
+          // Use value length (for base64) + timestamp for change detection
+          const valueStr = String(obj.src ?? obj.url ?? obj.value ?? '')
+          const valueLen = valueStr.length > 0 ? valueStr.length : 0
+          lastItemKey = `ts:${ts}-len:${valueLen}`
+        } else {
+          // For strings, use length + first 100 chars (more than 50 to be safer)
+          const str = String(lastItem)
+          lastItemKey = `len:${str.length}-${str.slice(0, 100)}`
+        }
+      }
+      return `array-${data.length}-${lastItemKey}`
     }
     return `object-${JSON.stringify(data).slice(0, 50)}`
   }, [data])
@@ -366,33 +438,69 @@ export function ImageHistory({
   // Transform data to images - handles telemetry raw points
   const images = useMemo(() => {
     const normalized = normalizeImageData(data ?? propImages ?? [])
-    return normalized.length > 0 ? normalized : transformTelemetryToImages(data ?? propImages ?? [])
+    const result = normalized.length > 0 ? normalized : transformTelemetryToImages(data ?? propImages ?? [])
+    return result
   }, [dataKey, propImages])
 
-  // Track images length to detect when images actually change
-  const imagesLengthRef = useRef<number>(0)
+  // Track image SOURCES (not just indices) to detect real changes vs reordering
+  const imageSourcesRef = useRef<string[]>([])
 
   const [currentIndex, setCurrentIndex] = useState(0)
   const [imageLoadState, setImageLoadState] = useState<ImageLoadState>('loading')
 
-  // Cache loaded image states
-  const loadedImagesRef = useRef<Set<number>>(new Set())
+  // Cache loaded image states by SOURCE URL (not index) for better persistence
+  const loadedImagesSrcRef = useRef<Set<string>>(new Set())
+
+  // Track data update count for cache-busting (forces image reload when data changes)
+  const [dataUpdateCount, setDataUpdateCount] = useState(0)
+  const dataUpdateCountRef = useRef(0)
+  dataUpdateCountRef.current = dataUpdateCount
+
+  // Update data update count when images array changes
+  useEffect(() => {
+    if (images.length > 0) {
+      setDataUpdateCount(c => c + 1)
+    }
+  }, [images.length, dataKey])  // Trigger when images array or dataKey changes
 
   const currentImage = images[currentIndex]
   const currentImageSrc = currentImage?.src
   const hasImages = images.length > 0
   const canNavigate = images.length > 1
 
-  // Reset index if images length changes
-  useEffect(() => {
-    const currentLength = images.length
-    if (currentLength !== imagesLengthRef.current) {
-      imagesLengthRef.current = currentLength
-      setCurrentIndex(0)
-      setImageLoadState('loading')
-      loadedImagesRef.current.clear()
+  // Add cache-busting for base64/data URLs to force reload when data changes
+  const displayImageSrc = useMemo(() => {
+    if (!currentImageSrc) return currentImageSrc
+    // Add cache buster for data URLs (base64 images)
+    if (currentImageSrc.startsWith('data:') || currentImageSrc.startsWith('blob:')) {
+      return `${currentImageSrc}#${dataUpdateCountRef.current}`
     }
-  }, [images.length])
+    return currentImageSrc
+  }, [currentImageSrc, dataUpdateCount])
+
+  // Reset index and loading state only when actual images change (not just reordering)
+  useEffect(() => {
+    const currentSources = images.map(img => img.src)
+    const prevSources = imageSourcesRef.current
+
+    // Check if the actual images changed (not just order)
+    const imagesChanged =
+      currentSources.length !== prevSources.length ||
+      currentSources.some((src, i) => src !== prevSources[i])
+
+    if (imagesChanged) {
+      imageSourcesRef.current = currentSources
+      setCurrentIndex(0)
+      // Only clear loaded cache if images actually changed
+      loadedImagesSrcRef.current = new Set(currentSources.filter(src => prevSources.includes(src)))
+      // Set loading state for current image
+      if (currentSources.length > 0 && loadedImagesSrcRef.current.has(currentSources[0])) {
+        setImageLoadState('loaded')
+      } else {
+        setImageLoadState('loading')
+      }
+    }
+  }, [images])
 
   // Update image load state when image source changes
   const prevImageSrcRef = useRef<string | undefined>(undefined)
@@ -402,14 +510,14 @@ export function ImageHistory({
     const indexChanged = currentIndex !== prevIndexRef.current
 
     if (imageChanged) {
-      if (loadedImagesRef.current.has(currentIndex)) {
+      if (currentImageSrc && loadedImagesSrcRef.current.has(currentImageSrc)) {
         setImageLoadState('loaded')
       } else {
         setImageLoadState('loading')
       }
       prevImageSrcRef.current = currentImageSrc
     } else if (indexChanged && currentImageSrc) {
-      setImageLoadState(loadedImagesRef.current.has(currentIndex) ? 'loaded' : 'loading')
+      setImageLoadState(loadedImagesSrcRef.current.has(currentImageSrc) ? 'loaded' : 'loading')
     }
 
     prevIndexRef.current = currentIndex
@@ -417,8 +525,10 @@ export function ImageHistory({
 
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')
-    loadedImagesRef.current.add(currentIndex)
-  }, [currentIndex])
+    if (currentImageSrc) {
+      loadedImagesSrcRef.current.add(currentImageSrc)
+    }
+  }, [currentImageSrc])
 
   const handleImageError = useCallback(() => {
     setImageLoadState('error')
@@ -476,8 +586,8 @@ export function ImageHistory({
       )}>
       {/* Image fills entire container */}
       <img
-        key={`img-${currentIndex}`}
-        src={currentImageSrc}
+        key={`img-${currentIndex}-${dataUpdateCount}`}
+        src={displayImageSrc}
         alt={currentImage?.alt || `Image ${currentIndex + 1}`}
         className={cn(
           'w-full h-full',

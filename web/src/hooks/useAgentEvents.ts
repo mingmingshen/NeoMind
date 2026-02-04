@@ -176,9 +176,24 @@ export function useAgentEvents(
     onMemoryUpdated,
   } = options
 
+  // Track current execution
+  const [currentExecution, setCurrentExecution] = useState<AgentExecution | null>(null)
+  const executionRef = useRef<AgentExecution | null>(null)
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    executionRef.current = currentExecution
+  }, [currentExecution])
+
   // Use global events hook with agent filter
   const { isConnected, events: allEvents, clearEvents, reconnect } = useEvents({
     enabled,
+    onConnected: (connected) => {
+      if (!connected && executionRef.current?.status === 'running') {
+        // Connection lost - clear running execution state
+        setCurrentExecution(null)
+      }
+    },
     onEvent: (event) => {
       // Filter events for this agent
       const eventData = event.data as { agent_id?: string }
@@ -214,9 +229,6 @@ export function useAgentEvents(
     const eventData = event.data as { agent_id?: string }
     return eventData.agent_id === agentId
   })
-
-  // Track current execution
-  const [currentExecution, setCurrentExecution] = useState<AgentExecution | null>(null)
 
   // Process agent events to maintain execution state
   useEffect(() => {

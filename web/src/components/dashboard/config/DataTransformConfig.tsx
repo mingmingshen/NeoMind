@@ -7,7 +7,7 @@
 
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, BarChart3, Sliders } from 'lucide-react'
+import { Clock, BarChart3, Sliders, Layers } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -23,10 +23,12 @@ import type {
   ChartViewMode,
   FillMissingStrategy,
   DataSource,
+  DataSourceOrList,
 } from '@/types/dashboard'
+import { normalizeDataSource } from '@/types/dashboard'
 
 export interface DataTransformConfigProps {
-  dataSource?: DataSource
+  dataSource?: DataSourceOrList
   onChange: (updates: Partial<DataSource>) => void
   // Show/hide specific options based on chart type
   chartType?: 'pie' | 'bar' | 'line' | 'area' | 'card' | 'sparkline' | 'led' | 'progress'
@@ -151,33 +153,62 @@ export function DataTransformConfig({
 }: DataTransformConfigProps) {
   const { t } = useTranslation('dashboardComponents')
 
+  // Normalize to array for consistent handling
+  const sources = useMemo(() => normalizeDataSource(dataSource), [dataSource])
+  const hasMultipleSources = sources.length > 1
+  const firstSource = sources[0]
+
   // Determine if this is a single-value component that needs simplified options
   const isSimplified = simplified || ['card', 'led', 'progress'].includes(chartType)
 
-  // Get current values with defaults
+  // Get current values from the first source with defaults
   const currentAggregate = useMemo(() => {
-    return dataSource?.aggregateExt ?? dataSource?.aggregate ?? DEFAULTS_BY_CHART[chartType]?.aggregate ?? 'raw'
-  }, [dataSource, chartType])
+    return firstSource?.aggregateExt ?? firstSource?.aggregate ?? DEFAULTS_BY_CHART[chartType]?.aggregate ?? 'raw'
+  }, [firstSource, chartType])
 
   const currentTimeWindow = useMemo(() => {
-    return dataSource?.timeWindow?.type ?? 'last_1hour'
-  }, [dataSource])
+    return firstSource?.timeWindow?.type ?? 'last_1hour'
+  }, [firstSource])
 
   const currentChartViewMode = useMemo(() => {
-    return dataSource?.chartViewMode ?? (chartType === 'pie' ? 'distribution' : 'timeseries')
-  }, [dataSource, chartType])
+    return firstSource?.chartViewMode ?? (chartType === 'pie' ? 'distribution' : 'timeseries')
+  }, [firstSource, chartType])
 
   const currentLimit = useMemo(() => {
-    return dataSource?.limit ?? DEFAULTS_BY_CHART[chartType]?.limit ?? 50
-  }, [dataSource, chartType])
+    return firstSource?.limit ?? DEFAULTS_BY_CHART[chartType]?.limit ?? 50
+  }, [firstSource, chartType])
 
   const currentFillMissing = useMemo(() => {
-    return dataSource?.fillMissing ?? 'none'
-  }, [dataSource])
+    return firstSource?.fillMissing ?? 'none'
+  }, [firstSource])
 
   const currentSampleInterval = useMemo(() => {
-    return dataSource?.sampleInterval ?? 60
-  }, [dataSource])
+    return firstSource?.sampleInterval ?? 60
+  }, [firstSource])
+
+  // Detect if sources have different settings (for visual feedback)
+  const hasMixedSettings = useMemo(() => {
+    if (sources.length <= 1) {
+      return { hasMixedAggregate: false, hasMixedTimeWindow: false, hasMixedLimit: false }
+    }
+
+    // Check if all sources have the same aggregate setting
+    const firstAggregate = firstSource?.aggregateExt ?? firstSource?.aggregate
+    const hasMixedAggregate = sources.some(s => {
+      const agg = s?.aggregateExt ?? s?.aggregate
+      return agg !== firstAggregate
+    })
+
+    // Check if all sources have the same time window
+    const firstTimeWindow = firstSource?.timeWindow?.type
+    const hasMixedTimeWindow = sources.some(s => s?.timeWindow?.type !== firstTimeWindow)
+
+    // Check if all sources have the same limit
+    const firstLimit = firstSource?.limit
+    const hasMixedLimit = sources.some(s => s?.limit !== firstLimit)
+
+    return { hasMixedAggregate, hasMixedTimeWindow, hasMixedLimit }
+  }, [sources, firstSource])
 
   // Choose aggregate options based on mode
   const aggregateOptions = isSimplified ? getSimplifiedAggregateOptions(t) : getAggregateOptions(t)
@@ -220,9 +251,26 @@ export function DataTransformConfig({
 
   return (
     <div className="space-y-3">
+      {/* Multi-source indicator */}
+      {hasMultipleSources && (
+        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-500/10 border border-blue-500/20 rounded-md">
+          <Layers className="h-3.5 w-3.5 text-blue-500" />
+          <span className="text-xs text-blue-600 font-medium">
+            {t('dataTransform.appliesToAll', { count: sources.length })}
+          </span>
+        </div>
+      )}
+
       {/* Time Window - simplified mode only shows now and last_1hour */}
       <Field>
-        <Label>{t('dataTransform.timeRange')}</Label>
+        <div className="flex items-center justify-between">
+          <Label>{t('dataTransform.timeRange')}</Label>
+          {hasMixedSettings?.hasMixedTimeWindow && (
+            <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+              {t('dataTransform.mixedValues')}
+            </span>
+          )}
+        </div>
         <Select value={currentTimeWindow} onValueChange={handleTimeWindowChange} disabled={readonly}>
           <SelectTrigger>
             <SelectValue placeholder={t('dataTransform.selectTimeRange')} />
@@ -245,7 +293,14 @@ export function DataTransformConfig({
 
       {/* Aggregation Method */}
       <Field>
-        <Label>{t('dataTransform.aggregation')}</Label>
+        <div className="flex items-center justify-between">
+          <Label>{t('dataTransform.aggregation')}</Label>
+          {hasMixedSettings?.hasMixedAggregate && (
+            <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+              {t('dataTransform.mixedValues')}
+            </span>
+          )}
+        </div>
         <Select value={currentAggregate} onValueChange={handleAggregateChange} disabled={readonly}>
           <SelectTrigger>
             <SelectValue placeholder={t('dataTransform.selectAggregation')} />
@@ -294,7 +349,14 @@ export function DataTransformConfig({
 
           {/* Data Points Limit */}
           <Field>
-            <Label>{t('dataTransform.dataPointLimit')}</Label>
+            <div className="flex items-center justify-between">
+              <Label>{t('dataTransform.dataPointLimit')}</Label>
+              {hasMixedSettings?.hasMixedLimit && (
+                <span className="text-[10px] text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                  {t('dataTransform.mixedValues')}
+                </span>
+              )}
+            </div>
             <Select
               value={String(currentLimit)}
               onValueChange={handleLimitChange}

@@ -64,25 +64,36 @@ export function getTimeRange(timeWindow: TimeWindowConfig): { start: number; end
     return { start: timeWindow.startTime, end }
   }
 
-  const startOffsets: Record<TimeWindowType, number> = {
-    'now': 0,
-    'last_5min': 5 * 60,
-    'last_15min': 15 * 60,
-    'last_30min': 30 * 60,
-    'last_1hour': 60 * 60,
-    'last_6hours': 6 * 60 * 60,
-    'last_24hours': 24 * 60 * 60,
-    'today': getStartOfDay(now),
-    'yesterday': getStartOfDay(now) - 24 * 60 * 60,
-    'this_week': getStartOfWeek(now),
-    'custom': timeWindow.startTime ? now - timeWindow.startTime : 60 * 60,
+  // Handle 'today', 'yesterday', 'this_week' as absolute time ranges
+  // All others are relative offsets from now
+  switch (timeWindow.type) {
+    case 'now':
+      return { start: now, end }
+    case 'today':
+      return { start: getStartOfDay(now), end }
+    case 'yesterday':
+      return { start: getStartOfDay(now) - 24 * 60 * 60, end: getStartOfDay(now) }
+    case 'this_week':
+      return { start: getStartOfWeek(now), end }
+    default: {
+      // Relative time ranges (offsets from now)
+      const offsets: Record<TimeWindowType, number> = {
+        'now': 0,
+        'last_5min': 5 * 60,
+        'last_15min': 15 * 60,
+        'last_30min': 30 * 60,
+        'last_1hour': 60 * 60,
+        'last_6hours': 6 * 60 * 60,
+        'last_24hours': 24 * 60 * 60,
+        'today': 0,  // Not used here, handled above
+        'yesterday': 0,  // Not used here, handled above
+        'this_week': 0,  // Not used here, handled above
+        'custom': 60 * 60,  // Not used here, custom handled separately
+      }
+      const offset = offsets[timeWindow.type] ?? 60 * 60
+      return { start: now - offset, end }
+    }
   }
-
-  const start = timeWindow.type === 'now'
-    ? now
-    : now - startOffsets[timeWindow.type]
-
-  return { start, end }
 }
 
 function getStartOfDay(timestamp: number): number {
@@ -96,7 +107,8 @@ function getStartOfWeek(timestamp: number): number {
   const diff = date.getDate() - day + (day === 0 ? -6 : 1)  // Adjust to Monday
   const monday = new Date(date.getFullYear(), date.getMonth(), diff)
   monday.setHours(0, 0, 0, 0)
-  return (monday.getTime() - timestamp * 1000) / 1000
+  // Return absolute timestamp in seconds, NOT offset
+  return monday.getTime() / 1000
 }
 
 // ============================================================================

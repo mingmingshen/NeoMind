@@ -100,6 +100,27 @@ export function AgentsPage() {
   useEvents({
     enabled: true,
     eventTypes: ['AgentExecutionStarted', 'AgentExecutionCompleted', 'AgentThinking'],
+    onConnected: (connected) => {
+      if (!connected) {
+        // Connection lost - clear all executing states and reset agent statuses
+        setExecutingAgents(new Map())
+        setAgentThinking({})
+        // Reset executing status in agents list - will be refreshed when reconnecting
+        setAgents(prev => prev.map(agent =>
+          agent.status === 'Executing'
+            ? { ...agent, status: 'Active' as const, currentThinking: null }
+            : { ...agent, currentThinking: null }
+        ))
+        // Also reset selected agent if present
+        setSelectedAgent(prev => prev?.status === 'Executing'
+          ? { ...prev, status: 'Active', currentThinking: null }
+          : prev
+        )
+      } else {
+        // Connection restored - refresh agent status from server
+        loadItems()
+      }
+    },
     onEvent: (event) => {
       const eventData = event.data as { agent_id?: string }
 

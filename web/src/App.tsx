@@ -187,10 +187,11 @@ function App() {
     setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window)
   }, [])
 
-  // Check authentication status on mount
+  // Check authentication status on mount (only once)
   useEffect(() => {
     checkAuthStatus()
-  }, [checkAuthStatus])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Set up WebSocket connection handler to update store
   useEffect(() => {
@@ -210,14 +211,16 @@ function App() {
 
   // Refresh WebSocket connections when authentication status changes
   useEffect(() => {
-    // Dynamic import to avoid SSR issues
-    import('@/lib/events').then(({ refreshEventConnections }) => {
-      refreshEventConnections()
-    })
-    // Also refresh chat WebSocket
-    import('@/lib/websocket').then(({ ws }) => {
-      ws.connect()
-    })
+    if (isAuthenticated) {
+      // Dynamic import to avoid SSR issues
+      import('@/lib/events').then(({ refreshEventConnections }) => {
+        refreshEventConnections()
+      })
+      // Also refresh chat WebSocket (has its own duplicate check)
+      import('@/lib/websocket').then(({ ws }) => {
+        ws.connect()
+      })
+    }
   }, [isAuthenticated])
 
   // Show loading screen in Tauri until backend is ready

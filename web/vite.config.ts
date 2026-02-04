@@ -51,10 +51,21 @@ export default defineConfig({
         target: 'http://localhost:9375',
         changeOrigin: true,
         ws: true,
-        // Only proxy /api requests, not static files
         configure: (proxy, _options) => {
-          proxy.on('error', (err, _req, _res) => {
-            console.log('proxy error', err)
+          proxy.on('error', (err, req, _res) => {
+            const code = (err as NodeJS.ErrnoException)?.code
+            const isWs = req?.url?.includes('/api/events/ws') || req?.url?.includes('/api/chat')
+            const isExpectedWsClose = (code === 'ECONNRESET' || code === 'EPIPE') && isWs
+            if (isExpectedWsClose) {
+              // WebSocket closed (backend/client closed or proxy write after close) - expected, no need to log as error
+              if (code === 'EPIPE') {
+                console.warn('[Vite proxy] WebSocket write after close (EPIPE). Connection was closed by peer.')
+              } else {
+                console.warn('[Vite proxy] WebSocket connection closed by backend (ECONNRESET).')
+              }
+            } else {
+              console.error('[Vite proxy]', err)
+            }
           })
           proxy.on('proxyReq', (proxyReq, req, _res) => {
             console.log('[Proxy]', req.method, req.url, '->', proxyReq.getHeader('host') + proxyReq.path)

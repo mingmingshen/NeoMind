@@ -302,11 +302,30 @@ export function getStatusBgClass(status: string): string {
 /**
  * Safely extract number array from unknown data
  * Handles: number[], string[], and { value: number, timestamp?: number }[]
+ *
+ * For telemetry points with timestamps, sorts by timestamp ascending (oldest first)
+ * to ensure proper time series display in charts.
  */
 export function toNumberArray(data: unknown, fallback: number[] = []): number[] {
   if (Array.isArray(data)) {
+    // Check if data has timestamp fields (telemetry points)
+    const hasTimestamps = data.length > 0 &&
+      typeof data[0] === 'object' &&
+      data[0] !== null &&
+      'timestamp' in data[0]
+
+    // For telemetry data, sort by timestamp ascending first
+    let sortedData = data
+    if (hasTimestamps && data.length > 1) {
+      sortedData = [...data].sort((a, b) => {
+        const at = (a as Record<string, unknown>).timestamp ?? 0
+        const bt = (b as Record<string, unknown>).timestamp ?? 0
+        return (at as number) - (bt as number)  // ascending: oldest first
+      })
+    }
+
     const result: number[] = []
-    for (const item of data) {
+    for (const item of sortedData) {
       if (typeof item === 'number' && !isNaN(item)) {
         result.push(item)
       } else if (typeof item === 'string' && !isNaN(parseFloat(item))) {

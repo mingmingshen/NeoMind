@@ -84,8 +84,9 @@ function toTelemetrySource(
     }
   }
 
-  // Convert device/metric to telemetry
-  if (dataSource.type === 'device' || dataSource.type === 'metric') {
+  // Convert device type to telemetry for historical data
+  // Note: metric type without deviceId should NOT be converted as it won't match events
+  if (dataSource.type === 'device' && dataSource.deviceId) {
     return {
       type: 'telemetry',
       deviceId: dataSource.deviceId,
@@ -354,36 +355,42 @@ export function PieChart({
           }
         }
 
-        // Check if data contains categorical (string) values
-        const firstItem = arr[0] as { value?: unknown } | undefined
-        const isCategoricalData = typeof firstItem === 'object' && firstItem !== null && 'value' in firstItem && typeof firstItem.value === 'string'
-        const forceCounting = effectiveAggregate === 'count'
+        // Check if data contains telemetry points with value property
+        const firstItem = arr[0] as { value?: unknown; timestamp?: number } | undefined
+        const hasTelemetryPoints = typeof firstItem === 'object' && firstItem !== null && 'value' in firstItem
 
-        if (isCategoricalData || forceCounting) {
-          // For categorical data, count occurrences of each unique value
-          const counts = new Map<string, number>()
-          for (const item of arr as Array<{ value?: unknown }>) {
-            if (typeof item === 'object' && item !== null && 'value' in item) {
-              const key = String(item.value ?? 'unknown')
-              counts.set(key, (counts.get(key) ?? 0) + 1)
+        if (hasTelemetryPoints) {
+          // Extract values from telemetry points
+          const values = (arr as Array<{ value?: unknown }>).map(item => {
+            const val = item.value
+            return typeof val === 'number' ? val : parseFloat(String(val)) || 0
+          }).filter(v => !isNaN(v))
+
+          if (values.length > 0) {
+            // Create timePoints for aggregation (use actual timestamps if available)
+            const now = Date.now() / 1000
+            const timePoints = (arr as Array<{ value?: unknown; timestamp?: number }>).map((item, idx) => ({
+              timestamp: item.timestamp || (now - (values.length - idx) * 60),
+              value: values[idx],
+            }))
+
+            const aggregatedValue = aggregateData(timePoints, effectiveAggregate)
+            return {
+              name: ds.deviceId
+                ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
+                : t('chart.series', { count: i + 1 }),
+              value: aggregatedValue ?? 0,
+              color: fallbackColors[i % fallbackColors.length],
             }
-          }
-          // Return the most common value as the representative
-          const mostCommon = Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]
-          return {
-            name: ds.deviceId
-              ? `${getDeviceName(ds.deviceId)} · ${getPropertyDisplayName(ds.metricId || ds.property)}`
-              : t('chart.series', { count: i + 1 }),
-            value: mostCommon ? mostCommon[1] : 0,
-            color: fallbackColors[i % fallbackColors.length],
           }
         }
 
-        // Numeric data - use aggregation
-        const values = (arr as unknown[]).filter(v => typeof v === 'number')
-        if (values.length > 0) {
-          const timePoints = values.map((v, idx) => ({
-            timestamp: Date.now() / 1000 - (values.length - idx) * 60,
+        // Handle simple number array
+        const numericValues = (arr as unknown[]).filter(v => typeof v === 'number')
+        if (numericValues.length > 0) {
+          const now = Date.now() / 1000
+          const timePoints = numericValues.map((v, idx) => ({
+            timestamp: now - (numericValues.length - idx) * 60,
             value: v as number,
           }))
           const aggregatedValue = aggregateData(timePoints, effectiveAggregate)

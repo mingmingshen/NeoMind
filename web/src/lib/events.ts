@@ -183,6 +183,9 @@ export class EventsWebSocket {
   private config: EventsConfig = {}
   private lastToken: string | null = null  // Track token for reconnection
   private tokenCheckTimer: ReturnType<typeof setInterval> | null = null  // Poll for token
+  private isConnecting = false  // Track if connection attempt is in progress
+  private authenticated = false  // Track if authentication succeeded
+  private authFailed = false  // Track if auth failed to prevent reconnection loops
 
   constructor(config?: EventsConfig) {
     this.config = config || {}
@@ -195,6 +198,11 @@ export class EventsWebSocket {
    * Connect to the events endpoint
    */
   connect() {
+    // Don't start a new connection if one is already in progress
+    if (this.isConnecting) {
+      return
+    }
+
     // Clear any existing token check timer
     if (this.tokenCheckTimer) {
       clearInterval(this.tokenCheckTimer)
@@ -225,8 +233,9 @@ export class EventsWebSocket {
 
     // If token changed, force reconnect
     if (this.lastToken !== currentToken) {
-      // Reset reconnect attempts when token changes
+      // Reset reconnect attempts and auth failed flag when token changes
       this.reconnectAttempts = 0
+      this.authFailed = false
       if (this.isConnected()) {
         this.disconnect()
       }
@@ -237,12 +246,19 @@ export class EventsWebSocket {
     // Only disconnect if we're changing connection type or config significantly changed
     // Otherwise, reuse existing connection
     const currentlyConnected = this.isConnected()
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const hasActiveSocket = this.ws?.readyState === WebSocket.OPEN ||
+                            this.ws?.readyState === WebSocket.CONNECTING ||
+                            this.eventSource?.readyState === EventSource.OPEN
     const category = this.config.category || 'all'
     const eventTypes = this.config.eventTypes || []
 
     if (currentlyConnected) {
-      // Already connected, no need to reconnect
+      // Already connected and authenticated, no need to reconnect
+      return
+    }
+
+    // Don't create duplicate connection if socket is already active
+    if (hasActiveSocket && this.isConnecting) {
       return
     }
 
@@ -251,7 +267,7 @@ export class EventsWebSocket {
       this.connectSSE(category, eventTypes)
     } else {
       // Use WebSocket
-      this.connectWebSocket(protocol, category, eventTypes)
+      this.connectWebSocket(category, eventTypes)
     }
   }
 
@@ -265,62 +281,92 @@ export class EventsWebSocket {
     }
   }
 
-  private connectWebSocket(protocol: string, category: string, eventTypes: EventType[]) {
+  private connectWebSocket(category: string, eventTypes: EventType[]) {
+    // Mark that we're starting a connection
+    this.isConnecting = true
+
     const params = new URLSearchParams()
     if (category !== 'all') {
       params.set('category', category)
     }
     eventTypes.forEach(type => params.append('event_type', type))
 
-    // Build WebSocket URL - do NOT include token in URL for security
-    // Token will be sent after connection is established
-    // In Tauri, connect to the backend server running on port 9375
-    // In development, use direct connection to backend server
-    // In production web, use the same host as the frontend
-    let wsHost = window.location.host
+    // Build WebSocket URL
+    // Note: Token is sent via Auth message after connection (more secure than URL)
+    // In development, use relative URL to go through Vite proxy
+    // In Tauri/production, connect directly to backend
+    let wsUrl: string
     if ((window as any).__TAURI__) {
       // Tauri: backend runs on localhost:9375
-      wsHost = 'localhost:9375'
-    } else if (window.location.port === '5173' || window.location.hostname === 'localhost') {
-      // Development: connect directly to backend server
-      wsHost = 'localhost:9375'
+      wsUrl = `ws://localhost:9375/api/events/ws?${params.toString()}`
+    } else if (window.location.port === '5173') {
+      // Development: use relative URL to go through Vite proxy
+      // The proxy will forward to the backend
+      wsUrl = `/api/events/ws?${params.toString()}`
+    } else {
+      // Production: use current host with ws/wss protocol
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      wsUrl = `${wsProtocol}//${window.location.host}/api/events/ws?${params.toString()}`
     }
-
-    const wsUrl = `${protocol}//${wsHost}/api/events/ws?${params.toString()}`
 
     try {
       this.ws = new WebSocket(wsUrl)
     } catch (e) {
+      this.isConnecting = false
       this.notifyError(new Error(`WebSocket creation failed: ${e}`))
       this.scheduleReconnect()
       return
     }
 
     this.ws.onopen = () => {
+      // Don't notify connection yet - wait for authentication
       this.reconnectAttempts = 0
-      this.notifyConnection(true)
 
-      // Send authentication message after connection is established
-      // This is more secure than putting token in URL
+      // Send authentication message immediately after connection is established
+      // Backend expects: {"type": "Auth", "token": "jwt-token"}
       const token = tokenManager.getToken()
       const ws = this.ws
-      if (token && ws) {
-        ws.send(JSON.stringify({
-          type: 'Auth',
-          token: token
-        }))
-      } else if (ws) {
-        // No token available, close the connection
-        ws.close()
+      if (token && ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({
+            type: 'Auth',
+            token: token
+          }))
+        } catch (e) {
+          // Failed to send auth message - set a flag to prevent reconnection from onclose
+          this.isConnecting = false
+          this.authFailed = true  // Flag to prevent reconnection loop
+          this.notifyError(new Error(`Failed to send auth message: ${e}`))
+          // Use a timeout to close connection to prevent onclose from scheduling reconnect immediately
+          setTimeout(() => {
+            if (ws) ws.close()
+          }, 0)
+          return
+        }
+      } else {
+        // No token available or not ready, close the connection
+        this.isConnecting = false
+        this.authFailed = true
+        this.notifyError(new Error('No token available for WebSocket authentication'))
+        setTimeout(() => {
+          ws?.close()
+        }, 0)
+        return
       }
     }
 
     this.ws.onclose = () => {
+      this.isConnecting = false
+      this.authenticated = false
       this.notifyConnection(false)
-      this.scheduleReconnect()
+      // Only schedule reconnect if auth didn't fail (e.g., token issues)
+      if (!this.authFailed) {
+        this.scheduleReconnect()
+      }
     }
 
     this.ws.onerror = () => {
+      this.isConnecting = false
       this.notifyError(new Error('WebSocket connection error'))
     }
 
@@ -329,20 +375,27 @@ export class EventsWebSocket {
         const data = JSON.parse(event.data)
         // Handle Authenticated response
         if (data.type === 'Authenticated') {
-          // Authentication successful, events will start flowing
+          // Authentication successful - now we can notify connection
+          this.isConnecting = false
+          this.authenticated = true
+          this.notifyConnection(true)
           return
         }
         // Handle error messages from server (e.g., auth failures)
         if (data.type === 'Error') {
           // If it's an auth error, clear the token and stop reconnecting
           if (data.message?.includes('token') || data.message?.includes('Authentication') || data.message?.includes('Unauthorized')) {
+            this.isConnecting = false
+            this.authenticated = false
             tokenManager.clearToken()
             this.disconnect()
           }
           return
         }
         // Only notify events after successful authentication
-        this.notifyEvent(data as NeoMindEvent)
+        if (this.authenticated) {
+          this.notifyEvent(data as NeoMindEvent)
+        }
       } catch {
         // Silent error handling for malformed messages
       }
@@ -350,6 +403,9 @@ export class EventsWebSocket {
   }
 
   private connectSSE(category: string, eventTypes: EventType[]) {
+    // Mark that we're starting a connection
+    this.isConnecting = true
+
     const params = new URLSearchParams()
     if (category !== 'all') {
       params.set('category', category)
@@ -358,21 +414,34 @@ export class EventsWebSocket {
 
     // Add JWT token for authentication
     const token = tokenManager.getToken()
-    if (token) {
-      params.set('token', token)
+    if (!token) {
+      this.isConnecting = false
+      this.notifyError(new Error('No token available for SSE connection'))
+      // Start polling for token
+      this.connect()
+      return
     }
+    params.set('token', token)
 
     const sseUrl = `/api/events/stream?${params.toString()}`
     this.eventSource = new EventSource(sseUrl)
 
     this.eventSource.onopen = () => {
+      this.isConnecting = false
       this.reconnectAttempts = 0
       this.notifyConnection(true)
     }
 
     this.eventSource.onerror = () => {
+      this.isConnecting = false
       this.notifyConnection(false)
       this.notifyError(new Error('SSE connection error'))
+      // Close the errored EventSource and schedule reconnection
+      if (this.eventSource) {
+        this.eventSource.close()
+        this.eventSource = null
+      }
+      this.scheduleReconnect()
     }
 
     // SSE messages come through the onmessage handler
@@ -390,6 +459,11 @@ export class EventsWebSocket {
    * Disconnect from the events endpoint
    */
   disconnect() {
+    // Reset connecting and authenticated state
+    this.isConnecting = false
+    this.authenticated = false
+    this.authFailed = false  // Reset auth failed flag on explicit disconnect
+
     // Clear token check timer
     if (this.tokenCheckTimer) {
       clearInterval(this.tokenCheckTimer)
@@ -529,8 +603,15 @@ export class EventsWebSocket {
   }
 
   isConnected() {
-    return this.ws?.readyState === WebSocket.OPEN ||
-           this.eventSource?.readyState === EventSource.OPEN
+    // For WebSocket, require authentication to be considered connected
+    // For SSE (EventSource), the connection itself implies auth (token in URL)
+    if (this.ws) {
+      return this.ws.readyState === WebSocket.OPEN && this.authenticated
+    }
+    if (this.eventSource) {
+      return this.eventSource.readyState === EventSource.OPEN
+    }
+    return false
   }
 
   /**
@@ -540,6 +621,16 @@ export class EventsWebSocket {
     this.config = { ...this.config, ...config }
     this.disconnect()
     this.connect()
+  }
+
+  /**
+   * Update config only when category or useSSE changed to avoid disconnect on every mount
+   */
+  updateConfigIfChanged(config: Partial<EventsConfig>) {
+    const sameCategory = this.config.category === config.category
+    const sameSSE = this.config.useSSE === config.useSSE
+    if (sameCategory && sameSSE) return
+    this.updateConfig(config)
   }
 }
 
@@ -556,10 +647,8 @@ export function getEventsConnection(key = 'default', config?: EventsConfig): Eve
     connection = new EventsWebSocket(config)
     eventConnections.set(key, connection)
   } else if (config && Object.keys(config).length > 0) {
-    // Update config if provided
-    connection.updateConfig(config)
+    connection.updateConfigIfChanged(config)
   }
-  // Use ensureConnected instead of connect to avoid unnecessary reconnection attempts
   connection.ensureConnected()
   return connection
 }

@@ -6,7 +6,7 @@
  * Fully responsive and adaptive with comprehensive error handling.
  */
 
-import { useRef, useEffect, useState, useMemo } from 'react'
+import { useRef, useEffect, useMemo, memo } from 'react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDataSource } from '@/hooks/useDataSource'
@@ -97,7 +97,8 @@ function getTrendTextColor(trend: number): string {
 const DEFAULT_SAMPLE_DATA = [12, 15, 13, 18, 14, 16, 19, 17, 20, 18, 22, 19, 21, 24, 22]
 
 // Internal sparkline component that tracks container size
-function ResponsiveSparkline({
+// Memoized to prevent re-renders when props haven't changed
+const ResponsiveSparkline = memo(function ResponsiveSparkline({
   data: chartData,
   width: initialWidth,
   height,
@@ -129,103 +130,84 @@ function ResponsiveSparkline({
   className?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(initialWidth)
-  const rafRef = useRef<number>()
-
-  // Create stable gradient ID for this component instance (FIX: use useRef to avoid flickering)
   const gradientId = useRef(`sparkline-gradient-${Math.random().toString(36).substr(2, 9)}`).current
 
-  // Track container size for responsiveness with debounce
-  useEffect(() => {
-    const updateSize = () => {
-      if (containerRef.current) {
-        const newWidth = containerRef.current.offsetWidth
-        setContainerWidth(newWidth > 0 ? newWidth : initialWidth)
+  // Use fixed viewBox with normalized coordinates (0-100 scale)
+  // This prevents flickering when container resizes
+  const VIEWBOX_WIDTH = 100
+  const VIEWBOX_HEIGHT = 100
+
+  // Memoize calculations to prevent unnecessary recalculations
+  const { min, max, isFlatLine, range, points } = useMemo(() => {
+    const min = Math.min(...chartData)
+    const max = Math.max(...chartData)
+    const isFlatLine = max === min
+    const range = max - min || 1
+
+    // Calculate points using normalized 0-100 coordinates
+    const points = chartData.map((v, i) => {
+      const x = (i / (chartData.length - 1)) * VIEWBOX_WIDTH
+      const y = isFlatLine
+        ? VIEWBOX_HEIGHT / 2
+        : VIEWBOX_HEIGHT - ((v - min) / range) * VIEWBOX_HEIGHT
+      return { x, y, value: v }
+    })
+
+    return { min, max, isFlatLine, range, points }
+  }, [chartData])
+
+  // Memoize path string to prevent recalculation
+  const pathD = useMemo(() => {
+    if (curved && points.length > 2) {
+      const curvePoints: string[] = []
+      curvePoints.push(`M ${points[0].x} ${points[0].y}`)
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[Math.max(0, i - 1)]
+        const p1 = points[i]
+        const p2 = points[i + 1]
+        const p3 = points[Math.min(points.length - 1, i + 2)]
+
+        const cp1x = p1.x + (p2.x - p0.x) / 6
+        const cp1y = p1.y + (p2.y - p0.y) / 6
+        const cp2x = p2.x - (p3.x - p1.x) / 6
+        const cp2y = p2.y - (p3.y - p1.y) / 6
+
+        curvePoints.push(`C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`)
       }
+
+      return curvePoints.join(' ')
+    } else {
+      return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
     }
+  }, [points, curved])
 
-    // Debounced resize handler using requestAnimationFrame
-    const handleResize = () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-      }
-      rafRef.current = requestAnimationFrame(updateSize)
+  const fillPath = useMemo(() => {
+    return `${pathD} L ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT} L 0 ${VIEWBOX_HEIGHT} Z`
+  }, [pathD])
+
+  const thresholdY = useMemo(() => {
+    if (showThreshold && threshold !== undefined && !isFlatLine) {
+      return VIEWBOX_HEIGHT - ((threshold - min) / range) * VIEWBOX_HEIGHT
     }
+    return null
+  }, [showThreshold, threshold, isFlatLine, min, range])
 
-    // Initial measurement
-    updateSize()
-
-    const resizeObserver = new ResizeObserver(handleResize)
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current)
-    }
-
-    return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-      }
-      resizeObserver.disconnect()
-    }
-  }, [initialWidth])
-
-  const min = Math.min(...chartData)
-  const max = Math.max(...chartData)
-  const isFlatLine = max === min
-  const range = max - min || 1
-
-  // Use fixed coordinate system for stable rendering
-  // Height is always 100 (normalized), width scales with container
-  const CHART_HEIGHT = 100
-  const aspectRatio = containerWidth / height
-  const normalizedWidth = CHART_HEIGHT * aspectRatio
-
-  // Calculate points in normalized coordinate system
-  const points = chartData.map((v, i) => {
-    const x = (i / (chartData.length - 1)) * normalizedWidth
-    const y = isFlatLine
-      ? CHART_HEIGHT / 2
-      : CHART_HEIGHT - ((v - min) / range) * CHART_HEIGHT
-    return { x, y, value: v }
-  })
-
-  // Create path string
-  let pathD: string
-  if (curved && points.length > 2) {
-    const curvePoints: string[] = []
-    curvePoints.push(`M ${points[0].x} ${points[0].y}`)
-
-    for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[Math.max(0, i - 1)]
-      const p1 = points[i]
-      const p2 = points[i + 1]
-      const p3 = points[Math.min(points.length - 1, i + 2)]
-
-      const cp1x = p1.x + (p2.x - p0.x) / 6
-      const cp1y = p1.y + (p2.y - p0.y) / 6
-      const cp2x = p2.x - (p3.x - p1.x) / 6
-      const cp2y = p2.y - (p3.y - p1.y) / 6
-
-      curvePoints.push(`C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`)
-    }
-
-    pathD = curvePoints.join(' ')
-  } else {
-    pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  }
-
-  const fillPath = `${pathD} L ${normalizedWidth} ${CHART_HEIGHT} L 0 ${CHART_HEIGHT} Z`
+  // Calculate proportional dash array for threshold line
+  const thresholdDashArray = useMemo(() => {
+    return '4% 4%'
+  }, [])
 
   return (
-    <div ref={containerRef} className={cn('w-full h-full flex items-center justify-center overflow-visible', className)}>
+    <div ref={containerRef} className={cn('w-full h-full relative', className)}>
       <svg
         width="100%"
         height="100%"
-        viewBox={`0 0 ${normalizedWidth} ${CHART_HEIGHT}`}
+        viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
         preserveAspectRatio="none"
         style={{ overflow: 'visible' }}
       >
         <defs>
-          {/* Original gradient that works */}
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" stopColor={color} stopOpacity="0.3" />
             <stop offset="50%" stopColor={color} stopOpacity="0.1" />
@@ -245,7 +227,6 @@ function ResponsiveSparkline({
           <path
             d={fillPath}
             fill={`url(#${gradientId})`}
-            className="transition-all duration-300 ease-out"
           />
         )}
 
@@ -258,7 +239,6 @@ function ResponsiveSparkline({
           strokeLinejoin="round"
           vectorEffect="non-scaling-stroke"
           filter={`url(#glow-${gradientId})`}
-          className="transition-all duration-300 ease-out"
         />
 
         {showPoints && points.map((p, i) => (
@@ -269,46 +249,59 @@ function ResponsiveSparkline({
             r={2.5}
             fill={color}
             vectorEffect="non-scaling-stroke"
-            className="opacity-50 transition-all duration-200 ease-out hover:opacity-100"
+            className="opacity-50 hover:opacity-100"
           />
         ))}
 
-        {showThreshold && threshold !== undefined && !isFlatLine && (
+        {showThreshold && threshold !== undefined && !isFlatLine && thresholdY !== null && (
           <line
             x1={0}
-            y1={CHART_HEIGHT - ((threshold - min) / range) * CHART_HEIGHT}
-            x2={normalizedWidth}
-            y2={CHART_HEIGHT - ((threshold - min) / range) * CHART_HEIGHT}
+            y1={thresholdY}
+            x2={VIEWBOX_WIDTH}
+            y2={thresholdY}
             stroke={thresholdColor}
             strokeWidth={1.5}
-            strokeDasharray="4 4"
+            strokeDasharray={thresholdDashArray}
             vectorEffect="non-scaling-stroke"
-            className="opacity-60 transition-all duration-300 ease-out"
+            className="opacity-60"
           />
         )}
-
-        {/* Last value indicator */}
-        <g className="animate-pulse">
-          <circle
-            cx={points[points.length - 1].x}
-            cy={points[points.length - 1].y}
-            r={6}
-            fill={color}
-            fillOpacity="0.2"
-            className="transition-all duration-300 ease-out"
-          />
-          <circle
-            cx={points[points.length - 1].x}
-            cy={points[points.length - 1].y}
-            r={3.5}
-            fill={color}
-            className="stroke-background stroke-1 transition-all duration-300 ease-out"
-          />
-        </g>
       </svg>
+
+      {/* Last value indicator - rendered as HTML to avoid SVG distortion */}
+      {points.length > 0 && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: `${points[points.length - 1].x}%`,
+            top: `${points[points.length - 1].y}%`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          {/* Outer glow ring */}
+          <div
+            className="rounded-full"
+            style={{
+              width: '12px',
+              height: '12px',
+              backgroundColor: color,
+              opacity: 0.2,
+            }}
+          />
+          {/* Main dot */}
+          <div
+            className="absolute top-1/2 left-1/2 rounded-full -translate-x-1/2 -translate-y-1/2"
+            style={{
+              width: '7px',
+              height: '7px',
+              backgroundColor: color,
+            }}
+          />
+        </div>
+      )}
     </div>
   )
-}
+})
 
 export function Sparkline({
   dataSource,
@@ -377,8 +370,9 @@ export function Sparkline({
         }
       }
 
-      // Convert device/metric to telemetry for historical data
-      if (ds.type === 'device' || ds.type === 'metric') {
+      // Convert device type to telemetry for historical data
+      // Note: metric type without deviceId should NOT be converted as it won't match events
+      if (ds.type === 'device' && ds.deviceId) {
         return {
           type: 'telemetry' as const,
           deviceId: ds.deviceId,
@@ -414,10 +408,18 @@ export function Sparkline({
   const chartData = useMemo(() => {
     if (error) return []
 
-    // Handle multi-source data - use first source
+    // Handle multi-source data - combine all sources' data
     let rawData = data ?? propData
     if (Array.isArray(rawData) && rawData.length > 0 && Array.isArray(rawData[0])) {
-      rawData = rawData[0] // Use first source's data
+      // Multi-source detected: combine all sources into one array
+      // For sparkline, we interleave or append data from all sources
+      const allData: unknown[] = []
+      for (const sourceData of rawData) {
+        if (Array.isArray(sourceData)) {
+          allData.push(...sourceData)
+        }
+      }
+      rawData = allData.length > 0 ? allData : rawData
     }
 
     const result = toNumberArray(rawData, [])
@@ -425,6 +427,7 @@ export function Sparkline({
     if (result.length === 0 && !hasDataSource) {
       return DEFAULT_SAMPLE_DATA
     }
+
     return result
   }, [data, propData, error, hasDataSource])
 
@@ -433,37 +436,43 @@ export function Sparkline({
   // Calculate chart height based on size
   const chartHeight = height ?? (size === 'sm' ? 40 : size === 'md' ? 60 : 80)
 
-  // Calculate stats
-  const latestValue = chartData.length > 0 ? chartData[chartData.length - 1] : 0
-  const prevValue = chartData.length > 1 ? chartData[chartData.length - 2] : latestValue
-  const trend = chartData.length > 1 ? latestValue - prevValue : 0
-  const trendPercent = prevValue !== 0 ? ((trend / prevValue) * 100).toFixed(1) : '0'
-
-  // For value-based coloring, determine the max value
-  const dataMax = chartData.length > 0 ? Math.max(...chartData) : 0
-  const effectiveMax = maxValue ?? dataMax ?? 100
+  // Memoize stats to prevent recalculation on every render
+  const stats = useMemo(() => {
+    const latestValue = chartData.length > 0 ? chartData[chartData.length - 1] : 0
+    const prevValue = chartData.length > 1 ? chartData[chartData.length - 2] : latestValue
+    const trend = chartData.length > 1 ? latestValue - prevValue : 0
+    const trendPercent = prevValue !== 0 ? ((trend / prevValue) * 100).toFixed(1) : '0'
+    const dataMax = chartData.length > 0 ? Math.max(...chartData) : 0
+    const effectiveMax = maxValue ?? dataMax ?? 100
+    return { latestValue, prevValue, trend, trendPercent, dataMax, effectiveMax }
+  }, [chartData, maxValue])
 
   // Derive threshold from dataMapping if not explicitly provided
   const effectiveThreshold = threshold ?? dataMapping?.thresholds?.warning?.value
 
-  // Determine line color based on colorMode
-  const lineColor = colorMode === 'auto'
-    ? (color || getTrendColor(trend))
-    : colorMode === 'value'
-      ? (color || getValueStateColor(latestValue, effectiveMax))
-      : colorMode === 'primary'
-        ? indicatorColors.primary.base
-        : color || indicatorColors.primary.base
+  // Memoize color calculation to prevent flickering
+  const lineColor = useMemo(() => {
+    if (colorMode === 'auto') {
+      return color || getTrendColor(stats.trend)
+    } else if (colorMode === 'value') {
+      return color || getValueStateColor(stats.latestValue, stats.effectiveMax)
+    } else if (colorMode === 'primary') {
+      return indicatorColors.primary.base
+    }
+    return color || indicatorColors.primary.base
+  }, [color, colorMode, stats.trend, stats.latestValue, stats.effectiveMax])
 
-  // Determine gradient state
-  let gradientState: IndicatorGradientType = 'neutral'
-  if (colorMode === 'value') {
-    gradientState = getValueGradient(latestValue, effectiveMax)
-  } else if (colorMode === 'primary') {
-    gradientState = 'primary'
-  } else if (colorMode === 'auto') {
-    gradientState = trend > 0 ? 'success' : trend < 0 ? 'error' : 'neutral'
-  }
+  // Memoize gradient state
+  const gradientState = useMemo((): IndicatorGradientType => {
+    if (colorMode === 'value') {
+      return getValueGradient(stats.latestValue, stats.effectiveMax)
+    } else if (colorMode === 'primary') {
+      return 'primary'
+    } else if (colorMode === 'auto') {
+      return stats.trend > 0 ? 'success' : stats.trend < 0 ? 'error' : 'neutral'
+    }
+    return 'neutral'
+  }, [colorMode, stats.trend, stats.latestValue, stats.effectiveMax])
 
   // Inner content component
   const SparklineContent = () => (
@@ -479,15 +488,15 @@ export function Sparkline({
           {showValue && (
             <div className="flex items-center gap-2">
               <span className={cn(indicatorFontWeight.value, 'text-foreground tabular-nums', sizeConfig.valueText)}>
-                {latestValue.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                {stats.latestValue.toLocaleString(undefined, { maximumFractionDigits: 1 })}
               </span>
-              {trend !== 0 && (
+              {stats.trend !== 0 && (
                 <span className={cn(
                   indicatorFontWeight.meta,
                   'text-xs',
-                  trend > 0 ? indicatorColors.success.text : indicatorColors.error.text
+                  stats.trend > 0 ? indicatorColors.success.text : indicatorColors.error.text
                 )}>
-                  {trend > 0 ? '+' : ''}{trendPercent}%
+                  {stats.trend > 0 ? '+' : ''}{stats.trendPercent}%
                 </span>
               )}
             </div>

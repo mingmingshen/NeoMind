@@ -188,6 +188,20 @@ import { confirm } from '@/hooks/use-confirm'
  * Caches both individual DataSource objects AND complete arrays to prevent reference changes
  */
 const telemetryCache: Record<string, any> = {}
+const MAX_CACHE_SIZE = 100  // Prevent memory leaks by limiting cache size
+const cacheKeys: string[] = []  // Track insertion order for LRU eviction
+
+/**
+ * Create stable cache key from object (handles property order variations)
+ */
+function createStableCacheKey(obj: unknown): string {
+  if (obj === null || obj === undefined) return ''
+  if (typeof obj !== 'object') return String(obj)
+  if (Array.isArray(obj)) return '[' + obj.map(createStableCacheKey).join(',') + ']'
+  const sortedKeys = Object.keys(obj).sort()
+  const recordObj = obj as Record<string, unknown>
+  return '{' + sortedKeys.map((k) => `"${k}":${createStableCacheKey(recordObj[k])}`).join(',') + '}'
+}
 
 /**
  * Convert device data source to telemetry with caching to prevent infinite re-renders
@@ -196,11 +210,17 @@ const telemetryCache: Record<string, any> = {}
 function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataSourceOrList | undefined {
   if (!dataSource) return undefined
 
-  // Create a stable cache key from the entire input
-  const cacheKey = JSON.stringify(dataSource)
+  // Create a stable cache key (property-order independent) from the entire input
+  const cacheKey = createStableCacheKey(dataSource)
 
   // Return cached result if exists (reference stability!)
   if (cacheKey in telemetryCache) {
+    // Move to end of keys to mark as recently used
+    const idx = cacheKeys.indexOf(cacheKey)
+    if (idx > -1) {
+      cacheKeys.splice(idx, 1)
+      cacheKeys.push(cacheKey)
+    }
     return telemetryCache[cacheKey]
   }
 
@@ -228,8 +248,15 @@ function getTelemetryDataSource(dataSource: DataSourceOrList | undefined): DataS
     ? dataSource.map(normalizeAndConvert)
     : normalizeAndConvert(dataSource)
 
+  // Implement LRU cache eviction to prevent memory leaks
+  if (cacheKeys.length >= MAX_CACHE_SIZE) {
+    const oldestKey = cacheKeys.shift()!
+    delete telemetryCache[oldestKey]
+  }
+
   // Cache the entire result for reference stability
   telemetryCache[cacheKey] = result
+  cacheKeys.push(cacheKey)
 
   return result
 }
@@ -456,6 +483,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           trendPeriod={config.trendPeriod}
           showSparkline={config.showSparkline}
           sparklineData={config.sparkline}
+          size={config.size || 'md'}
         />
       )
 
@@ -473,6 +501,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           showGlow={config.showGlow ?? true}
           showAnimation={config.showAnimation ?? true}
           showCard={config.showCard ?? true}
+          dataMapping={config.dataMapping}
         />
       )
 
@@ -585,6 +614,8 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           showTooltip={config.showTooltip ?? true}
           layout={config.layout || 'vertical'}
           stacked={config.stacked ?? false}
+          color={config.color}
+          size={config.size || 'md'}
         />
       )
 
@@ -605,6 +636,8 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           variant={config.variant || 'donut'}
           innerRadius={config.innerRadius}
           outerRadius={config.outerRadius}
+          size={config.size || 'md'}
+          colors={config.colors}
         />
       )
 
@@ -638,7 +671,11 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
         />
       )
 
-    case 'image-history':
+    case 'image-history': {
+      const imageLimit = typeof config.limit === 'number' && config.limit >= 1 && config.limit <= 500
+        ? config.limit
+        : 200
+      const imageTimeRange = config.timeRange ?? 48
       return (
         <ImageHistory
           {...spreadableProps}
@@ -646,10 +683,11 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           images={config.images}
           fit={config.fit || 'fill'}
           rounded={config.rounded ?? true}
-          limit={config.limit ?? 50}
-          timeRange={config.timeRange ?? 1}
+          limit={imageLimit}
+          timeRange={imageTimeRange}
         />
       )
+    }
 
     case 'web-display':
       return (
@@ -837,7 +875,9 @@ interface ComponentWrapperProps {
   onDuplicate: (componentId: string) => void
 }
 
-function ComponentWrapper({
+// Memoize ComponentWrapper to prevent unnecessary re-renders
+// Only re-renders when component.id, editMode, or children reference changes
+const ComponentWrapper = memo(function ComponentWrapper({
   component,
   children,
   editMode,
@@ -847,11 +887,18 @@ function ComponentWrapper({
 }: ComponentWrapperProps) {
   const [isHovered, setIsHovered] = useState(false)
 
+  // Memoize event handlers to prevent creating new functions on each render
+  const handleMouseEnter = useCallback(() => setIsHovered(true), [])
+  const handleMouseLeave = useCallback(() => setIsHovered(false), [])
+  const handleConfigClick = useCallback(() => onOpenConfig(component.id), [component.id, onOpenConfig])
+  const handleRemoveClick = useCallback(() => onRemove(component.id), [component.id, onRemove])
+  const handleDuplicateClick = useCallback(() => onDuplicate(component.id), [component.id, onDuplicate])
+
   return (
     <div
       className="relative h-full"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {/* Component content */}
       <div className="h-full w-full flex flex-col">
@@ -865,7 +912,7 @@ function ComponentWrapper({
             variant="secondary"
             size="icon"
             className="h-7 w-7 bg-background/90 backdrop-blur"
-            onClick={() => onOpenConfig(component.id)}
+            onClick={handleConfigClick}
           >
             <Settings2 className="h-3.5 w-3.5" />
           </Button>
@@ -873,7 +920,7 @@ function ComponentWrapper({
             variant="secondary"
             size="icon"
             className="h-7 w-7 bg-background/90 backdrop-blur"
-            onClick={() => onDuplicate(component.id)}
+            onClick={handleDuplicateClick}
           >
             <Copy className="h-3.5 w-3.5" />
           </Button>
@@ -881,7 +928,7 @@ function ComponentWrapper({
             variant="secondary"
             size="icon"
             className="h-7 w-7 bg-background/90 backdrop-blur hover:bg-destructive hover:text-destructive-foreground transition-colors"
-            onClick={() => onRemove(component.id)}
+            onClick={handleRemoveClick}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -889,7 +936,7 @@ function ComponentWrapper({
       )}
     </div>
   )
-}
+})
 
 // ============================================================================
 // Main Component
@@ -1112,7 +1159,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
     }
 
     if (deviceIds.size > 0) {
-      console.log('[VisualDashboard] Fetching current values for', deviceIds.size, 'devices')
       fetchDevicesCurrentBatch(Array.from(deviceIds))
     }
   }, [devices.length, dashboards, currentDashboard, fetchDevicesCurrentBatch])
@@ -1148,18 +1194,15 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       if (exists && dashboardId !== currentDashboardId) {
         // URL has valid dashboardId and differs from current, switch to it
         isSyncingFromUrl.current = true
-        console.log('[VisualDashboard] Loading dashboard from URL:', dashboardId)
         setCurrentDashboard(dashboardId)
         // Reset flag after state update completes
         setTimeout(() => { isSyncingFromUrl.current = false }, 50)
       } else if (!exists && currentDashboardId) {
         // URL has invalid dashboardId, redirect to current dashboard
-        console.log('[VisualDashboard] Invalid dashboardId in URL, redirecting to current:', currentDashboardId)
         navigate(`/visual-dashboard/${currentDashboardId}`, { replace: true })
       } else if (!exists && dashboards.length > 0) {
         // URL has invalid dashboardId and no current dashboard, redirect to first/default
         const defaultDashboard = dashboards.find(d => d.isDefault) || dashboards[0]
-        console.log('[VisualDashboard] Invalid dashboardId in URL, redirecting to default:', defaultDashboard.id)
         navigate(`/visual-dashboard/${defaultDashboard.id}`, { replace: true })
       }
     } else if (currentDashboardId) {
@@ -1180,7 +1223,6 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
     // Only update URL if it's different from current URL
     if (currentDashboardId && currentDashboardId !== dashboardId) {
-      console.log('[VisualDashboard] Updating URL with current dashboard:', currentDashboardId)
       isSyncingFromStore.current = true
       navigate(`/visual-dashboard/${currentDashboardId}`, { replace: true })
       setTimeout(() => { isSyncingFromStore.current = false }, 50)
@@ -1310,7 +1352,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
           fit: 'fill',
           rounded: true,
           limit: 50,
-          timeRange: 1,
+          timeRange: 24,
         }
         break
       case 'web-display':
@@ -1444,9 +1486,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // Handle layout change
   const handleLayoutChange = (layout: readonly any[]) => {
-    console.log('[VisualDashboard] handleLayoutChange called with:', layout)
     layout.forEach((item) => {
-      console.log(`[VisualDashboard] Updating component ${item.i}:`, { x: item.x, y: item.y, w: item.w, h: item.h })
       updateComponent(item.i, {
         position: {
           x: item.x,
@@ -1500,9 +1540,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
   // SelectField component - NOT memoized to ensure it receives fresh props
   function SelectField({ label, value, onChange, options, className }: SelectFieldProps) {
-    console.log('[SelectField render] label:', label, 'value:', value)
     const handleChange = (newValue: string) => {
-      console.log('[SelectField handleChange] newValue:', newValue, 'label:', label)
       onChange(newValue)
     }
     return (
@@ -1883,6 +1921,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               render: () => (
                 <div className="space-y-3">
                   <SelectField
+                    label={t('visualDashboard.size')}
+                    value={config.size || 'md'}
+                    onChange={updateConfig('size')}
+                    options={[
+                      { value: 'sm', label: t('sizes.sm') },
+                      { value: 'md', label: t('sizes.md') },
+                      { value: 'lg', label: t('sizes.lg') },
+                    ]}
+                  />
+
+                  <SelectField
                     label={t('visualDashboard.style')}
                     value={config.variant || 'default'}
                     onChange={updateConfig('variant')}
@@ -1898,6 +1947,16 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     value={config.icon || ''}
                     onChange={(icon) => updateConfig('icon')(icon)}
                     label={t('visualDashboard.icon')}
+                  />
+
+                  <SelectField
+                    label={t('visualDashboard.iconType')}
+                    value={config.iconType || 'entity'}
+                    onChange={updateConfig('iconType')}
+                    options={[
+                      { value: 'entity', label: 'Entity Icon' },
+                      { value: 'class', label: 'Lucide Icon' },
+                    ]}
                   />
 
                   <ColorPicker
@@ -2063,26 +2122,35 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       <span className="text-sm">{t('visualDashboard.fillArea')}</span>
                     </label>
 
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.curved ?? true}
-                        onChange={(e) => updateConfig('curved')(e.target.checked)}
-                        className="rounded"
+                    {config.fill && (
+                      <ColorPicker
+                        value={config.fillColor || '#3b82f6'}
+                        onChange={(color) => updateConfig('fillColor')(color)}
+                        label={t('visualDashboard.fillColor')}
+                        presets="primary"
                       />
-                      <span className="text-sm">{t('visualDashboard.curved')}</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={config.showPoints ?? false}
-                        onChange={(e) => updateConfig('showPoints')(e.target.checked)}
-                        className="rounded"
-                      />
-                      <span className="text-sm">{t('visualDashboard.showDataPoints')}</span>
-                    </label>
+                    )}
                   </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.curved ?? false}
+                      onChange={(e) => updateConfig('curved')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">{t('visualDashboard.curved')}</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={config.showPoints ?? false}
+                      onChange={(e) => updateConfig('showPoints')(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-sm">{t('visualDashboard.showDataPoints')}</span>
+                  </label>
                 </div>
               ),
             },
@@ -2672,7 +2740,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     onChange={updateConfig('layout')}
                     options={[
                       { value: 'vertical', label: t('visualDashboard.vertical') },
-                      { value: 'default', label: t('visualDashboard.default') },
+                      { value: 'horizontal', label: t('visualDashboard.horizontal') },
                     ]}
                   />
                 </div>
@@ -3094,10 +3162,25 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                       <Label>{t('visualDashboard.maxImages')}</Label>
                       <Input
                         type="number"
-                        value={config.limit ?? 50}
-                        onChange={(e) => updateConfig('limit')(Number(e.target.value))}
+                        value={config.limit !== undefined && config.limit !== null && config.limit !== '' ? config.limit : ''}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          if (raw === '') {
+                            updateConfig('limit')(undefined)
+                            return
+                          }
+                          const v = Number(raw)
+                          if (Number.isFinite(v)) updateConfig('limit')(v)
+                        }}
+                        onBlur={(e) => {
+                          const v = Number(e.target.value)
+                          if (e.target.value !== '' && (!Number.isFinite(v) || v < 1 || v > 200)) {
+                            updateConfig('limit')(50)
+                          }
+                        }}
                         min={1}
                         max={200}
+                        placeholder="50"
                         className="h-9"
                       />
                     </Field>

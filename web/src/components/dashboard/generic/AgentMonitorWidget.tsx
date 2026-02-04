@@ -1002,7 +1002,6 @@ export function AgentMonitorWidget({
 
     try {
       const data = await api.getAgent(agentId)
-      console.log('[AgentMonitorWidget] Agent data:', data)
       setAgent(data)
     } catch (error) {
       console.error('Failed to load agent:', error)
@@ -1017,7 +1016,6 @@ export function AgentMonitorWidget({
     if (!agentId) return
     try {
       const data = await api.getAgentExecutions(agentId, 50)
-      console.log('[AgentMonitorWidget] Executions loaded:', data.executions?.length || 0)
       setExecutions(data.executions || [])
       hasLoadedRef.current = true
     } catch (error) {
@@ -1081,7 +1079,6 @@ export function AgentMonitorWidget({
 
   // Initial load and refresh on agentId change
   useEffect(() => {
-    console.log('[AgentMonitorWidget] Init with agentId:', agentId)
     hasLoadedRef.current = false
     setNewExecutionId(null)
     setCurrentStage(null)
@@ -1106,13 +1103,10 @@ export function AgentMonitorWidget({
       'AgentProgress',
     ],
     onEvent: (event) => {
-      console.log('[AgentMonitorWidget] Received event:', event.type, 'data:', event.data)
       switch (event.type) {
         case 'AgentExecutionStarted': {
           const startedData = (event as AgentExecutionStartedEvent).data
-          console.log('[AgentMonitorWidget] AgentExecutionStarted - event.agent_id:', startedData.agent_id, 'widget.agentId:', agentId, 'match:', startedData.agent_id === agentId)
           if (startedData.agent_id === agentId) {
-            console.log('[AgentMonitorWidget] Execution started:', startedData.execution_id)
             setIsExecuting(true)
             setNewExecutionId(startedData.execution_id || null)
             setCurrentStage('collecting')
@@ -1127,7 +1121,6 @@ export function AgentMonitorWidget({
         case 'AgentProgress': {
           const progressData = (event as AgentProgressEvent).data
           if (progressData.agent_id === agentId) {
-            console.log('[AgentMonitorWidget] Progress:', progressData)
             setCurrentStage(progressData.stage)
             setStageLabel(progressData.stage_label)
             setStageDetails(progressData.details || null)
@@ -1143,9 +1136,7 @@ export function AgentMonitorWidget({
 
         case 'AgentThinking': {
           const thinkingData = (event as AgentThinkingEvent).data
-          console.log('[AgentMonitorWidget] AgentThinking - event.agent_id:', thinkingData.agent_id, 'widget.agentId:', agentId, 'match:', thinkingData.agent_id === agentId)
           if (thinkingData.agent_id === agentId) {
-            console.log('[AgentMonitorWidget] Thinking:', thinkingData)
             setCurrentThinking(thinkingData.description)
             setThinkingSteps(prev => [
               ...prev.filter(s => s.step !== thinkingData.step_number),
@@ -1158,7 +1149,6 @@ export function AgentMonitorWidget({
         case 'AgentDecision': {
           const decisionData = (event as AgentDecisionEvent).data
           if (decisionData.agent_id === agentId) {
-            console.log('[AgentMonitorWidget] Decision:', decisionData)
             setCurrentThinking(`Decided: ${decisionData.action}`)
           }
           break
@@ -1167,7 +1157,6 @@ export function AgentMonitorWidget({
         case 'AgentExecutionCompleted': {
           const completedData = (event as AgentExecutionCompletedEvent).data
           if (completedData.agent_id === agentId) {
-            console.log('[AgentMonitorWidget] Execution completed:', completedData.execution_id)
             setIsExecuting(false)
             setCurrentStage(null)
             setStageLabel(null)
