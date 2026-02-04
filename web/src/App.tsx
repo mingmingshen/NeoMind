@@ -102,15 +102,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
           }
         }
       }
-      // After all retries, assume setup not required (backend might be genuinely down)
-      return false
+      // After all retries, assume setup IS required (safer default for first-time install)
+      // This ensures new installations see the setup page even if backend check fails
+      return true
     }
 
     checkSetup().then(result => {
       setSetupRequired(result)
       setLoading(false)
     }).catch(() => {
-      setSetupRequired(false)
+      // On error, assume setup required for safety
+      setSetupRequired(true)
       setLoading(false)
     })
   }, [])
@@ -164,14 +166,16 @@ function SetupRoute({ children }: { children: React.ReactNode }) {
           }
         }
       }
-      return false
+      // After all retries, assume setup IS required (safer default for first-time install)
+      return true
     }
 
     checkSetup().then(result => {
       setSetupRequired(result)
       setLoading(false)
     }).catch(() => {
-      setSetupRequired(false)
+      // On error, assume setup required for safety
+      setSetupRequired(true)
       setLoading(false)
     })
   }, [])
@@ -220,14 +224,16 @@ function SetupCheckRoute({ children }: { children: React.ReactNode }) {
           }
         }
       }
-      return false
+      // After all retries, assume setup IS required (safer default for first-time install)
+      return true
     }
 
     checkSetup().then(result => {
       setSetupRequired(result)
       setLoading(false)
     }).catch(() => {
-      setSetupRequired(false)
+      // On error, assume setup required for safety
+      setSetupRequired(true)
       setLoading(false)
     })
   }, [])

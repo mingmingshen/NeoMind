@@ -135,6 +135,8 @@ fn create_tray_menu(app: &tauri::App) -> Result<tauri::tray::TrayIcon, Box<dyn s
 
     let app_handle = app.handle().clone();
     let app_handle_for_tray = app_handle.clone();
+
+    // Try to load tray icon at compile time
     let tray = TrayIconBuilder::new()
         .menu(&menu)
         .show_menu_on_left_click(false)
