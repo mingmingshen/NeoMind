@@ -74,192 +74,15 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 // Protected Route component
-// Uses tokenManager.getToken() directly to avoid race condition with store hydration
-// Also checks if setup is required before redirecting to login
+// Simply checks if user has a valid token
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
   const token = tokenManager.getToken()
-
-  useEffect(() => {
-    const checkSetup = async (retries = 10, delay = 500): Promise<boolean> => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
-
-      for (let i = 0; i < retries; i++) {
-        try {
-          const response = await fetch(`${apiBase}/setup/status`, {
-            // Add timeout to prevent hanging
-            signal: AbortSignal.timeout(3000),
-          })
-          if (response.ok) {
-            const data = await response.json() as { setup_required: boolean }
-            return data.setup_required
-          }
-        } catch {
-          // Retry after delay, with exponential backoff
-          if (i < retries - 1) {
-            await new Promise(resolve => setTimeout(resolve, delay * (1 + i * 0.5)))
-          }
-        }
-      }
-      // After all retries, assume setup IS required (safer default for first-time install)
-      // This ensures new installations see the setup page even if backend check fails
-      return true
-    }
-
-    checkSetup().then(result => {
-      setSetupRequired(result)
-      setLoading(false)
-    }).catch(() => {
-      // On error, assume setup required for safety
-      setSetupRequired(true)
-      setLoading(false)
-    })
-  }, [])
-
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    )
-  }
-
-  // Setup is required - redirect to setup page (even if authenticated!)
-  // This handles the case where setup was completed but the user hasn't created an account yet
-  if (setupRequired === true) {
-    return <Navigate to="/setup" replace />
-  }
 
   // Not authenticated - redirect to login
   if (!token) {
     return <Navigate to="/login" replace />
   }
 
-  return <>{children}</>
-}
-
-// Setup Route component
-// Only accessible when setup is required (not completed)
-// Users can be authenticated during setup (after account step) - that's fine
-function SetupRoute({ children }: { children: React.ReactNode }) {
-  const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const checkSetup = async (retries = 10, delay = 500): Promise<boolean> => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
-
-      for (let i = 0; i < retries; i++) {
-        try {
-          const response = await fetch(`${apiBase}/setup/status`, {
-            signal: AbortSignal.timeout(3000),
-          })
-          if (response.ok) {
-            const data = await response.json() as { setup_required: boolean }
-            return data.setup_required
-          }
-        } catch {
-          if (i < retries - 1) {
-            await new Promise(resolve => setTimeout(resolve, delay * (1 + i * 0.5)))
-          }
-        }
-      }
-      // After all retries, assume setup IS required (safer default for first-time install)
-      return true
-    }
-
-    checkSetup().then(result => {
-      setSetupRequired(result)
-      setLoading(false)
-    }).catch(() => {
-      // On error, assume setup required for safety
-      setSetupRequired(true)
-      setLoading(false)
-    })
-  }, [])
-
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    )
-  }
-
-  // Setup already completed - redirect to login
-  if (setupRequired === false) {
-    return <Navigate to="/login" replace />
-  }
-
-  // Show setup page (allow authenticated users to continue setup)
-  return <>{children}</>
-}
-
-// Setup Required Route component
-// Checks if setup is needed and redirects to /setup if required
-// Otherwise redirects to login if authenticated
-function SetupCheckRoute({ children }: { children: React.ReactNode }) {
-  const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const checkSetup = async (retries = 10, delay = 500): Promise<boolean> => {
-      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
-
-      for (let i = 0; i < retries; i++) {
-        try {
-          const response = await fetch(`${apiBase}/setup/status`, {
-            signal: AbortSignal.timeout(3000),
-          })
-          if (response.ok) {
-            const data = await response.json() as { setup_required: boolean }
-            return data.setup_required
-          }
-        } catch {
-          if (i < retries - 1) {
-            await new Promise(resolve => setTimeout(resolve, delay * (1 + i * 0.5)))
-          }
-        }
-      }
-      // After all retries, assume setup IS required (safer default for first-time install)
-      return true
-    }
-
-    checkSetup().then(result => {
-      setSetupRequired(result)
-      setLoading(false)
-    }).catch(() => {
-      // On error, assume setup required for safety
-      setSetupRequired(true)
-      setLoading(false)
-    })
-  }, [])
-
-  const token = tokenManager.getToken()
-
-  // Show loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    )
-  }
-
-  // Setup is required - redirect to setup page
-  if (setupRequired === true) {
-    return <Navigate to="/setup" replace />
-  }
-
-  // Already authenticated - redirect to dashboard
-  if (token) {
-    return <Navigate to="/" replace />
-  }
-
-  // Otherwise show login page
   return <>{children}</>
 }
 
@@ -327,27 +150,13 @@ function App() {
     <>
       <Suspense fallback={<PageLoading />}>
         <Routes>
-          {/* Setup route - protected, only accessible when setup required and not authenticated */}
-          <Route
-            path="/setup"
-            element={
-              <SetupRoute>
-                <SetupPage />
-              </SetupRoute>
-            }
-          />
+          {/* Setup route - accessible via link from login page */}
+          <Route path="/setup" element={<SetupPage />} />
 
-        {/* Login route with setup check - redirects to /setup if needed */}
-        <Route
-          path="/login"
-          element={
-            <SetupCheckRoute>
-              <LoginPage />
-            </SetupCheckRoute>
-          }
-        />
+          {/* Login route */}
+          <Route path="/login" element={<LoginPage />} />
 
-        {/* Protected routes */}
+          {/* Protected routes */}
         <Route
           path="/*"
           element={

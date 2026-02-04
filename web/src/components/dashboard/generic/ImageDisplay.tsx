@@ -510,21 +510,36 @@ export function ImageDisplay({
   // Determine if we should show loading state
   // Only show loading when there's actually a dataSource to load from
   const hasDataSource = dataSource !== undefined
-  const shouldShowLoading = loading && hasDataSource && imageLoadState === 'loading'
 
-  // Update image load state when src changes
+  // Track previous displaySrc to detect when image actually changes
+  const prevDisplaySrcRef = useRef<string | undefined>()
+  const displaySrcChanged = displaySrc !== prevDisplaySrcRef.current
+
+  // Update image load state when src changes or loading state changes
   useEffect(() => {
+    // Update ref for next comparison
+    if (displaySrc !== prevDisplaySrcRef.current) {
+      prevDisplaySrcRef.current = displaySrc
+    }
+
     if (!hasDataSource) {
       // No data source configured - show no-source state
       setImageLoadState('no-source')
     } else if (loading) {
+      // Data source is still loading - show loading
       setImageLoadState('loading')
     } else if (!hasValidSource) {
+      // No valid image source - show no-source state
       setImageLoadState('no-source')
-    } else {
+    } else if (displaySrcChanged) {
+      // Data loaded and src changed - trigger image load
       setImageLoadState('loading')
     }
-  }, [displaySrc, loading, hasValidSource, hasDataSource])
+    // If displaySrc hasn't changed, keep current state
+  }, [displaySrc, loading, hasValidSource, hasDataSource, displaySrcChanged])
+
+  // Show loading skeleton only during data fetch, not during image render
+  const shouldShowLoading = loading && hasDataSource && imageLoadState === 'loading'
 
   const handleImageLoad = useCallback(() => {
     setImageLoadState('loaded')

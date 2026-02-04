@@ -173,14 +173,18 @@ function ResponsiveSparkline({
   const isFlatLine = max === min
   const range = max - min || 1
 
-  const width = containerWidth
+  // Use fixed coordinate system for stable rendering
+  // Height is always 100 (normalized), width scales with container
+  const CHART_HEIGHT = 100
+  const aspectRatio = containerWidth / height
+  const normalizedWidth = CHART_HEIGHT * aspectRatio
 
-  // Calculate points - center flat lines vertically for better aesthetics
+  // Calculate points in normalized coordinate system
   const points = chartData.map((v, i) => {
-    const x = (i / (chartData.length - 1)) * width
+    const x = (i / (chartData.length - 1)) * normalizedWidth
     const y = isFlatLine
-      ? height / 2
-      : height - ((v - min) / range) * height
+      ? CHART_HEIGHT / 2
+      : CHART_HEIGHT - ((v - min) / range) * CHART_HEIGHT
     return { x, y, value: v }
   })
 
@@ -209,15 +213,15 @@ function ResponsiveSparkline({
     pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
   }
 
-  const fillPath = `${pathD} L ${width} ${height} L 0 ${height} Z`
+  const fillPath = `${pathD} L ${normalizedWidth} ${CHART_HEIGHT} L 0 ${CHART_HEIGHT} Z`
 
   return (
     <div ref={containerRef} className={cn('w-full h-full flex items-center justify-center overflow-visible', className)}>
       <svg
         width="100%"
         height="100%"
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="xMidYMid meet"
+        viewBox={`0 0 ${normalizedWidth} ${CHART_HEIGHT}`}
+        preserveAspectRatio="none"
         style={{ overflow: 'visible' }}
       >
         <defs>
@@ -272,9 +276,9 @@ function ResponsiveSparkline({
         {showThreshold && threshold !== undefined && !isFlatLine && (
           <line
             x1={0}
-            y1={height - ((threshold - min) / range) * height}
-            x2={width}
-            y2={height - ((threshold - min) / range) * height}
+            y1={CHART_HEIGHT - ((threshold - min) / range) * CHART_HEIGHT}
+            x2={normalizedWidth}
+            y2={CHART_HEIGHT - ((threshold - min) / range) * CHART_HEIGHT}
             stroke={thresholdColor}
             strokeWidth={1.5}
             strokeDasharray="4 4"

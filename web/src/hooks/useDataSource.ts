@@ -1222,7 +1222,7 @@ export function useDataSource<T = unknown>(
         setLastUpdate(Date.now())
       }
     }
-  }, [events.length, dataSources, enabled])  // Only depend on events.length, not the full array
+  }, [events.length, enabled, dataSourceKey])  // Use dataSourceKey instead of dataSources for stable reference
 
   // Telemetry data fetching (for historical time-series data)
   // Use stable key for dependency to prevent infinite re-renders

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 import { useStore } from "@/store"
-import { Bot, Languages, Lock, User, Shield } from "lucide-react"
+import { Bot, Languages, Lock, User, Shield, Rocket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -50,14 +51,37 @@ function translateError(error: string, t: (key: string, params?: Record<string, 
 export function LoginPage() {
   const { t, i18n } = useTranslation(['common', 'auth'])
   const { login } = useStore()
+  const navigate = useNavigate()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [isFirstSetup, setIsFirstSetup] = useState<boolean | null>(null)
 
   // Load saved credentials on mount
   useEffect(() => {
+    // Check if this is first-time setup (no admin user exists)
+    const checkSetupStatus = async () => {
+      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      try {
+        const response = await fetch(`${apiBase}/setup/status`, {
+          signal: AbortSignal.timeout(5000),
+        })
+        if (response.ok) {
+          const data = await response.json() as { setup_required: boolean }
+          setIsFirstSetup(data.setup_required)
+        } else {
+          setIsFirstSetup(false)
+        }
+      } catch {
+        // On error, assume setup not required (allow normal login)
+        setIsFirstSetup(false)
+      }
+    }
+    checkSetupStatus()
+
+    // Load saved credentials
     try {
       const saved = localStorage.getItem(CREDENTIALS_KEY)
       if (saved) {
@@ -219,7 +243,32 @@ export function LoginPage() {
           {/* Login Card */}
           <div className="bg-background/50 dark:bg-background/30 backdrop-blur-md rounded-xl p-8">
             {/* Login Title */}
-            <h2 className="text-3xl font-semibold mb-8 text-center">{t('auth:login')}</h2>
+            <h2 className="text-3xl font-semibold mb-6 text-center">{t('auth:login')}</h2>
+
+            {/* First-time setup notice */}
+            {isFirstSetup === true && (
+              <div className="mb-6 flex items-start gap-3 p-4 bg-primary/10 dark:bg-primary/20 border border-primary/20 rounded-lg">
+                <Rocket className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-foreground mb-1">
+                    {t('auth:firstSetupTitle', 'Welcome to NeoMind!')}
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    {t('auth:firstSetupDesc', 'No admin account found. Let\'s create one to get started.')}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => navigate('/setup')}
+                  >
+                    <Rocket className="h-4 w-4 mr-1.5" />
+                    {t('auth:startSetup', 'Start Setup')}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Login Form */}
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
