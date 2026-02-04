@@ -734,7 +734,7 @@ export function ChatPage() {
           </div>
         ) : hasMessages ? (
           /* Chat Messages - shown on /chat/:sessionId with messages */
-          <div className="touch-scroll flex-1 overflow-y-auto px-2 sm:px-4 py-2">
+          <div className="touch-scroll flex-1 min-h-0 overflow-y-auto px-2 sm:px-4 py-2">
             <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
               {displayMessages.map((message) => (
                 <div
@@ -824,7 +824,7 @@ export function ChatPage() {
           </div>
         ) : (
           /* Empty chat - shown on /chat/:sessionId with no messages yet */
-          <div className="flex-1 flex items-center justify-center px-4">
+          <div className="flex-1 min-h-0 flex items-center justify-center px-4">
             <div className="text-center space-y-4 max-w-md">
               <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">
                 <Sparkles className="h-8 w-8 text-muted-foreground" />
