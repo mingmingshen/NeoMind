@@ -735,7 +735,7 @@ export function ChatPage() {
         ) : hasMessages ? (
           /* Chat Messages - shown on /chat/:sessionId with messages */
           <div className="touch-scroll flex flex-col items-start justify-start flex-1 overflow-y-auto">
-            <div className="w-full px-2 sm:px-4 py-4 sm:py-6">
+            <div className="w-full px-2 sm:px-4 pt-2 sm:pt-3 pb-4 sm:pb-6">
             <div className="w-full max-w-3xl mx-auto space-y-4 sm:space-y-6">
               {displayMessages.map((message) => (
                 <div
