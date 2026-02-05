@@ -63,7 +63,7 @@ export function DeviceList({
   const getAdapterIcon = (adapter: string) => {
     const lower = adapter?.toLowerCase() || ''
     if (lower.includes('mqtt') || lower === 'mqtt') return Database
-    if (lower.includes('modbus')) return Cpu
+    if (lower.includes('http')) return Cpu
     return Waves
   }
 

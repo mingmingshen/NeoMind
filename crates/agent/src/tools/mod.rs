@@ -4,7 +4,6 @@
 //! the NeoTalk event bus for tracking tool calls, recording history,
 //! and handling errors.
 
-pub mod analysis;
 pub mod automation;
 pub mod dsl;
 pub mod event_integration;

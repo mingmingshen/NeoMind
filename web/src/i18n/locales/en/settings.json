@@ -7,7 +7,7 @@
   "aboutDesc": "Intelligent Edge AI Agent Platform",
   "projectIntro": "Project Overview",
   "aboutDesc1": "NeoMind is an intelligent AI agent platform running on edge devices, supporting multi-model LLM, event-driven architecture, device management, rule engine and workflow orchestration.",
-  "aboutDesc2": "Through a plug-in architecture, NeoMind can flexibly expand functionality, supporting MQTT, Modbus, Home Assistant and other device adapters to achieve true intelligent edge computing.",
+  "aboutDesc2": "Through a plug-in architecture, NeoMind can flexibly expand functionality, supporting MQTT, HTTP, Webhook and other device adapters to achieve true intelligent edge computing.",
   "techStack": "Tech Stack",
   "systemCore": "System Core",
   "frameWork": "Framework",

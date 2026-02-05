@@ -165,8 +165,8 @@ export function PluginCard({
         return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
       case 'device_adapter':
       case 'mqtt':
-      case 'modbus':
-      case 'hass':
+      case 'http':
+      case 'webhook':
         return 'badge-info'
       case 'alert_channel':
         return 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'

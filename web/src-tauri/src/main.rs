@@ -21,6 +21,7 @@ struct ServerState {
 impl ServerState {
     /// Wait for the server to be ready with HTTP health check.
     /// Uses exponential backoff and checks the actual health endpoint.
+    #[allow(dead_code)]
     fn wait_for_server_ready(&self, timeout_secs: u64) -> bool {
         let max_attempts = timeout_secs * 10; // Check every 100ms
         let client = reqwest::blocking::Client::builder()

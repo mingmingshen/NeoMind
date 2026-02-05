@@ -7,7 +7,7 @@
   "aboutDesc": "智能边缘 AI Agent 平台",
   "projectIntro": "项目简介",
   "aboutDesc1": "NeoMind 是一个运行在边缘设备上的智能 AI Agent 平台，支持多模型 LLM、事件驱动架构、设备管理、规则引擎和工作流编排。",
-  "aboutDesc2": "通过插件化架构，NeoMind 可以灵活扩展功能，支持 MQTT、Modbus、Home Assistant 等多种设备适配器，实现真正的智能化边缘计算。",
+  "aboutDesc2": "通过插件化架构，NeoMind 可以灵活扩展功能，支持 MQTT、HTTP、Webhook 等多种设备适配器，实现真正的智能化边缘计算。",
   "techStack": "技术栈",
   "systemCore": "系统核心",
   "frameWork": "框架",

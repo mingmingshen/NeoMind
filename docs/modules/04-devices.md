@@ -510,6 +510,7 @@ let result = service.send_command(
 
 - ✅ Modbus适配器（未实现）
 - ✅ Home Assistant发现模块（已废弃）
+- ✅ Agent 分析工具（异常检测、趋势分析 - 未使用）
 
 ## 设计原则
 
