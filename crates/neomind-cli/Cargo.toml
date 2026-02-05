@@ -1,0 +1,25 @@
+[package]
+name = "neomind-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "neomind"
+path = "src/main.rs"
+
+[dependencies]
+neomind-core = { path = "../neomind-core" }
+neomind-agent = { path = "../neomind-agent" }
+neomind-api = { path = "../neomind-api" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+
+# CLI
+clap = { workspace = true }

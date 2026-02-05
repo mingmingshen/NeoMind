@@ -1,0 +1,22 @@
+[package]
+name = "neomind-testing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Tokio for async
+tokio = { workspace = true, features = ["full"] }
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+# Date/time
+chrono = { workspace = true }
+# Logging
+tracing = { workspace = true }
+# Error handling
+anyhow = "1.0"
+# Random for generating test data
+rand = { workspace = true }
+
+# Core types
+neomind-core = { path = "../neomind-core" }

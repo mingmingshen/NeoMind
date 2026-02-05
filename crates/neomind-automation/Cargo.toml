@@ -1,0 +1,38 @@
+[package]
+name = "neomind-automation"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+neomind-core = { path = "../neomind-core" }
+neomind-rules = { path = "../neomind-rules" }
+
+tokio = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+# Utils
+uuid = { workspace = true, features = ["v4", "serde"] }
+chrono = { workspace = true, features = ["serde"] }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Encoding/decoding
+hex = { workspace = true }
+base64 = { workspace = true }
+urlencoding = { workspace = true }
+
+# JavaScript execution - use Boa for cross-platform support
+boa_engine = "0.17"
+
+# Storage
+redb = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }
+
+[features]
+default = []
+javascript = []

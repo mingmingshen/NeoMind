@@ -1,31 +1,31 @@
 [workspace]
 members = [
-    "crates/core",
-    "crates/llm",
-    "crates/api",
-    "crates/sandbox",
-    "crates/cli",
-    "crates/devices",
-    "crates/storage",
-    "crates/rules",
-    "crates/messages",
-    "crates/memory",
-    "crates/tools",
-    "crates/agent",
-    "crates/commands",
-    "crates/integrations",
-    "crates/plugin-sdk",
-    "crates/automation",
-    "crates/testing",
+    "crates/neomind-core",
+    "crates/neomind-llm",
+    "crates/neomind-api",
+    "crates/neomind-sandbox",
+    "crates/neomind-cli",
+    "crates/neomind-devices",
+    "crates/neomind-storage",
+    "crates/neomind-rules",
+    "crates/neomind-messages",
+    "crates/neomind-memory",
+    "crates/neomind-tools",
+    "crates/neomind-agent",
+    "crates/neomind-commands",
+    "crates/neomind-integrations",
+    "crates/neomind-extension-sdk",
+    "crates/neomind-automation",
+    "crates/neomind-testing",
 ]
 exclude = ["web"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 rust-version = "1.85"
-authors = ["Edge AI Agent Contributors"]
+authors = ["NeoMind Contributors"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/camthink-ai/NeoMind"
 

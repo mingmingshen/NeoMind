@@ -1,0 +1,49 @@
+[package]
+name = "neomind-agent"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+sysinfo = ["dep:sysinfo"]
+
+[dependencies]
+neomind-core = { path = "../neomind-core" }
+neomind-llm = { path = "../neomind-llm", features = ["cloud"] }
+neomind-tools = { path = "../neomind-tools" }
+neomind-devices = { path = "../neomind-devices" }
+neomind-storage = { path = "../neomind-storage" }
+neomind-rules = { path = "../neomind-rules" }
+neomind-messages = { path = "../neomind-messages" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = "0.10"
+tokio = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+futures = { workspace = true }
+async-stream = "0.3"
+tracing = { workspace = true }
+rand = { workspace = true }
+# Cron scheduling libraries
+cron = "0.12"
+# Optional system info dependency
+sysinfo = { version = "0.33", optional = true }
+
+[[bench]]
+name = "agent_bench"
+harness = false
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# edge_ai-testing = { path = "../neomind-testing" }
+tempfile = "3.4"
+anyhow = "1.0"
+criterion = { version = "0.5", features = ["async_tokio"] }
