@@ -268,19 +268,12 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Failed to start server: {}", e);
     }
 
-    // Wait for server ready - increased timeout for Windows/older machines
-    let state = app.state::<ServerState>();
-    let server_ready = state.wait_for_server_ready(30);
-
-    if server_ready {
-        println!("Server is ready - showing main window");
-        // Show the main window after backend is ready
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-        // Emit event to let frontend know backend is ready
-        let app_handle = app.handle();
+    // Check server readiness asynchronously - don't block window display
+    // Window is already visible (visible: true in config), frontend will connect when ready
+    let app_handle = app.handle().clone();
+    std::thread::spawn(move || {
+        // Give server time to start, then notify frontend
+        std::thread::sleep(Duration::from_secs(2));
         let _ = app_handle.emit_to(
             "main",
             "backend-ready",
@@ -289,23 +282,7 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 "port": 9375
             }),
         );
-    } else {
-        eprintln!("Server did not become ready in time - showing window anyway");
-        // Show window even if server isn't ready (frontend has retry logic)
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-        }
-        // Emit event with error status
-        let app_handle = app.handle();
-        let _ = app_handle.emit_to(
-            "main",
-            "backend-ready",
-            serde_json::json!({
-                "status": "timeout",
-                "port": 9375
-            }),
-        );
-    }
+    });
 
     Ok(())
 }

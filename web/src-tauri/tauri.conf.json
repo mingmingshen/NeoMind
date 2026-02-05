@@ -24,7 +24,7 @@
         "decorations": true,
         "transparent": false,
         "hiddenTitle": false,
-        "visible": false
+        "visible": true
       }
     ],
     "security": {
@@ -76,7 +76,14 @@
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["English", "SimpChinese"]
+      }
     },
     "linux": {
       "deb": {
