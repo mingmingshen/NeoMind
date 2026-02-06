@@ -1,10 +1,10 @@
 [package]
 name = "neomind-tauri"
-version = "0.4.1"
+version = "0.5.2"
 description = "NeoMind Edge AI Platform"
 authors = ["NeoMind Team"]
 license = "MIT"
-repository = "https://github.com/camthink-ai/NeoMind"
+repository = "https://github.com/mingmingshen/NeoMind"
 edition = "2021"
 
 [build-dependencies]
