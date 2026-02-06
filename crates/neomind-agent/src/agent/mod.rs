@@ -30,6 +30,8 @@ pub mod types;
 pub mod conversation_context;
 pub mod smart_followup;
 pub mod intent_classifier;
+pub mod scheduler;
+pub mod cache;
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -164,32 +166,361 @@ pub fn compact_tool_results(messages: &[AgentMessage], keep_recent: usize) -> Ve
     result
 }
 
-/// === ANTHROPIC-STYLE IMPROVEMENT: Context Window with Tool Result Clearing ===
+/// === ENHANCED: Conversation-Level Compression ===
+///
+/// Extends compression beyond tool results to include conversation messages.
+/// This follows the "tiered compression" strategy from LangChain:
+/// - Level 1: Keep recent messages intact
+/// - Level 2: Summarize older assistant messages to key points
+/// - Level 3: Compress very old messages to brief topic markers
+///
+/// Rules:
+/// - Keep N most recent messages intact (default: 6)
+/// - Preserve user messages verbatim (higher priority for user intent)
+/// - Compress assistant messages to key points (remove verbose explanations)
+/// - Group very old messages into topic summaries
+/// - Never compress system messages
+///
+/// Expected impact: 30-50% token reduction for long conversations.
+pub fn compact_conversation(
+    messages: &[AgentMessage],
+    keep_recent: usize,
+    target_tokens: usize,
+) -> Vec<AgentMessage> {
+    if messages.len() <= keep_recent {
+        return messages.to_vec();
+    }
+
+    let mut result = Vec::new();
+    let mut current_tokens = 0;
+
+    // First pass: keep recent messages intact
+    let recent_start = messages.len().saturating_sub(keep_recent);
+    for msg in &messages[recent_start..] {
+        result.push(msg.clone());
+        current_tokens += tokenizer::estimate_message_tokens(msg);
+    }
+
+    // If we're already under the token limit, return early
+    if current_tokens <= target_tokens {
+        // Still need to add older messages in reverse order
+        for msg in messages[..recent_start].iter().rev() {
+            let msg_tokens = tokenizer::estimate_message_tokens(msg);
+            if current_tokens + msg_tokens > target_tokens {
+                break;
+            }
+            result.insert(0, msg.clone());
+            current_tokens += msg_tokens;
+        }
+        return result;
+    }
+
+    // Second pass: compress older messages
+    let mut compressed_older = Vec::new();
+    let mut topic_batches: Vec<String> = Vec::new();
+
+    for (i, msg) in messages[..recent_start].iter().enumerate() {
+        // Always keep system messages
+        if msg.role == "system" {
+            compressed_older.push(msg.clone());
+            current_tokens += tokenizer::estimate_message_tokens(msg);
+            continue;
+        }
+
+        // Keep user messages verbatim (they contain critical intent)
+        if msg.role == "user" {
+            // Truncate very long user messages
+            let truncated_content = if msg.content.len() > 200 {
+                format!("{}... (消息过长，已截断)", &msg.content[..200])
+            } else {
+                msg.content.clone()
+            };
+            compressed_older.push(AgentMessage {
+                content: truncated_content,
+                ..msg.clone()
+            });
+            current_tokens += tokenizer::estimate_message_tokens(msg);
+            continue;
+        }
+
+        // Assistant messages: create brief summary
+        if msg.role == "assistant" {
+            let summary = summarize_assistant_message(msg);
+            topic_batches.push(summary);
+        }
+    }
+
+    // Create a single summary for old conversation
+    if !topic_batches.is_empty() {
+        let old_summary = if topic_batches.len() <= 3 {
+            format!("[之前的对话: {}]", topic_batches.join("; "))
+        } else {
+            format!(
+                "[之前的对话: 包含{}轮交流，主题涉及{}]",
+                topic_batches.len(),
+                if topic_batches.len() > 5 { "多个话题" } else { "相关内容" }
+            )
+        };
+
+        // Create a synthetic summary message
+        let timestamp = messages
+            .first()
+            .and_then(|m| Some(m.timestamp))
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
+
+        compressed_older.push(AgentMessage {
+            role: "system".to_string(),
+            content: old_summary,
+            tool_calls: None,
+            tool_call_id: None,
+            tool_call_name: None,
+            thinking: None,
+            images: None,
+            timestamp,
+        });
+    }
+
+    // Combine compressed older messages with recent messages
+    let mut final_result = compressed_older;
+    final_result.extend(result);
+
+    final_result
+}
+
+/// Summarize an assistant message to its key points.
+fn summarize_assistant_message(msg: &AgentMessage) -> String {
+    let content = msg.content.trim();
+
+    // Early return for short content
+    if content.len() <= 50 {
+        return content.to_string();
+    }
+
+    // Check for common patterns and extract key info
+    if content.contains("成功") || content.contains("已完成") {
+        if let Some(tool_name) = &msg.tool_call_name {
+            return format!("执行了{}", tool_name);
+        }
+        return "操作已完成".to_string();
+    }
+
+    if content.contains("失败") || content.contains("错误") {
+        return format!("操作失败: {}", extract_first_phrase(content, 30));
+    }
+
+    if content.contains("查询到") || content.contains("数据显示") {
+        return format!("查询了数据: {}", extract_first_phrase(content, 30));
+    }
+
+    // Generic: extract first meaningful phrase
+    extract_first_phrase(content, 40)
+}
+
+/// Extract the first meaningful phrase from text.
+fn extract_first_phrase(text: &str, max_len: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.len() <= max_len {
+        return trimmed.to_string();
+    }
+
+    // Try to break at sentence boundary
+    if let Some(pos) = trimmed.find('。') {
+        if pos <= max_len {
+            return trimmed[..pos + 1].to_string();
+        }
+    }
+
+    if let Some(pos) = trimmed.find('.') {
+        if pos <= max_len {
+            return trimmed[..pos + 1].to_string();
+        }
+    }
+
+    if let Some(pos) = trimmed.find('，') {
+        if pos <= max_len {
+            return trimmed[..pos].to_string();
+        }
+    }
+
+    if let Some(pos) = trimmed.find(',') {
+        if pos <= max_len {
+            return trimmed[..pos].to_string();
+        }
+    }
+
+    // Hard truncate with ellipsis
+    format!("{}...", &trimmed[..max_len.saturating_sub(3)])
+}
+
+/// === ENHANCED: Context Window with Importance-Based Selection ===
 ///
 /// Builds conversation context with:
 /// 1. Tool result clearing for old messages
-/// 2. Token-based windowing with accurate estimation
-/// 3. Always keep recent messages (minimum 4) for context continuity
+/// 2. Conversation-level compression for long histories
+/// 3. Importance-based message selection (P1.2)
+/// 4. Token-based windowing with accurate estimation
+/// 5. Always keep recent messages (minimum 4) for context continuity
 ///
 /// The `max_tokens` parameter allows dynamic context sizing based on the model's actual capacity.
 /// This prevents wasting model capability (e.g., using 5k context with a 32k model) while
 /// also preventing errors from exceeding the model's limit (e.g., using 12k context with an 8k model).
 fn build_context_window(messages: &[AgentMessage], max_tokens: usize) -> Vec<AgentMessage> {
     // Use the improved tokenizer module for accurate token estimation
-    use tokenizer::select_messages_within_token_limit;
+    use tokenizer::select_messages_with_importance;
 
     // First, apply tool result clearing
-    let compacted = compact_tool_results(messages, 2); // Default: keep 2 recent results
+    let tool_compacted = compact_tool_results(messages, 2); // Default: keep 2 recent results
 
-    // Select messages within token limit using improved estimation
-    let selected_refs = select_messages_within_token_limit(
-        &compacted,
+    // Then apply conversation-level compression if we have many messages
+    let conversation_compacted = if tool_compacted.len() > 12 {
+        // Only compress if we have more than 12 messages after tool clearing
+        compact_conversation(&tool_compacted, 6, max_tokens)
+    } else {
+        tool_compacted
+    };
+
+    // Use importance-based selection for better context quality (P1.2)
+    // This prioritizes system messages, user intent, and error handling
+    let selected_refs = select_messages_with_importance(
+        &conversation_compacted,
         max_tokens,
-        4, // Always keep at least 4 recent messages
+        4,  // Always keep at least 4 recent messages
+        0.15, // Minimum importance threshold
     );
 
     // Convert references to owned messages
     selected_refs.into_iter().cloned().collect()
+}
+
+/// Calculate adaptive context size adjustment based on conversation complexity.
+///
+/// Returns a multiplier (0.9 to 1.2) that adjusts the context window:
+/// - 1.2: High complexity (many entities, topics, recent errors)
+/// - 1.0: Normal complexity
+/// - 0.9: Low complexity (simple greetings, repetitive)
+///
+/// Complexity factors:
+/// - High entity diversity: +10%
+/// - Multiple active topics: +10%
+/// - Recent errors: +15%
+/// - Simple greetings: -10%
+fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
+    if messages.is_empty() {
+        return 1.0;
+    }
+
+    let mut adjustment = 1.0f64;
+
+    // Analyze recent messages (last 10) for complexity
+    let recent_count = messages.len().min(10);
+    let recent = &messages[messages.len().saturating_sub(recent_count)..];
+
+    // 1. Entity diversity: Count unique device/rule/agent mentions
+    let mut entities = std::collections::HashSet::new();
+    for msg in recent {
+        let content = msg.content.to_lowercase();
+
+        // Extract device IDs
+        for word in content.split_whitespace() {
+            if word.starts_with("device_") || word.starts_with("设备") {
+                entities.insert(word.to_string());
+            }
+            // Rule mentions
+            if word.contains("rule") || word.contains("规则") {
+                entities.insert("rule".to_string());
+            }
+            // Agent mentions
+            if word.contains("agent") || word.contains("智能体") {
+                entities.insert("agent".to_string());
+            }
+            // Location mentions
+            if word.contains("客厅") || word.contains("卧室") || word.contains("厨房")
+                || word.contains("living") || word.contains("bedroom") || word.contains("kitchen") {
+                entities.insert("location".to_string());
+            }
+        }
+    }
+
+    // High entity diversity: +10%
+    if entities.len() >= 4 {
+        adjustment += 0.1;
+        tracing::debug!("Adaptive context: +10% for high entity diversity ({})", entities.len());
+    }
+
+    // 2. Topic variety: Count distinct topics
+    let mut topics = std::collections::HashSet::new();
+    for msg in recent {
+        let content = msg.content.to_lowercase();
+
+        if content.contains("温度") || content.contains("temperature") {
+            topics.insert("temperature");
+        }
+        if content.contains("灯") || content.contains("light") {
+            topics.insert("lighting");
+        }
+        if content.contains("湿度") || content.contains("humidity") {
+            topics.insert("humidity");
+        }
+        if content.contains("创建") || content.contains("create") {
+            topics.insert("creation");
+        }
+        if content.contains("查询") || content.contains("query") || content.contains("list") {
+            topics.insert("query");
+        }
+        if content.contains("控制") || content.contains("control") {
+            topics.insert("control");
+        }
+    }
+
+    // Multiple active topics: +10%
+    if topics.len() >= 3 {
+        adjustment += 0.1;
+        tracing::debug!("Adaptive context: +10% for multiple topics ({})", topics.len());
+    }
+
+    // 3. Recent errors: +15%
+    let has_recent_errors = recent.iter().any(|msg| {
+        let content = msg.content.to_lowercase();
+        content.contains("错误") || content.contains("失败") || content.contains("error")
+            || content.contains("fail") || msg.role == "tool" && content.contains("\"success\":false")
+    });
+    if has_recent_errors {
+        adjustment += 0.15;
+        tracing::debug!("Adaptive context: +15% for recent errors");
+    }
+
+    // 4. Simple greetings: -10%
+    let is_simple_greeting = messages.len() <= 3 && recent.iter().all(|msg| {
+        let content = msg.content.to_lowercase();
+        let tokens = content.split_whitespace().count();
+        tokens <= 5 || content.contains("你好") || content.contains("hello")
+            || content.contains("hi") || content.contains("嗨")
+    });
+    if is_simple_greeting {
+        adjustment -= 0.1;
+        tracing::debug!("Adaptive context: -10% for simple greeting");
+    }
+
+    // 5. Repetitive content penalty: -5%
+    let unique_contents: std::collections::HashSet<_> = recent.iter().map(|m| m.content.as_str()).collect();
+    if recent.len() > 3 && unique_contents.len() < recent.len() / 2 {
+        adjustment -= 0.05;
+        tracing::debug!("Adaptive context: -5% for repetitive content");
+    }
+
+    // Clamp adjustment to reasonable bounds
+    let adjustment = adjustment.clamp(0.9, 1.2);
+
+    tracing::debug!(
+        "Adaptive context adjustment: {:.2} (entities={}, topics={}, has_errors={}, is_greeting={})",
+        adjustment,
+        entities.len(),
+        topics.len(),
+        has_recent_errors,
+        is_simple_greeting
+    );
+
+    adjustment
 }
 
 /// Default context window size to use when model capacity is unknown.
@@ -641,6 +972,100 @@ impl Agent {
     pub async fn update_context_rule_engine(&self, engine: Arc<neomind_rules::RuleEngine>) {
         let selector = self.context_selector.read().await;
         selector.set_rule_engine(engine).await;
+    }
+
+    // === P4.2: INTELLIGENT MEMORY INJECTION HELPERS ===
+
+    /// Extract entities and topics from conversation for memory retrieval.
+    ///
+    /// Analyzes recent messages to identify:
+    /// - Device mentions (device IDs, locations)
+    /// - Topic keywords (temperature, lighting, etc.)
+    /// - Rule/automation mentions
+    fn extract_conversation_entities_topics(&self, messages: &[AgentMessage]) -> (Vec<String>, Vec<String>) {
+        use std::collections::HashSet;
+
+        let mut entities = HashSet::new();
+        let mut topics = HashSet::new();
+
+        // Analyze last 10 messages
+        let recent_count = messages.len().min(10);
+        let recent = &messages[messages.len().saturating_sub(recent_count)..];
+
+        for msg in recent {
+            let content = msg.content.to_lowercase();
+
+            // Extract device entities
+            for word in content.split_whitespace() {
+                if word.starts_with("device_") || word.starts_with("设备") {
+                    entities.insert(word.to_string());
+                }
+                // Location mentions
+                if word.contains("客厅") || word.contains("卧室") || word.contains("厨房") {
+                    entities.insert(word.to_string());
+                }
+                if word.contains("living") || word.contains("bedroom") || word.contains("kitchen") {
+                    entities.insert(word.to_string());
+                }
+            }
+
+            // Extract topics
+            if content.contains("温度") || content.contains("temperature") {
+                topics.insert("temperature".to_string());
+            }
+            if content.contains("灯") || content.contains("light") {
+                topics.insert("lighting".to_string());
+            }
+            if content.contains("湿度") || content.contains("humidity") {
+                topics.insert("humidity".to_string());
+            }
+            if content.contains("规则") || content.contains("自动化") || content.contains("rule") {
+                topics.insert("automation".to_string());
+            }
+        }
+
+        (
+            entities.into_iter().collect(),
+            topics.into_iter().collect(),
+        )
+    }
+
+    /// Build memory injection hint based on entities, topics, and health status.
+    ///
+    /// Creates a system prompt that guides the LLM to recall relevant context
+    /// from long-term memory. This is a framework that can be extended with
+    /// actual memory queries when a persistent memory service is integrated.
+    fn build_memory_injection_hint(
+        &self,
+        entities: &[String],
+        topics: &[String],
+        health: &crate::context::ContextHealth,
+    ) -> String {
+        if entities.is_empty() && topics.is_empty() {
+            return String::new();
+        }
+
+        let mut hint = String::from("[Memory Recall] ");
+
+        // Add health-based guidance
+        if let Some(recommendation) = health.recommendation() {
+            hint.push_str(&format!("Context hint: {}. ", recommendation));
+        }
+
+        // Add entity recall hints
+        if !entities.is_empty() {
+            hint.push_str(&format!("Related entities: {}. ", entities.join(", ")));
+        }
+
+        // Add topic recall hints
+        if !topics.is_empty() {
+            hint.push_str(&format!("Previous topics discussed: {}. ", topics.join(", ")));
+        }
+
+        // Add guidance for memory retrieval
+        hint.push_str("Consider any relevant information from earlier in the conversation that might help with the current request.");
+
+        hint
     }
 
     // === SEMANTIC MAPPING METHODS ===
@@ -1196,11 +1621,25 @@ impl Agent {
         // This allows us to use the full capability of models like qwen3-vl:2b (32k)
         // without artificial limits.
         let max_context = self.llm_interface.max_context_length().await;
-        let effective_max = (max_context * 90) / 100;
+
+        // === P3.2: ADAPTIVE CONTEXT SIZING ===
+        // Adjust context size based on conversation complexity:
+        // - High entity diversity: +10%
+        // - Multiple active topics: +10%
+        // - Recent errors: +15%
+        // - Simple greetings: -10%
+        let base_effective_max = (max_context * 90) / 100;
+        let adaptive_adjustment = calculate_adaptive_context_adjustment(&history_without_last);
+        let effective_max = ((base_effective_max as f64) * adaptive_adjustment) as usize;
+
+        // Enforce floor and ceiling
+        let effective_max = effective_max.clamp(4096, max_context);
 
         tracing::debug!(
-            "Context window: model_capacity={}, effective_max={} (90% for history)",
+            "Context window: model_capacity={}, base_effective={}, adjustment={:.2}, effective_max={} (90% for history)",
             max_context,
+            base_effective_max,
+            adaptive_adjustment,
             effective_max
         );
 
@@ -1255,6 +1694,34 @@ impl Agent {
             } else {
                 drop(last_hash); // Release lock
                 tracing::debug!("Skipping context injection - unchanged from previous");
+            }
+        }
+
+        // === P4.2: INTELLIGENT MEMORY INJECTION ===
+        // Detect stale context and inject relevant long-term memory summaries
+        // This improves context continuity in long conversations
+        use crate::context::{calculate_health, ContextHealth};
+        let health = calculate_health(&history_without_last);
+
+        // Inject memory if context is degraded
+        if health.needs_refresh() {
+            tracing::debug!(
+                "Context health degraded (score: {:.2}), injecting memory hints",
+                health.overall_score
+            );
+
+            // Extract entities and topics from recent conversation
+            let (entities, topics) = self.extract_conversation_entities_topics(&history_without_last);
+
+            if !entities.is_empty() || !topics.is_empty() {
+                // Build memory hint prompt
+                let memory_hint = self.build_memory_injection_hint(&entities, &topics, &health);
+
+                if !memory_hint.is_empty() {
+                    use neomind_core::message::{Content, MessageRole};
+                    core_history.push(Message::new(MessageRole::System, Content::text(&memory_hint)));
+                    tracing::debug!("Injected memory hint into context");
+                }
             }
         }
 

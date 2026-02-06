@@ -179,11 +179,39 @@ function App() {
   const { isAuthenticated, checkAuthStatus, setWsConnected } = useStore()
   const [backendReady, setBackendReady] = useState(false)
   const [isTauri, setIsTauri] = useState(false)
+  const [initialCheckDone, setInitialCheckDone] = useState(false)
+  const [setupRequired, setSetupRequired] = useState<boolean | null>(null)
 
   // Check if running in Tauri environment
   useEffect(() => {
     setIsTauri(typeof window !== 'undefined' && '__TAURI__' in window)
   }, [])
+
+  // Initial setup check - runs before routes are rendered
+  useEffect(() => {
+    const checkInitialSetup = async () => {
+      const apiBase = (window as any).__TAURI__ ? 'http://localhost:9375/api' : '/api'
+      try {
+        const response = await fetch(`${apiBase}/setup/status`, {
+          signal: AbortSignal.timeout(5000),
+        })
+        if (response.ok) {
+          const data = await response.json() as { setup_required: boolean }
+          setSetupRequired(data.setup_required)
+        }
+      } catch {
+        // On error, assume setup is not required
+        setSetupRequired(false)
+      } finally {
+        setInitialCheckDone(true)
+      }
+    }
+
+    // Only check after backend is ready in Tauri
+    if (!isTauri || backendReady) {
+      checkInitialSetup()
+    }
+  }, [isTauri, backendReady])
 
   // Check authentication status on mount (only once)
   useEffect(() => {
@@ -224,6 +252,18 @@ function App() {
   // Show loading screen in Tauri until backend is ready
   if (isTauri && !backendReady) {
     return <StartupLoading onReady={() => setBackendReady(true)} />
+  }
+
+  // Show loading while checking initial setup status
+  if (!initialCheckDone) {
+    return <PageLoading />
+  }
+
+  // Auto-redirect to setup if required (fresh install)
+  // Check if current path is not already /setup to avoid redirect loop
+  const currentPath = window.location.pathname
+  if (setupRequired && currentPath !== '/setup') {
+    return <Navigate to="/setup" replace />
   }
 
   return (

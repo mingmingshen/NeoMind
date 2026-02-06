@@ -10,6 +10,7 @@ mod meta_tools;
 mod resource_index;
 mod dynamic_tools;
 mod resource_resolver;
+mod health;
 
 #[cfg(test)]
 mod mock_devices;
@@ -28,6 +29,7 @@ pub use resource_resolver::{
     ResourceResolver, ResolvedIntent, ResourceMatch,
     IntentCategory, MatchType, SuggestedAction, ActionType,
 };
+pub use health::{ContextHealth, HealthStatus, HealthCheckConfig, calculate_health, calculate_health_with_config};
 
 #[cfg(test)]
 pub use mock_devices::{generate_mock_devices, generate_large_scale_devices, get_device_summary};

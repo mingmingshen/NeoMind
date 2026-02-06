@@ -106,6 +106,136 @@ pub fn select_messages_within_token_limit(
     selected
 }
 
+/// === P1.2: Relevance-Based Context Selection ===
+///
+/// Calculate importance score for a message based on multiple factors:
+/// - Recency: Recent messages get higher scores
+/// - Role: User messages get priority
+/// - Content: Error messages and tool results get boosted
+/// - Entities: Messages with entity references get priority
+///
+/// Returns a score between 0.0 (low importance) and 1.0 (critical)
+pub fn calculate_message_importance(
+    msg: &crate::agent::AgentMessage,
+    position: usize,
+    total_messages: usize,
+) -> f32 {
+    let mut score = 0.5f32; // Base score
+
+    // 1. Recency bonus (0-0.25)
+    let recency_ratio = position as f32 / total_messages as f32;
+    score += recency_ratio * 0.25;
+
+    // 2. Role-based priority
+    match msg.role.as_str() {
+        "system" => score += 0.3,  // System messages are critical
+        "user" => score += 0.2,     // User intent is high priority
+        "assistant" => score += 0.0, // Neutral
+        "tool" => score -= 0.1,    // Tool results already handled separately
+        _ => {}
+    }
+
+    // 3. Content-based boosts
+    let content = msg.content.to_lowercase();
+    if content.contains("错误") || content.contains("失败") || content.contains("error") || content.contains("fail") {
+        score += 0.15; // Error messages are important for debugging
+    }
+
+    // 4. Tool call indication
+    if msg.tool_calls.as_ref().map(|t| !t.is_empty()).unwrap_or(false) {
+        score += 0.1; // Active tool calls are important
+    }
+
+    // 5. Thinking content (slight boost for reasoning)
+    if msg.thinking.as_ref().map(|t| !t.is_empty()).unwrap_or(false) {
+        score += 0.05;
+    }
+
+    // Clamp to valid range
+    score.clamp(0.0, 1.0)
+}
+
+/// === P1.2: Enhanced Context Selection with Importance Scoring ===
+///
+/// Select messages within token limit using importance-based prioritization.
+/// This is an enhanced version of `select_messages_within_token_limit` that:
+/// - Always keeps recent N messages (for continuity)
+/// - Prioritizes high-importance messages within the token budget
+/// - Falls back to recency-only when importance is similar
+///
+/// The `min_messages` parameter ensures we always keep the most recent messages.
+/// The `importance_threshold` parameter filters out low-importance messages (default: 0.15).
+pub fn select_messages_with_importance(
+    messages: &[crate::agent::AgentMessage],
+    max_tokens: usize,
+    min_messages: usize,
+    importance_threshold: f32,
+) -> Vec<&crate::agent::AgentMessage> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
+
+    let total_messages = messages.len();
+
+    // If all messages fit, return all
+    let total_tokens: usize = messages
+        .iter()
+        .map(estimate_message_tokens)
+        .sum();
+    if total_tokens <= max_tokens {
+        return messages.iter().collect();
+    }
+
+    // First: Always include the most recent min_messages
+    let mut selected = Vec::new();
+    let mut used_tokens = 0;
+    let recent_start = total_messages.saturating_sub(min_messages);
+
+    for msg in &messages[recent_start..] {
+        selected.push(msg);
+        used_tokens += estimate_message_tokens(msg);
+    }
+
+    // Calculate importance for remaining messages
+    let mut scored_messages: Vec<(f32, usize, &crate::agent::AgentMessage)> = messages[..recent_start]
+        .iter()
+        .enumerate()
+        .map(|(i, msg)| {
+            let importance = calculate_message_importance(msg, i, total_messages);
+            (importance, i, msg)
+        })
+        .filter(|(score, _, _)| *score >= importance_threshold)
+        .collect();
+
+    // Sort by importance (descending), then by position (recent first)
+    scored_messages.sort_by(|a, b| {
+        b.0
+            .partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.1.cmp(&a.1))
+    });
+
+    // Greedy selection: add high-importance messages that fit
+    for (score, _pos, msg) in scored_messages {
+        let msg_tokens = estimate_message_tokens(msg);
+        if used_tokens + msg_tokens <= max_tokens {
+            // Insert at the beginning (before recent messages)
+            selected.insert(0, msg);
+            used_tokens += msg_tokens;
+        }
+    }
+
+    // Sort selected by original position
+    selected.sort_by_key(|msg| {
+        messages
+            .iter()
+            .position(|m| std::ptr::eq(m, *msg))
+            .unwrap_or(usize::MAX)
+    });
+
+    selected
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
