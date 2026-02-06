@@ -1617,10 +1617,13 @@ impl Agent {
 
         // === DYNAMIC CONTEXT WINDOW: Get model's actual capacity ===
         // Query the LLM backend for the actual context window size.
-        // Use 90% of model capacity for history, reserve 10% for generation.
-        // This allows us to use the full capability of models like qwen3-vl:2b (32k)
-        // without artificial limits.
+        // Reserve space for: system prompt, user message, and generation
         let max_context = self.llm_interface.max_context_length().await;
+
+        // Calculate space needed for non-history components
+        // System prompt (~500 tokens) + user message (~200 tokens) + context injection (~200 tokens) + generation reserve (~1000 tokens)
+        const NON_HISTORY_TOKENS: usize = 1900;
+        let safe_max_context = max_context.saturating_sub(NON_HISTORY_TOKENS);
 
         // === P3.2: ADAPTIVE CONTEXT SIZING ===
         // Adjust context size based on conversation complexity:
@@ -1628,17 +1631,18 @@ impl Agent {
         // - Multiple active topics: +10%
         // - Recent errors: +15%
         // - Simple greetings: -10%
-        let base_effective_max = (max_context * 90) / 100;
         let adaptive_adjustment = calculate_adaptive_context_adjustment(&history_without_last);
-        let effective_max = ((base_effective_max as f64) * adaptive_adjustment) as usize;
 
-        // Enforce floor and ceiling
-        let effective_max = effective_max.clamp(4096, max_context);
+        // Calculate effective max with adaptive adjustment, ensuring we don't exceed safe limit
+        let effective_max = ((safe_max_context as f64) * adaptive_adjustment) as usize;
+
+        // Enforce reasonable bounds (minimum 1024 tokens for history, maximum safe limit)
+        let effective_max = effective_max.clamp(1024, safe_max_context);
 
         tracing::debug!(
-            "Context window: model_capacity={}, base_effective={}, adjustment={:.2}, effective_max={} (90% for history)",
+            "Context window: model_capacity={}, safe_max={}, adjustment={:.2}, effective_max={}",
             max_context,
-            base_effective_max,
+            safe_max_context,
             adaptive_adjustment,
             effective_max
         );

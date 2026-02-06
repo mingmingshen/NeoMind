@@ -123,6 +123,18 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Properly shutdown the server before exiting
+fn clean_shutdown(app_handle: &AppHandle) {
+    // Try to get server state and shutdown
+    if let Ok(state) = app_handle.try_state::<ServerState>() {
+        // Shutdown the tokio runtime
+        if let Some(rt) = state.runtime.lock().unwrap().take() {
+            rt.shutdown_timeout(Duration::from_secs(2));
+        }
+        // The server thread will be joined when ServerState is dropped
+    }
+}
+
 /// Create and set up the system tray menu
 fn create_tray_menu(app: &tauri::App) -> Result<tauri::tray::TrayIcon, Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
@@ -246,12 +258,26 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Handle window close event
+    // On Windows: close button quits the app (user expectation)
+    // On macOS/Linux: close button minimizes to tray
     if let Some(window) = app.get_webview_window("main") {
         let window_clone = window.clone();
+        let app_handle = app.handle().clone();
         window.on_window_event(move |event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window_clone.hide();
+                #[cfg(target_os = "windows")]
+                {
+                    // On Windows, close button should quit the app
+                    // Properly shutdown server before exiting
+                    clean_shutdown(&app_handle);
+                    api.close();
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    // On macOS/Linux, minimize to tray
+                    api.prevent_close();
+                    let _ = window_clone.hide();
+                }
             }
         });
     }
