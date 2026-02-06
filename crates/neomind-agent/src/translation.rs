@@ -17,6 +17,12 @@ pub enum Language {
     English,
 }
 
+impl Default for Language {
+    fn default() -> Self {
+        Self::Chinese
+    }
+}
+
 impl Language {
     /// Get language code.
     pub fn code(&self) -> &str {

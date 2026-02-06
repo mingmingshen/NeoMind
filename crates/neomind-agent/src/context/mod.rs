@@ -10,7 +10,6 @@ mod meta_tools;
 mod resource_index;
 mod dynamic_tools;
 mod resource_resolver;
-mod unified_context;
 
 #[cfg(test)]
 mod mock_devices;
@@ -28,10 +27,6 @@ pub use dynamic_tools::DynamicToolGenerator;
 pub use resource_resolver::{
     ResourceResolver, ResolvedIntent, ResourceMatch,
     IntentCategory, MatchType, SuggestedAction, ActionType,
-};
-pub use unified_context::{
-    UnifiedContext, UnifiedContextManager, ContextManagerConfig as UnifiedContextConfig,
-    HistoricalMessage, ConsolidationHint, ConsolidationType,
 };
 
 #[cfg(test)]

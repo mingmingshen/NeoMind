@@ -176,11 +176,31 @@ impl Tool for QueryDataTool {
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("metric must be a string".to_string()))?;
 
-        let end_time = args["end_time"]
-            .as_i64()
-            .unwrap_or_else(|| chrono::Utc::now().timestamp());
+        // Parse end_time - support both Unix timestamp (number) and ISO 8601 string (e.g. "2026-02-06T13:37:10Z")
+        let end_time = if let Some(ts) = args["end_time"].as_i64() {
+            ts
+        } else if let Some(s) = args["end_time"].as_str() {
+            // Try to parse ISO 8601 string
+            chrono::DateTime::parse_from_rfc3339(s)
+                .or_else(|_| chrono::DateTime::parse_from_rfc2822(s))
+                .map(|dt| dt.timestamp())
+                .unwrap_or_else(|_| chrono::Utc::now().timestamp())
+        } else {
+            chrono::Utc::now().timestamp()
+        };
 
-        let start_time = args["start_time"].as_i64().unwrap_or(end_time - 86400); // Default 24 hours
+        // Parse start_time - support both Unix timestamp (number) and ISO 8601 string
+        let start_time = if let Some(ts) = args["start_time"].as_i64() {
+            ts
+        } else if let Some(s) = args["start_time"].as_str() {
+            // Try to parse ISO 8601 string
+            chrono::DateTime::parse_from_rfc3339(s)
+                .or_else(|_| chrono::DateTime::parse_from_rfc2822(s))
+                .map(|dt| dt.timestamp())
+                .unwrap_or(end_time - 86400)
+        } else {
+            end_time - 86400  // Default 24 hours
+        };
 
         // Query the data from real storage
         let data_points = self

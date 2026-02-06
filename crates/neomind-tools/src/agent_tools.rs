@@ -158,7 +158,6 @@ impl Tool for ListAgentsTool {
                 "event" => Some(ScheduleType::Event),
                 "cron" => Some(ScheduleType::Cron),
                 "interval" => Some(ScheduleType::Interval),
-                "once" => Some(ScheduleType::Once),
                 _ => None,
             };
         }

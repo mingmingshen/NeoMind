@@ -644,6 +644,63 @@ pub async fn ws_chat_handler(
     ws.on_upgrade(|socket| handle_ws_socket(socket, state, session_id, session_info))
 }
 
+/// Send session history to the client.
+///
+/// This is called when a session is restored or switched to send the conversation
+/// history to the frontend for display.
+async fn send_session_history(
+    socket: &mut WebSocket,
+    session_id: &str,
+    state: &ServerState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match state.agents.session_manager.get_history(session_id).await {
+        Ok(messages) => {
+            if !messages.is_empty() {
+                tracing::info!(
+                    session_id = %session_id,
+                    count = messages.len(),
+                    "Sending session history to client"
+                );
+
+                // Send each message as a separate event
+                for msg in &messages {
+                    let history_msg = json!({
+                        "type": "history",
+                        "sessionId": session_id,
+                        "role": msg.role,
+                        "content": msg.content,
+                        "thinking": msg.thinking,
+                        "toolCalls": msg.tool_calls,
+                        "timestamp": msg.timestamp,
+                    }).to_string();
+
+                    if socket.send(AxumMessage::Text(history_msg)).await.is_err() {
+                        return Err("Failed to send history message".into());
+                    }
+                }
+
+                // Send history complete marker
+                let complete_msg = json!({
+                    "type": "history_complete",
+                    "sessionId": session_id,
+                    "count": messages.len(),
+                }).to_string();
+
+                socket.send(AxumMessage::Text(complete_msg)).await?;
+            }
+            Ok(())
+        }
+        Err(e) => {
+            tracing::warn!(
+                session_id = %session_id,
+                error = %e,
+                "Failed to get session history"
+            );
+            Err(e.into())
+        }
+    }
+}
+
 /// Handle WebSocket connection.
 async fn handle_ws_socket(
     mut socket: WebSocket,
@@ -683,6 +740,13 @@ async fn handle_ws_socket(
     if socket.send(AxumMessage::Text(welcome)).await.is_err() {
         conn_meta.mark_closed().await;
         return;
+    }
+
+    // Send session history if reconnecting with an existing session
+    if let Some(ref sid) = session_id {
+        if !sid.is_empty() {
+            let _ = send_session_history(&mut socket, sid, &state).await;
+        }
     }
 
     // Main event loop - handle client messages, device updates, and heartbeat
@@ -743,6 +807,10 @@ async fn handle_ws_socket(
                                                 if socket.send(AxumMessage::Text(msg)).await.is_err() {
                                                     return;
                                                 }
+
+                                                // Send session history after switching
+                                                let _ = send_session_history(&mut socket, &id, &state).await;
+
                                                 id
                                             } else {
                                                 unreachable!()
@@ -767,8 +835,10 @@ async fn handle_ws_socket(
                                             }
                                             new_id
                                         } else {
-                                            // Use current session
-                                            current.to_string()
+                                            // Use current session - send history if this is a reconnection
+                                            let id = current.to_string();
+                                            let _ = send_session_history(&mut socket, &id, &state).await;
+                                            id
                                         }
                                     };
 

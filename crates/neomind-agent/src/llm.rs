@@ -681,13 +681,14 @@ impl LlmInterface {
             }
         }
 
-        // Build base prompt
-        let builder = PromptBuilder::new()
+        // Build base prompt using PromptBuilder
+        let base_prompt = PromptBuilder::new()
             .with_thinking(true)  // Include thinking guidelines
-            .with_examples(true); // Include usage examples
+            .with_examples(true)  // Include usage examples
+            .build_system_prompt();
 
         let mut prompt = String::with_capacity(4096);
-        prompt.push_str(&builder.build_system_prompt());
+        prompt.push_str(&base_prompt);
         prompt.push_str("\n\n");
 
         // Add tool calling instruction and format
@@ -821,22 +822,24 @@ impl LlmInterface {
         // Add intent-specific addon if we can classify the user's message
         if let Some(msg) = user_message {
             let intent = self.intent_classifier.classify(msg);
-            let intent_namespace = match intent.category {
+
+            // Get intent addon using legacy PromptBuilder
+            use crate::prompts::PromptBuilder;
+
+            let task_type = match intent.category {
                 crate::agent::staged::IntentCategory::Device => "device",
                 crate::agent::staged::IntentCategory::Data => "data",
                 crate::agent::staged::IntentCategory::Rule => "rule",
                 crate::agent::staged::IntentCategory::Workflow => "workflow",
-                crate::agent::staged::IntentCategory::Alert => "alert",
-                crate::agent::staged::IntentCategory::System => "system",
-                crate::agent::staged::IntentCategory::Help => "help",
-                crate::agent::staged::IntentCategory::General => "general",
+                _ => "general",
             };
-            // Get intent addon (recreate builder for this part)
-            let builder = crate::prompts::PromptBuilder::new();
-            let addon = builder.get_intent_prompt_addon(intent_namespace);
+
+            // Get intent-specific addon from PromptBuilder
+            let addon = PromptBuilder::new()
+                .get_intent_prompt_addon(task_type);
+
             if !addon.is_empty() {
                 prompt.push_str(&addon);
-                prompt.push_str("\n\n");
             }
         }
 

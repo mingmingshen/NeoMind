@@ -12,10 +12,10 @@ import { useToast } from "@/hooks/use-toast"
 import { RefreshCw, Plus, Cpu, Plug, BellRing, Puzzle } from "lucide-react"
 import { ExtensionUploadDialog } from "@/components/extensions"
 
-type PluginTabValue = "llm" | "connections" | "alert-channels" | "extensions"
+type TabValue = "llm" | "connections" | "alert-channels" | "extensions"
 
 export function PluginsPage() {
-  const { t } = useTranslation(["common", "plugins", "devices"])
+  const { t } = useTranslation(["extensions", "common"])
   const { toast } = useToast()
 
   // Router integration
@@ -23,11 +23,11 @@ export function PluginsPage() {
   const location = useLocation()
 
   // Get tab from URL path
-  const getTabFromPath = (): PluginTabValue => {
+  const getTabFromPath = (): TabValue => {
     const pathSegments = location.pathname.split('/')
     const lastSegment = pathSegments[pathSegments.length - 1]
     if (lastSegment === 'connections' || lastSegment === 'alert-channels' || lastSegment === 'extensions') {
-      return lastSegment as PluginTabValue
+      return lastSegment as TabValue
     }
     return 'llm'
   }
@@ -53,7 +53,7 @@ export function PluginsPage() {
   } = useStore()
 
   // Active tab state - sync with URL
-  const [activeTab, setActiveTab] = useState<PluginTabValue>(getTabFromPath)
+  const [activeTab, setActiveTab] = useState<TabValue>(getTabFromPath)
 
   // Update tab when URL changes
   useEffect(() => {
@@ -63,7 +63,7 @@ export function PluginsPage() {
 
   // Update URL when tab changes
   const handleTabChange = (tab: string) => {
-    const validTab = tab as PluginTabValue
+    const validTab = tab as TabValue
     setActiveTab(validTab)
     if (validTab === 'llm') {
       navigate('/plugins')
@@ -82,10 +82,10 @@ export function PluginsPage() {
   }, [fetchExtensions, activeTab])
 
   const tabs = [
-    { value: "llm" as PluginTabValue, label: t("plugins:llmBackends"), icon: <Cpu className="h-4 w-4" /> },
-    { value: "connections" as PluginTabValue, label: t("plugins:deviceConnections"), icon: <Plug className="h-4 w-4" /> },
-    { value: "alert-channels" as PluginTabValue, label: t("plugins:alertChannels"), icon: <BellRing className="h-4 w-4" /> },
-    { value: "extensions" as PluginTabValue, label: t("plugins:extensionPlugins"), icon: <Puzzle className="h-4 w-4" /> },
+    { value: "llm" as TabValue, label: t("llmBackends"), icon: <Cpu className="h-4 w-4" /> },
+    { value: "connections" as TabValue, label: t("deviceConnections"), icon: <Plug className="h-4 w-4" /> },
+    { value: "alert-channels" as TabValue, label: t("alertChannels"), icon: <BellRing className="h-4 w-4" /> },
+    { value: "extensions" as TabValue, label: t("extensionPlugins"), icon: <Puzzle className="h-4 w-4" /> },
   ]
 
   // Extension action handlers
@@ -93,11 +93,11 @@ export function PluginsPage() {
     const result = await startExtension(id)
     if (result) {
       toast({
-        title: t("plugins:pluginStarted"),
+        title: t("extensionStarted"),
       })
     } else {
       toast({
-        title: t("plugins:actionFailed"),
+        title: t("actionFailed"),
         variant: "destructive",
       })
     }
@@ -108,11 +108,11 @@ export function PluginsPage() {
     const result = await stopExtension(id)
     if (result) {
       toast({
-        title: t("plugins:pluginStopped"),
+        title: t("extensionStopped"),
       })
     } else {
       toast({
-        title: t("plugins:actionFailed"),
+        title: t("actionFailed"),
         variant: "destructive",
       })
     }
@@ -131,11 +131,11 @@ export function PluginsPage() {
     const result = await unregisterExtension(id)
     if (result) {
       toast({
-        title: t("plugins:unregisterSuccess"),
+        title: t("unregisterSuccess"),
       })
     } else {
       toast({
-        title: t("plugins:unregisterFailed"),
+        title: t("unregisterFailed"),
         variant: "destructive",
       })
     }
@@ -145,7 +145,7 @@ export function PluginsPage() {
   const handleRefresh = async () => {
     await fetchExtensions()
     toast({
-      title: t("plugins:refreshed"),
+      title: t("refreshed"),
     })
     return true
   }
@@ -153,14 +153,14 @@ export function PluginsPage() {
   const handleDiscover = async () => {
     const result = await discoverExtensions()
     toast({
-      title: t("plugins:discovered", { count: result.discovered }),
+      title: t("discovered", { count: result.discovered }),
     })
   }
 
   return (
     <PageLayout
-      title={t('plugins:title', '扩展与连接')}
-      subtitle={t('plugins:description', '管理 LLM 后端、设备连接、外部通知通道和扩展插件')}
+      title={t('title')}
+      subtitle={t('description')}
     >
       <PageTabs
         tabs={tabs}
@@ -170,19 +170,19 @@ export function PluginsPage() {
           activeTab === 'extensions'
             ? [
                 {
-                  label: t('plugins:discover'),
+                  label: t('discover'),
                   icon: <RefreshCw className="h-4 w-4" />,
                   variant: 'outline' as const,
                   onClick: handleDiscover,
                 },
                 {
-                  label: t('plugins:refresh'),
+                  label: t('refresh'),
                   icon: <RefreshCw className="h-4 w-4" />,
                   variant: 'outline' as const,
                   onClick: handleRefresh,
                 },
                 {
-                  label: t('plugins:add'),
+                  label: t('add'),
                   icon: <Plus className="h-4 w-4" />,
                   variant: 'default' as const,
                   onClick: () => setUploadDialogOpen(true),
@@ -235,7 +235,7 @@ export function PluginsPage() {
         }}
         onUploadComplete={(extensionId) => {
           toast({
-            title: t("plugins:pluginLoaded", { id: extensionId }),
+            title: t("registerSuccess"),
           })
           fetchExtensions()
         }}

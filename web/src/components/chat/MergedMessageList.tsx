@@ -74,17 +74,34 @@ export function MergedMessageList({
                 />
               )}
 
-              {/* Content */}
-              {streamingContent && (
-                <MarkdownMessage content={streamingContent} />
-              )}
+              {/* Content with blinking cursor when streaming */}
+              {(streamingContent || streamingThinking || streamingToolCalls.length > 0) ? (
+                <>
+                  {streamingThinking && (
+                    <ThinkingBlock thinking={streamingThinking} />
+                  )}
 
-              {/* Loading indicator */}
-              {!streamingContent && !streamingThinking && streamingToolCalls.length === 0 && (
+                  {streamingToolCalls.length > 0 && (
+                    <ToolCallVisualization
+                      toolCalls={streamingToolCalls}
+                      isStreaming={true}
+                    />
+                  )}
+
+                  {streamingContent && (
+                    <div className="relative inline">
+                      <MarkdownMessage content={streamingContent} />
+                      {/* Blinking cursor at the end of streaming content */}
+                      <span className="inline-block w-0.5 h-4 ml-0.5 bg-current align-middle animate-pulse" />
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Loading indicator - shown when waiting for first response */
                 <div className="flex items-center gap-1">
-                  <span key="dot-1" className="w-2 h-2 rounded-full bg-current animate-bounce delay-0" />
-                  <span key="dot-2" className="w-2 h-2 rounded-full bg-current animate-bounce delay-150" />
-                  <span key="dot-3" className="w-2 h-2 rounded-full bg-current animate-bounce delay-300" />
+                  <span key="dot-1" className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span key="dot-2" className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span key="dot-3" className="w-2 h-2 rounded-full bg-current animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               )}
             </div>

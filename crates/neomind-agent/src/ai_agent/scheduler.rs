@@ -454,10 +454,6 @@ impl AgentScheduler {
                 // Event-triggered, no scheduled execution
                 Ok((i64::MAX, None))
             }
-            ScheduleType::Once => {
-                // Execute immediately
-                Ok((now.timestamp(), None))
-            }
         }
     }
 
@@ -528,7 +524,8 @@ impl AgentScheduler {
                 task.enabled = false;
             }
         } else {
-            // One-time execution, disable
+            // No interval and no cron schedule - invalid state, disable task
+            // This should not happen with properly initialized tasks
             task.enabled = false;
         }
     }
@@ -687,27 +684,6 @@ mod tests {
 
         // Event schedules should have MAX next execution
         assert_eq!(next, i64::MAX);
-    }
-
-    #[tokio::test]
-    async fn test_once_schedule_immediate() {
-        let scheduler = AgentScheduler::new(SchedulerConfig::default())
-            .await
-            .unwrap();
-
-        let once_schedule = AgentSchedule {
-            schedule_type: ScheduleType::Once,
-            cron_expression: None,
-            interval_seconds: None,
-            event_filter: None,
-            timezone: None,
-        };
-
-        let now = Utc::now().timestamp();
-        let (next, _) = scheduler.calculate_next_execution(&once_schedule).await.unwrap();
-
-        // Once schedules should execute immediately
-        assert!(next >= now && next <= now + 5);
     }
 
     #[tokio::test]

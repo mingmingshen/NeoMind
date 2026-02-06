@@ -169,8 +169,6 @@ pub enum ScheduleType {
     Cron,
     /// Fixed interval
     Interval,
-    /// One-time execution
-    Once,
 }
 
 /// Agent status.

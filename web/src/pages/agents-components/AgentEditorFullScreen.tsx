@@ -178,7 +178,7 @@ export function AgentEditorFullScreen({
   const [llmBackendId, setLlmBackendId] = useState<string | null>(null)
 
   // Schedule state
-  const [scheduleType, setScheduleType] = useState<'interval' | 'daily' | 'weekly' | 'event' | 'once'>('interval')
+  const [scheduleType, setScheduleType] = useState<'interval' | 'daily' | 'weekly' | 'event'>('interval')
   const [intervalValue, setIntervalValue] = useState(5)
   const [scheduleHour, setScheduleHour] = useState(9)
   const [scheduleMinute, setScheduleMinute] = useState(0)
@@ -1502,4 +1502,4 @@ export function AgentEditorFullScreen({
 }
 
 // Type imports
-type AgentScheduleType = 'interval' | 'cron' | 'event' | 'once'
+type AgentScheduleType = 'interval' | 'cron' | 'event'

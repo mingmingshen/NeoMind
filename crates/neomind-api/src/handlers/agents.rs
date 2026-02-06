@@ -28,7 +28,6 @@ fn schedule_type_to_string(schedule_type: &ScheduleType) -> &'static str {
         ScheduleType::Interval => "interval",
         ScheduleType::Cron => "cron",
         ScheduleType::Event => "event",
-        ScheduleType::Once => "once",
     }
 }
 
@@ -663,7 +662,6 @@ pub async fn create_agent(
         "interval" => ScheduleType::Interval,
         "cron" => ScheduleType::Cron,
         "event" => ScheduleType::Event,
-        "once" => ScheduleType::Once,
         _ => return Err(ErrorResponse::bad_request(format!("Invalid schedule type: {}", request.schedule.schedule_type))),
     };
 
@@ -806,7 +804,6 @@ pub async fn update_agent(
             "interval" => neomind_storage::ScheduleType::Interval,
             "cron" => neomind_storage::ScheduleType::Cron,
             "event" => neomind_storage::ScheduleType::Event,
-            "once" => neomind_storage::ScheduleType::Once,
             _ => return Err(ErrorResponse::bad_request(format!("Invalid schedule_type: {}", schedule.schedule_type))),
         };
 

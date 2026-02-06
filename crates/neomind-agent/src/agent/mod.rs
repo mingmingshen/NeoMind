@@ -29,9 +29,6 @@ pub mod tokenizer;
 pub mod types;
 pub mod conversation_context;
 pub mod smart_followup;
-pub mod tool_confidence;
-pub mod error_recovery;
-pub mod model_selection;
 pub mod intent_classifier;
 
 use std::pin::Pin;
@@ -86,17 +83,14 @@ pub use smart_followup::{
     SmartFollowUpManager, FollowUpAnalysis, FollowUpItem, FollowUpType,
     FollowUpPriority, DetectedIntent, AvailableDevice,
 };
-pub use tool_confidence::{
-    ToolConfidenceManager, ToolExecutionResult, ConfidenceLevel,
-    ConfidenceConfig, ExecutionStatus,
+pub use crate::task_orchestrator::{
+    TaskOrchestrator, TaskSession, TaskStep, TaskResponse, TaskContext,
+    TaskStatus, StepType, ResponseType,
 };
-pub use error_recovery::{
-    ErrorRecoveryManager, ErrorInfo, ErrorCategory, RecoveryStrategy,
-    RecoveryAction, FallbackPlan, ErrorRecoveryConfig, ErrorStats,
-};
-pub use model_selection::{
-    ModelSelectionManager, ModelSelection, ModelInfo, ModelType,
-    ModelCapabilities, ModelStatus, TaskComplexity, ModelSelectionConfig,
+pub use crate::context_selector::{
+    ContextSelector, IntentAnalyzer, IntentAnalysis, ContextBundle,
+    IntentType, Entity, ContextScope,
+    DeviceTypeReference, RuleReference, CommandReference,
 };
 
 /// Maximum number of tool calls allowed per request to prevent infinite loops
@@ -226,6 +220,12 @@ pub struct Agent {
     semantic_mapper: Arc<semantic_mapper::SemanticToolMapper>,
     /// Conversation context - enables continuous dialogue with entity references
     conversation_context: Arc<tokio::sync::RwLock<ConversationContext>>,
+    /// Smart followup manager - intelligent question generation when input is incomplete
+    smart_followup: Arc<tokio::sync::RwLock<SmartFollowUpManager>>,
+    /// Task orchestrator - multi-turn dialogue for complex automation creation
+    task_orchestrator: Option<Arc<crate::task_orchestrator::TaskOrchestrator>>,
+    /// Context selector - intelligent context selection based on intent analysis
+    context_selector: Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>>,
     /// Last injected context summary hash (for deduplication)
     last_injected_context_hash: Arc<tokio::sync::RwLock<u64>>,
 }
@@ -254,7 +254,12 @@ impl Agent {
 
         // Create semantic mapper with resource index
         let resource_index = Arc::new(RwLock::new(ResourceIndex::new()));
-        let semantic_mapper = Arc::new(semantic_mapper::SemanticToolMapper::new(resource_index));
+        let semantic_mapper = Arc::new(semantic_mapper::SemanticToolMapper::new(resource_index.clone()));
+
+        // Create smart followup manager with resource index for device-aware followups
+        let smart_followup = Arc::new(tokio::sync::RwLock::new(
+            SmartFollowUpManager::with_resource_index(resource_index.clone())
+        ));
 
         Self {
             config,
@@ -271,6 +276,9 @@ impl Agent {
             )),
             semantic_mapper,
             conversation_context: Arc::new(tokio::sync::RwLock::new(ConversationContext::new())),
+            smart_followup,
+            task_orchestrator: None,  // Optional, can be set later
+            context_selector: Arc::new(tokio::sync::RwLock::new(crate::context_selector::ContextSelector::new())),
             last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
         }
     }
@@ -597,6 +605,78 @@ impl Agent {
         smart_conv.update_rules(rules);
     }
 
+    // === SMART FOLLOWUP METHODS ===
+
+    /// Update smart followup manager with current devices.
+    /// This enables intelligent followup questions based on available devices.
+    pub async fn update_followup_devices(&self, devices: Vec<AvailableDevice>) {
+        let mut followup = self.smart_followup.write().await;
+        followup.set_available_devices(devices);
+    }
+
+    /// Refresh smart followup devices from resource index.
+    pub async fn refresh_followup_devices(&self) {
+        let mut followup = self.smart_followup.write().await;
+        followup.refresh_devices().await;
+    }
+
+    // === TASK ORCHESTRATOR METHODS ===
+
+    /// Set the task orchestrator for multi-turn dialogue support.
+    pub fn set_task_orchestrator(&mut self, orchestrator: Arc<crate::task_orchestrator::TaskOrchestrator>) {
+        self.task_orchestrator = Some(orchestrator);
+    }
+
+    /// Check if there's an active task orchestration for this session.
+    pub async fn has_active_task(&self) -> bool {
+        let state = self.internal_state.read().await;
+        state.active_task_id.is_some()
+    }
+
+    /// Get the current active task ID.
+    pub async fn get_active_task_id(&self) -> Option<String> {
+        let state = self.internal_state.read().await;
+        state.active_task_id.clone()
+    }
+
+    /// Cancel the current active task.
+    pub async fn cancel_active_task(&self) -> Result<()> {
+        let mut state = self.internal_state.write().await;
+        if let Some(task_id) = state.active_task_id.take() {
+            if let Some(orchestrator) = &self.task_orchestrator {
+                // Ignore errors during cancellation (task might already be gone)
+                let _ = orchestrator.cancel_task(&task_id).await;
+            }
+        }
+        Ok(())
+    }
+
+    // === CONTEXT SELECTOR METHODS ===
+
+    /// Get the context selector reference.
+    pub async fn context_selector(&self) -> Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>> {
+        Arc::clone(&self.context_selector)
+    }
+
+    /// Analyze query intent and get suggested context bundle.
+    pub async fn analyze_intent(&self, query: &str) -> (IntentAnalysis, ContextBundle) {
+        let selector = self.context_selector.read().await;
+        selector.select_context(query).await
+    }
+
+    /// Update device types in the context selector.
+    pub async fn update_context_device_types(&self, device_types: Vec<neomind_devices::mdl_format::DeviceTypeDefinition>) {
+        let selector = self.context_selector.read().await;
+        selector.set_device_types(device_types).await;
+        selector.register_with_analyzer().await;
+    }
+
+    /// Update rule engine in the context selector.
+    pub async fn update_context_rule_engine(&self, engine: Arc<neomind_rules::RuleEngine>) {
+        let selector = self.context_selector.read().await;
+        selector.set_rule_engine(engine).await;
+    }
+
     // === SEMANTIC MAPPING METHODS ===
 
     /// Register a device in the semantic mapper for natural language resolution.
@@ -738,9 +818,58 @@ impl Agent {
 
         let start = std::time::Instant::now();
 
-        // === SMART CONVERSATION INTERCEPTION ===
-        // Check if we need to ask questions, confirm actions, or clarify intent
-        // BEFORE calling the LLM - this guarantees intelligent behavior
+        // === SMART FOLLOWUP INTERCEPTION (Context-Aware) ===
+        // More advanced interception with conversation context awareness
+        let followup_analysis = {
+            let ctx = self.conversation_context.read().await;
+            let mut followup = self.smart_followup.write().await;
+            followup.analyze_input(user_message, &ctx)
+        };
+
+        // Handle smart followup cases
+        if !followup_analysis.can_proceed {
+            let response_content = if let Some(first_followup) = followup_analysis.followups.first() {
+                // Use the highest priority followup
+                let mut content = first_followup.question.clone();
+
+                // Add suggestions if available
+                if !first_followup.suggestions.is_empty() {
+                    content.push_str("\n\n建议选项：");
+                    for (i, suggestion) in first_followup.suggestions.iter().enumerate() {
+                        content.push_str(&format!("\n{}. {}", i + 1, suggestion));
+                    }
+                }
+
+                content
+            } else {
+                // Should not reach here, but fallback
+                "我明白您的请求，但需要更多信息。".to_string()
+            };
+
+            // Save user message and our response to history
+            let user_msg = AgentMessage::user(user_message);
+            let response_msg = AgentMessage::assistant(&response_content);
+
+            self.internal_state
+                .write()
+                .await
+                .push_message(user_msg);
+            self.internal_state
+                .write()
+                .await
+                .push_message(response_msg.clone());
+
+            return Ok(AgentResponse {
+                message: response_msg,
+                tool_calls: vec![],
+                memory_context_used: true,
+                tools_used: vec![],
+                processing_time_ms: start.elapsed().as_millis() as u64,
+            });
+        }
+
+        // === SMART CONVERSATION INTERCEPTION (Simple, Fallback) ===
+        // Simple pattern-based interception for backward compatibility
         let smart_analysis = {
             let smart_conv = self.smart_conversation.read().await;
             smart_conv.analyze_input(user_message)
@@ -782,6 +911,79 @@ impl Agent {
                 tools_used: vec![],
                 processing_time_ms: start.elapsed().as_millis() as u64,
             });
+        }
+
+        // === TASK ORCHESTRATION: Multi-turn dialogue for complex automation creation ===
+        // Check if we should route to task orchestrator
+        if let Some(orchestrator) = &self.task_orchestrator {
+            // Get current active task ID
+            let active_task_id = {
+                let state = self.internal_state.read().await;
+                state.active_task_id.clone()
+            };
+
+            if let Some(task_id) = active_task_id {
+                // Continue existing task
+                match orchestrator.continue_task(&task_id, user_message).await {
+                    Ok(task_response) => {
+                        // Save messages
+                        let user_msg = AgentMessage::user(user_message);
+                        let response_msg = AgentMessage::assistant(&task_response.message);
+
+                        self.internal_state.write().await.push_message(user_msg);
+                        self.internal_state.write().await.push_message(response_msg.clone());
+
+                        // Update active task ID
+                        if task_response.completed {
+                            self.internal_state.write().await.active_task_id = None;
+                        }
+
+                        return Ok(AgentResponse {
+                            message: response_msg,
+                            tool_calls: vec![],
+                            memory_context_used: true,
+                            tools_used: vec![],
+                            processing_time_ms: start.elapsed().as_millis() as u64,
+                        });
+                    }
+                    Err(_) => {
+                        // Task failed or not found, clear and continue to normal processing
+                        self.internal_state.write().await.active_task_id = None;
+                    }
+                }
+            } else {
+                // Check if this is a complex automation creation request
+                let should_start_task = self.should_start_task_orchestration(user_message).await;
+
+                if should_start_task {
+                    match orchestrator.start_task(user_message, &self.session_id).await {
+                        Ok(task_response) => {
+                            // Save messages
+                            let user_msg = AgentMessage::user(user_message);
+                            let response_msg = AgentMessage::assistant(&task_response.message);
+
+                            self.internal_state.write().await.push_message(user_msg);
+                            self.internal_state.write().await.push_message(response_msg.clone());
+
+                            // Store active task ID if this is a multi-turn task
+                            if !task_response.completed && task_response.needs_input {
+                                self.internal_state.write().await.active_task_id = Some(task_response.task_id.clone());
+                            }
+
+                            return Ok(AgentResponse {
+                                message: response_msg,
+                                tool_calls: vec![],
+                                memory_context_used: true,
+                                tools_used: vec![],
+                                processing_time_ms: start.elapsed().as_millis() as u64,
+                            });
+                        }
+                        Err(_) => {
+                            // Task orchestration failed, continue to normal processing
+                        }
+                    }
+                }
+            }
         }
 
         // === PROCEED WITH NORMAL PROCESSING ===
@@ -1720,6 +1922,31 @@ END"#)
     ) -> Result<Pin<Box<dyn Stream<Item = String> + Send>>> {
         let event_stream = self.process_stream_events(user_message).await?;
         Ok(events_to_string_stream(event_stream))
+    }
+
+    // === TASK ORCHESTRATION HELPER METHODS ===
+
+    /// Determine if the input should trigger task orchestration for multi-turn dialogue.
+    /// This detects complex automation creation requests that benefit from step-by-step guidance.
+    async fn should_start_task_orchestration(&self, input: &str) -> bool {
+        let input_lower = input.to_lowercase();
+
+        // Keywords that indicate complex automation creation
+        let complex_automation_keywords = [
+            "创建自动化", "create automation",
+            "新建规则", "new rule",
+            "设置规则", "setup rule",
+            "配置自动化", "configure automation",
+            "帮我建", "help me create",
+        ];
+
+        // Check if input contains complex automation keywords
+        let has_complex_keyword = complex_automation_keywords.iter()
+            .any(|keyword| input_lower.contains(keyword));
+
+        // Only trigger if input is relatively short (suggesting incomplete info)
+        // and contains complex creation keywords
+        has_complex_keyword && input.len() < 100
     }
 }
 

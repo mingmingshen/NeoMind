@@ -49,7 +49,7 @@ pub use types::*;
 // Re-export core types with common aliases
 pub use error::{AutomationError, Result};
 pub use conversion::AutomationConverter;
-pub use nl2automation::{Nl2Automation, ExtractedEntities, TriggerEntity, ConditionEntity, ActionEntity, TriggerTypeEntity, ActionTypeEntity, TimeConstraints};
+pub use nl2automation::{Nl2Automation, ExtractedEntities, TriggerEntity, ConditionEntity, ActionEntity, TriggerTypeEntity, ActionTypeEntity, TimeConstraints, Language, ExtractionContext, DeviceInfo, MetricInfo};
 pub use threshold_recommender::{ThresholdRecommender, ThresholdRequest, ThresholdRecommendation, ThresholdIntent, ThresholdValidation, Statistics};
 pub use device_type_generator::{DeviceTypeGenerator, DeviceCapabilities, ValidationResult, GenerationConfig};
 

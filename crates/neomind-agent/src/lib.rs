@@ -36,12 +36,9 @@
 
 pub mod agent;
 pub mod ai_agent;
-pub mod concurrency;
 pub mod config;
 pub mod context;
-pub mod hooks;
 pub mod context_selector;
-pub mod state_machine;
 pub mod error;
 pub mod llm;
 pub mod prompts;
@@ -57,18 +54,6 @@ pub use agent::{
     SessionState, ToolCall, default_fallback_rules, process_fallback,
 };
 pub use config::{StreamingConfig, get_default_config, set_default_config};
-pub use hooks::{
-    AgentHook, ContentModerationHook, HookChain, HookContext, HookResult, InputSanitizationHook,
-    LoggingHook, MetricsHook, default_hook_chain, production_hook_chain,
-};
-pub use state_machine::{
-    ProcessState, StateMachine, StateMachineConfig, StateMonitor, StateTransition,
-    StateTransitionError,
-};
-pub use concurrency::{
-    ConcurrencyStats, DEFAULT_GLOBAL_LIMIT, DEFAULT_PER_SESSION_LIMIT, GlobalConcurrencyLimiter,
-    GlobalPermit, SessionConcurrencyLimiter, SessionPermit,
-};
 pub use error::{NeoMindError, Result};
 pub use session::SessionManager;
 pub use tools::{

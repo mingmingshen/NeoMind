@@ -10,78 +10,89 @@ use neomind_core::{LlmRuntime, Message, GenerationParams};
 use neomind_core::llm::backend::LlmInput;
 use serde_json::json;
 
+/// Language for prompts
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Language {
+    Chinese,
+    English,
+}
+
+/// Context for entity extraction
+#[derive(Debug, Clone, Default)]
+pub struct ExtractionContext {
+    /// Available devices
+    pub available_devices: Vec<DeviceInfo>,
+    /// Available metrics
+    pub available_metrics: Vec<MetricInfo>,
+    /// Known rules
+    pub existing_rules: Vec<String>,
+}
+
+/// Device information for context
+#[derive(Debug, Clone)]
+pub struct DeviceInfo {
+    pub name: String,
+    pub device_type: String,
+    pub id: String,
+}
+
+/// Metric information for context
+#[derive(Debug, Clone)]
+pub struct MetricInfo {
+    pub name: String,
+    pub description: String,
+    pub device_types: Vec<String>,
+}
+
 /// Natural language to automation converter
 pub struct Nl2Automation {
     llm: Arc<dyn LlmRuntime>,
+    /// Language for prompts
+    language: Language,
+    /// Available device/metric context
+    context: ExtractionContext,
 }
 
 impl Nl2Automation {
     /// Create a new NL2Automation converter
     pub fn new(llm: Arc<dyn LlmRuntime>) -> Self {
-        Self { llm }
+        Self {
+            llm,
+            language: Language::Chinese,
+            context: ExtractionContext::default(),
+        }
+    }
+
+    /// Create with custom language
+    pub fn with_language(llm: Arc<dyn LlmRuntime>, language: Language) -> Self {
+        Self {
+            llm,
+            language,
+            context: ExtractionContext::default(),
+        }
+    }
+
+    /// Set the extraction context
+    pub fn with_context(mut self, context: ExtractionContext) -> Self {
+        self.context = context;
+        self
     }
 
     /// Extract entities from a natural language description
     pub async fn extract_entities(&self, description: &str) -> Result<ExtractedEntities> {
-        let prompt = format!(
-            r#"Extract the automation entities from the following description.
-
-Description: "{}"
-
-Respond in JSON format:
-{{
-  "triggers": [
-    {{
-      "type": "device_state" | "schedule" | "manual",
-      "device_id": "device identifier or null",
-      "metric": "metric name or null",
-      "condition": "condition description or null",
-      "cron": "cron expression or null",
-      "description": "human-readable trigger description"
-    }}
-  ],
-  "conditions": [
-    {{
-      "device_id": "device identifier",
-      "metric": "metric name",
-      "operator": "gt" | "lt" | "eq" | "ne" | "gte" | "lte",
-      "threshold": "threshold value as number",
-      "description": "condition description"
-    }}
-  ],
-  "actions": [
-    {{
-      "type": "notify" | "execute_command" | "set_value" | "create_alert",
-      "target": "target device or recipient",
-      "parameters": {{}},
-      "description": "action description"
-    }}
-  ],
-  "devices": ["list of all mentioned devices"],
-  "time_constraints": {{
-    "start_time": "HH:MM or null",
-    "end_time": "HH:MM or null",
-    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] or null
-  }}
-}}
-
-Guidelines:
-- For device_state triggers: extract device_id, metric, and condition
-- For schedule triggers: extract cron expression or time constraints
-- For conditions: extract device, metric, comparison operator, and threshold value
-- For actions: extract the action type and target/parameters
-- If information is missing or unclear, use null"#,
-            description
-        );
+        let user_prompt = self.build_prompt(description);
 
         let input = LlmInput {
             messages: vec![
-                Message::system("You are an IoT automation expert. Extract structured entities from natural language descriptions. Respond ONLY with valid JSON."),
-                Message::user(prompt),
+                Message::system(match self.language {
+                    Language::Chinese => "你是一个物联网自动化专家。从自然语言描述中提取结构化实体。只返回有效的JSON格式。",
+                    Language::English => "You are an IoT automation expert. Extract structured entities from natural language descriptions. Respond ONLY with valid JSON.",
+                }),
+                Message::user(user_prompt),
             ],
             params: GenerationParams {
                 temperature: Some(0.1),
-                max_tokens: Some(1000),
+                max_tokens: Some(1500),
                 ..Default::default()
             },
             model: None,
@@ -97,6 +108,53 @@ Guidelines:
             .map_err(|e| AutomationError::IntentAnalysisFailed(format!("Invalid JSON: {}", e)))?;
 
         Ok(self.parse_entities(entities))
+    }
+
+    /// Build the extraction prompt
+    fn build_prompt(&self, description: &str) -> String {
+        let (system_role, output_format, examples) = match self.language {
+            Language::Chinese => (
+                ZH_SYSTEM_ROLE,
+                ZH_OUTPUT_FORMAT,
+                ZH_EXAMPLES,
+            ),
+            Language::English => (
+                EN_SYSTEM_ROLE,
+                EN_OUTPUT_FORMAT,
+                EN_EXAMPLES,
+            ),
+        };
+
+        let mut prompt = String::new();
+        prompt.push_str(system_role);
+        prompt.push_str("\n\n");
+        prompt.push_str(output_format);
+        prompt.push_str("\n\n");
+        prompt.push_str(examples);
+        prompt.push_str("\n\n");
+
+        // Add context if available
+        if !self.context.available_devices.is_empty() {
+            prompt.push_str("## 可用设备\n\n");
+            for device in &self.context.available_devices {
+                prompt.push_str(&format!("- {} ({})\n", device.name, device.device_type));
+            }
+            prompt.push('\n');
+        }
+
+        if !self.context.available_metrics.is_empty() {
+            prompt.push_str("## 可用指标\n\n");
+            for metric in &self.context.available_metrics {
+                prompt.push_str(&format!("- {}: {}\n", metric.name, metric.description));
+            }
+            prompt.push('\n');
+        }
+
+        prompt.push_str("## 当前任务\n\n");
+        prompt.push_str(&format!("描述: \"{}\"\n\n", description));
+        prompt.push_str("请提取结构化实体，只返回JSON格式：");
+
+        prompt
     }
 
     /// Parse entities from LLM response
@@ -307,6 +365,144 @@ fn extract_json_from_response(response: &str) -> Result<String> {
     Ok(response[start..=end].to_string())
 }
 
+// ============================================================================
+// Prompt Templates
+// ============================================================================
+
+const ZH_SYSTEM_ROLE: &str = r#"你是一个物联网自动化专家，擅长从自然语言描述中提取结构化的自动化实体。
+
+你的任务是分析用户描述，提取以下信息：
+- **触发器 (triggers)**: 什么条件下触发自动化
+- **条件 (conditions)**: 需要满足的判断条件
+- **动作 (actions)**: 执行什么操作
+- **涉及设备**: 提到的所有设备
+- **时间约束**: 时间限制"#;
+
+const EN_SYSTEM_ROLE: &str = r#"You are an IoT automation expert, skilled at extracting structured automation entities from natural language descriptions.
+
+Your task is to analyze user descriptions and extract:
+- **triggers**: What conditions trigger the automation
+- **conditions**: Judgment conditions that must be met
+- **actions**: What operations to execute
+- **devices**: All mentioned devices
+- **time_constraints**: Time restrictions"#;
+
+const ZH_OUTPUT_FORMAT: &str = r#"## 输出格式
+
+请严格按照以下JSON格式返回：
+
+```json
+{
+  "triggers": [
+    {
+      "type": "device_state | schedule | manual",
+      "device_id": "设备ID或null",
+      "metric": "指标名称或null",
+      "condition": "条件描述或null",
+      "cron": "cron表达式或null",
+      "description": "触发器的人类可读描述"
+    }
+  ],
+  "conditions": [
+    {
+      "device_id": "设备ID",
+      "metric": "指标名称",
+      "operator": "gt | lt | eq | ne | gte | lte",
+      "threshold": 阈值数字,
+      "description": "条件描述"
+    }
+  ],
+  "actions": [
+    {
+      "type": "notify | execute_command | set_value | create_alert",
+      "target": "目标设备或接收者",
+      "parameters": {},
+      "description": "动作描述"
+    }
+  ],
+  "devices": ["所有提到的设备列表"],
+  "time_constraints": {
+    "start_time": "HH:MM或null",
+    "end_time": "HH:MM或null",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]或null
+  }
+}
+```"#;
+
+const EN_OUTPUT_FORMAT: &str = r#"## Output Format
+
+Return in strict JSON format:
+
+```json
+{
+  "triggers": [
+    {
+      "type": "device_state | schedule | manual",
+      "device_id": "device ID or null",
+      "metric": "metric name or null",
+      "condition": "condition description or null",
+      "cron": "cron expression or null",
+      "description": "human-readable trigger description"
+    }
+  ],
+  "conditions": [
+    {
+      "device_id": "device ID",
+      "metric": "metric name",
+      "operator": "gt | lt | eq | ne | gte | lte",
+      "threshold": threshold number,
+      "description": "condition description"
+    }
+  ],
+  "actions": [
+    {
+      "type": "notify | execute_command | set_value | create_alert",
+      "target": "target device or recipient",
+      "parameters": {},
+      "description": "action description"
+    }
+  ],
+  "devices": ["list of all mentioned devices"],
+  "time_constraints": {
+    "start_time": "HH:MM or null",
+    "end_time": "HH:MM or null",
+    "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] or null
+  }
+}
+```"#;
+
+const ZH_EXAMPLES: &str = r#"## 示例
+
+**输入**: 当温度传感器1的温度超过30度时，发送通知
+**输出**: {
+  "triggers": [{"type": "device_state", "device_id": "温度传感器1", "metric": "temperature", "condition": "> 30", "description": "温度超过30度"}],
+  "actions": [{"type": "notify", "description": "发送通知"}],
+  "devices": ["温度传感器1"]
+}
+
+**输入**: 每天早上8点打开客厅灯
+**输出**: {
+  "triggers": [{"type": "schedule", "cron": "0 8 * * *", "description": "每天早上8点"}],
+  "actions": [{"type": "set_value", "target": "客厅灯", "parameters": {"state": "on"}, "description": "打开客厅灯"}],
+  "devices": ["客厅灯"]
+}"#;
+
+const EN_EXAMPLES: &str = r#"## Examples
+
+**Input**: When temperature sensor 1 exceeds 30 degrees, send a notification
+**Output**: {
+  "triggers": [{"type": "device_state", "device_id": "temp_sensor_1", "metric": "temperature", "condition": "> 30", "description": "Temperature exceeds 30 degrees"}],
+  "actions": [{"type": "notify", "description": "Send notification"}],
+  "devices": ["temp_sensor_1"]
+}
+
+**Input**: Turn on living room light at 8am every day
+**Output**: {
+  "triggers": [{"type": "schedule", "cron": "0 8 * * *", "description": "8am daily"}],
+  "actions": [{"type": "set_value", "target": "living_room_light", "parameters": {"state": "on"}, "description": "Turn on living room light"}],
+  "devices": ["living_room_light"]
+}"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,5 +557,42 @@ mod tests {
 
         assert_eq!(tc.start_time, Some("09:00".to_string()));
         assert_eq!(tc.days.len(), 2);
+    }
+
+    #[test]
+    fn test_build_prompt_zh() {
+        // Test prompt building with minimal setup
+        let (system_role, output_format, examples) = (
+            ZH_SYSTEM_ROLE,
+            ZH_OUTPUT_FORMAT,
+            ZH_EXAMPLES,
+        );
+
+        let mut prompt = String::new();
+        prompt.push_str(system_role);
+        prompt.push_str("\n\n");
+        prompt.push_str(output_format);
+        prompt.push_str("\n\n");
+        prompt.push_str(examples);
+
+        assert!(prompt.contains("物联网自动化专家"));
+        assert!(prompt.contains("输出格式"));
+    }
+
+    #[test]
+    fn test_build_context() {
+        let ctx = ExtractionContext {
+            available_devices: vec![
+                DeviceInfo {
+                    name: "温度传感器1".to_string(),
+                    device_type: "sensor".to_string(),
+                    id: "temp1".to_string(),
+                }
+            ],
+            ..Default::default()
+        };
+
+        assert_eq!(ctx.available_devices.len(), 1);
+        assert_eq!(ctx.available_devices[0].name, "温度传感器1");
     }
 }

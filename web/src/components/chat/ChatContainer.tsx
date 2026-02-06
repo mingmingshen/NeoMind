@@ -560,20 +560,29 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
             {/* Input */}
             <div className="flex items-end gap-2">
               <div className="flex-1 relative">
+                {/* Streaming indicator overlay */}
+                {isStreaming && (
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 pointer-events-none">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping" />
+                    <span className="text-xs text-muted-foreground">{t("status.typing", "正在输入...")}</span>
+                  </div>
+                )}
                 <textarea
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={t("input.placeholder")}
+                  placeholder={isStreaming ? t("status.wait", "请等待...") : t("input.placeholder")}
                   rows={1}
+                  disabled={isStreaming}
                   className={cn(
                     "w-full px-4 py-3 rounded-2xl resize-none",
                     "bg-[var(--input-focus-bg)] border border-[var(--border)]",
                     "text-[var(--foreground)] placeholder:text-muted-foreground",
                     "focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50",
                     "transition-all duration-200",
-                    "max-h-32"
+                    "max-h-32",
+                    isStreaming && "opacity-60 cursor-wait"
                   )}
                   style={{
                     minHeight: "48px",
@@ -587,7 +596,7 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                 />
               </div>
 
-              {/* Send button */}
+              {/* Send button - shows loading spinner when streaming */}
               <Button
                 onClick={handleSend}
                 disabled={!input.trim() || isStreaming}
@@ -595,10 +604,18 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
                   "h-12 w-12 rounded-full flex-shrink-0",
                   "bg-blue-600 hover:bg-blue-700 text-white",
                   "transition-all duration-200",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                  "disabled:opacity-50 disabled:cursor-not-allowed",
+                  isStreaming && "relative overflow-hidden"
                 )}
               >
-                <Send className="h-5 w-5" />
+                {isStreaming ? (
+                  <>
+                    <span className="absolute inset-0 bg-blue-600/20 animate-ping" />
+                    <Send className="h-5 w-5 relative" />
+                  </>
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
               </Button>
             </div>
 
