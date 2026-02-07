@@ -271,11 +271,18 @@ impl ToolRegistryBuilder {
     // ============================================================================
 
     /// Add the query data tool.
+    /// With DeviceService, the tool can list all available metrics when metric is not specified.
     pub fn with_query_data_tool(
         self,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
+        service: Option<Arc<neomind_devices::DeviceService>>,
     ) -> Self {
-        self.with_tool(Arc::new(super::real::QueryDataTool::new(storage)))
+        let tool = if let Some(svc) = service {
+            super::real::QueryDataTool::new(storage).with_device_service(svc)
+        } else {
+            super::real::QueryDataTool::new(storage)
+        };
+        self.with_tool(Arc::new(tool))
     }
 
     /// Add the control device tool.

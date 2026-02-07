@@ -789,8 +789,19 @@ impl Tool for ServiceRestartTool {
                 description: "重启规则引擎".to_string(),
             }),
             category: ToolCategory::System,
-            scenarios: vec![],
-            relationships: ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "重启系统服务".to_string(),
+                    example_query: "重启规则引擎".to_string(),
+                    suggested_call: Some(r#"{"service": "rule_engine", "wait": true}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先获取系统信息
+                call_after: vec!["system_info".to_string()],
+                output_to: vec!["system_info".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),

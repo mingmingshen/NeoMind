@@ -9,7 +9,7 @@ use base64::{Engine as _, engine::general_purpose};
 use super::error::Result;
 use super::tool::{Tool, ToolDefinition, ToolOutput, number_property, object_schema, string_property};
 use super::error::ToolError;
-use neomind_core::tools::{ToolExample, UsageScenario};
+use neomind_core::tools::{ToolExample, UsageScenario, ToolRelationships};
 
 pub type ToolResult<T> = std::result::Result<T, ToolError>;
 
@@ -20,6 +20,8 @@ use neomind_rules::RuleEngine;
 /// Tool for querying time series data using real storage.
 pub struct QueryDataTool {
     storage: Arc<TimeSeriesStorage>,
+    /// Device service for getting device templates and metric info
+    service: Option<Arc<DeviceService>>,
     /// 最大允许的数据延迟（秒），超过此时间会提示数据可能过期
     max_data_age_seconds: i64,
 }
@@ -29,8 +31,15 @@ impl QueryDataTool {
     pub fn new(storage: Arc<TimeSeriesStorage>) -> Self {
         Self {
             storage,
+            service: None,
             max_data_age_seconds: 300, // 默认5分钟
         }
+    }
+
+    /// Create a new query data tool with device service support.
+    pub fn with_device_service(mut self, service: Arc<DeviceService>) -> Self {
+        self.service = Some(service);
+        self
     }
 
     /// 设置最大数据延迟阈值
@@ -80,18 +89,19 @@ impl Tool for QueryDataTool {
     }
 
     fn description(&self) -> &str {
-        "查询设备的历史时间序列数据。支持指定时间范围分析数据趋势。时间参数支持Unix时间戳（秒）或ISO 8601格式字符串。"
+        "查询设备的历史时间序列数据。支持指定时间范围分析数据趋势。时间参数支持Unix时间戳（秒）或ISO 8601格式字符串。设备ID支持设备名称、简称或完整ID（如\"ne101\"可匹配\"ne101 sensor\"）。"
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
-                "device_id": string_property("设备ID，例如：sensor_1, temp_sensor_02"),
-                "metric": string_property("指标名称，例如：temperature（温度）、humidity（湿度）、pressure（压力）"),
+                "device_id": string_property("设备ID或名称，支持模糊匹配。例如：ne101（可匹配\"ne101 test\"）、sensor_1"),
+                "metric": string_property("指标名称，例如：temperature（温度）、humidity（湿度）、battery（电池）。不指定则查询所有指标"),
                 "start_time": number_property("起始时间戳（Unix时间戳，秒）。可选，默认为当前时间往前推24小时"),
                 "end_time": number_property("结束时间戳（Unix时间戳，秒）。可选，默认为当前时间"),
             }),
-            vec!["device_id".to_string(), "metric".to_string()],
+            vec!["device_id".to_string()],
+            // metric 不再是必需参数，不指定时查询所有指标
         )
     }
 
@@ -119,8 +129,24 @@ impl Tool for QueryDataTool {
                 description: "查询传感器最近24小时的温度数据".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Data,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "查询设备指标历史数据".to_string(),
+                    example_query: "查看ne101温度数据".to_string(),
+                    suggested_call: Some(r#"{"device_id": "ne101", "metric": "temperature"}"#.to_string()),
+                },
+                UsageScenario {
+                    description: "查询所有指标".to_string(),
+                    example_query: "查看ne101所有数据".to_string(),
+                    suggested_call: Some(r#"{"device_id": "ne101"}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先获取设备列表，确认设备存在
+                call_after: vec!["list_devices".to_string()],
+                output_to: vec!["device_analyze".to_string(), "export_to_csv".to_string(), "generate_report".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -149,9 +175,19 @@ impl Tool for QueryDataTool {
     async fn execute(&self, args: Value) -> Result<ToolOutput> {
         self.validate_args(&args)?;
 
-        let device_id = args["device_id"]
+        let device_id_param = args["device_id"]
             .as_str()
             .ok_or_else(|| ToolError::InvalidArguments("device_id must be a string".to_string()))?;
+
+        // === 解析设备ID：支持设备名称、简称或别名 ===
+        // 用户可能输入 "ne101" 而不是完整的设备ID
+        let device_id = if let Some(ref svc) = self.service {
+            resolve_device_id(svc, device_id_param)
+                .await
+                .unwrap_or_else(|| device_id_param.to_string())
+        } else {
+            device_id_param.to_string()
+        };
 
         let metric = args["metric"]
             .as_str()
@@ -186,7 +222,7 @@ impl Tool for QueryDataTool {
         // Query the data from real storage
         let data_points = self
             .storage
-            .query(device_id, metric, start_time, end_time)
+            .query(&device_id, metric, start_time, end_time)
             .await
             .map_err(|e| ToolError::Execution(format!("Failed to query data: {}", e)))?;
 
@@ -305,8 +341,29 @@ impl Tool for ControlDeviceTool {
                 description: "打开执行器设备".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Device,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "打开设备".to_string(),
+                    example_query: "打开客厅的灯".to_string(),
+                    suggested_call: Some(r#"{"device_id": "actuator_1", "command": "turn_on"}"#.to_string()),
+                },
+                UsageScenario {
+                    description: "关闭设备".to_string(),
+                    example_query: "关闭设备".to_string(),
+                    suggested_call: Some(r#"{"device_id": "switch_living", "command": "turn_off"}"#.to_string()),
+                },
+                UsageScenario {
+                    description: "设置设备值".to_string(),
+                    example_query: "设置温度为22度".to_string(),
+                    suggested_call: Some(r#"{"device_id": "thermostat_1", "command": "set_value", "value": "22"}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先获取设备列表，确认设备存在且为可控类型
+                call_after: vec!["list_devices".to_string()],
+                output_to: vec!["get_device_data".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -530,8 +587,24 @@ impl Tool for ListDevicesTool {
                 description: "列出所有设备".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Device,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "获取所有设备列表".to_string(),
+                    example_query: "有哪些设备".to_string(),
+                    suggested_call: Some(r#"{}"#.to_string()),
+                },
+                UsageScenario {
+                    description: "按类型筛选设备".to_string(),
+                    example_query: "列出所有传感器".to_string(),
+                    suggested_call: Some(r#"{"filter_type": "sensor"}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                call_after: vec![],
+                // 输出设备列表，供后续工具使用
+                output_to: vec!["query_data".to_string(), "control_device".to_string(), "get_device_data".to_string(), "create_rule".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -659,8 +732,19 @@ impl Tool for CreateRuleTool {
                 description: "创建一个温度超过35度时触发告警的规则".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Rule,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "创建温度告警规则".to_string(),
+                    example_query: "温度超过30度时告警".to_string(),
+                    suggested_call: Some(r#"{"name": "高温告警", "dsl": "RULE \"高温告警\"\nWHEN sensor.temperature > 30\nDO NOTIFY \"温度过高\"\nEND"}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先获取设备列表，了解可用设备
+                call_after: vec!["list_devices".to_string()],
+                output_to: vec!["list_rules".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -751,8 +835,19 @@ impl Tool for ListRulesTool {
                 description: "列出所有自动化规则".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Rule,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "列出所有规则".to_string(),
+                    example_query: "有哪些规则".to_string(),
+                    suggested_call: Some(r#"{}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                call_after: vec![],
+                // 输出规则列表，供后续工具使用
+                output_to: vec!["create_rule".to_string(), "delete_rule".to_string(), "query_rule_history".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -847,8 +942,19 @@ impl Tool for DeleteRuleTool {
                 description: "删除指定的自动化规则".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Rule,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "删除规则".to_string(),
+                    example_query: "删除高温告警规则".to_string(),
+                    suggested_call: Some(r#"{"rule_id": "rule_123"}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先查看规则列表，确认规则ID
+                call_after: vec!["list_rules".to_string()],
+                output_to: vec!["list_rules".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -965,8 +1071,19 @@ impl Tool for QueryRuleHistoryTool {
                 description: "查询指定规则的执行历史".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Data,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "查询规则执行历史".to_string(),
+                    example_query: "查看高温告警规则的执行历史".to_string(),
+                    suggested_call: Some(r#"{"rule_id": "rule_1", "limit": 10}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先查看规则列表，确认规则ID
+                call_after: vec!["list_rules".to_string()],
+                output_to: vec![],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -1130,8 +1247,20 @@ impl Tool for GetDeviceDataTool {
                 description: "获取设备的所有当前数据".to_string(),
             }),
             category: neomind_core::tools::ToolCategory::Data,
-            scenarios: vec![],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            scenarios: vec![
+                UsageScenario {
+                    description: "获取设备所有当前数据".to_string(),
+                    example_query: "ne101当前状态".to_string(),
+                    suggested_call: Some(r#"{"device_id": "ne101"}"#.to_string()),
+                },
+            ],
+            relationships: ToolRelationships {
+                // 建议先获取设备列表，确认设备存在
+                call_after: vec!["list_devices".to_string()],
+                // 输出设备数据，供分析和导出使用
+                output_to: vec!["analyze_device".to_string(), "export_to_csv".to_string(), "export_to_json".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -1334,14 +1463,16 @@ impl Tool for DeviceAnalyzeTool {
     }
 
     fn description(&self) -> &str {
-        "分析设备数据，发现趋势、异常和模式。支持trend（趋势）、anomaly（异常检测）、summary（统计摘要）三种分析类型。"
+        "分析设备数据，发现趋势、异常和模式。支持trend（趋势）、anomaly（异常检测）、summary（统计摘要）三种分析类型。设备ID支持设备名称、简称或完整ID。"
     }
 
     fn parameters(&self) -> Value {
         object_schema(
             serde_json::json!({
-                "device_id": string_property("设备ID，例如：sensor_temp_living"),
-                "analysis_type": string_property("分析类型（可选）：trend（趋势）、anomaly（异常检测）、summary（摘要，默认）")
+                "device_id": string_property("设备ID或名称，支持模糊匹配。例如：ne101（可匹配\"ne101 test\"）"),
+                "metric": string_property("指标名称（可选），不指定时分析所有可用指标"),
+                "analysis_type": string_property("分析类型（可选）：trend（趋势）、anomaly（异常检测）、summary（摘要，默认）"),
+                "limit": number_property("要分析的数据点数量，默认24")
             }),
             vec!["device_id".to_string()],
         )
@@ -1378,7 +1509,13 @@ impl Tool for DeviceAnalyzeTool {
                     suggested_call: Some(r#"{"device_id": "sensor_temp_living", "metric": "temperature", "analysis_type": "anomaly"}"#.to_string()),
                 },
             ],
-            relationships: neomind_core::tools::ToolRelationships::default(),
+            relationships: ToolRelationships {
+                // 建议先获取设备列表和数据
+                call_after: vec!["list_devices".to_string(), "query_data".to_string(), "get_device_data".to_string()],
+                // 输出分析结果，供报告生成使用
+                output_to: vec!["generate_report".to_string()],
+                exclusive_with: vec![],
+            },
             deprecated: false,
             replaced_by: None,
             version: "1.0.0".to_string(),
@@ -1389,26 +1526,37 @@ impl Tool for DeviceAnalyzeTool {
     }
 
     async fn execute(&self, args: Value) -> ToolResult<ToolOutput> {
-        let device_id = args
+        let device_id_param = args
             .get("device_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidArguments("device_id is required".to_string()))?;
+
+        // === 解析设备ID：支持设备名称、简称或别名 ===
+        // 用户可能输入 "ne101" 而不是完整的设备ID
+        let device_id = resolve_device_id(self.service.as_ref(), device_id_param)
+            .await
+            .unwrap_or_else(|| {
+                // 如果解析失败，使用原始输入继续（可能是新设备）
+                device_id_param.to_string()
+            });
 
         // Find device(s) with fuzzy matching
         let devices = self.service.list_devices().await;
         let matched_devices: Vec<_> = devices
             .iter()
-            .filter(|d| d.device_id.contains(device_id) || d.name.contains(device_id))
+            .filter(|d| d.device_id.contains(device_id_param) || d.name.contains(device_id_param))
             .collect();
 
-        if matched_devices.is_empty() {
-            return Ok(ToolOutput::error_with_metadata(
-                format!("未找到设备: {}", device_id),
-                serde_json::json!({"device_id": device_id, "hint": "使用 device.discovery() 查看可用设备"}),
-            ));
-        }
-
-        let device = &matched_devices[0];
+        let device = if matched_devices.is_empty() {
+            // 尝试通过解析后的ID查找
+            devices.iter()
+                .find(|d| &d.device_id == &device_id)
+                .ok_or_else(|| {
+                    ToolError::Execution(format!("未找到设备: {}", device_id_param))
+                })?
+        } else {
+            &matched_devices[0]
+        };
 
         // Get analysis type
         let analysis_type = args
@@ -1425,18 +1573,46 @@ impl Tool for DeviceAnalyzeTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(24) as usize;
 
-        // Determine which metrics to analyze
+        // === 智能选择要分析的指标 ===
+        // 优先级：用户指定 > template定义 > 存储中的实际数据
         let metrics_to_analyze: Vec<String> = if let Some(m) = metric_param {
+            // 用户明确指定了指标
             vec![m.to_string()]
         } else {
-            // Get available metrics from device template (async call)
-            // For now, just list metrics from storage
-            self.storage.list_metrics(&device.device_id).await.unwrap_or_default()
+            // 用户未指定指标时，优先使用 template 中定义的指标
+            match self.service.get_device_with_template(&device.device_id).await {
+                Ok((_, template)) => {
+                    if !template.metrics.is_empty() {
+                        // 优先使用 template 中定义的指标
+                        template.metrics.iter().map(|m| m.name.clone()).collect()
+                    } else {
+                        // template 为空时，从存储中列出实际有数据的指标
+                        self.storage.list_metrics(&device.device_id).await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter(|m| !m.is_empty() && !m.starts_with('_'))
+                            .collect()
+                    }
+                }
+                Err(_) => {
+                    // 获取模板失败时，直接从存储中列出指标
+                    self.storage.list_metrics(&device.device_id).await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|m| !m.is_empty() && !m.starts_with('_'))
+                        .collect()
+                }
+            }
         };
 
         if metrics_to_analyze.is_empty() {
-            return Ok(ToolOutput::error(
-                "设备没有可分析的指标".to_string()
+            return Ok(ToolOutput::error_with_metadata(
+                "设备没有可分析的指标".to_string(),
+                serde_json::json!({
+                    "device_id": device.device_id,
+                    "device_name": device.name,
+                    "hint": "请确保设备已配置并上报数据"
+                }),
             ));
         }
 
@@ -1444,25 +1620,37 @@ impl Tool for DeviceAnalyzeTool {
         let mut all_findings = vec![];
         let mut all_insights = vec![];
         let mut all_recommendations = vec![];
+        let mut analyzed_metrics = vec![];
 
         for metric_name in metrics_to_analyze {
+            // 跳过内部指标（以 _ 开头的）
+            if metric_name.starts_with('_') {
+                continue;
+            }
+
             // Fetch historical data from storage using query_telemetry
             let end_time = chrono::Utc::now().timestamp();
             let start_time = end_time - (24 * 3600); // 24 hours ago
 
-            let history = self.service.query_telemetry(
+            let history = match self.service.query_telemetry(
                 &device.device_id,
                 &metric_name,
                 Some(start_time),
                 Some(end_time),
-            ).await.map_err(|e| {
-                ToolError::Execution(format!("Failed to query telemetry: {}", e))
-            })?;
+            ).await {
+                Ok(h) => h,
+                Err(_) => {
+                    // 跳过无效指标，继续处理下一个
+                    continue;
+                }
+            };
 
             if history.is_empty() {
                 all_findings.push(format!("指标 {} 暂无数据", metric_name));
                 continue;
             }
+
+            analyzed_metrics.push(metric_name.clone());
 
             // Convert to DataPoint format
             let data_points: Vec<neomind_devices::DataPoint> = history
@@ -1496,10 +1684,23 @@ impl Tool for DeviceAnalyzeTool {
             }
         }
 
+        if analyzed_metrics.is_empty() {
+            return Ok(ToolOutput::error_with_metadata(
+                "暂无法分析设备数据".to_string(),
+                serde_json::json!({
+                    "device_id": device.device_id,
+                    "device_name": device.name,
+                    "reason": "所选指标无数据",
+                    "hint": "请确保设备已正常运行并上报数据"
+                }),
+            ));
+        }
+
         Ok(ToolOutput::success(serde_json::json!({
             "device_id": device.device_id,
             "device_name": device.name,
             "analysis_type": analysis_type,
+            "metrics_analyzed": analyzed_metrics,
             "data_points_analyzed": limit,
             "findings": all_findings,
             "insights": all_insights,

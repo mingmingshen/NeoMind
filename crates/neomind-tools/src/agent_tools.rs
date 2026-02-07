@@ -98,7 +98,8 @@ impl Tool for ListAgentsTool {
             ],
             relationships: ToolRelationships {
                 call_after: vec![],
-                output_to: vec!["get_agent".to_string(), "execute_agent".to_string()],
+                // 输出智能体列表，供后续工具使用
+                output_to: vec!["get_agent".to_string(), "execute_agent".to_string(), "control_agent".to_string(), "get_agent_executions".to_string(), "create_agent".to_string()],
                 exclusive_with: vec![],
             },
             deprecated: false,
