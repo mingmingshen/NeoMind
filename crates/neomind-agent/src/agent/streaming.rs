@@ -2534,8 +2534,12 @@ async fn detect_complex_intent_with_llm(
 判断标准（满足任一即返回 true）:
 1. 条件判断: 如 \"如果A则B\"，\"当温度超过X时做Y\"
 2. 链式操作: 如 \"先查询A，然后基于结果做B\"
-3. 多个独立操作: 如 \"同时检查A和B\"
+3. 多个独立操作: 如 \"同时检查A和B\"，\"获取所有设备的数据\"
 4. 需要分析后决定: 如 \"看看设备状态，如果有问题就告警\"
+5. **数据分析**: 如 \"分析趋势\"，\"统计\"，\"对比\"，\"查看历史数据并分析\"
+6. **多设备操作**: 如 \"所有\"，\"每个\"，\"全部设备\"
+
+**关键**: 如果请求涉及\"分析\"、\"趋势\"、\"历史\"、\"所有\"等词，通常需要多步操作。
 
 **只需要回答\"true\"或\"false\"，小写，不要其他内容。**",
         user_message
@@ -2565,6 +2569,7 @@ async fn detect_complex_intent_with_llm(
 }
 
 /// Fallback keyword-based complex intent detection (used when LLM detection fails).
+/// Detects patterns that indicate multi-step tool calling is needed.
 fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
     let complex_patterns = [
         // Conditional patterns
@@ -2579,6 +2584,21 @@ fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
         // Multiple operation indicators
         ("并且", ""),
         ("同时", ""),
+        // === NEW: Analysis and data patterns ===
+        ("分析", ""),
+        ("趋势", ""),
+        ("统计", ""),
+        ("历史", ""),
+        ("对比", ""),
+        ("比较", ""),
+        ("所有", ""),
+        ("每个", ""),
+        ("全部", ""),
+        // === NEW: Multi-step patterns ===
+        ("查看", "并"),
+        ("查询", "并"),
+        ("获取", "后"),
+        ("先", "后"),
     ];
 
     let lower = message.to_lowercase();
@@ -2586,9 +2606,11 @@ fn is_complex_multi_step_intent_fallback(message: &str) -> bool {
     for (first, second) in complex_patterns {
         if !second.is_empty() {
             if lower.contains(first) && lower.contains(second) {
+                tracing::info!("Complex intent detected by keyword: '{}' + '{}'", first, second);
                 return true;
             }
         } else if lower.contains(first) {
+            tracing::info!("Complex intent detected by keyword: '{}'", first);
             return true;
         }
     }

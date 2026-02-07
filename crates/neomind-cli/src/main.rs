@@ -373,6 +373,10 @@ async fn run_chat(session_id: Option<String>) -> Result<()> {
                         neomind_agent::AgentEvent::Warning { message } => {
                             eprintln!("[Warning] {}", message);
                         }
+                        neomind_agent::AgentEvent::IntermediateEnd => {
+                            // Intermediate end - more content coming, don't break
+                            println!("[Continuing...]");
+                        }
                         neomind_agent::AgentEvent::End => {
                             break;
                         }

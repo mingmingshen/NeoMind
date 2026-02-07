@@ -47,6 +47,9 @@ pub enum AgentEvent {
     },
     /// Stream ended
     End,
+    /// Intermediate end (for multi-round tool calling)
+    /// Indicates the current round is complete but more processing is coming
+    IntermediateEnd,
     /// Intent classification result
     Intent {
         /// Intent category (e.g., "Device", "Rule", "Workflow")
@@ -140,6 +143,11 @@ impl AgentEvent {
         Self::End
     }
 
+    /// Create an intermediate end event (for multi-round processing).
+    pub fn intermediate_end() -> Self {
+        Self::IntermediateEnd
+    }
+
     /// Create an intent event.
     pub fn intent(
         category: impl Into<String>,
@@ -186,6 +194,11 @@ impl AgentEvent {
     /// Check if this event ends the stream.
     pub fn is_end(&self) -> bool {
         matches!(self, Self::End)
+    }
+
+    /// Check if this event is any kind of end (End or IntermediateEnd).
+    pub fn is_any_end(&self) -> bool {
+        matches!(self, Self::End | Self::IntermediateEnd)
     }
 
     /// Convert to JSON for WebSocket transmission.

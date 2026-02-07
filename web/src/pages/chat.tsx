@@ -379,6 +379,29 @@ export function ChatPage() {
           break
         }
 
+        case "intermediate_end": {
+          // Intermediate end for multi-round tool calling
+          // Save the current progress but keep streaming state active
+          const { content, thinking, toolCalls } = capturedStreamingRef.current
+          if (content || thinking || toolCalls.length > 0) {
+            const messageId = streamingMessageIdRef.current || crypto.randomUUID()
+            const intermediateMessage: Message = {
+              id: messageId,
+              role: "assistant",
+              content,
+              timestamp: Date.now(),
+              thinking: thinking || undefined,
+              tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+            }
+            // Always add the message (store will handle deduplication by id)
+            addMessage(intermediateMessage)
+            // Keep track of this message for further updates
+            streamingMessageIdRef.current = messageId
+          }
+          // Don't reset streaming state - more content is coming
+          break
+        }
+
         case "Error":
           setIsStreaming(false)
           // Reset captured ref on error too
@@ -397,7 +420,7 @@ export function ChatPage() {
 
     const unsubscribe = ws.onMessage(handleMessage)
     return () => { void unsubscribe() }
-  }, [addMessage, switchSession, lastAssistantMessageId, messages, sessionId, isStreaming])
+  }, [addMessage, switchSession, lastAssistantMessageId, sessionId, isStreaming])
 
   // Check for pending stream after reconnection
   useEffect(() => {

@@ -669,7 +669,7 @@ impl ServerState {
         // Build tool registry with real implementations that connect to actual services
         let builder = ToolRegistryBuilder::new()
             // Real implementations
-            .with_query_data_tool(self.devices.telemetry.clone())
+            .with_query_data_tool(self.devices.telemetry.clone(), Some(self.devices.service.clone()))
             .with_get_device_data_tool(self.devices.service.clone(), self.devices.telemetry.clone())
             .with_control_device_tool(self.devices.service.clone())
             .with_list_devices_tool(self.devices.service.clone())

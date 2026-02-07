@@ -143,6 +143,16 @@ async fn process_stream_to_channel(
                             "sessionId": session_id,
                         })
                     }
+                    AgentEvent::IntermediateEnd => {
+                        // Intermediate end - for multi-round tool calling
+                        // This indicates the current round is complete but more processing is coming
+                        // Send this to frontend but don't exit the loop
+                        tracing::debug!("*** Sending IntermediateEnd event (round {}) ***", event_count);
+                        json!({
+                            "type": "intermediate_end",
+                            "sessionId": session_id,
+                        })
+                    }
                     AgentEvent::End => {
                         // P0.3: Delete pending state on successful completion
                         let _ = session_store.delete_pending_stream(&session_id);
@@ -274,6 +284,7 @@ async fn process_stream_to_channel(
                 }
 
                 // If this was the End event, exit the loop
+                // (IntermediateEnd does NOT exit the loop - more events are coming)
                 if matches!(event, AgentEvent::End) {
                     break;
                 }

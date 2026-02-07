@@ -471,6 +471,8 @@ export type ServerMessage =
   | { type: 'Error'; message: string; sessionId: string }
   // Stream ended
   | { type: 'end'; sessionId: string }
+  // Intermediate end for multi-round tool calling (indicates more content coming)
+  | { type: 'intermediate_end'; sessionId: string }
   // Non-streaming response (fallback)
   | { type: 'response'; content: string; sessionId: string; toolsUsed?: string[]; processingTimeMs?: number }
   // Device status update
