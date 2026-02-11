@@ -11,12 +11,16 @@ use neomind_storage::{
     AgentFilter, ScheduleType, ResourceType,
     UserMessage,
 };
+use neomind_llm::instance_manager::get_instance_manager;
 
 use super::{
     ServerState,
     common::{HandlerResult, ok},
 };
 use crate::models::ErrorResponse;
+
+// Import DataSourceId for type-safe resource ID parsing
+use neomind_core::datasource::DataSourceId;
 
 // ============================================================================
 // Helper functions for enum serialization
@@ -38,6 +42,56 @@ fn resource_type_to_string(resource_type: &ResourceType) -> &'static str {
         ResourceType::Metric => "metric",
         ResourceType::Command => "command",
         ResourceType::DataStream => "data_stream",
+        ResourceType::ExtensionTool => "extension_tool",
+        ResourceType::ExtensionMetric => "extension_metric",
+    }
+}
+
+/// Infer resource type from resource_id string.
+///
+/// This function uses DataSourceId parsing to determine the resource type
+/// in a type-safe manner, avoiding fragile string-based inference.
+///
+/// # Important Note on Ambiguity
+/// When resource_type is not explicitly specified, the following rules apply:
+/// - "extension:id:field" with field containing "." -> ExtensionMetric (nested data field)
+/// - "extension:id:field" without "." -> ExtensionMetric (simple metric, default)
+/// - "extension:id" -> ExtensionTool (extension reference without field)
+///
+/// Users SHOULD specify resource_type explicitly to avoid ambiguity.
+///
+/// # Returns
+/// Inferred ResourceType, or Device as default fallback
+fn infer_resource_type_from_id(resource_id: &str) -> ResourceType {
+    // Try parsing as standard DataSourceId (three-part format: type:id:field)
+    if let Some(ds_id) = DataSourceId::parse(resource_id) {
+        match ds_id.source_type {
+            neomind_core::datasource::DataSourceType::Device => ResourceType::Metric,
+            neomind_core::datasource::DataSourceType::Extension => {
+                // Extension with a field: "extension:id:field"
+                // Default to ExtensionMetric for data query compatibility
+                // Use ExtensionTool explicitly if you want command execution
+                ResourceType::ExtensionMetric
+            }
+            neomind_core::datasource::DataSourceType::Transform => ResourceType::DataStream,
+        }
+    } else if let Some(_ds_id) = DataSourceId::parse_extension_command(resource_id) {
+        // Four-part format: extension:id:command:field
+        // Always ExtensionMetric for data queries
+        ResourceType::ExtensionMetric
+    } else if resource_id.starts_with("extension:") {
+        // Count parts to distinguish
+        let parts: Vec<&str> = resource_id.split(':').collect();
+        if parts.len() == 2 {
+            // "extension:id" -> ExtensionTool (extension reference, no field)
+            ResourceType::ExtensionTool
+        } else {
+            // "extension:id:..." with more parts -> default to ExtensionMetric
+            ResourceType::ExtensionMetric
+        }
+    } else {
+        // Default fallback for device-like resources
+        ResourceType::Device
     }
 }
 
@@ -59,6 +113,15 @@ struct AgentDto {
     success_count: u32,
     error_count: u32,
     avg_duration_ms: u64,
+    // Advanced configuration fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_tool_chaining: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_chain_depth: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_window_size: Option<usize>,
 }
 
 /// AI Agent detail.
@@ -83,6 +146,15 @@ struct AgentDetailDto {
     error_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     llm_backend_id: Option<String>,
+    // Advanced configuration fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enable_tool_chaining: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_chain_depth: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    priority: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_window_size: Option<usize>,
 }
 
 /// Agent resource for API responses.
@@ -317,14 +389,44 @@ pub struct CreateAgentRequest {
     #[serde(default)]
     pub description: Option<String>,
     pub user_prompt: String,
+    /// Legacy device IDs (for backward compatibility)
+    #[serde(default)]
     pub device_ids: Vec<String>,
+    /// Legacy metrics selection (for backward compatibility)
     #[serde(default)]
     pub metrics: Vec<MetricSelectionRequest>,
+    /// Legacy commands selection (for backward compatibility)
     #[serde(default)]
     pub commands: Vec<CommandSelectionRequest>,
+    /// New unified resources format (supports devices and extensions)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<ResourceRequest>>,
     pub schedule: AgentScheduleRequest,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llm_backend_id: Option<String>,
+    /// Enable tool chaining (default: false)
+    #[serde(default)]
+    pub enable_tool_chaining: Option<bool>,
+    /// Maximum chain depth (default: 3)
+    #[serde(default)]
+    pub max_chain_depth: Option<usize>,
+    /// Agent priority (0-255, default: 128)
+    #[serde(default)]
+    pub priority: Option<u8>,
+    /// Context window size (default: 10)
+    #[serde(default)]
+    pub context_window_size: Option<usize>,
+}
+
+/// Resource request in the new unified format.
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct ResourceRequest {
+    pub resource_id: String,
+    pub resource_type: String,
+    pub name: String,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<serde_json::Value>,
 }
 
 /// Metric selection in create request.
@@ -386,6 +488,15 @@ pub struct UpdateAgentRequest {
     pub metrics: Option<Vec<MetricSelectionRequest>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commands: Option<Vec<CommandSelectionRequest>>,
+    // Advanced options
+    #[serde(default)]
+    pub enable_tool_chaining: Option<bool>,
+    #[serde(default)]
+    pub max_chain_depth: Option<usize>,
+    #[serde(default)]
+    pub priority: Option<u8>,
+    #[serde(default)]
+    pub context_window_size: Option<usize>,
 }
 
 /// Resource in update request (new format).
@@ -424,6 +535,11 @@ impl From<AiAgent> for AgentDto {
             success_count: agent.stats.successful_executions as u32,
             error_count: agent.stats.failed_executions as u32,
             avg_duration_ms: agent.stats.avg_duration_ms,
+            // Advanced configuration
+            enable_tool_chaining: Some(agent.enable_tool_chaining),
+            max_chain_depth: Some(agent.max_chain_depth),
+            priority: Some(agent.priority),
+            context_window_size: Some(agent.context_window_size),
         }
     }
 }
@@ -519,6 +635,11 @@ impl From<&AiAgent> for AgentDetailDto {
             last_execution_at: agent.last_execution_at.map(format_datetime),
             error_message: agent.error_message.clone(),
             llm_backend_id: agent.llm_backend_id.clone(),
+            // Advanced configuration
+            enable_tool_chaining: Some(agent.enable_tool_chaining),
+            max_chain_depth: Some(agent.max_chain_depth),
+            priority: Some(agent.priority),
+            context_window_size: Some(agent.context_window_size),
         }
     }
 }
@@ -677,6 +798,32 @@ pub async fn create_agent(
     let mut resources = Vec::new();
     use neomind_storage::{AgentResource, ResourceType};
 
+    // Handle new resources format (preferred)
+    if let Some(ref req_resources) = request.resources {
+        for req_resource in req_resources {
+            let resource_type = match req_resource.resource_type.as_str() {
+                "device" | "Device" => ResourceType::Device,
+                "metric" | "Metric" => ResourceType::Metric,
+                "command" | "Command" => ResourceType::Command,
+                "extension_metric" | "ExtensionMetric" => ResourceType::ExtensionMetric,
+                "extension_tool" | "ExtensionTool" => ResourceType::ExtensionTool,
+                "data_stream" | "DataStream" => ResourceType::DataStream,
+                _ => {
+                    // Use type-safe inference based on DataSourceId parsing
+                    infer_resource_type_from_id(&req_resource.resource_id)
+                }
+            };
+
+            resources.push(AgentResource {
+                resource_type,
+                resource_id: req_resource.resource_id.clone(),
+                name: req_resource.name.clone(),
+                config: req_resource.config.clone().unwrap_or_default(),
+            });
+        }
+    }
+
+    // Handle legacy format for backward compatibility
     for device_id in &request.device_ids {
         resources.push(AgentResource {
             resource_type: ResourceType::Device,
@@ -731,7 +878,7 @@ pub async fn create_agent(
         resources,
         schedule,
         status: AgentStatus::Active,
-        priority: 128, // Default middle priority (0-255 range)
+        priority: request.priority.unwrap_or(128), // Default middle priority (0-255 range)
         created_at: chrono::Utc::now().timestamp(),
         updated_at: chrono::Utc::now().timestamp(),
         last_execution_at: None,
@@ -741,13 +888,34 @@ pub async fn create_agent(
         conversation_history: Default::default(),
         user_messages: Default::default(),
         conversation_summary: Default::default(),
-        context_window_size: Default::default(),
+        context_window_size: request.context_window_size.unwrap_or(10),
+        enable_tool_chaining: request.enable_tool_chaining.unwrap_or(false),
+        max_chain_depth: request.max_chain_depth.unwrap_or(3),
     };
 
     // Save to storage
     let store = &state.agents.agent_store;
     store.save_agent(&agent).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to save agent: {}", e)))?;
+
+    // Schedule the agent if it's interval/cron type (not event-triggered)
+    if agent.schedule.schedule_type != neomind_storage::ScheduleType::Event {
+        if let Ok(manager) = state.get_or_init_agent_manager().await {
+            if let Err(e) = manager.scheduler().schedule_agent(agent.clone()).await {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    error = %e,
+                    "Failed to schedule agent after creation"
+                );
+            } else {
+                tracing::info!(
+                    agent_id = %agent.id,
+                    schedule_type = ?agent.schedule.schedule_type,
+                    "Agent scheduled successfully"
+                );
+            }
+        }
+    }
 
     tracing::info!("Created AI Agent: {} ({})", agent.name, agent.id);
 
@@ -827,7 +995,13 @@ pub async fn update_agent(
                 "device" | "Device" => ResourceType::Device,
                 "metric" | "Metric" => ResourceType::Metric,
                 "command" | "Command" => ResourceType::Command,
-                _ => ResourceType::Device, // Default to Device for unknown types
+                "extension_metric" | "ExtensionMetric" => ResourceType::ExtensionMetric,
+                "extension_tool" | "ExtensionTool" => ResourceType::ExtensionTool,
+                "data_stream" | "DataStream" => ResourceType::DataStream,
+                _ => {
+                    // Use type-safe inference based on DataSourceId parsing
+                    infer_resource_type_from_id(&req_resource.resource_id)
+                }
             };
 
             resources.push(AgentResource {
@@ -900,11 +1074,52 @@ pub async fn update_agent(
         agent.resources = resources;
     }
 
+    // Update advanced options if provided
+    if let Some(enable_chaining) = request.enable_tool_chaining {
+        agent.enable_tool_chaining = enable_chaining;
+    }
+    if let Some(max_depth) = request.max_chain_depth {
+        agent.max_chain_depth = max_depth;
+    }
+    if let Some(priority) = request.priority {
+        agent.priority = priority;
+    }
+    if let Some(context_window) = request.context_window_size {
+        agent.context_window_size = context_window;
+    }
+
     agent.updated_at = chrono::Utc::now().timestamp();
 
     // Save
     store.save_agent(&agent).await
         .map_err(|e| ErrorResponse::internal(format!("Failed to update agent: {}", e)))?;
+
+    // Reschedule the agent if schedule changed or if agent is active (interval/cron type)
+    // This ensures scheduled agents pick up the new schedule
+    if has_schedule_update || agent.schedule.schedule_type != neomind_storage::ScheduleType::Event {
+        if let Ok(manager) = state.get_or_init_agent_manager().await {
+            // First unschedule the old schedule
+            let _ = manager.scheduler().unschedule_agent(&agent.id).await;
+
+            // Then reschedule with the new configuration (if active and not event-triggered)
+            if agent.status == neomind_storage::AgentStatus::Active
+                && agent.schedule.schedule_type != neomind_storage::ScheduleType::Event {
+                if let Err(e) = manager.scheduler().schedule_agent(agent.clone()).await {
+                    tracing::warn!(
+                        agent_id = %agent.id,
+                        error = %e,
+                        "Failed to reschedule agent after update"
+                    );
+                } else {
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        schedule_type = ?agent.schedule.schedule_type,
+                        "Agent rescheduled successfully after update"
+                    );
+                }
+            }
+        }
+    }
 
     tracing::info!("Updated AI Agent: {}", id);
 
@@ -925,9 +1140,19 @@ pub async fn delete_agent(
         .map_err(|e| ErrorResponse::internal(format!("Failed to get agent: {}", e)))?
         .ok_or_else(|| ErrorResponse::not_found(format!("Agent not found: {}", id)))?;
 
-    // Delete
-    store.delete_agent(&id).await
-        .map_err(|e| ErrorResponse::internal(format!("Failed to delete agent: {}", e)))?;
+    // Get or initialize the agent manager to properly unschedule the agent
+    // This is critical for:
+    // 1. Removing scheduled tasks (interval/cron agents)
+    // 2. Preventing event-triggered agents from executing
+    if let Ok(manager) = state.get_or_init_agent_manager().await {
+        // Use the manager's delete_agent which properly unschedules
+        manager.delete_agent(&id).await
+            .map_err(|e| ErrorResponse::internal(format!("Failed to unschedule agent: {}", e)))?;
+    } else {
+        // Fallback: just delete from storage if manager is not available
+        store.delete_agent(&id).await
+            .map_err(|e| ErrorResponse::internal(format!("Failed to delete agent: {}", e)))?;
+    }
 
     tracing::info!("Deleted AI Agent: {}", id);
 
@@ -1351,6 +1576,65 @@ fn validate_with_scheduler(
             }))
         }
     }
+}
+
+
+/// Validate that an LLM backend is available and working.
+///
+/// POST /api/agents/validate-llm
+pub async fn validate_llm_backend(
+    State(_state): State<ServerState>,
+    Json(request): Json<ValidateLlmRequest>,
+) -> HandlerResult<Value> {
+    let manager = get_instance_manager()
+        .map_err(|e| ErrorResponse::internal(e.to_string()))?;
+
+    // Determine which backend to test
+    let backend_id = if let Some(id) = &request.backend_id {
+        id.clone()
+    } else {
+        // Use the active backend
+        let active = manager.get_active_instance()
+            .ok_or_else(|| ErrorResponse::bad_request("No LLM backend configured. Please add an LLM backend first.".to_string()))?;
+        active.id.clone()
+    };
+
+    // Test the connection
+    let test_result = manager.test_connection(&backend_id).await;
+
+    match test_result {
+        Ok(_) => {
+            // Get backend info
+            let instances = manager.list_instances();
+            if let Some(backend) = instances.iter().find(|b| b.id == backend_id) {
+                ok(json!({
+                    "valid": true,
+                    "backend_name": backend.name,
+                    "model": backend.model,
+                }))
+            } else {
+                ok(json!({
+                    "valid": true,
+                    "backend_name": "unknown",
+                    "model": "unknown",
+                }))
+            }
+        }
+        Err(e) => {
+            ok(json!({
+                "valid": false,
+                "error": e.to_string(),
+            }))
+        }
+    }
+}
+
+/// Request body for validating an LLM backend.
+#[derive(Debug, serde::Deserialize)]
+pub struct ValidateLlmRequest {
+    /// Backend ID to validate (if not specified, validates the active/default backend)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<String>,
 }
 
 /// Provide a human-readable description of a cron expression.

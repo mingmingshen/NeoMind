@@ -18,6 +18,9 @@ use tokio::sync::RwLock;
 use std::collections::HashMap;
 use futures::future::join_all;
 
+// Import DataSourceId for type-safe extension metric queries
+use neomind_core::datasource::DataSourceId;
+
 use crate::LlmBackend;
 use crate::error::{NeoMindError, Result as AgentResult};
 use crate::prompts::CONVERSATION_CONTEXT_ZH;
@@ -622,6 +625,86 @@ pub struct EventTriggerData {
     pub timestamp: i64,
 }
 
+
+/// State for tracking tool chaining progress
+#[derive(Debug, Clone)]
+pub struct ChainState {
+    /// Current depth in the chain
+    depth: usize,
+    /// Results from previous rounds that can be used as input
+    previous_results: Vec<ChainResult>,
+    /// Maximum depth allowed
+    max_depth: usize,
+}
+
+/// A result from one step in the chain that can be used as input
+#[derive(Debug, Clone)]
+pub struct ChainResult {
+    /// Action that produced this result
+    action_type: String,
+    /// Target of the action
+    target: String,
+    /// Result data (if any)
+    result: Option<String>,
+    /// Whether the action succeeded
+    success: bool,
+}
+
+impl ChainState {
+    fn new(max_depth: usize) -> Self {
+        Self {
+            depth: 0,
+            previous_results: Vec::new(),
+            max_depth,
+        }
+    }
+
+    fn can_continue(&self) -> bool {
+        self.depth < self.max_depth
+    }
+
+    fn advance(&mut self, results: &[neomind_storage::ActionExecuted]) {
+        self.depth += 1;
+        for action in results {
+            self.previous_results.push(ChainResult {
+                action_type: action.action_type.clone(),
+                target: action.target.clone(),
+                result: action.result.clone(),
+                success: action.success,
+            });
+        }
+    }
+
+    /// Format previous results as context for the next LLM round
+    fn format_as_context(&self) -> String {
+        if self.previous_results.is_empty() {
+            return String::new();
+        }
+
+        let mut context = String::from("\n\n## 之前的工具执行结果 (Tool Chaining)\n\n");
+        context.push_str(&format!("当前是第 {} 轮执行。\n\n", self.depth));
+
+        for (i, result) in self.previous_results.iter().enumerate() {
+            context.push_str(&format!("### 执行步骤 {} - {}\n", i + 1, result.action_type));
+            context.push_str(&format!("- **目标**: {}\n", result.target));
+            context.push_str(&format!("- **状态**: {}\n", if result.success { "成功" } else { "失败" }));
+            if let Some(ref result_str) = result.result {
+                // Only include non-trivial results
+                if !result_str.is_empty() && result_str != "Command sent successfully" {
+                    context.push_str(&format!("- **结果**: {}\n", result_str));
+                }
+            }
+            context.push('\n');
+        }
+
+        context.push_str("请基于以上之前的执行结果，判断是否需要进一步操作。");
+        context.push_str("如果之前的操作已经完成目标，或者没有更多有意义的操作，请说明并结束。");
+        context.push_str("如果需要继续，请明确说明下一步要做什么。\n");
+
+        context
+    }
+}
+
 /// Configuration for agent executor.
 #[derive(Clone)]
 pub struct AgentExecutorConfig {
@@ -639,6 +722,8 @@ pub struct AgentExecutorConfig {
     pub llm_runtime: Option<Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>,
     /// LLM backend store for per-agent backend lookup
     pub llm_backend_store: Option<Arc<LlmBackendStore>>,
+    /// Phase 3.3: Extension registry for dynamic tool loading
+    pub extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
 }
 
 /// Context for agent execution.
@@ -691,6 +776,8 @@ pub struct AgentExecutor {
     /// LLM runtime cache: backend_id -> runtime
     /// Key format: "{backend_type}:{endpoint}:{model}" for cache invalidation
     llm_runtime_cache: Arc<RwLock<HashMap<String, Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>>>>,
+    /// Phase 3.3: Extension registry for dynamic tool loading
+    extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
 }
 
 /// Calculate relevance score for a conversation turn based on current context.
@@ -768,6 +855,7 @@ impl AgentExecutor {
         let llm_runtime = config.llm_runtime.clone();
         let llm_backend_store = config.llm_backend_store.clone();
         let message_manager = config.message_manager.clone();
+        let extension_registry = config.extension_registry.clone();
         Ok(Self {
             store: config.store.clone(),
             time_series_storage: config.time_series_storage.clone(),
@@ -780,6 +868,7 @@ impl AgentExecutor {
             event_agents: Arc::new(RwLock::new(HashMap::new())),
             recent_executions: Arc::new(RwLock::new(HashMap::new())),
             llm_runtime_cache: Arc::new(RwLock::new(HashMap::new())),
+            extension_registry,
         })
     }
 
@@ -791,6 +880,74 @@ impl AgentExecutor {
     /// Get the agent store.
     pub fn store(&self) -> Arc<AgentStore> {
         self.store.clone()
+    }
+
+    // ========================================================================
+    // Extension Tools Integration
+    // ========================================================================
+
+    /// Get the extension registry.
+    pub fn extension_registry(&self) -> Option<Arc<neomind_core::extension::registry::ExtensionRegistry>> {
+        self.extension_registry.clone()
+    }
+
+    /// Get available tools from extensions.
+    ///
+    /// Returns a list of tool definitions from all registered extensions.
+    /// Each extension command becomes a tool that AI agents can call.
+    pub async fn get_extension_tools(&self) -> Vec<serde_json::Value> {
+        let mut result = Vec::new();
+
+        if let Some(ref registry) = self.extension_registry {
+            let extensions = registry.list().await;
+
+            for info in extensions {
+                let metadata_id = info.metadata.id.clone();
+                let commands = info.commands;
+
+                // Convert each command to a tool description
+                for cmd in commands {
+                    // Build parameters JSON schema from command parameters
+                    let parameters = build_parameters_schema(&cmd.parameters);
+
+                    result.push(serde_json::json!({
+                        "name": format!("{}_{}", metadata_id, cmd.name),
+                        "description": cmd.llm_hints,
+                        "parameters": parameters,
+                        "extension_id": metadata_id,
+                        "command": cmd.name,
+                    }));
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Execute an extension command.
+    ///
+    /// This allows agents to call tools provided by extensions.
+    pub async fn execute_extension_command(
+        &self,
+        extension_id: &str,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> AgentResult<serde_json::Value> {
+        let registry = self.extension_registry.as_ref()
+            .ok_or_else(|| NeoMindError::Config(
+                "Extension registry not configured".to_string(),
+            ))?;
+
+        registry.execute_command(extension_id, command, args)
+            .await
+            .map_err(|e| NeoMindError::Tool(e.to_string()))
+    }
+
+    /// Get all extension tools.
+    ///
+    /// This is a convenience method that returns all extension tools.
+    pub async fn get_all_extension_tools(&self) -> Vec<serde_json::Value> {
+        self.get_extension_tools().await
     }
 
     /// Send a progress event for an agent execution.
@@ -1217,6 +1374,7 @@ Respond in JSON format:
                             message_manager: executor_message_manager,
                             llm_runtime: executor_llm,
                             llm_backend_store: executor_llm_store,
+                            extension_registry: None,
                         };
 
                         match AgentExecutor::new(executor_config).await {
@@ -1358,6 +1516,21 @@ Respond in JSON format:
         }
     }
 
+    /// Remove an agent from the event-triggered agents cache.
+    ///
+    /// This should be called when an agent is deleted to immediately remove it
+    /// from the cache, preventing it from being triggered by events before the
+    /// next scheduled refresh.
+    pub async fn remove_event_agent(&self, agent_id: &str) {
+        let mut cache = self.event_agents.write().await;
+        if cache.remove(agent_id).is_some() {
+            tracing::info!(
+                agent_id = %agent_id,
+                "[EVENT] Removed agent from event-triggered cache"
+            );
+        }
+    }
+
     /// Execute an agent and record the full decision process.
     pub async fn execute_agent(&self, agent: AiAgent) -> AgentResult<AgentExecutionRecord> {
         let agent_id = agent.id.clone();
@@ -1402,7 +1575,8 @@ Respond in JSON format:
         }
 
         // Execute with error handling for stability
-        let execution_result = self.execute_with_retry(context).await;
+        // Use execute_with_chaining to support multi-round tool chaining
+        let execution_result = self.execute_with_chaining(context).await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -1577,7 +1751,8 @@ Respond in JSON format:
         }
 
         // Execute with error handling for stability
-        let execution_result = self.execute_with_retry_and_event(context, event_data).await;
+        // Use execute_with_chaining_and_event to support multi-round tool chaining
+        let execution_result = self.execute_with_chaining_and_event(context, event_data).await;
 
         let duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -1749,6 +1924,361 @@ Respond in JSON format:
         }
 
         Ok(records)
+    }
+
+
+    /// Check if an action result is chainable (contains data useful for next round)
+    fn is_chainable_action(action: &neomind_storage::ActionExecuted) -> bool {
+        // Extension commands that return data are chainable
+        if action.action_type == "extension_command" {
+            return true;
+        }
+
+        // Actions with meaningful results (not just success messages)
+        if let Some(ref result) = action.result {
+            // Filter out generic success messages
+            if !result.is_empty()
+                && result != "Command sent successfully"
+                && result != "Success"
+                && !result.starts_with("Failed:")
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Execute with tool chaining support
+    async fn execute_with_chaining(
+        &self,
+        mut context: ExecutionContext,
+    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
+        let agent = context.agent.clone();
+        let max_depth = if agent.enable_tool_chaining {
+            agent.max_chain_depth
+        } else {
+            1 // No chaining, just single execution
+        };
+
+        let mut chain_state = ChainState::new(max_depth);
+        #[allow(unused_assignments)]
+        let mut final_decision_process: Option<DecisionProcess> = None;
+        let mut all_actions_executed: Vec<neomind_storage::ActionExecuted> = Vec::new();
+        let mut all_notifications_sent: Vec<neomind_storage::NotificationSent> = Vec::new();
+
+        tracing::info!(
+            agent_id = %agent.id,
+            enable_chaining = agent.enable_tool_chaining,
+            max_depth = max_depth,
+            "Starting agent execution"
+        );
+
+        // Execute rounds until we reach max depth or no more chainable results
+        loop {
+            tracing::debug!(
+                agent_id = %agent.id,
+                current_depth = chain_state.depth,
+                max_depth = chain_state.max_depth,
+                "Execution round"
+            );
+
+            // Update context with chain results if we have any
+            if chain_state.depth > 0 {
+                context.agent.user_prompt = format!(
+                    "{}{}",
+                    context.agent.user_prompt,
+                    chain_state.format_as_context()
+                );
+            }
+
+            // Execute one round with retry
+            let (decision_process, execution_result) = self.execute_with_retry(context.clone()).await?;
+
+            // Collect results from this round
+            all_actions_executed.extend(execution_result.actions_executed.clone());
+            all_notifications_sent.extend(execution_result.notifications_sent.clone());
+
+            // Store the final decision process (last round takes precedence)
+            final_decision_process = Some(decision_process.clone());
+
+            // Check if we should continue chaining
+            if !agent.enable_tool_chaining || !chain_state.can_continue() {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    depth = chain_state.depth,
+                    "Chaining disabled or max depth reached, stopping"
+                );
+                break;
+            }
+
+            // Check if we have chainable results
+            let has_chainable = execution_result.actions_executed
+                .iter()
+                .any(Self::is_chainable_action);
+
+            if !has_chainable {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    "No chainable results, stopping"
+                );
+                break;
+            }
+
+            // Check if decisions indicate more work needed
+            let needs_more_work = decision_process.decisions
+                .iter()
+                .any(|d| {
+                    d.decision_type == "needs_more_data"
+                        || d.action.to_lowercase().contains("continue")
+                        || d.action.to_lowercase().contains("further")
+                        || d.action.to_lowercase().contains("下一步")
+                        || d.action.to_lowercase().contains("继续")
+                });
+
+            if !needs_more_work {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    "Decisions indicate no more work needed, stopping"
+                );
+                break;
+            }
+
+            // Advance to next round
+            chain_state.advance(&execution_result.actions_executed);
+
+            // Send progress event for chaining
+            self.send_progress(
+                &context.agent.id,
+                &context.execution_id,
+                "chaining",
+                &format!("Tool chaining round {}", chain_state.depth + 1),
+                Some(&format!("Continuing analysis with results from {} previous action(s)...", chain_state.previous_results.len()))
+            ).await;
+        }
+
+        // Merge decision processes from all rounds
+        let merged_decision_process = if let Some(mut final_dp) = final_decision_process {
+            // Add chain info to situation analysis
+            if chain_state.depth > 1 {
+                final_dp.situation_analysis = format!(
+                    "{}\n\n[工具链式调用: 共执行 {} 轮]",
+                    final_dp.situation_analysis,
+                    chain_state.depth
+                );
+            }
+            final_dp
+        } else {
+            // Fallback (shouldn't happen)
+            DecisionProcess {
+                situation_analysis: "No decision process generated".to_string(),
+                data_collected: vec![],
+                reasoning_steps: vec![],
+                decisions: vec![],
+                conclusion: "No conclusion".to_string(),
+                confidence: 0.0,
+            }
+        };
+
+        // Extract conclusion for summary before moving
+        let summary_conclusion = merged_decision_process.conclusion.clone();
+
+        let success_rate = if all_actions_executed.is_empty() {
+            1.0
+        } else {
+            all_actions_executed.iter().filter(|a| a.success).count() as f32 / all_actions_executed.len() as f32
+        };
+
+        let total_actions = all_actions_executed.len();
+
+        let merged_execution_result = StorageExecutionResult {
+            actions_executed: all_actions_executed,
+            report: None, // Reports are generated per-round, not in chaining
+            notifications_sent: all_notifications_sent,
+            summary: if chain_state.depth > 1 {
+                format!("Completed {} execution rounds via tool chaining", chain_state.depth)
+            } else {
+                summary_conclusion
+            },
+            success_rate,
+        };
+
+        tracing::info!(
+            agent_id = %agent.id,
+            total_rounds = chain_state.depth,
+            total_actions = total_actions,
+            "Tool chaining execution completed"
+        );
+
+        Ok((merged_decision_process, merged_execution_result))
+    }
+
+
+    /// Execute with tool chaining support (event-triggered variant)
+    async fn execute_with_chaining_and_event(
+        &self,
+        mut context: ExecutionContext,
+        event_data: EventTriggerData,
+    ) -> AgentResult<(DecisionProcess, StorageExecutionResult)> {
+        let agent = context.agent.clone();
+        let max_depth = if agent.enable_tool_chaining {
+            agent.max_chain_depth
+        } else {
+            1 // No chaining, just single execution
+        };
+
+        let mut chain_state = ChainState::new(max_depth);
+        #[allow(unused_assignments)]
+        let mut final_decision_process: Option<DecisionProcess> = None;
+        let mut all_actions_executed: Vec<neomind_storage::ActionExecuted> = Vec::new();
+        let mut all_notifications_sent: Vec<neomind_storage::NotificationSent> = Vec::new();
+
+        tracing::info!(
+            agent_id = %agent.id,
+            enable_chaining = agent.enable_tool_chaining,
+            max_depth = max_depth,
+            event_device = %event_data.device_id,
+            event_metric = %event_data.metric,
+            "Starting event-triggered agent execution"
+        );
+
+        // Execute rounds until we reach max depth or no more chainable results
+        loop {
+            tracing::debug!(
+                agent_id = %agent.id,
+                current_depth = chain_state.depth,
+                max_depth = chain_state.max_depth,
+                "Execution round (event-triggered)"
+            );
+
+            // Update context with chain results if we have any
+            if chain_state.depth > 0 {
+                context.agent.user_prompt = format!(
+                    "{}{}",
+                    context.agent.user_prompt,
+                    chain_state.format_as_context()
+                );
+            }
+
+            // Execute one round with retry (event variant)
+            let (decision_process, execution_result) = self.execute_with_retry_and_event(context.clone(), event_data.clone()).await?;
+
+            // Collect results from this round
+            all_actions_executed.extend(execution_result.actions_executed.clone());
+            all_notifications_sent.extend(execution_result.notifications_sent.clone());
+
+            // Store the final decision process (last round takes precedence)
+            final_decision_process = Some(decision_process.clone());
+
+            // Check if we should continue chaining
+            if !agent.enable_tool_chaining || !chain_state.can_continue() {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    depth = chain_state.depth,
+                    "Chaining disabled or max depth reached, stopping"
+                );
+                break;
+            }
+
+            // Check if we have chainable results
+            let has_chainable = execution_result.actions_executed
+                .iter()
+                .any(Self::is_chainable_action);
+
+            if !has_chainable {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    "No chainable results, stopping"
+                );
+                break;
+            }
+
+            // Check if decisions indicate more work needed
+            let needs_more_work = decision_process.decisions
+                .iter()
+                .any(|d| {
+                    d.decision_type == "needs_more_data"
+                        || d.action.to_lowercase().contains("continue")
+                        || d.action.to_lowercase().contains("further")
+                        || d.action.to_lowercase().contains("下一步")
+                        || d.action.to_lowercase().contains("继续")
+                });
+
+            if !needs_more_work {
+                tracing::debug!(
+                    agent_id = %agent.id,
+                    "Decisions indicate no more work needed, stopping"
+                );
+                break;
+            }
+
+            // Advance to next round
+            chain_state.advance(&execution_result.actions_executed);
+
+            // Send progress event for chaining
+            self.send_progress(
+                &context.agent.id,
+                &context.execution_id,
+                "chaining",
+                &format!("Tool chaining round {}", chain_state.depth + 1),
+                Some(&format!("Continuing analysis with results from {} previous action(s)...", chain_state.previous_results.len()))
+            ).await;
+        }
+
+        // Merge decision processes from all rounds
+        let merged_decision_process = if let Some(mut final_dp) = final_decision_process {
+            // Add chain info to situation analysis
+            if chain_state.depth > 1 {
+                final_dp.situation_analysis = format!(
+                    "{}\n\n[工具链式调用: 共执行 {} 轮]",
+                    final_dp.situation_analysis,
+                    chain_state.depth
+                );
+            }
+            final_dp
+        } else {
+            // Fallback (shouldn't happen)
+            DecisionProcess {
+                situation_analysis: "No decision process generated".to_string(),
+                data_collected: vec![],
+                reasoning_steps: vec![],
+                decisions: vec![],
+                conclusion: "No conclusion".to_string(),
+                confidence: 0.0,
+            }
+        };
+
+        // Extract conclusion for summary before moving
+        let summary_conclusion = merged_decision_process.conclusion.clone();
+
+        let success_rate = if all_actions_executed.is_empty() {
+            1.0
+        } else {
+            all_actions_executed.iter().filter(|a| a.success).count() as f32 / all_actions_executed.len() as f32
+        };
+
+        let total_actions = all_actions_executed.len();
+
+        let merged_execution_result = StorageExecutionResult {
+            actions_executed: all_actions_executed,
+            report: None, // Reports are generated per-round, not in chaining
+            notifications_sent: all_notifications_sent,
+            summary: if chain_state.depth > 1 {
+                format!("Completed {} execution rounds via tool chaining", chain_state.depth)
+            } else {
+                summary_conclusion
+            },
+            success_rate,
+        };
+
+        tracing::info!(
+            agent_id = %agent.id,
+            total_rounds = chain_state.depth,
+            total_actions = total_actions,
+            "Event-triggered tool chaining execution completed"
+        );
+
+        Ok((merged_decision_process, merged_execution_result))
     }
 
     /// Execute with retry for stability.
@@ -2202,6 +2732,15 @@ Respond in JSON format:
     async fn collect_data(&self, agent: &AiAgent) -> AgentResult<Vec<DataCollected>> {
         let timestamp = chrono::Utc::now().timestamp();
 
+        // DEBUG: Log data collection start
+        tracing::info!(
+            agent_id = %agent.id,
+            agent_name = %agent.name,
+            total_resources = agent.resources.len(),
+            has_time_series_storage = self.time_series_storage.is_some(),
+            "[COLLECT] Starting data collection"
+        );
+
         // Split resources by type for parallel processing
         let metric_resources: Vec<_> = agent.resources.iter()
             .filter(|r| r.resource_type == ResourceType::Metric)
@@ -2213,15 +2752,55 @@ Respond in JSON format:
             .map(|r| r.resource_id.clone())
             .collect();
 
+        let extension_metric_resources: Vec<_> = agent.resources.iter()
+            .filter(|r| r.resource_type == ResourceType::ExtensionMetric)
+            .cloned()
+            .collect();
+
+        tracing::debug!(
+            agent_id = %agent.id,
+            metric_count = metric_resources.len(),
+            device_count = device_resources.len(),
+            extension_metric_count = extension_metric_resources.len(),
+            "[COLLECT] Resource breakdown"
+        );
+
+        // Check if time_series_storage is available
+        if self.time_series_storage.is_none() {
+            tracing::warn!(
+                agent_id = %agent.id,
+                "[COLLECT] Time series storage is NOT available - data collection will fail!"
+            );
+        }
+
         // Collect metric data in parallel
         let metric_data = self.collect_metric_data_parallel(agent, metric_resources, timestamp).await?;
+        tracing::debug!(
+            agent_id = %agent.id,
+            metric_data_count = metric_data.len(),
+            "[COLLECT] Metric data collected"
+        );
 
         // Collect device data in parallel
         let device_data = self.collect_device_data_parallel(agent, device_resources, timestamp).await?;
+        tracing::debug!(
+            agent_id = %agent.id,
+            device_data_count = device_data.len(),
+            "[COLLECT] Device data collected"
+        );
+
+        // Collect extension metric data in parallel
+        let extension_data = self.collect_extension_metric_data_parallel(agent, extension_metric_resources, timestamp).await?;
+        tracing::debug!(
+            agent_id = %agent.id,
+            extension_data_count = extension_data.len(),
+            "[COLLECT] Extension metric data collected"
+        );
 
         // Combine all data
         let mut data = metric_data;
         data.extend(device_data);
+        data.extend(extension_data);
 
         // Add condensed memory context
         let memory_data = self.collect_memory_summary(agent, timestamp)?;
@@ -2229,8 +2808,20 @@ Respond in JSON format:
             data.push(mem_data);
         }
 
+        // Log summary of collected data
+        tracing::info!(
+            agent_id = %agent.id,
+            total_collected = data.len(),
+            data_sources = ?data.iter().map(|d| format!("{}:{}", d.source, d.data_type)).collect::<Vec<_>>(),
+            "[COLLECT] Data collection summary"
+        );
+
         // If no data collected, add a placeholder
         if data.is_empty() {
+            tracing::warn!(
+                agent_id = %agent.id,
+                "[COLLECT] NO DATA COLLECTED - adding placeholder"
+            );
             data.push(DataCollected {
                 source: "system".to_string(),
                 data_type: "info".to_string(),
@@ -2362,12 +2953,33 @@ Respond in JSON format:
         let end_time = chrono::Utc::now().timestamp();
         let start_time = end_time - ((time_range_minutes * 60) as i64);
 
+        tracing::debug!(
+            device_id = %device_id,
+            metric_name = %metric_name,
+            time_range_minutes = %time_range_minutes,
+            start_time = %start_time,
+            end_time = %end_time,
+            "[COLLECT] Querying metric"
+        );
+
         let result = storage.query_range(device_id, metric_name, start_time, end_time).await
             .map_err(|e| NeoMindError::Storage(format!("Query failed: {}", e)))?;
 
         if result.points.is_empty() {
+            tracing::debug!(
+                device_id = %device_id,
+                metric_name = %metric_name,
+                "[COLLECT] No data points found"
+            );
             return Ok(None);
         }
+
+        tracing::debug!(
+            device_id = %device_id,
+            metric_name = %metric_name,
+            points_count = result.points.len(),
+            "[COLLECT] Data points found"
+        );
 
         let latest = &result.points[result.points.len() - 1];
 
@@ -2483,6 +3095,10 @@ Respond in JSON format:
     }
 
     /// Collect data from a single device resource.
+    ///
+    /// This collects:
+    /// 1. Device metadata (device_info)
+    /// 2. Latest data point for ALL available metrics (not just images)
     async fn collect_single_device_data(
         device_service: Arc<DeviceService>,
         storage: Arc<neomind_storage::TimeSeriesStore>,
@@ -2507,51 +3123,332 @@ Respond in JSON format:
                 timestamp,
             });
 
-            // Try to get image metrics
+            // Get all available metrics for this device
             let end_time = chrono::Utc::now().timestamp();
-            let start_time = end_time - (300); // Last 5 minutes
+            let start_time = end_time - (3600); // Last 1 hour for regular metrics
 
-            let potential_metrics = vec![
+            let metrics = storage.list_metrics(device_id).await
+                .unwrap_or_default();
+
+            tracing::debug!(
+                device_id = %device_id,
+                metrics_count = metrics.len(),
+                "[COLLECT] Found metrics for device"
+            );
+
+            // Image metrics to check separately (only collect one image)
+            let image_metric_names = vec![
                 "values.image", "image", "snapshot", "values.snapshot",
                 "camera.image", "camera.snapshot",
                 "picture", "values.picture",
                 "frame", "values.frame",
             ];
 
-            // Try each metric until we find an image
-            for metric_name in potential_metrics {
-                if let Ok(result) = storage.query_range(device_id, metric_name, start_time, end_time).await
+            let mut image_found = false;
+
+            // Collect data for each metric
+            for metric_name in metrics {
+                // Skip if we already found an image and this is another image metric
+                if image_found && image_metric_names.contains(&metric_name.as_str()) {
+                    continue;
+                }
+
+                // Query for data points
+                let time_range = if image_metric_names.contains(&metric_name.as_str()) {
+                    (end_time - 300, end_time) // 5 minutes for images
+                } else {
+                    (start_time, end_time) // 1 hour for regular metrics
+                };
+
+                if let Ok(result) = storage.query_range(device_id, &metric_name, time_range.0, time_range.1).await
                     && !result.points.is_empty() {
-                        let latest = &result.points[result.points.len() - 1];
-                        let is_image = is_image_metric(metric_name, &latest.value);
+                    let latest = &result.points[result.points.len() - 1];
+                    let is_image = is_image_metric(&metric_name, &latest.value);
 
-                        if is_image {
-                            let (image_url, image_base64, image_mime) = extract_image_data(&latest.value);
+                    if is_image {
+                        let (image_url, image_base64, image_mime) = extract_image_data(&latest.value);
 
-                            let values_json = serde_json::json!({
-                                "value": latest.value,
-                                "timestamp": latest.timestamp,
-                                "points_count": result.points.len(),
-                                "_is_image": true,
-                                "image_url": image_url,
-                                "image_base64": image_base64,
-                                "image_mime_type": image_mime,
-                            });
+                        let values_json = serde_json::json!({
+                            "value": latest.value,
+                            "timestamp": latest.timestamp,
+                            "points_count": result.points.len(),
+                            "_is_image": true,
+                            "image_url": image_url,
+                            "image_base64": image_base64,
+                            "image_mime_type": image_mime,
+                        });
 
-                            data.push(DataCollected {
-                                source: format!("{}:{}", device_id, metric_name),
-                                data_type: metric_name.to_string(),
-                                values: values_json,
-                                timestamp,
-                            });
+                        data.push(DataCollected {
+                            source: format!("{}:{}", device_id, metric_name),
+                            data_type: metric_name.clone(),
+                            values: values_json,
+                            timestamp,
+                        });
 
-                            break; // Found an image, stop looking
-                        }
+                        image_found = true;
+                    } else {
+                        // Regular metric - add latest value
+                        let values_json = serde_json::json!({
+                            "value": latest.value,
+                            "timestamp": latest.timestamp,
+                            "points_count": result.points.len(),
+                        });
+
+                        data.push(DataCollected {
+                            source: format!("{}:{}", device_id, metric_name),
+                            data_type: metric_name.clone(),
+                            values: values_json,
+                            timestamp,
+                        });
                     }
+
+                    tracing::debug!(
+                        device_id = %device_id,
+                        metric_name = %metric_name,
+                        value = %latest.value,
+                        "[COLLECT] Collected metric data"
+                    );
+                }
             }
         }
 
+        tracing::debug!(
+            device_id = %device_id,
+            data_count = data.len(),
+            "[COLLECT] Total data items collected for device"
+        );
+
         Ok(data)
+    }
+
+    async fn collect_extension_metric_data_parallel(
+        &self,
+        _agent: &AiAgent,
+        resources: Vec<AgentResource>,
+        timestamp: i64,
+    ) -> AgentResult<Vec<DataCollected>> {
+        if resources.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let registry = self.extension_registry.clone()
+            .ok_or(NeoMindError::validation("Extension registry not available".to_string()))?;
+
+        let storage = self.time_series_storage.clone()
+            .ok_or(NeoMindError::validation("Time series storage not available".to_string()))?;
+
+        // Collect extension metric data in parallel with timeout
+        const QUERY_TIMEOUT_SECS: u64 = 10;
+
+        let timeout_futures: Vec<_> = resources.into_iter()
+            .map(|resource| {
+                let resource_id = resource.resource_id.clone();
+                let registry_clone = registry.clone();
+                let storage_clone = storage.clone();
+
+                async move {
+                    // Normalize legacy format with duplicate "extension:" prefix
+                    // Legacy: "extension:extension:ext_id:metric" -> Standard: "extension:ext_id:metric"
+                    let normalized_resource_id = if resource_id.starts_with("extension:extension:") {
+                        // Remove the duplicate "extension:" prefix
+                        resource_id.replacen("extension:extension:", "extension:", 1)
+                    } else {
+                        resource_id.clone()
+                    };
+
+                    // Parse the resource_id using DataSourceId
+                    // All extension metrics must use the DataSourceId format
+                    let ds_id = match DataSourceId::parse(&normalized_resource_id) {
+                        Some(id) if id.source_type == neomind_core::datasource::DataSourceType::Extension => id,
+                        _ => {
+                            tracing::warn!(
+                                original_id = %resource_id,
+                                normalized_id = %normalized_resource_id,
+                                "Invalid extension metric resource ID format (must be extension:id:metric or extension:id:command.field)"
+                            );
+                            return Ok::<Option<DataCollected>, NeoMindError>(None);
+                        }
+                    };
+
+                    // Extract parts for response
+                    let extension_id = &ds_id.source_id;
+                    let field_path = &ds_id.field_path;
+
+                    tracing::debug!(
+                        extension_id = %extension_id,
+                        field_path = %field_path,
+                        "[COLLECT] Querying extension metric"
+                    );
+
+                    // Query storage parts for historical data
+                    let device_part = ds_id.device_part();
+                    let metric_part = ds_id.metric_part();
+
+                    // First, try to get current value from registry (most up-to-date)
+                    let current_metric = tokio::time::timeout(
+                        std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+                        registry_clone.get_current_metrics(extension_id)
+                    ).await
+                        .ok()
+                        .and_then(|metric_values| {
+                            metric_values.into_iter()
+                                .find(|mv| mv.name == *field_path)
+                        });
+
+                    // Second, query historical data from storage
+                    let end_time = chrono::Utc::now().timestamp();
+                    let start_time = end_time - 3600; // Last 1 hour for historical data
+
+                    let historical_result = tokio::time::timeout(
+                        std::time::Duration::from_secs(QUERY_TIMEOUT_SECS),
+                        storage_clone.query_range(&device_part, metric_part, start_time, end_time)
+                    ).await;
+
+                    let points_count = match &historical_result {
+                        Ok(Ok(result)) => result.points.len(),
+                        _ => 0,
+                    };
+
+                    // Build response combining current value and historical info
+                    match (current_metric, historical_result) {
+                        (Some(metric_value), Ok(Ok(storage_result))) => {
+                            // Has both current value and historical data
+                            let json_value = match &metric_value.value {
+                                neomind_core::extension::system::ParamMetricValue::Float(v) => {
+                                    serde_json::json!(*v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::Integer(v) => {
+                                    serde_json::json!(*v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::Boolean(v) => {
+                                    serde_json::json!(*v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::String(v) => {
+                                    serde_json::json!(v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::Null => {
+                                    serde_json::Value::Null
+                                }
+                                neomind_core::extension::ParamMetricValue::Binary(_) => {
+                                    // Binary data encoded as base64 string
+                                    serde_json::json!("<binary data>")
+                                }
+                            };
+
+                            tracing::debug!(
+                                extension_id = %extension_id,
+                                field_path = %field_path,
+                                value = ?json_value,
+                                points_count,
+                                "[COLLECT] Extension metric found with historical data"
+                            );
+
+                            Ok(Some(DataCollected {
+                                source: resource_id.clone(),
+                                data_type: field_path.clone(),
+                                values: serde_json::json!({
+                                    "extension_id": extension_id,
+                                    "value": json_value,
+                                    "timestamp": metric_value.timestamp,
+                                    "points_count": points_count,
+                                    "has_history": points_count > 1,
+                                }),
+                                timestamp,
+                            }))
+                        }
+                        (Some(metric_value), _) => {
+                            // Only current value available, no historical data
+                            let json_value = match &metric_value.value {
+                                neomind_core::extension::system::ParamMetricValue::Float(v) => {
+                                    serde_json::json!(*v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::Integer(v) => {
+                                    serde_json::json!(*v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::Boolean(v) => {
+                                    serde_json::json!(*v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::String(v) => {
+                                    serde_json::json!(v)
+                                }
+                                neomind_core::extension::system::ParamMetricValue::Null => {
+                                    serde_json::Value::Null
+                                }
+                                neomind_core::extension::ParamMetricValue::Binary(_) => {
+                                    // Binary data encoded as base64 string
+                                    serde_json::json!("<binary data>")
+                                }
+                            };
+
+                            tracing::debug!(
+                                extension_id = %extension_id,
+                                field_path = %field_path,
+                                value = ?json_value,
+                                "[COLLECT] Extension metric found (current only)"
+                            );
+
+                            Ok(Some(DataCollected {
+                                source: resource_id.clone(),
+                                data_type: field_path.clone(),
+                                values: serde_json::json!({
+                                    "extension_id": extension_id,
+                                    "value": json_value,
+                                    "timestamp": metric_value.timestamp,
+                                    "points_count": 1,
+                                    "has_history": false,
+                                }),
+                                timestamp,
+                            }))
+                        }
+                        (None, Ok(Ok(storage_result))) if !storage_result.points.is_empty() => {
+                            // No current value but historical data exists
+                            let latest = &storage_result.points[storage_result.points.len() - 1];
+
+                            tracing::debug!(
+                                extension_id = %extension_id,
+                                field_path = %field_path,
+                                points_count,
+                                "[COLLECT] Extension metric found in historical data only"
+                            );
+
+                            Ok(Some(DataCollected {
+                                source: resource_id.clone(),
+                                data_type: field_path.clone(),
+                                values: serde_json::json!({
+                                    "extension_id": extension_id,
+                                    "value": latest.value,
+                                    "timestamp": latest.timestamp,
+                                    "points_count": points_count,
+                                    "has_history": points_count > 1,
+                                }),
+                                timestamp,
+                            }))
+                        }
+                        _ => {
+                            tracing::debug!(
+                                extension_id = %extension_id,
+                                field_path = %field_path,
+                                "[COLLECT] Extension metric not found"
+                            );
+                            Ok(None)
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        let results = join_all(timeout_futures).await;
+        let collected: Vec<_> = results.into_iter()
+            .filter_map(|r| r.ok())
+            .filter_map(|v| v)
+            .collect();
+
+        tracing::debug!(
+            collected_count = collected.len(),
+            "[COLLECT] Extension metrics collected"
+        );
+
+        Ok(collected)
     }
 
     /// Collect condensed memory summary.
@@ -2689,6 +3586,263 @@ Respond in JSON format:
         Ok(data)
     }
 
+    /// Build a description of available commands for the LLM.
+    ///
+    /// This formats the command resources into a clear, structured text
+    /// that the LLM can understand and use to make decisions about which
+    /// commands to execute.
+    fn build_available_commands_description(agent: &AiAgent) -> String {
+        let mut device_commands: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
+        let mut extension_commands: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
+
+        // Group commands by device or extension
+        for resource in &agent.resources {
+            match resource.resource_type {
+                ResourceType::Command => {
+                    // Parse device_id from resource_id (format: "device_id:command_name")
+                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
+                    let device_id = if parts.len() >= 1 { parts[0] } else { "unknown" };
+
+                    device_commands
+                        .entry(device_id.to_string())
+                        .or_default()
+                        .push(resource);
+                }
+                ResourceType::ExtensionTool => {
+                    // Parse extension_id from resource_id (format: "extension:extension_id:command_name")
+                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
+                    let ext_id = if parts.len() >= 2 { parts[1] } else { "unknown" };
+
+                    extension_commands
+                        .entry(ext_id.to_string())
+                        .or_default()
+                        .push(resource);
+                }
+                _ => {}
+            }
+        }
+
+        if device_commands.is_empty() && extension_commands.is_empty() {
+            return "无可用命令".to_string();
+        }
+
+        let mut descriptions = Vec::new();
+
+        // Add device commands
+        if !device_commands.is_empty() {
+            descriptions.push("## 可用设备命令\n".to_string());
+
+            for (device_id, commands) in &device_commands {
+                descriptions.push(format!("### 设备: {}", device_id));
+
+                for cmd in commands {
+                    // Extract command name from resource_id
+                    let parts: Vec<&str> = cmd.resource_id.split(':').collect();
+                    let command_name = if parts.len() >= 2 { parts[1] } else { &cmd.resource_id };
+
+                    // Get display name or use command name
+                    let display_name = if !cmd.name.is_empty() { &cmd.name } else { command_name };
+
+                    // Format: "device_id:command_name" - display_name
+                    descriptions.push(format!("- `{}:{}` - {}", device_id, command_name, display_name));
+
+                    // Add parameters info if available
+                    if let Some(params) = cmd.config.get("parameters").and_then(|v| v.as_array()) {
+                        let param_names: Vec<_> = params.iter()
+                            .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
+                            .collect();
+                        if !param_names.is_empty() {
+                            descriptions.push(format!("  参数: {}", param_names.join(", ")));
+                        }
+                    }
+                }
+
+                descriptions.push(String::new()); // Empty line between devices
+            }
+        }
+
+        // Add extension commands
+        if !extension_commands.is_empty() {
+            descriptions.push("## 可用扩展工具\n".to_string());
+
+            for (ext_id, commands) in &extension_commands {
+                descriptions.push(format!("### 扩展: {}", ext_id));
+
+                for cmd in commands {
+                    // Extract command name from resource_id (format: "extension:ext_id:command_name")
+                    let parts: Vec<&str> = cmd.resource_id.split(':').collect();
+                    let command_name = if parts.len() >= 3 { parts[2] } else { &cmd.resource_id };
+
+                    // Get display name or use command name
+                    let display_name = if !cmd.name.is_empty() { &cmd.name } else { command_name };
+
+                    // Format: "extension:ext_id:command_name" - display_name
+                    descriptions.push(format!("- `extension:{}:{}` - {}", ext_id, command_name, display_name));
+
+                    // Add parameters info if available
+                    if let Some(params) = cmd.config.get("parameters").and_then(|v| v.as_array()) {
+                        let param_names: Vec<_> = params.iter()
+                            .filter_map(|p| p.get("name").and_then(|n| n.as_str()))
+                            .collect();
+                        if !param_names.is_empty() {
+                            descriptions.push(format!("  参数: {}", param_names.join(", ")));
+                        }
+                    }
+                }
+
+                descriptions.push(String::new()); // Empty line between extensions
+            }
+        }
+
+        // Add usage instructions
+        descriptions.push(
+            "### 命令执行说明\n\
+             在 decisions 中，如需执行命令，请使用以下格式：\n\
+             - 设备命令: action: \"device_id:command_name\" (例如: \"light1:turn_on\")\n\
+             - 扩展工具: action: \"extension:ext_id:command_name\" (例如: \"extension:weather:get_forecast\")\n\
+             - decision_type: \"command\"\n\
+             - description: 命令描述\n\
+             - rationale: 执行原因".to_string()
+        );
+
+        descriptions.join("\n")
+    }
+
+    /// Build available data sources description for LLM.
+    /// This tells the agent what data sources are configured, even if no data is currently available.
+    fn build_available_data_sources_description(agent: &AiAgent) -> String {
+        let mut device_metrics: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
+        let mut extension_metrics: std::collections::HashMap<String, Vec<&AgentResource>> = std::collections::HashMap::new();
+        let mut device_resources: Vec<&AgentResource> = Vec::new();
+
+        // Group data sources by type
+        for resource in &agent.resources {
+            match resource.resource_type {
+                ResourceType::Metric => {
+                    // Parse device_id from resource_id (format: "device_id:metric_name")
+                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
+                    let device_id = if parts.len() >= 1 { parts[0] } else { "unknown" };
+
+                    device_metrics
+                        .entry(device_id.to_string())
+                        .or_default()
+                        .push(resource);
+                }
+                ResourceType::ExtensionMetric => {
+                    // Parse extension_id from resource_id (format: "extension:extension_id:metric")
+                    let parts: Vec<&str> = resource.resource_id.split(':').collect();
+                    let ext_id = if parts.len() >= 2 { parts[1] } else { "unknown" };
+
+                    extension_metrics
+                        .entry(ext_id.to_string())
+                        .or_default()
+                        .push(resource);
+                }
+                ResourceType::Device => {
+                    device_resources.push(resource);
+                }
+                _ => {}
+            }
+        }
+
+        if device_metrics.is_empty() && extension_metrics.is_empty() && device_resources.is_empty() {
+            return String::new();
+        }
+
+        let mut descriptions = Vec::new();
+
+        // Add device metrics
+        if !device_metrics.is_empty() {
+            descriptions.push("## 可用设备数据源\n".to_string());
+
+            for (device_id, metrics) in &device_metrics {
+                descriptions.push(format!("### 设备: {}", device_id));
+
+                for metric in metrics {
+                    // Extract metric name from resource_id
+                    let parts: Vec<&str> = metric.resource_id.split(':').collect();
+                    let metric_name = if parts.len() >= 2 { parts[1] } else { &metric.resource_id };
+
+                    // Get display name or use metric name
+                    let display_name = if !metric.name.is_empty() { &metric.name } else { metric_name };
+
+                    // Get data type and unit from config
+                    let data_type = metric.config
+                        .get("data_type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("number");
+                    let unit = metric.config
+                        .get("unit")
+                        .and_then(|v| v.as_str());
+
+                    let unit_str = if let Some(u) = unit { format!(" ({})", u) } else { String::new() };
+
+                    descriptions.push(format!("- `{}:{}` - {}{} [{}]", device_id, metric_name, display_name, unit_str, data_type));
+                }
+
+                descriptions.push(String::new()); // Empty line between devices
+            }
+        }
+
+        // Add device resources (full device data)
+        if !device_resources.is_empty() {
+            descriptions.push("## 可用设备\n".to_string());
+
+            for resource in device_resources {
+                let display_name = if !resource.name.is_empty() { &resource.name } else { &resource.resource_id };
+                descriptions.push(format!("- `{}` - {}", resource.resource_id, display_name));
+            }
+
+            descriptions.push(String::new());
+        }
+
+        // Add extension metrics
+        if !extension_metrics.is_empty() {
+            descriptions.push("## 可用扩展数据源\n".to_string());
+
+            for (ext_id, metrics) in &extension_metrics {
+                descriptions.push(format!("### 扩展: {}", ext_id));
+
+                for metric in metrics {
+                    // Extract metric name from resource_id (format: "extension:ext_id:metric" or "extension:ext_id:command:field")
+                    let parts: Vec<&str> = metric.resource_id.split(':').collect();
+                    let metric_path = if parts.len() >= 3 {
+                        parts[2..].join(":")
+                    } else if parts.len() >= 3 {
+                        parts[2].to_string()
+                    } else {
+                        metric.resource_id.clone()
+                    };
+
+                    let display_name = if !metric.name.is_empty() { &metric.name } else { &metric_path };
+
+                    descriptions.push(format!("- `{}:{}` - {}", ext_id, metric_path, display_name));
+                }
+
+                descriptions.push(String::new()); // Empty line between extensions
+            }
+        }
+
+        // Add usage instructions
+        if !descriptions.is_empty() {
+            descriptions.push(
+                "### 数据查询说明\n\
+                 - 当前数据值会在下方「当前数据」部分显示\n\
+                 - 如果显示「No data available」，表示数据源暂时没有最新数据\n\
+                 - 如需查询特定时间范围的数据，在 decision 的 action 中使用格式：\n\
+                   * `query:device_id:metric:1h` - 查询最近1小时\n\
+                   * `query:device_id:metric:24h` - 查询最近24小时\n\
+                   * `query:device_id:metric:7d` - 查询最近7天\n\
+                   * `query:device_id:metric:yesterday` - 查询昨天\n\
+                   * `query:device_id:metric:last_week` - 查询上周\n\
+                 - 支持的时间单位: m(分钟), h(小时), d(天), w(周)\n\
+                 - 示例: `query:sensor1:temperature:24h` 查询传感器最近24小时温度".to_string()
+            );
+        }
+
+        descriptions.join("\n")
+    }
+
     /// Analyze situation using LLM or rule-based logic.
     async fn analyze_situation_with_intent(
         &self,
@@ -2776,37 +3930,51 @@ Respond in JSON format:
         });
 
         // Collect image parts first to check if we actually have valid image data
-        let image_parts: Vec<_> = data.iter()
-            .filter_map(|d| {
+        // Images are queried from storage (not included in DataCollected to avoid context explosion)
+        let mut image_parts = Vec::new();
+        if let Some(storage) = self.time_series_storage.clone() {
+            for d in data.iter() {
                 let is_image = d.values.get("_is_image").and_then(|v| v.as_bool()).unwrap_or(false);
                 if !is_image {
-                    return None;
+                    continue;
                 }
 
-                // Try to get image URL first
-                if let Some(url) = d.values.get("image_url").and_then(|v| v.as_str()) {
-                    return Some((
-                        d.source.clone(),
-                        d.data_type.clone(),
-                        ImageContent::Url(url.to_string())
-                    ));
-                }
+                // Parse the source to get device_id and metric
+                // Source format: "device_id:metric_name" or "extension:id:metric"
+                if let Some(colon_pos) = d.source.find(':') {
+                    let device_id = &d.source[..colon_pos];
+                    let metric_name = &d.source[colon_pos + 1..];
 
-                // Try to get base64 data
-                if let Some(base64) = d.values.get("image_base64").and_then(|v| v.as_str()) {
-                    let mime = d.values.get("image_mime_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("image/jpeg");
-                    return Some((
-                        d.source.clone(),
-                        d.data_type.clone(),
-                        ImageContent::Base64(base64.to_string(), mime.to_string())
-                    ));
-                }
+                    // Query storage for the latest image data
+                    let end_time = chrono::Utc::now().timestamp();
+                    let start_time = end_time - 300; // Last 5 minutes
 
-                None
-            })
-            .collect();
+                    if let Ok(result) = storage.query_range(device_id, metric_name, start_time, end_time).await
+                        && !result.points.is_empty() {
+                        let latest = &result.points[result.points.len() - 1];
+                        
+                        // Extract image data from storage
+                        let (image_url, image_base64, image_mime) = extract_image_data(&latest.value);
+                        
+                        // Use URL if available, otherwise base64
+                        if let Some(url) = image_url {
+                            image_parts.push((
+                                d.source.clone(),
+                                d.data_type.clone(),
+                                ImageContent::Url(url)
+                            ));
+                        } else if let Some(base64) = image_base64 {
+                            let mime = image_mime.as_deref().unwrap_or("image/jpeg");
+                            image_parts.push((
+                                d.source.clone(),
+                                d.data_type.clone(),
+                                ImageContent::Base64(base64, mime.to_string())
+                            ));
+                        }
+                    }
+                }
+            }
+        }
 
         // Check if LLM supports vision/multimodal
         let llm_supports_vision = llm.capabilities().supports_images;
@@ -3040,15 +4208,29 @@ Respond in JSON format:
         // Get current time context for temporal understanding
         let time_context = get_time_context();
 
+        // Build available commands description for LLM
+        let available_commands = Self::build_available_commands_description(agent);
+
+        // Build available data sources description for LLM
+        // This tells the agent what data sources are configured, even if no data is currently available
+        let available_data_sources = Self::build_available_data_sources_description(agent);
+
+        // Combine commands and data sources for system prompt
+        let resources_info = if available_data_sources.is_empty() {
+            available_commands
+        } else {
+            format!("{}\n\n{}", available_commands, available_data_sources)
+        };
+
         let system_prompt = if has_valid_images {
             format!(
-                "{}\n\n{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录观察\n- alert: 检测到目标，发送告警\n- command: 执行设备指令",
-                role_prompt, time_context, agent.user_prompt
+                "{}\n\n{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"图像内容描述\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"分析步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}",
+                role_prompt, resources_info, agent.user_prompt
             )
         } else {
             format!(
-                "{}\n\n{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info\", \"description\": \"描述\", \"action\": \"log\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}\n\n# 决策类型\n- info: 仅记录\n- alert: 发送告警\n- command: 执行指令",
-                role_prompt, time_context, agent.user_prompt
+                "{}\n\n{}\n\n# 输出格式 - 仅输出JSON，不要输出其他任何文字\n{{\n  \"situation_analysis\": \"情况分析\",\n  \"reasoning_steps\": [{{\"step\": 1, \"description\": \"步骤\", \"confidence\": 0.9}}],\n  \"decisions\": [{{\"decision_type\": \"info|alert|command\", \"description\": \"描述\", \"action\": \"log或device:command\", \"rationale\": \"理由\", \"confidence\": 0.8}}],\n  \"conclusion\": \"结论\"\n}}\n\n# 用户指令\n{}",
+                role_prompt, resources_info, agent.user_prompt
             )
         };
 
@@ -3636,6 +4818,183 @@ Respond in JSON format:
         false
     }
 
+    /// Execute a single command by device_id and command_name.
+    async fn execute_single_command(
+        &self,
+        agent: &AiAgent,
+        device_id: &str,
+        command_name: &str,
+        decision: &Decision,
+    ) -> Option<neomind_storage::ActionExecuted> {
+        let device_service = self.device_service.as_ref()?;
+
+        // Find the command resource to get parameters
+        let command_resource_id = format!("{}:{}", device_id, command_name);
+        let resource = agent.resources.iter()
+            .find(|r| r.resource_type == ResourceType::Command && r.resource_id == command_resource_id);
+
+        let parameters = if let Some(ref res) = resource {
+            res.config.get("parameters")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            serde_json::Map::new()
+        };
+
+        // Clone parameters for DeviceService (will be consumed)
+        let params_map: std::collections::HashMap<String, serde_json::Value> = parameters
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+
+        tracing::info!(
+            agent_id = %agent.id,
+            device_id = %device_id,
+            command = %command_name,
+            decision_action = %decision.action,
+            "Executing command from LLM decision"
+        );
+
+        // Execute the command via DeviceService
+        let execution_result = device_service.send_command(
+            device_id,
+            command_name,
+            params_map,
+        ).await;
+
+        let (success, result) = match execution_result {
+            Ok(_) => (true, Some("Command sent successfully".to_string())),
+            Err(e) => {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    device_id = %device_id,
+                    command = %command_name,
+                    error = %e,
+                    "Failed to send command"
+                );
+                (false, Some(format!("Failed: {}", e)))
+            }
+        };
+
+        Some(neomind_storage::ActionExecuted {
+            action_type: "device_command".to_string(),
+            description: format!("Execute {} on {} (reason: {})", command_name, device_id, decision.rationale),
+            target: device_id.to_string(),
+            parameters: serde_json::to_value(&parameters).unwrap_or_default(),
+            success,
+            result,
+        })
+    }
+
+    /// Execute an extension tool command and return ActionExecuted record.
+    async fn execute_extension_command_for_agent(
+        &self,
+        agent: &AiAgent,
+        extension_id: &str,
+        command_name: &str,
+        decision: &Decision,
+    ) -> Option<neomind_storage::ActionExecuted> {
+        let extension_registry = self.extension_registry.as_ref()?;
+
+        tracing::info!(
+            agent_id = %agent.id,
+            extension_id = %extension_id,
+            command = %command_name,
+            decision_action = %decision.action,
+            "Executing extension command from LLM decision"
+        );
+
+        // Build parameters from resource config or decision
+        let command_args = decision.rationale.clone();
+        let args_value = if command_args.is_empty() {
+            serde_json::json!({})
+        } else {
+            // Try to parse as JSON, otherwise wrap as string
+            serde_json::from_str(&command_args).unwrap_or_else(|_| serde_json::json!({ "reason": command_args }))
+        };
+
+        // Execute the extension command
+        let execution_result = extension_registry.execute_command(
+            extension_id,
+            command_name,
+            &args_value,
+        ).await;
+
+        let (success, result) = match execution_result {
+            Ok(resp) => (true, Some(format!("Success: {}", resp))),
+            Err(e) => {
+                tracing::warn!(
+                    agent_id = %agent.id,
+                    extension_id = %extension_id,
+                    command = %command_name,
+                    error = %e,
+                    "Failed to execute extension command"
+                );
+                (false, Some(format!("Failed: {}", e)))
+            }
+        };
+
+        Some(neomind_storage::ActionExecuted {
+            action_type: "extension_command".to_string(),
+            description: format!("Execute {} on extension {} (reason: {})", command_name, extension_id, decision.rationale),
+            target: extension_id.to_string(),
+            parameters: args_value,
+            success,
+            result,
+        })
+    }
+
+    /// Parse command from decision.action field.
+    /// Expected formats:
+    /// - "device_id:command_name" -> device command
+    /// - "extension:ext_id:command_name" -> extension command
+    /// Returns: (type, id, command_name) where type is "device" or "extension"
+    fn parse_command_from_action(action: &str) -> Option<(String, String, String)> {
+        let action = action.trim();
+
+        // Try to parse as "prefix:id:command_name"
+        if let Some(colon_pos) = action.find(':') {
+            let prefix = &action[..colon_pos];
+            let rest = &action[colon_pos + 1..];
+
+            // Check if it's "extension:ext_id:command_name"
+            if prefix == "extension" || prefix == "ext" {
+                if let Some(second_colon) = rest.find(':') {
+                    let ext_id = &rest[..second_colon];
+                    let command_name = &rest[second_colon + 1..];
+                    if !ext_id.is_empty() && !command_name.is_empty() {
+                        return Some(("extension".to_string(), ext_id.trim().to_string(), command_name.trim().to_string()));
+                    }
+                }
+            }
+
+            // Otherwise treat as "device_id:command_name"
+            if !prefix.is_empty() && !rest.is_empty() {
+                return Some(("device".to_string(), prefix.trim().to_string(), rest.trim().to_string()));
+            }
+        }
+
+        // Try to parse as "device:command" (common format)
+        if action.contains("device:") || action.contains("设备:") {
+            // Extract device:command pattern using regex-like parsing
+            let parts: Vec<&str> = action.split(|c| c == ':' || c == '：')
+                .map(|s| s.trim())
+                .collect();
+            if parts.len() >= 3 {
+                // Format: "device:xxx:command" or similar
+                let cmd_keyword_idx = parts.iter().position(|&p| p == "device" || p == "设备" || p == "command" || p == "指令");
+                if let Some(idx) = cmd_keyword_idx {
+                    if idx + 1 < parts.len() {
+                        return Some(("device".to_string(), parts[idx + 1].to_string(), parts[idx + 2].to_string()));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     /// Execute decisions - real command execution.
     async fn execute_decisions(
         &self,
@@ -3646,9 +5005,160 @@ Respond in JSON format:
         let mut notifications_sent = Vec::new();
 
         for decision in decisions {
-            // Execute actions based on decision type
+            // === Handle query decisions - Agent requesting specific time range data ===
+            // Format: query:device_id:metric:time_range (e.g., query:sensor1:temperature:24h)
+            if decision.action.starts_with("query:") {
+                let parts: Vec<&str> = decision.action.split(':').collect();
+                if parts.len() >= 4 {
+                    let _device_id = parts[1];
+                    let _metric = parts[2];
+                    let time_spec = parts[3];
+
+                    // Parse time specification and log the request
+                    // Note: This is a informational action - the actual time range
+                    // adjustment needs to happen in the data collection phase
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        time_spec = %time_spec,
+                        decision_action = %decision.action,
+                        "Agent requested data with specific time range"
+                    );
+
+                    // Record as a "query" action for tracking
+                    actions_executed.push(neomind_storage::ActionExecuted {
+                        action_type: "data_query".to_string(),
+                        description: format!("Query data with time range: {}", time_spec),
+                        target: format!("{}:{}", parts[1], parts[2]),
+                        parameters: serde_json::json!({"time_spec": time_spec}),
+                        success: true,
+                        result: Some(format!("Time range request noted: {}", time_spec)),
+                    });
+                }
+            }
+
+            // === NEW: Handle LLM-driven command decisions ===
+            // When LLM returns decision_type == "command", parse the action field
+            // and execute only that specific command
+            if decision.decision_type == "command" {
+                if let Some((cmd_type, target_id, command_name)) = Self::parse_command_from_action(&decision.action) {
+                    tracing::info!(
+                        agent_id = %agent.id,
+                        cmd_type = %cmd_type,
+                        target_id = %target_id,
+                        command_name = %command_name,
+                        decision_action = %decision.action,
+                        "Executing LLM-specified command"
+                    );
+
+                    match cmd_type.as_str() {
+                        "extension" => {
+                            // Execute extension command
+                            if let Some(action_executed) = self.execute_extension_command_for_agent(
+                                agent,
+                                &target_id,
+                                &command_name,
+                                decision,
+                            ).await {
+                                actions_executed.push(action_executed);
+                            }
+                        }
+                        "device" => {
+                            // Execute device command
+                            if let Some(action_executed) = self.execute_single_command(
+                                agent,
+                                &target_id,
+                                &command_name,
+                                decision,
+                            ).await {
+                                actions_executed.push(action_executed);
+                            }
+                        }
+                        _ => {
+                            tracing::warn!(
+                                agent_id = %agent.id,
+                                cmd_type = %cmd_type,
+                                "Unknown command type"
+                            );
+                        }
+                    }
+                } else {
+                    // Fallback: try to find matching command in resources
+                    if let Some(cmd_name) = extract_command_from_description(&decision.description) {
+                        // Find a matching command in resources (both device and extension)
+                        for resource in &agent.resources {
+                            let is_device_cmd = resource.resource_type == ResourceType::Command
+                                && resource.resource_id.ends_with(&format!(":{}", cmd_name));
+                            let is_ext_cmd = resource.resource_type == ResourceType::ExtensionTool
+                                && resource.resource_id.ends_with(&format!(":{}", cmd_name));
+
+                            if is_device_cmd || is_ext_cmd {
+                                let parts: Vec<&str> = resource.resource_id.split(':').collect();
+
+                                match resource.resource_type {
+                                    ResourceType::Command => {
+                                        if parts.len() == 2 {
+                                            if let Some(action_executed) = self.execute_single_command(
+                                                agent,
+                                                parts[0],
+                                                parts[1],
+                                                decision,
+                                            ).await {
+                                                actions_executed.push(action_executed);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    ResourceType::ExtensionTool => {
+                                        if parts.len() >= 3 && parts[0] == "extension" {
+                                            if let Some(action_executed) = self.execute_extension_command_for_agent(
+                                                agent,
+                                                parts[1],
+                                                parts[2],
+                                                decision,
+                                            ).await {
+                                                actions_executed.push(action_executed);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    } else {
+                        tracing::warn!(
+                            agent_id = %agent.id,
+                            decision_action = %decision.action,
+                            decision_description = %decision.description,
+                            "Could not parse command from decision"
+                        );
+                    }
+                }
+                // Continue to next decision after handling command type
+                continue;
+            }
+
+            // === Handle alert-type decisions ===
+            let is_alert_decision = decision.decision_type.to_lowercase().contains("alert") ||
+                                   decision.action.to_lowercase().contains("alert") ||
+                                   decision.action.to_lowercase().contains("报警") ||
+                                   decision.action.to_lowercase().contains("notify") ||
+                                   decision.action.to_lowercase().contains("通知");
+
+            if is_alert_decision {
+                tracing::info!(
+                    agent_id = %agent.id,
+                    decision_type = %decision.decision_type,
+                    decision_action = %decision.action,
+                    "Alert-type decision detected, sending notification"
+                );
+                self.send_alert_for_decision(agent, decision, &mut notifications_sent).await;
+            }
+
+            // === LEGACY: Handle condition_met decisions ===
+            // This executes ALL commands (old behavior, kept for backward compatibility)
             if decision.decision_type == "condition_met" {
-                // Execute commands defined in agent resources
+                // Execute device commands
                 if let Some(ref device_service) = self.device_service {
                     for resource in &agent.resources {
                         if resource.resource_type == ResourceType::Command {
@@ -4558,6 +6068,53 @@ fn extract_threshold(text: &str) -> Option<f64> {
         .collect();
 
     nums.first().copied()
+}
+
+/// Build JSON Schema parameters from extension command parameters.
+/// Helper for V2 extension integration.
+fn build_parameters_schema(parameters: &[neomind_core::extension::ParameterDefinition]) -> serde_json::Value {
+    use std::collections::HashMap;
+    use neomind_core::extension::MetricDataType;
+
+    let mut properties = HashMap::new();
+    let mut required = Vec::new();
+
+    for param in parameters {
+        let param_type = match param.param_type {
+            MetricDataType::Float => "number",
+            MetricDataType::Integer => "integer",
+            MetricDataType::Boolean => "boolean",
+            MetricDataType::String | MetricDataType::Enum { .. } => "string",
+            MetricDataType::Binary => "string",
+        };
+
+        let mut param_schema = serde_json::json!({
+            "type": param_type,
+            "description": param.description,
+        });
+
+        // Add enum options if present
+        if let MetricDataType::Enum { options } = &param.param_type {
+            param_schema["enum"] = serde_json::json!(options);
+        }
+
+        // Add default value if present
+        if let Some(default_val) = &param.default_value {
+            param_schema["default"] = serde_json::json!(default_val);
+        }
+
+        properties.insert(param.name.clone(), param_schema);
+
+        if param.required {
+            required.push(param.name.clone());
+        }
+    }
+
+    serde_json::json!({
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    })
 }
 
 #[cfg(test)]

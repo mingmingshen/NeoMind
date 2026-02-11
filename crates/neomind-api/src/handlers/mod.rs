@@ -45,6 +45,7 @@ pub use devices::{
     list_device_types_handler, list_devices_handler, query_metric_handler,
     read_metric_handler, register_device_type_handler,
     send_command_handler, validate_device_type_handler,
+    list_cloud_device_types_handler, import_cloud_device_types_handler,
 };
 pub use events::{
     event_stream_handler, event_websocket_handler,
@@ -65,12 +66,14 @@ pub use commands::{
 };
 // Stats API
 pub use stats::{get_device_stats_handler, get_rule_stats_handler, get_system_stats_handler};
-// Extensions API (new)
+// Extensions API
 pub use extensions::{
     discover_extensions_handler, execute_extension_command_handler, extension_health_handler,
     get_extension_handler, get_extension_stats_handler, list_extension_types_handler,
     list_extensions_handler, register_extension_handler, start_extension_handler,
     stop_extension_handler, unregister_extension_handler,
+    // Command-based extension handlers
+    list_extension_commands_handler, list_extension_data_sources_handler,
 };
 // LLM Backends API
 pub use llm_backends::{

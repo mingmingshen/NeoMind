@@ -16,12 +16,10 @@
     <!-- Performance: Prefetch critical API endpoints -->
     <link rel="prefetch" href="/api/devices">
     <link rel="prefetch" href="/api/agents">
-
-    <!-- Performance: Preload critical fonts -->
-    <link rel="preload" href="/src/fonts/index.css" as="style">
   </head>
-  <body>
+  <body class="h-screen overflow-hidden">
     <div id="root"></div>
+    <div id="dialog-root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

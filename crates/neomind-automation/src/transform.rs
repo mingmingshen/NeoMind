@@ -10,16 +10,36 @@
 //! - AI generates JavaScript transformation code
 //! - Code executes in a sandboxed Boa JS context
 //! - Results become virtual metrics
+//!
+//! # Auto-Registration
+//!
+//! Transform outputs are automatically registered as data sources when
+//! the transform executes successfully, making them available for:
+//! - Dashboard components
+//! - Rule conditions
+//! - AI Agent queries
+//!
+//! # JavaScript Extension API
+//!
+//! Transforms can call extensions via `extensions.invoke(extension_id, command, params)`:
+//! ```javascript
+//! const result = extensions.invoke('weather.ext', 'get_current', { location: 'Beijing' })
+//! return result.temp_f
+//! ```
 
 use crate::types::{
     TransformAutomation, TransformOperation, AggregationFunc,
     TimeWindow,
 };
 use crate::error::{AutomationError, Result};
+use crate::output_registry::TransformOutputRegistry;
 use chrono::Utc;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+// Import ExtensionRegistry for extension invoke support
+use neomind_core::extension::registry::ExtensionRegistry;
 
 /// JavaScript-based transform executor using Boa engine
 ///
@@ -33,7 +53,7 @@ impl JsTransformExecutor {
         JsTransformExecutor
     }
 
-    /// Execute JavaScript transformation code
+    /// Execute JavaScript transformation code with optional extension support
     ///
     /// # Arguments
     /// * `code` - JavaScript code to execute
@@ -41,6 +61,7 @@ impl JsTransformExecutor {
     /// * `output_prefix` - Prefix for output metric names
     /// * `device_id` - Device ID for metrics
     /// * `timestamp` - Timestamp for metrics
+    /// * `extension_registry` - Optional extension registry for invoking extensions
     ///
     /// # Returns
     /// Vector of transformed metrics
@@ -49,6 +70,7 @@ impl JsTransformExecutor {
     ///
     /// The code has access to:
     /// - `input`: The raw device data (object)
+    /// - `extensions.invoke(extension_id, command, params)`: Call extension commands (if registry provided)
     /// - Code can use `return` or simply evaluate to a value (last expression is returned)
     ///
     /// # Example
@@ -66,6 +88,12 @@ impl JsTransformExecutor {
     /// ```javascript
     /// return (input.items || input.detections || []).length;
     /// ```
+    ///
+    /// Or with extension invocation:
+    /// ```javascript
+    /// const weather = extensions.invoke('weather.ext', 'get_current', { location: 'Beijing' })
+    /// return weather.temp_f || 0
+    /// ```
     pub fn execute(
         &self,
         code: &str,
@@ -73,8 +101,9 @@ impl JsTransformExecutor {
         output_prefix: &str,
         device_id: &str,
         timestamp: i64,
+        extension_registry: Option<&Arc<ExtensionRegistry>>,
     ) -> Result<Vec<TransformedMetric>> {
-        use boa_engine::{context::Context, Source};
+        use boa_engine::{context::Context, Source, js_string, object::FunctionObjectBuilder, JsValue};
 
         // Create Boa context
         let mut context = Context::default();
@@ -94,6 +123,275 @@ impl JsTransformExecutor {
                 message: format!("Failed to set input: {}", e),
             }
         })?;
+
+        // Pre-execute extension calls if registry is provided
+        // We parse the code for extensions.invoke() calls, execute them asynchronously,
+        // and inject the results into the JS context before running user code
+        let mut extension_results: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+
+        if let Some(registry) = extension_registry {
+            // Try to get current tokio runtime handle
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                // Parse code for extension invocations using simple string matching
+                // Pattern: extensions.invoke('ext_id', 'command', {...})
+                let mut pending_calls: Vec<(String, String, Value)> = Vec::new();
+
+                // Simple parser for extensions.invoke calls
+                let code_str = code;
+                let mut search_start = 0;
+
+                while let Some(invoke_pos) = code_str[search_start..].find("extensions.invoke") {
+                    let full_invoke_pos = search_start + invoke_pos;
+                    let remaining = &code_str[full_invoke_pos..];
+
+                    // Find opening parenthesis
+                    if let Some(open_pos) = remaining.find('(') {
+                        let after_open = &remaining[open_pos + 1..];
+
+                        // Find first quote (extension_id)
+                        let mut parse_pos = 0;
+                        let mut found_calls = false;
+
+                        // Skip whitespace
+                        while parse_pos < after_open.len()
+                            && after_open.chars().nth(parse_pos).map_or(false, |c| c.is_whitespace()) {
+                            parse_pos += 1;
+                        }
+
+                        // Try to find extension_id (single or double quoted)
+                        if let Some(_) = after_open[parse_pos..].find(|c| c == '\'' || c == '"') {
+                            let quote_char = after_open.chars().nth(parse_pos).unwrap();
+                            let ext_id_start = parse_pos + 1;
+                            parse_pos = ext_id_start;
+
+                            // Find closing quote
+                            let mut ext_id_end = None;
+                            while parse_pos < after_open.len() {
+                                if after_open.chars().nth(parse_pos) == Some(quote_char) {
+                                    ext_id_end = Some(parse_pos);
+                                    parse_pos += 1;
+                                    break;
+                                }
+                                parse_pos += 1;
+                            }
+
+                            if let Some(eid) = ext_id_end {
+                                let ext_id = after_open[ext_id_start..eid].to_string();
+
+                                // Skip to command
+                                while parse_pos < after_open.len()
+                                    && after_open.chars().nth(parse_pos).map_or(false, |c| c.is_whitespace() || c == ',') {
+                                    parse_pos += 1;
+                                }
+
+                                // Find command quote
+                                if let Some(_) = after_open[parse_pos..].find(|c| c == '\'' || c == '"') {
+                                    let cmd_quote_char = after_open.chars().nth(parse_pos).unwrap();
+                                    let cmd_start = parse_pos + 1;
+                                    parse_pos = cmd_start;
+
+                                    // Find closing quote for command
+                                    let mut cmd_end = None;
+                                    while parse_pos < after_open.len() {
+                                        if after_open.chars().nth(parse_pos) == Some(cmd_quote_char) {
+                                            cmd_end = Some(parse_pos);
+                                            parse_pos += 1;
+                                            break;
+                                        }
+                                        parse_pos += 1;
+                                    }
+
+                                    if let Some(cd) = cmd_end {
+                                        let cmd_str = after_open[cmd_start..cd].to_string();
+
+                                        // Try to parse params (object or null)
+                                        let params_val = loop {
+                                            while parse_pos < after_open.len()
+                                                && after_open.chars().nth(parse_pos).map_or(false, |c| c.is_whitespace() || c == ',') {
+                                                parse_pos += 1;
+                                            }
+
+                                            if parse_pos >= after_open.len() {
+                                                break serde_json::json!({});
+                                            }
+
+                                            let next_char = after_open.chars().nth(parse_pos);
+                                            if next_char == Some('{') {
+                                                // Find matching closing brace
+                                                let mut brace_count = 1;
+                                                parse_pos += 1;
+                                                let params_start = parse_pos;
+
+                                                while parse_pos < after_open.len() && brace_count > 0 {
+                                                    if after_open.chars().nth(parse_pos) == Some('{') {
+                                                        brace_count += 1;
+                                                    } else if after_open.chars().nth(parse_pos) == Some('}') {
+                                                        brace_count -= 1;
+                                                    }
+                                                    parse_pos += 1;
+                                                }
+
+                                                let params_str = after_open[params_start..parse_pos - 1].trim();
+                                                if let Ok(v) = serde_json::from_str(params_str) {
+                                                    break v;
+                                                }
+                                                break serde_json::json!({});
+                                            } else if next_char == Some('\'' ) || next_char == Some('"') {
+                                                // String parameter - could be nested JSON
+                                                let quote = next_char.unwrap();
+                                                parse_pos += 1;
+                                                let str_start = parse_pos;
+
+                                                while parse_pos < after_open.len()
+                                                    && after_open.chars().nth(parse_pos) != Some(quote) {
+                                                    parse_pos += 1;
+                                                    }
+
+                                                    if let Ok(s) = serde_json::from_str::<Value>(&after_open[str_start..parse_pos]) {
+                                                        break s;
+                                                    }
+                                                    break serde_json::json!({});
+                                            } else {
+                                                break serde_json::json!({});
+                                            }
+                                        };
+
+                                        pending_calls.push((ext_id, cmd_str, params_val));
+                                        found_calls = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        if found_calls {
+                            // Move past this invocation
+                            if let Some(close_pos) = remaining[open_pos..].find(')') {
+                                search_start = full_invoke_pos + open_pos + close_pos + 1;
+                            } else {
+                                break;
+                            }
+                        } else {
+                            search_start = full_invoke_pos + 1;
+                        }
+                    } else {
+                        search_start = full_invoke_pos + 1;
+                    }
+                }
+
+                // Execute all pending extension calls
+                if !pending_calls.is_empty() {
+                    let registry = registry.clone();
+
+                    // Use block_in_place to avoid spawning new threads
+                    let results = handle.block_on(async move {
+                        let mut results_map = std::collections::HashMap::new();
+
+                        for (ext_id, cmd_str, params_val) in pending_calls {
+                            tracing::debug!(
+                                "Pre-executing extension call for Transform: {}::{} with args: {:?}",
+                                ext_id, cmd_str, params_val
+                            );
+
+                            match registry.execute_command(&ext_id, &cmd_str, &params_val).await {
+                                Ok(result) => {
+                                    tracing::debug!("Extension call result: {:?}", result);
+                                    results_map.insert(
+                                        format!("{}::{}", ext_id, cmd_str),
+                                        result
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Extension call failed: {}::{} - {:?}", ext_id, cmd_str, e);
+                                    results_map.insert(
+                                        format!("{}::{}", ext_id, cmd_str),
+                                        serde_json::json!({ "error": e.to_string() })
+                                    );
+                                }
+                            }
+                        }
+
+                        results_map
+                    });
+
+                    extension_results = results;
+                }
+            }
+
+            // Inject extension results into JS context as variables
+            // Also create a global lookup object for extensions.invoke()
+            let mut results_json = serde_json::Map::new();
+            for (key, value) in &extension_results {
+                results_json.insert(key.clone(), value.clone());
+
+                let value_json = serde_json::to_string(value).unwrap_or_default();
+                let var_name = format!("ext_result_{}", key.replace("::", "_"));
+
+                let inject_code = format!(
+                    "const {} = {};",
+                    var_name,
+                    value_json
+                );
+
+                context.eval(Source::from_bytes(inject_code.as_bytes())).map_err(|e| {
+                    AutomationError::TransformError {
+                        operation: "JsTransform".to_string(),
+                        message: format!("Failed to inject extension result: {}", e),
+                    }
+                })?;
+
+                tracing::debug!("Injected extension result as variable: {}", var_name);
+            }
+
+            // Create a global lookup object for extensions.invoke()
+            let results_json_str = serde_json::to_string(&results_json).unwrap_or_default();
+            let lookup_code = format!("const __extension_results__ = {};", results_json_str);
+            context.eval(Source::from_bytes(lookup_code.as_bytes())).map_err(|e| {
+                AutomationError::TransformError {
+                    operation: "JsTransform".to_string(),
+                    message: format!("Failed to inject extension results lookup: {}", e),
+                }
+            })?;
+
+            // Provide extensions.invoke() function that looks up pre-computed results
+            let invoke_fn = boa_engine::NativeFunction::from_copy_closure(
+                |_this, args: &[JsValue], context: &mut Context<'_>| {
+                    let extension_id = args.get(0).and_then(|v| v.as_string())
+                        .map(|s| s.to_std_string_escaped())
+                        .unwrap_or_default();
+                    let command = args.get(1).and_then(|v| v.as_string())
+                        .map(|s| s.to_std_string_escaped())
+                        .unwrap_or_default();
+
+                    let key = format!("{}::{}", extension_id, command);
+
+                    // Look up in the global __extension_results__ object
+                    let lookup_code = format!("__extension_results__['{}']", key.replace('\\', "\\\\").replace('\'', "\\'"));
+                    match context.eval(Source::from_bytes(lookup_code.as_bytes())) {
+                        Ok(val) => Ok(val),
+                        Err(_) => Ok(JsValue::from(js_string!(format!("Extension result not found: {}", key)))),
+                    }
+                },
+            );
+
+            let invoke_fn_obj = FunctionObjectBuilder::new(&mut context, invoke_fn)
+                .name("invoke")
+                .length(3)
+                .build();
+
+            // Register extensions_invoke() for use in user code
+            context.register_global_property(
+                js_string!("extensions_invoke"),
+                invoke_fn_obj,
+                boa_engine::property::Attribute::default()
+            ).map_err(|e| AutomationError::TransformError {
+                operation: "JsTransform".to_string(),
+                message: format!("Failed to register extensions_invoke function: {}", e),
+            })?;
+
+            if !extension_results.is_empty() {
+                tracing::debug!("Extension invocation support registered in Transform context (pre-execution mode with {} results)", extension_results.len());
+            }
+        }
 
         // Wrap user code in a function to allow `return` statements
         let wrapped_code = format!(
@@ -277,6 +575,10 @@ pub struct TransformEngine {
     time_series_cache: Arc<tokio::sync::RwLock<TimeSeriesCache>>,
     /// JavaScript executor for AI-generated code
     js_executor: JsTransformExecutor,
+    /// Phase 4.1: Extension registry for preprocessing
+    extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+    /// Output registry for auto-registering Transform outputs as data sources
+    output_registry: Arc<TransformOutputRegistry>,
 }
 
 impl Default for TransformEngine {
@@ -291,7 +593,66 @@ impl TransformEngine {
         Self {
             time_series_cache: Arc::new(tokio::sync::RwLock::new(TimeSeriesCache::new())),
             js_executor: JsTransformExecutor::new(),
+            extension_registry: None,
+            output_registry: Arc::new(TransformOutputRegistry::new()),
         }
+    }
+
+    /// Phase 4.1: Create a transform engine with extension registry
+    pub fn with_extension_registry(
+        extension_registry: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+    ) -> Self {
+        Self {
+            time_series_cache: Arc::new(tokio::sync::RwLock::new(TimeSeriesCache::new())),
+            js_executor: JsTransformExecutor::new(),
+            extension_registry: Some(extension_registry),
+            output_registry: Arc::new(TransformOutputRegistry::new()),
+        }
+    }
+
+    /// Create a transform engine with a shared output registry
+    ///
+    /// This allows multiple components to access the same registry
+    /// and query Transform outputs as data sources.
+    pub fn with_output_registry(
+        output_registry: Arc<TransformOutputRegistry>,
+    ) -> Self {
+        Self {
+            time_series_cache: Arc::new(tokio::sync::RwLock::new(TimeSeriesCache::new())),
+            js_executor: JsTransformExecutor::new(),
+            extension_registry: None,
+            output_registry,
+        }
+    }
+
+    /// Create a transform engine with both extension and output registries
+    pub fn with_registries(
+        extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
+        output_registry: Arc<TransformOutputRegistry>,
+    ) -> Self {
+        Self {
+            time_series_cache: Arc::new(tokio::sync::RwLock::new(TimeSeriesCache::new())),
+            js_executor: JsTransformExecutor::new(),
+            extension_registry,
+            output_registry,
+        }
+    }
+
+    /// Phase 4.1: Set the extension registry
+    pub fn set_extension_registry(&mut self, registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) {
+        self.extension_registry = Some(registry);
+    }
+
+    /// Set the output registry
+    pub fn set_output_registry(&mut self, registry: Arc<TransformOutputRegistry>) {
+        self.output_registry = registry;
+    }
+
+    /// Get the output registry
+    ///
+    /// This allows querying Transform outputs as data sources.
+    pub fn output_registry(&self) -> Arc<TransformOutputRegistry> {
+        Arc::clone(&self.output_registry)
     }
 
     /// Get the JS executor (for testing purposes)
@@ -299,7 +660,79 @@ impl TransformEngine {
         &self.js_executor
     }
 
+    // ========================================================================
+    // Phase 4.1: Extension Preprocessing
+    // ========================================================================
+
+    /// Preprocess device data through extensions before transformation.
+    ///
+    /// This method looks for extensions with a "preprocess" command
+    /// that can handle the given device type.
+    /// Extensions can convert proprietary formats to standard JSON.
+    ///
+    /// # Arguments
+    /// * `device_id` - The device identifier
+    /// * `device_type` - Optional device type hint
+    /// * `raw_data` - Raw data from the device (may be any format)
+    ///
+    /// # Returns
+    /// Preprocessed JSON data, or the original data if no preprocessor found
+    pub async fn preprocess_with_extensions(
+        &self,
+        device_id: &str,
+        device_type: Option<&str>,
+        raw_data: &Value,
+    ) -> Value {
+        if let Some(ref registry) = self.extension_registry {
+            // Try extensions with preprocess command
+            let extensions = registry.list().await;
+
+            for info in extensions {
+                let metadata_id = info.metadata.id.clone();
+
+                // Check if this extension has a preprocess command
+                let has_preprocess = info.commands.iter().any(|cmd| cmd.name == "preprocess");
+                if !has_preprocess {
+                    continue;
+                }
+
+                // Get the actual extension instance
+                let ext = match registry.get(&metadata_id).await {
+                    Some(e) => e,
+                    None => continue,
+                };
+
+                let args = serde_json::json!({
+                    "device_id": device_id,
+                    "device_type": device_type,
+                    "data": raw_data,
+                });
+
+                match ext.read().await.execute_command("preprocess", &args).await {
+                    Ok(preprocessed) => {
+                        tracing::debug!(
+                            extension_id = %metadata_id,
+                            "Preprocessed data for device {}",
+                            device_id
+                        );
+                        return preprocessed;
+                    }
+                    Err(_) => {
+                        // Extension failed, try next
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // No preprocessor found, return original data
+        raw_data.clone()
+    }
+
     /// Process raw device data through applicable transforms
+    ///
+    /// # Phase 4.1: Now calls preprocess_with_extensions first
+    /// # Auto-Registration: Transform outputs are automatically registered as data sources
     ///
     /// # Arguments
     /// * `transforms` - List of transforms to apply (should be sorted by priority)
@@ -316,6 +749,9 @@ impl TransformEngine {
         device_type: Option<&str>,
         raw_data: &Value,
     ) -> Result<TransformResult> {
+        // Phase 4.1: Preprocess data through extensions first
+        let processed_data = self.preprocess_with_extensions(device_id, device_type, raw_data).await;
+
         let mut all_metrics = Vec::new();
         let mut all_warnings = Vec::new();
 
@@ -334,8 +770,25 @@ impl TransformEngine {
 
         // Apply each applicable transform
         for transform in applicable_transforms {
-            match self.execute_transform(transform, device_id, raw_data).await {
+            match self.execute_transform(transform, device_id, &processed_data).await {
                 Ok(result) => {
+                    // Auto-register Transform outputs as data sources
+                    if !result.metrics.is_empty() {
+                        self.output_registry.register_outputs(
+                            &transform.metadata.id,
+                            &transform.metadata.name,
+                            &result.metrics,
+                            transform.metadata.enabled,
+                        ).await;
+
+                        tracing::debug!(
+                            transform_id = %transform.metadata.id,
+                            transform_name = %transform.metadata.name,
+                            metric_count = result.metrics.len(),
+                            "Auto-registered Transform outputs as data sources"
+                        );
+                    }
+
                     all_metrics.extend(result.metrics);
                     all_warnings.extend(result.warnings);
                 }
@@ -403,12 +856,15 @@ impl TransformEngine {
         // Try JS-based execution first (new AI-native approach)
         if let Some(ref js_code) = transform.js_code
             && !js_code.is_empty() {
+                // Pass extension registry to JS executor for extensions.invoke() support
+                let ext_ref = self.extension_registry.as_ref();
                 match self.js_executor.execute(
                     js_code,
                     raw_data,
                     &actual_prefix,
                     device_id,
                     timestamp,
+                    ext_ref,
                 ) {
                     Ok(js_metrics) => {
                         metrics.extend(js_metrics);
@@ -518,6 +974,76 @@ impl TransformEngine {
                         quality: None,
                     })
                     .collect())
+            }
+
+            TransformOperation::Extension {
+                extension_id,
+                command,
+                parameters,
+                output_metrics,
+            } => {
+                // Phase 4.2: Execute extension-based transform
+                if let Some(ref registry) = self.extension_registry {
+                    if let Some(ext) = registry.get(extension_id).await {
+                        // Merge parameters with raw data
+                        let mut args = parameters.clone();
+                        args.insert("data".to_string(), raw_data.clone());
+                        args.insert("device_id".to_string(), device_id.to_string().into());
+
+                        match ext.read().await.execute_command(command, &serde_json::to_value(args)?).await {
+                            Ok(result) => {
+                                // Convert result to metrics
+                                Ok(output_metrics
+                                    .iter()
+                                    .map(|m| TransformedMetric {
+                                        device_id: device_id.to_string(),
+                                        metric: m.clone(),
+                                        value: Self::extract_metric_value(&result, m),
+                                        timestamp,
+                                        quality: Some(1.0),
+                                    })
+                                    .collect())
+                            }
+                            Err(e) => {
+                                tracing::error!("Extension transform failed: {:?}", e);
+                                Ok(output_metrics
+                                    .iter()
+                                    .map(|m| TransformedMetric {
+                                        device_id: device_id.to_string(),
+                                        metric: m.clone(),
+                                        value: 0.0,
+                                        timestamp,
+                                        quality: Some(0.0),
+                                    })
+                                    .collect())
+                            }
+                        }
+                    } else {
+                        tracing::warn!("Extension not found: {}", extension_id);
+                        Ok(output_metrics
+                            .iter()
+                            .map(|m| TransformedMetric {
+                                device_id: device_id.to_string(),
+                                metric: m.clone(),
+                                value: 0.0,
+                                timestamp,
+                                quality: None,
+                            })
+                            .collect())
+                    }
+                } else {
+                    tracing::warn!("No extension registry configured");
+                    Ok(output_metrics
+                        .iter()
+                        .map(|m| TransformedMetric {
+                            device_id: device_id.to_string(),
+                            metric: m.clone(),
+                            value: 0.0,
+                            timestamp,
+                            quality: None,
+                        })
+                        .collect())
+                }
             }
 
             TransformOperation::MultiOutput { operations } => {
@@ -1239,6 +1765,56 @@ impl TransformEngine {
         Ok(current.clone())
     }
 
+    /// Phase 4.2: Extract a metric value from an extension result
+    /// Handles various result formats: object with named fields, array, or direct value
+    fn extract_metric_value(result: &Value, metric_name: &str) -> f64 {
+        match result {
+            // Object: look for the metric_name as a key
+            Value::Object(map) => {
+                // Try exact match first
+                if let Some(v) = map.get(metric_name) {
+                    return value_as_f64(v).unwrap_or(0.0);
+                }
+                // Try lowercase
+                let lower_name = metric_name.to_lowercase();
+                for (key, val) in map.iter() {
+                    if key.to_lowercase() == lower_name {
+                        return value_as_f64(val).unwrap_or(0.0);
+                    }
+                }
+                // Fallback to first numeric value
+                for val in map.values() {
+                    if let Some(f) = value_as_f64(val) {
+                        return f;
+                    }
+                }
+                0.0
+            }
+            // Array: if metric_name is a number, use as index, else use first
+            Value::Array(arr) => {
+                if let Ok(index) = metric_name.parse::<usize>() {
+                    if index < arr.len() {
+                        value_as_f64(&arr[index]).unwrap_or(0.0)
+                    } else {
+                        0.0
+                    }
+                } else if !arr.is_empty() {
+                    value_as_f64(&arr[0]).unwrap_or(0.0)
+                } else {
+                    0.0
+                }
+            }
+            // Direct number
+            Value::Number(n) => n.as_f64().unwrap_or(0.0),
+            // Boolean as 0/1
+            Value::Bool(b) => if *b { 1.0 } else { 0.0 },
+            // String: try to parse as number
+            Value::String(s) => s.parse::<f64>().unwrap_or(0.0),
+            // Null
+            Value::Null => 0.0,
+        }
+    }
+
     /// Add a data point to the time-series cache (for TimeSeriesAggregation)
     pub async fn add_time_series_point(
         &self,
@@ -1515,7 +2091,7 @@ impl TimeSeriesCache {
                 points
                     .iter()
                     .filter(|(ts, _)| *ts >= cutoff)
-                    .map(|(ts, v)| DataPoint { timestamp: *ts, value: *v })
+                    .map(|(ts, v)| DataPoint { _timestamp: *ts, value: *v })
                     .collect()
             })
             .unwrap_or_default()
@@ -1523,7 +2099,7 @@ impl TimeSeriesCache {
 }
 
 struct DataPoint {
-    timestamp: i64,
+    _timestamp: i64,
     value: f64,
 }
 

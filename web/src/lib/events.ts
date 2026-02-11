@@ -29,6 +29,7 @@ export type EventType =
   | 'ToolExecutionStart'
   | 'ToolExecutionSuccess'
   | 'ToolExecutionFailure'
+  | 'ExtensionOutput'
   | 'Custom'
 
 export interface CustomEvent extends NeoMindEvent {
@@ -39,7 +40,7 @@ export interface CustomEvent extends NeoMindEvent {
   }
 }
 
-export type EventCategory = 'device' | 'rule' | 'llm' | 'alert' | 'tool' | 'agent' | 'all'
+export type EventCategory = 'device' | 'rule' | 'llm' | 'alert' | 'tool' | 'agent' | 'extension' | 'all'
 
 export interface NeoMindEvent {
   id: string
@@ -56,6 +57,18 @@ export interface DeviceMetricEvent extends NeoMindEvent {
     metric: string
     value: number | string | boolean
     quality?: number
+  }
+}
+
+// Extension-related events
+export interface ExtensionOutputEvent extends NeoMindEvent {
+  type: 'ExtensionOutput'
+  data: {
+    extension_id: string
+    output_name: string
+    value: number | string | boolean
+    quality?: number
+    labels?: Record<string, string>
   }
 }
 

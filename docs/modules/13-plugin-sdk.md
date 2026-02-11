@@ -1,13 +1,23 @@
-# Plugin SDK 模块
+# Plugin/Extension SDK 模块
 
-**包名**: `neomind_plugin_sdk`
-**版本**: 0.1.0
+**包名**: `neomind-extension-sdk`
+**版本**: 0.5.8
 **完成度**: 60%
-**用途**: 动态插件SDK
+**用途**: 动态扩展SDK
+
+## ⚠️ 重要变更 (v0.5.x)
+
+**Plugin系统已迁移到统一的Extension系统**。本SDK现在支持Extension trait开发。
+
+- Plugin API → Extension API (推荐使用)
+- 旧的Plugin SDK保持向后兼容
+- 新开发请使用 `neomind-extension-sdk` 中的 `Extension` trait
+
+详见 [Plugin迁移文档](../../architecture/plugin-migration.md)。
 
 ## 概述
 
-Plugin SDK提供了开发NeoMind动态插件所需的宏、类型和工具。
+Extension SDK提供了开发NeoMind动态扩展所需的宏、类型和工具。
 
 ## 模块结构
 

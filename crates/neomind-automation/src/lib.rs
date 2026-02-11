@@ -38,6 +38,7 @@ pub mod device_type_generator;
 pub mod error;
 pub mod intent;
 pub mod nl2automation;
+pub mod output_registry;
 pub mod threshold_recommender;
 pub mod transform;
 pub mod types;
@@ -90,3 +91,9 @@ pub use types::{
 
 // Re-export transform engine
 pub use transform::{TransformEngine, TransformResult, TransformedMetric};
+
+// Re-export output registry
+pub use output_registry::{
+    TransformOutputRegistry, TransformOutputInfo, TransformOutputType,
+    TransformDataSourceInfo, TransformDataSourcesResponse,
+};

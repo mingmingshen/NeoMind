@@ -150,7 +150,7 @@
     "alerts": "Alerts",
     "decisions": "Decisions",
     "messages": "Messages",
-    "plugins": "Plugins",
+    "extensions": "Extensions",
     "settings": "Settings"
   },
   "add": "Add",
@@ -180,6 +180,8 @@
   "deleting": "Deleting...",
   "testing": "Testing...",
   "processing": "Processing...",
+  "register": "Register",
+  "registering": "Registering...",
   "runStatus": {
     "running": "Running",
     "stopped": "Stopped",
@@ -429,6 +431,10 @@
     "resumeResponseDesc": "Detected an in-progress response from previous disconnection",
     "discard": "Discard",
     "resume": "Resume"
+  },
+  "range": {
+    "min": "Min",
+    "max": "Max"
   },
   "language": {
     "switchToEnglish": "Switch to English",

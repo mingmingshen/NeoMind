@@ -12,10 +12,8 @@
 
 use crate::agent::ToolCall;
 use neomind_tools::ToolOutput;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Default TTL for device query results (60 seconds)
@@ -248,7 +246,7 @@ impl CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     fn make_test_call(tool_name: &str, args: Value) -> ToolCall {
         ToolCall {

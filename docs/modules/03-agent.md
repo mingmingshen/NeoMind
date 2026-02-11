@@ -1,81 +1,59 @@
 # Agent 模块
 
 **包名**: `neomind-agent`
-**版本**: 0.1.0
-**完成度**: 85%
+**版本**: 0.5.8
+**完成度**: 90%
 **用途**: AI会话代理，集成LLM、内存和工具
 
 ## 概述
 
-Agent模块实现了NeoMind的核心AI代理，负责处理用户对话、调用工具、管理会话等。
+Agent模块实现了NeoMind的核心AI代理，负责处理用户对话、调用工具、管理会话、执行自主决策等。
 
 ## 模块结构
 
 ```
-crates/agent/src/
+crates/neomind-agent/src/
 ├── lib.rs                      # 公开接口
 ├── agent/
 │   ├── mod.rs                  # Agent核心实现
 │   ├── types.rs                # Agent类型定义
-│   ├── conversation_context.rs # 对话上下文
-│   ├── error_recovery.rs       # 错误恢复
+│   ├── cache.rs                # 缓存管理
 │   ├── fallback.rs             # 降级规则
-│   ├── formatter.rs            # 响应格式化
-│   ├── intent_classifier.rs    # 意图分类
-│   ├── model_selection.rs      # 模型选择
-│   ├── semantic_mapper.rs      # 语义映射
-│   ├── smart_followup.rs       # 智能追问
-│   ├── staged.rs               # 分阶段执行
+│   ├── scheduler.rs            # 调度器
 │   ├── streaming.rs            # 流式响应
-│   └── tool_confidence.rs      # 工具置信度
+│   └── tokenizer.rs            # 分词器
 ├── ai_agent/
 │   ├── mod.rs                  # 自主Agent
-│   ├── executor.rs             # 执行器
-│   ├── intent_parser.rs        # 意图解析
-│   ├── llm_pool.rs             # LLM连接池
-│   └── scheduler.rs            # 调度器
-├── autonomous/
-│   ├── mod.rs                  # 自主系统
-│   ├── agent.rs                # 自主Agent
-│   ├── config.rs               # 配置
-│   ├── context.rs              # 上下文
-│   ├── decision.rs             # 决策
-│   └── review.rs               # 审查
-├── context/
-│   ├── mod.rs                  # 上下文管理
-│   ├── business_context.rs     # 业务上下文
-│   ├── device_registry.rs      # 设备注册
-│   ├── dynamic_tools.rs        # 动态工具
-│   ├── meta_tools.rs           # 元工具
-│   ├── resource_resolver.rs    # 资源解析
-│   ├── state_provider.rs       # 状态提供者
-│   └── unified_context.rs      # 统一上下文
+│   ├── executor.rs             # 执行器（支持设备/扩展指标采集）
+│   └── intent_parser.rs        # 意图解析
 ├── tools/
 │   ├── mod.rs                  # Agent工具
-│   ├── analysis/               # 分析工具
-│   ├── automation.rs           # 自动化工具
 │   ├── dsl.rs                  # DSL工具
-│   ├── event_integration.rs    # 事件集成
-│   ├── interaction.rs          # 交互工具
 │   ├── mapper.rs               # 映射工具
-│   ├── mdl.rs                  # MDL工具
-│   ├── rule_gen.rs             # 规则生成
-│   ├── think.rs                # 思考工具
-│   └── tool_search.rs          # 工具搜索
+│   └── rule_gen.rs             # 规则生成
+├── prompts/
+│   └── builder.rs              # 提示词构建器
 ├── config/
 │   └── mod.rs                  # 配置
-├── concurrency.rs              # 并发控制
 ├── context_selector.rs         # 上下文选择器
 ├── error.rs                    # 错误类型
 ├── hooks/                      # Hook系统
 ├── llm.rs                      # LLM集成
-├── prompts.rs                  # 提示词模板
 ├── session.rs                  # 会话管理
-├── smart_conversation.rs       # 智能对话
-├── state_machine.rs            # 状态机
-├── task_orchestrator.rs        # 任务编排
 └── translation.rs              # 翻译
 ```
+
+## 重要变更 (v0.5.x)
+
+### 移除的模块
+- `agent/intent_classifier.rs` - 意图分类已整合到executor
+- `task_orchestrator.rs` - 任务编排已整合到executor
+- `tools/automation.rs` - 自动化工具已迁移到automation模块
+
+### 新增功能
+- **扩展指标支持**: executor.rs现在可以采集扩展(Extension)指标
+- **DataSourceId集成**: 使用类型安全的DataSourceId进行指标查询
+- **统一时序数据库**: 使用`data/timeseries.redb`统一存储设备和扩展指标
 
 ## 核心组件
 
@@ -332,6 +310,124 @@ pub enum ToolCallStatus {
 
 /// 工具搜索
 - ToolSearchTool        // 工具查找
+```
+
+## AgentExecutor - 执行器
+
+AgentExecutor是自主Agent的核心组件，负责执行Agent、采集数据、调用LLM并执行决策。
+
+### 数据采集
+
+AgentExecutor支持多种资源类型的数据采集：
+
+```rust
+pub enum ResourceType {
+    /// 设备指标
+    Metric,
+    /// 扩展指标
+    ExtensionMetric,
+    /// 设备资源
+    Device,
+    /// 扩展工具
+    ExtensionTool,
+}
+```
+
+### DataSourceId集成
+
+AgentExecutor使用类型安全的DataSourceId进行指标查询：
+
+```rust
+use neomind_core::datasource::DataSourceId;
+
+// 解析DataSourceId
+let ds_id = DataSourceId::new("extension:weather:temperature")?;
+let device_part = ds_id.device_part();  // "extension:weather"
+let metric_part = ds_id.metric_part();   // "temperature"
+
+// 查询时序数据
+let result = time_series_storage.query_latest(&device_part, &metric_part).await?;
+```
+
+### 设备指标采集
+
+```rust
+async fn collect_single_metric(
+    storage: Arc<TimeSeriesStore>,
+    device_id: &str,
+    metric_name: &str,
+    time_range_minutes: u32,
+) -> AgentResult<Option<DataCollected>> {
+    let end_time = chrono::Utc::now().timestamp();
+    let start_time = end_time - ((time_range_minutes * 60) as i64);
+
+    let result = storage.query_range(device_id, metric_name, start_time, end_time).await?;
+    // ...
+}
+```
+
+### 扩展指标采集
+
+```rust
+async fn collect_extension_metric_data_parallel(
+    &self,
+    agent: &AiAgent,
+    resources: Vec<AgentResource>,
+    timestamp: i64,
+) -> AgentResult<Vec<DataCollected>> {
+    // 使用DataSourceId的device_part和metric_part
+    let device_part = ds_id.device_part();  // "extension:extension_id"
+    let metric_part = ds_id.metric_part();   // metric_name
+
+    let result = storage.query_latest(&device_part, metric_part).await?;
+    // ...
+}
+```
+
+### 统一时序数据库
+
+**重要变更**: AgentExecutor现在使用`data/timeseries.redb`而不是`data/timeseries_agents.redb`。
+
+这使得Agent可以访问：
+- 设备遥测数据（通过DeviceService写入）
+- 扩展指标数据（通过ExtensionMetricsStorage写入）
+
+```rust
+// crates/neomind-api/src/server/types.rs
+let time_series_store = match neomind_storage::TimeSeriesStore::open("data/timeseries.redb") {
+    Ok(store) => Some(store),
+    Err(e) => {
+        tracing::warn!("Failed to open TimeSeriesStore: {}", e);
+        None
+    }
+};
+```
+
+### WebSocket事件
+
+AgentExecutor通过EventBus发送实时事件：
+
+```rust
+// 执行开始
+event_bus.publish(NeoMindEvent::AgentExecutionStarted(AgentExecutionStartedEvent {
+    agent_id: agent.id.clone(),
+    execution_id: execution_id.clone(),
+    trigger_type: "manual".to_string(),
+}));
+
+// 执行完成
+event_bus.publish(NeoMindEvent::AgentExecutionCompleted(AgentExecutionCompletedEvent {
+    agent_id: agent.id.clone(),
+    execution_id: execution_id.clone(),
+    success: result.is_ok(),
+    error: result.as_ref().err().map(|e| e.to_string()),
+}));
+
+// 思考中
+event_bus.publish(NeoMindEvent::AgentThinking(AgentThinkingEvent {
+    agent_id: agent.id.clone(),
+    description: format!("分析{}个数据源", data_collected.len()),
+}));
 ```
 
 ## 自主Agent

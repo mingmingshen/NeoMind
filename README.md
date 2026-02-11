@@ -302,10 +302,10 @@ cargo build --release
 cargo test
 
 # Run tests for specific crate
-cargo test -p edge-ai-agent
-cargo test -p edge-ai-llm
-cargo test -p edge-ai-core
-cargo test -p edge-ai-api
+cargo test -p neomind-agent
+cargo test -p neomind-llm
+cargo test -p neomind-core
+cargo test -p neomind-api
 
 # Check compilation without building
 cargo check

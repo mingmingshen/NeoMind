@@ -56,7 +56,7 @@ impl AgentState {
         Self {
             session_manager: Arc::new(SessionManager::memory()),
             memory: Arc::new(RwLock::new(TieredMemory::default())),
-            agent_store: Arc::new(AgentStore::memory().unwrap()),
+            agent_store: AgentStore::memory().unwrap(),
             agent_manager: Arc::new(RwLock::new(None)),
         }
     }

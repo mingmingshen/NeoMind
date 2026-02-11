@@ -6,7 +6,7 @@ import { useState } from "react"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveTable } from "@/components/shared"
-import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2 } from "lucide-react"
+import { Edit, Trash2, Code, Database, Globe, Cpu, HardDrive, CheckCircle2, Download } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { cn } from "@/lib/utils"
 import type { TransformAutomation } from "@/types"
@@ -20,6 +20,7 @@ interface TransformsListProps {
   onEdit: (transform: TransformAutomation) => void
   onDelete: (transform: TransformAutomation) => void
   onToggleStatus: (transform: TransformAutomation) => void
+  onExport?: (transform: TransformAutomation) => void
 }
 
 // Scope configuration
@@ -67,6 +68,7 @@ export function TransformsList({
   onEdit,
   onDelete,
   onToggleStatus,
+  onExport,
 }: TransformsListProps) {
   const { t } = useTranslation(['common', 'automation'])
   const [internalPage, setInternalPage] = useState(1)
@@ -234,6 +236,14 @@ export function TransformsList({
             onEdit(transform)
           },
         },
+        ...(onExport ? [{
+          label: t('common:export'),
+          icon: <Download className="h-4 w-4" />,
+          onClick: (rowData: unknown) => {
+            const transform = rowData as unknown as TransformAutomation
+            onExport(transform)
+          },
+        }] : []),
         {
           label: t('common:delete'),
           icon: <Trash2 className="h-4 w-4" />,

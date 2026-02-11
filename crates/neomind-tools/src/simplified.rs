@@ -77,7 +77,7 @@ impl ErrorMessages {
     /// Device not found error with helpful suggestions.
     pub fn device_not_found(device_id: &str) -> FriendlyError {
         FriendlyError::new(format!("找不到设备 '{}'", device_id))
-            .with_suggestion("使用 'list_devices' 查看所有可用设备".to_string())
+            .with_suggestion("使用 'device_discover' 查看所有可用设备".to_string())
             .with_suggestion("检查设备ID是否正确".to_string())
             .with_suggestion(format!("可能是设备 '{}' 尚未添加到系统", device_id))
     }
@@ -243,126 +243,126 @@ pub struct Example {
 ///
 /// IMPORTANT: Tool names MUST match the actual tool names registered in the tool registry.
 /// See real.rs, agent_tools.rs, and system_tools.rs for actual tool names.
+///
+/// DESIGN PRINCIPLES (基于 Anthropic 最佳实践):
+/// - 更少、更聚焦的工具，而非大量细粒度工具
+/// - 合并功能相似的工具，减少 LLM 选择负担
+/// - 优先考虑高价值、高使用频率的工具
+/// - 每个工具应该是"不可删减"的
+///
+/// 工具清单 (12个工具，从原18个精简):
+/// - 设备工具(4): device_discover, get_device_data, query_data, device_control
+/// - 规则工具(3): list_rules, create_rule, delete_rule
+/// - Agent工具(5): list_agents, get_agent, create_agent, execute_agent, control_agent
 pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
     vec![
-        // === Device Tools ===
+        // === 工具调用流程说明 ===
+        //
+        // **设备数据工具支持名称解析**：
+        //   - get_device_data 和 query_data 的 device_id 参数支持设备名称、简称或完整ID
+        //   - 工具内部会自动将 'ne101'、'ne101 test' 等名称解析为真实设备ID
+        //   - 因此：device_discover 不是必须的，除非用户明确问"有哪些设备"
+        //
+        // **推荐调用顺序**:
+        //   场景A - 用户询问特定设备数据：
+        //     Step 1: get_device_data(device_id="设备名称") → 获取所有当前指标
+        //     Step 2: query_data(device_id="设备名称", metric="实际指标名") → 仅当需要历史/趋势时
+        //
+        //   场景B - 用户问"有哪些设备"：
+        //     Step 1: device_discover() → 显示所有设备列表
+        //     Step 2: get_device_data(device_id) → 根据需要查询特定设备
+        //
+        // **常见错误**:
+        //   ❌ 跳过 get_device_data 直接调用 query_data → 指标名可能不准确
+        //   ❌ query_data 的 metric 参数用 'battery' → 应该是 'values.battery'
+        //
+        // **正确示例**:
+        //   ✅ 用户说"ne101 test的数据" → get_device_data(device_id="ne101 test")
+        //   ✅ 用户说"有哪些设备" → device_discover()
+        //   ✅ 用户说"今天的电池趋势" → get_device_data() → query_data(metric="values.battery")
+        //
+        // ================================
 
-        // list_devices - actual tool name in registry
+        // === Device Tools (4个) ===
+
+        // device_discover - 列出所有设备
         LlmToolDefinition {
-            name: "list_devices".to_string(),
-            description: "列出系统中所有设备".to_string(),
-            aliases: vec![
-                "查看设备".to_string(),
-                "有哪些设备".to_string(),
-                "所有设备".to_string(),
-                "设备列表".to_string(),
-                "显示设备".to_string(),
-            ],
+            name: "device_discover".to_string(),
+            description: "列出所有设备(id/name/type/status)和统计信息".to_string(),
+            aliases: vec!["查看设备".to_string(), "有哪些设备".to_string(), "设备列表".to_string()],
             required: vec![],
             optional: HashMap::new(),
             examples: vec![
                 Example {
                     user_query: "有哪些设备？".to_string(),
-                    tool_call: "list_devices()".to_string(),
-                    explanation: "显示所有设备".to_string(),
+                    tool_call: "device_discover()".to_string(),
+                    explanation: "显示设备列表".to_string(),
                 },
             ],
             use_when: vec!["用户询问设备".to_string()],
         },
 
-        // get_device_data - actual tool name in registry (simpler than query_data)
+        // get_device_data - 获取设备数据（含趋势分析）
         LlmToolDefinition {
             name: "get_device_data".to_string(),
-            description: "获取设备的所有当前数据（仅当前值，无历史）。用于查看设备实时状态。如果要分析数据变化/趋势，必须使用query_data工具并指定时间范围".to_string(),
-            aliases: vec![
-                "设备数据".to_string(),
-                "查询数据".to_string(),
-                "温度多少".to_string(),
-                "当前温度".to_string(),
-                "获取数据".to_string(),
-            ],
+            description: "获取设备当前所有指标值。device_id支持名称/简称/ID自动解析。趋势分析: analysis='trend'".to_string(),
+            aliases: vec!["设备数据".to_string(), "设备状态".to_string(), "趋势分析".to_string()],
             required: vec!["device_id".to_string()],
-            optional: HashMap::new(),
-            examples: vec![
-                Example {
-                    user_query: "温度传感器1的数据".to_string(),
-                    tool_call: "get_device_data(device_id='sensor_1')".to_string(),
-                    explanation: "获取设备所有指标".to_string(),
-                },
-            ],
-            use_when: vec![
-                "用户询问温度/湿度/数据".to_string(),
-                "用户想查看读数".to_string(),
-            ],
-        },
-
-        // query_data - for historical data and trend analysis with time range
-        LlmToolDefinition {
-            name: "query_data".to_string(),
-            description: "查询设备历史数据并分析趋势。必须指定时间范围来分析数据变化。用当前时间戳减去秒数得到start_time。例如：今天数据=今天0点到现在，最近24小时=当前时间-86400".to_string(),
-            aliases: vec![
-                "历史数据".to_string(),
-                "数据趋势".to_string(),
-                "电量变化".to_string(),
-                "温度变化".to_string(),
-                "分析数据".to_string(),
-                "今天数据".to_string(),
-            ],
-            required: vec!["device_id".to_string(), "metric".to_string()],
             optional: HashMap::from_iter(vec![
-                ("start_time".to_string(), ParameterInfo {
-                    description: "起始时间戳（Unix秒），分析今天=今天0点，最近X小时=当前时间-X*3600".to_string(),
+                ("analysis".to_string(), ParameterInfo {
+                    description: "分析类型: 'trend'趋势分析".to_string(),
                     default: serde_json::json!(null),
-                    examples: vec!["1738368000".to_string(), "当前时间-86400".to_string()],
-                }),
-                ("end_time".to_string(), ParameterInfo {
-                    description: "结束时间戳，默认为当前时间".to_string(),
-                    default: serde_json::json!(null),
-                    examples: vec!["1738454400".to_string(), "当前时间".to_string()],
+                    examples: vec!["trend".to_string()],
                 }),
             ]),
             examples: vec![
                 Example {
-                    user_query: "分析今天ne101的电池变化".to_string(),
-                    tool_call: "query_data(device_id='4t1vcbefzk', metric='battery', start_time=今天0点时间戳, end_time=当前时间戳)".to_string(),
-                    explanation: "查询今天的历史数据分析趋势".to_string(),
+                    user_query: "ne101的电量？".to_string(),
+                    tool_call: "get_device_data(device_id='ne101')".to_string(),
+                    explanation: "查询设备数据".to_string(),
                 },
                 Example {
-                    user_query: "ne101最近24小时温度变化如何".to_string(),
-                    tool_call: "query_data(device_id='4t1vcbefzk', metric='temperature', start_time=当前时间-86400, end_time=当前时间)".to_string(),
-                    explanation: "查询历史数据对比温度变化".to_string(),
-                },
-                Example {
-                    user_query: "电量有没有下降".to_string(),
-                    tool_call: "query_data(device_id='ne101', metric='battery', start_time=当前时间-3600, end_time=当前时间)".to_string(),
-                    explanation: "查询历史数据判断电量变化趋势".to_string(),
+                    user_query: "电量趋势？".to_string(),
+                    tool_call: "get_device_data(device_id='ne101', analysis='trend')".to_string(),
+                    explanation: "趋势分析".to_string(),
                 },
             ],
-            use_when: vec![
-                "用户询问数据变化/趋势".to_string(),
-                "用户问电量变化/温度变化".to_string(),
-                "用户要分析今天/最近的数据".to_string(),
-                "用户问有没有下降/上升".to_string(),
-            ],
+            use_when: vec!["用户询问设备数据/状态/趋势".to_string()],
         },
 
-        // control_device - actual tool name in registry
+        // query_data - 查询历史时间序列数据
         LlmToolDefinition {
-            name: "control_device".to_string(),
-            description: "控制设备（打开、关闭、设置值）".to_string(),
-            aliases: vec![
-                "控制设备".to_string(),
-                "打开".to_string(),
-                "关闭".to_string(),
-                "开启".to_string(),
-                "调节".to_string(),
-                "设置".to_string(),
+            name: "query_data".to_string(),
+            description: "查询设备历史时间序列数据。需先get_device_data确认指标名(如values.battery)".to_string(),
+            aliases: vec!["历史数据".to_string()],
+            required: vec!["device_id".to_string(), "metric".to_string()],
+            optional: HashMap::from_iter(vec![
+                ("start_time".to_string(), ParameterInfo {
+                    description: "起始时间戳(秒)".to_string(),
+                    default: serde_json::json!(null),
+                    examples: vec!["今天0点".to_string()],
+                }),
+            ]),
+            examples: vec![
+                Example {
+                    user_query: "今天的详细电量数据".to_string(),
+                    tool_call: "query_data(device_id='ne101', metric='values.battery')".to_string(),
+                    explanation: "历史查询".to_string(),
+                },
             ],
+            use_when: vec!["用户查询详细历史数据".to_string()],
+        },
+
+        // device_control - 控制设备
+        LlmToolDefinition {
+            name: "device_control".to_string(),
+            description: "控制设备: turn_on/turn_off/set_value".to_string(),
+            aliases: vec!["打开".to_string(), "关闭".to_string(), "控制".to_string()],
             required: vec!["device_id".to_string(), "command".to_string()],
             optional: {
                 let mut map = HashMap::new();
                 map.insert("value".to_string(), ParameterInfo {
-                    description: "命令值（可选）".to_string(),
+                    description: "命令值".to_string(),
                     default: Value::Null,
                     examples: vec!["26".to_string()],
                 });
@@ -371,46 +371,14 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             examples: vec![
                 Example {
                     user_query: "打开客厅灯".to_string(),
-                    tool_call: "control_device(device_id='light_living', command='turn_on')".to_string(),
-                    explanation: "打开设备".to_string(),
+                    tool_call: "device_control(device_id='light_living', command='turn_on')".to_string(),
+                    explanation: "控制设备".to_string(),
                 },
             ],
-            use_when: vec![
-                "用户要打开/关闭设备".to_string(),
-                "用户要调节设备".to_string(),
-            ],
+            use_when: vec!["用户要打开/关闭/控制设备".to_string()],
         },
 
-        // analyze_device - actual tool name in registry (was device.analyze)
-        LlmToolDefinition {
-            name: "analyze_device".to_string(),
-            description: "分析设备数据趋势".to_string(),
-            aliases: vec![
-                "分析数据".to_string(),
-                "数据分析".to_string(),
-                "趋势分析".to_string(),
-            ],
-            required: vec!["device_id".to_string()],
-            optional: {
-                let mut map = HashMap::new();
-                map.insert("analysis_type".to_string(), ParameterInfo {
-                    description: "分析类型".to_string(),
-                    default: serde_json::json!("summary"),
-                    examples: vec!["trend".to_string()],
-                });
-                map
-            },
-            examples: vec![
-                Example {
-                    user_query: "分析温度趋势".to_string(),
-                    tool_call: "analyze_device(device_id='sensor_1', analysis_type='trend')".to_string(),
-                    explanation: "分析趋势".to_string(),
-                },
-            ],
-            use_when: vec!["用户要求分析".to_string()],
-        },
-
-        // === Rule Tools ===
+        // === Rule Tools (3个) ===
 
         // list_rules - actual tool name in registry
         LlmToolDefinition {
@@ -418,8 +386,6 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             description: "列出所有自动化规则".to_string(),
             aliases: vec![
                 "规则列表".to_string(),
-                "显示规则".to_string(),
-                "查看规则".to_string(),
                 "有哪些规则".to_string(),
             ],
             required: vec![],
@@ -437,20 +403,28 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // create_rule - actual tool name in registry
         LlmToolDefinition {
             name: "create_rule".to_string(),
-            description: "创建自动化规则".to_string(),
+            description: "创建自动化规则。DSL: RULE\"名\"WHEN条件DO动作END。条件: device.metric>50、BETWEEN、AND/OR。动作: NOTIFY/EXECUTE/ALERT/SET/DELAY".to_string(),
             aliases: vec![
                 "创建规则".to_string(),
-                "新建规则".to_string(),
                 "添加规则".to_string(),
-                "自动化".to_string(),
             ],
             required: vec!["name".to_string(), "dsl".to_string()],
             optional: HashMap::new(),
             examples: vec![
                 Example {
-                    user_query: "创建温度告警规则".to_string(),
-                    tool_call: "create_rule(name='高温告警', dsl='RULE 高温告警 WHEN temperature > 50 DO NOTIFY 通知 END')".to_string(),
-                    explanation: "创建规则".to_string(),
+                    user_query: "当ne101电量低于50%时告警".to_string(),
+                    tool_call: "create_rule(name='低电量告警', dsl='RULE \"低电量告警\"\nWHEN ne101.battery_percent < 50\nDO NOTIFY \"设备ne101电量低于50%\"\nEND')".to_string(),
+                    explanation: "创建低电量告警规则，设备ID和指标名用点连接，消息用引号".to_string(),
+                },
+                Example {
+                    user_query: "温度过高时自动开启风扇".to_string(),
+                    tool_call: "create_rule(name='高温开启风扇', dsl='RULE \"高温开启风扇\"\nWHEN sensor.temperature > 30\nDO EXECUTE sensor.fan(speed=100)\nEND')".to_string(),
+                    explanation: "创建带设备控制的规则，使用EXECUTE动作".to_string(),
+                },
+                Example {
+                    user_query: "温度异常时告警（过高或过低）".to_string(),
+                    tool_call: "create_rule(name='温度异常', dsl='RULE \"温度异常\"\nWHEN (sensor.temp > 35) OR (sensor.temp < 10)\nDO NOTIFY \"温度超出安全范围\"\nEND')".to_string(),
+                    explanation: "创建复杂条件规则，使用OR逻辑组合".to_string(),
                 },
             ],
             use_when: vec!["用户要创建规则".to_string()],
@@ -463,7 +437,6 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             aliases: vec![
                 "删除规则".to_string(),
                 "移除规则".to_string(),
-                "删除自动化".to_string(),
             ],
             required: vec!["rule_id".to_string()],
             optional: HashMap::new(),
@@ -477,17 +450,16 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             use_when: vec!["用户要删除规则".to_string()],
         },
 
-        // === Agent Tools ===
+        // === Agent Tools (5个) ===
 
         // list_agents - actual tool name in registry
         LlmToolDefinition {
             name: "list_agents".to_string(),
-            description: "列出所有AI Agent".to_string(),
+            description: "列出所有Agent(id/状态/执行统计)。用户询问Agent时必先调用此工具获取ID".to_string(),
             aliases: vec![
                 "列出Agent".to_string(),
                 "有哪些Agent".to_string(),
                 "Agent列表".to_string(),
-                "查看Agent".to_string(),
             ],
             required: vec![],
             optional: HashMap::new(),
@@ -495,42 +467,49 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
                 Example {
                     user_query: "有哪些Agent？".to_string(),
                     tool_call: "list_agents()".to_string(),
-                    explanation: "列出所有Agent".to_string(),
+                    explanation: "首先列出所有Agent获取ID".to_string(),
+                },
+                Example {
+                    user_query: "显示所有智能体".to_string(),
+                    tool_call: "list_agents()".to_string(),
+                    explanation: "列出Agent及其状态".to_string(),
                 },
             ],
-            use_when: vec!["用户询问Agent".to_string()],
+            use_when: vec![
+                "用户询问有哪些Agent".to_string(),
+                "用户询问Agent列表".to_string(),
+                "用户想查看所有Agent".to_string(),
+                "用户询问某个Agent但未提供agent_id".to_string(),
+            ],
         },
 
         // get_agent - actual tool name in registry
         LlmToolDefinition {
             name: "get_agent".to_string(),
-            description: "获取Agent详细信息和执行历史。返回执行统计、最后执行时间、成功/失败次数。用户询问Agent执行情况/任务/结果时必须调用此工具".to_string(),
+            description: "获取Agent详情(执行统计/调度配置)。无agent_id时必先list_agents".to_string(),
             aliases: vec![
                 "Agent详情".to_string(),
                 "Agent信息".to_string(),
                 "Agent执行情况".to_string(),
-                "Agent执行历史".to_string(),
             ],
             required: vec!["agent_id".to_string()],
             optional: HashMap::new(),
             examples: vec![
                 Example {
-                    user_query: "Agent最近执行了什么".to_string(),
-                    tool_call: "get_agent(agent_id='agent_1')".to_string(),
-                    explanation: "获取Agent执行统计和历史".to_string(),
+                    user_query: "温度监控Agent的执行情况".to_string(),
+                    tool_call: "先list_agents获取agent_id，再用get_agent(agent_id='xxx')查询详情".to_string(),
+                    explanation: "需要agent_id才能查询，先调用list_agents".to_string(),
                 },
                 Example {
-                    user_query: "温度监控Agent的详情".to_string(),
+                    user_query: "agent_1的详细信息".to_string(),
                     tool_call: "get_agent(agent_id='agent_1')".to_string(),
-                    explanation: "获取Agent详情".to_string(),
+                    explanation: "已知agent_id时直接查询".to_string(),
                 },
             ],
             use_when: vec![
-                "用户询问Agent详情".to_string(),
-                "用户询问Agent执行情况".to_string(),
-                "用户询问Agent执行历史".to_string(),
-                "用户询问Agent执行结果".to_string(),
-                "用户问Agent做了什么".to_string(),
+                "用户询问Agent详情/状态".to_string(),
+                "用户询问Agent执行情况/结果".to_string(),
+                "用户提供agent_id名称".to_string(),
             ],
         },
 
@@ -561,7 +540,6 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             aliases: vec![
                 "暂停Agent".to_string(),
                 "恢复Agent".to_string(),
-                "删除Agent".to_string(),
             ],
             required: vec!["agent_id".to_string(), "action".to_string()],
             optional: HashMap::new(),
@@ -578,12 +556,10 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
         // create_agent - actual tool name in registry
         LlmToolDefinition {
             name: "create_agent".to_string(),
-            description: "通过自然语言创建新AI Agent。描述应包含：目标设备、监控指标、触发条件、执行动作、执行频率。Agent类型：监控型(monitor)、执行型(executor)、分析型(analyst)".to_string(),
+            description: "创建AI Agent。描述: 设备/指标/条件/动作/频率。类型: monitor/executor/analyst".to_string(),
             aliases: vec![
                 "创建Agent".to_string(),
                 "新建Agent".to_string(),
-                "添加Agent".to_string(),
-                "创建智能体".to_string(),
             ],
             required: vec!["description".to_string()],
             optional: HashMap::from_iter(vec![
@@ -613,57 +589,8 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
             use_when: vec!["用户要创建Agent".to_string(), "用户要添加智能体".to_string(), "用户要做自动化".to_string()],
         },
 
-        // agent_memory - actual tool name in registry
-        LlmToolDefinition {
-            name: "agent_memory".to_string(),
-            description: "查询Agent记忆和学习内容".to_string(),
-            aliases: vec![
-                "Agent记忆".to_string(),
-                "Agent学习".to_string(),
-            ],
-            required: vec!["agent_id".to_string()],
-            optional: HashMap::new(),
-            examples: vec![
-                Example {
-                    user_query: "Agent学到了什么".to_string(),
-                    tool_call: "agent_memory(agent_id='agent_1', query_type='patterns')".to_string(),
-                    explanation: "查询学习内容".to_string(),
-                },
-            ],
-            use_when: vec!["用户询问Agent学习".to_string()],
-        },
-
-        // === System Tools ===
-
-        // system_help - actual tool name in registry
-        LlmToolDefinition {
-            name: "system_help".to_string(),
-            description: "获取系统帮助和功能介绍".to_string(),
-            aliases: vec![
-                "帮助".to_string(),
-                "使用帮助".to_string(),
-                "功能介绍".to_string(),
-                "怎么用".to_string(),
-            ],
-            required: vec![],
-            optional: {
-                let mut map = HashMap::new();
-                map.insert("topic".to_string(), ParameterInfo {
-                    description: "帮助主题".to_string(),
-                    default: Value::Null,
-                    examples: vec!["overview".to_string()],
-                });
-                map
-            },
-            examples: vec![
-                Example {
-                    user_query: "这个系统能做什么？".to_string(),
-                    tool_call: "system_help(topic='overview')".to_string(),
-                    explanation: "显示系统概览".to_string(),
-                },
-            ],
-            use_when: vec!["新用户求助".to_string()],
-        },
+        // 注意: 已移除低频工具 - agent_memory, get_agent_executions, get_agent_execution_detail, get_agent_conversation
+        // 这些功能可通过 get_agent 获取基础信息，详情可通过直接查询数据库获得
     ]
 }
 
@@ -671,41 +598,27 @@ pub fn get_simplified_tools() -> Vec<LlmToolDefinition> {
 pub fn format_tools_for_llm() -> String {
     let tools = get_simplified_tools();
     let mut prompt = String::from("## 可用工具\n\n");
-    prompt.push_str("你可以调用以下工具来完成任务。工具调用格式：\n");
-    prompt.push_str("```\n[{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n```\n\n");
+
+    // 精简指导原则
+    prompt.push_str("### 调用流程\n\n");
+    prompt.push_str("设备数据: device_discover→get_device_data→query_data(如需历史)\n");
+    prompt.push_str("Agent查询: list_agents→get_agent(需agent_id)\n");
+    prompt.push_str("格式: [{\"name\":\"工具名\",\"arguments\":{\"参数\":\"值\"}}]\n\n");
 
     for tool in tools {
-        prompt.push_str(&format!("### {} ({})\n", tool.name, tool.description));
-
+        prompt.push_str(&format!("### {} - {}", tool.name, tool.description));
         if !tool.aliases.is_empty() {
-            prompt.push_str(&format!("**别名**: {}\n", tool.aliases.join(", ")));
+            prompt.push_str(&format!(" [{}]", tool.aliases.join(",")));
         }
+        prompt.push('\n');
 
-        prompt.push_str("**参数**:\n");
-        if tool.required.is_empty() && tool.optional.is_empty() {
-            prompt.push_str("  无需参数\n");
-        } else {
-            for param in &tool.required {
-                prompt.push_str(&format!("  - **{}** (必需)\n", param));
-            }
-            for (param, info) in &tool.optional {
-                prompt.push_str(&format!("  - **{}** (可选，默认: {}) - {}\n",
-                    param, info.default, info.description));
-            }
+        // 精简参数展示
+        if !tool.required.is_empty() {
+            prompt.push_str(&format!("必参:{}", tool.required.join(",")));
         }
-
-        if !tool.examples.is_empty() {
-            prompt.push_str("\n**示例**:\n");
-            for ex in &tool.examples {
-                prompt.push_str(&format!("  - 用户: \"{}\"\n", ex.user_query));
-                prompt.push_str(&format!("    → `{}`\n", ex.tool_call));
-            }
+        if !tool.optional.is_empty() {
+            prompt.push_str(&format!(" 可参:{}", tool.optional.keys().cloned().collect::<Vec<_>>().join(",")));
         }
-
-        if !tool.use_when.is_empty() {
-            prompt.push_str(&format!("\n**使用场景**: {}\n", tool.use_when.join("、")));
-        }
-
         prompt.push('\n');
     }
 
@@ -752,9 +665,9 @@ mod tests {
     #[test]
     fn test_format_tools_for_llm() {
         let prompt = format_tools_for_llm();
-        assert!(prompt.contains("list_devices"));
+        assert!(prompt.contains("device_discover"));
         assert!(prompt.contains("get_device_data"));
-        assert!(prompt.contains("control_device"));
+        assert!(prompt.contains("device_control"));
         assert!(prompt.contains("create_rule"));
     }
 

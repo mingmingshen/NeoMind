@@ -50,6 +50,7 @@ utoipa = "5"
 utoipa-swagger-ui = { version = "8", features = ["axum"] }
 atty = "0.2"
 sysinfo = "0.32"
+dirs = "5.0"
 
 # Encryption
 aes-gcm = { workspace = true }

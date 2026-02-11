@@ -6,17 +6,33 @@
  * Uses PageLayout + PageTabs structure consistent with other pages.
  */
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useLocation } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent, Pagination } from "@/components/shared"
-import { Sparkles, GitBranch } from "lucide-react"
+import { Sparkles, GitBranch, Download, Upload, MoreVertical } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { confirm } from "@/hooks/use-confirm"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
-import type { TransformAutomation, Rule } from "@/types"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu"
+import type { TransformAutomation, Rule, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
 
 // Import split-pane builder components
 import { SimpleRuleBuilderSplit } from "@/components/automation/SimpleRuleBuilderSplit"
@@ -88,6 +104,9 @@ export function AutomationPage() {
   const [devices, setDevices] = useState<any[]>([])
   const [deviceTypes, setDeviceTypes] = useState<any[]>([])
   const [ruleDevices, setRuleDevices] = useState<any[]>([])  // Devices with metrics for rules
+  const [extensions, setExtensions] = useState<Extension[]>([])
+  const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
+  const [messageChannels, setMessageChannels] = useState<Array<{ name: string; type: string; enabled: boolean }>>([])
 
   // Fetch data
   const loadItems = useCallback(async () => {
@@ -112,6 +131,34 @@ export function AutomationPage() {
       } catch (err) {
         handleError(err, { operation: 'Load rule resources', showToast: false })
         setRuleDevices([])
+      }
+
+      // Load extensions for rule builder
+      try {
+        const [extData, dsData] = await Promise.all([
+          api.listExtensions().catch((): Extension[] => []),
+          api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
+        ])
+        setExtensions(extData)
+        // Filter only extension data sources (exclude transform data sources)
+        setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
+      } catch (err) {
+        // Extensions are optional, don't show error
+        setExtensions([])
+        setExtensionDataSources([])
+      }
+
+      // Load message channels for Notify action
+      try {
+        const channelsData = await api.listMessageChannels()
+        setMessageChannels((channelsData.channels || []).map((ch: any) => ({
+          name: ch.name,
+          type: ch.channel_type,
+          enabled: ch.enabled
+        })))
+      } catch {
+        // Channels are optional
+        setMessageChannels([])
       }
 
       // Load tab-specific data
@@ -303,6 +350,47 @@ export function AutomationPage() {
     }
   }
 
+  const handleExportSingleTransform = async (transform: TransformAutomation) => {
+    try {
+      const exportData = {
+        automations: [{
+          id: transform.id,
+          name: transform.name,
+          description: transform.description,
+          type: 'transform',
+          enabled: transform.enabled,
+          created_at: transform.created_at,
+          updated_at: transform.updated_at,
+          definition: {
+            scope: transform.scope,
+            js_code: transform.js_code,
+            output_prefix: transform.output_prefix,
+            complexity: transform.complexity,
+          },
+        }],
+        count: 1,
+        exported_at: new Date().toISOString(),
+      }
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      // Sanitize filename
+      const safeName = transform.name.replace(/[^a-zA-Z0-9_-]/g, '_')
+      a.download = `transform-${safeName}-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast({
+        title: tCommon('success'),
+        description: `Exported "${transform.name}"`,
+      })
+    } catch (error) {
+      handleError(error, { operation: 'Export transform', showToast: true })
+    }
+  }
+
   // Save handlers
   const handleSaveRule = async (rule: any) => {
     try {
@@ -375,6 +463,115 @@ export function AutomationPage() {
     }
   }
 
+  // Import/Export handlers
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleExportRules = async () => {
+    try {
+      const data = await api.exportRules('json')
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `neomind-rules-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast({
+        title: tCommon('success'),
+        description: `Exported ${data.total_count} rules`,
+      })
+    } catch (error) {
+      handleError(error, { operation: 'Export rules', showToast: true })
+    }
+  }
+
+  const handleImportRules = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleExportTransforms = async () => {
+    try {
+      const data = await api.exportAutomations()
+      // Filter only transform-type automations
+      const transformData = {
+        automations: (data.automations || []).filter((a: any) => a.type === 'transform'),
+        count: ((data.automations || []).filter((a: any) => a.type === 'transform')).length,
+        exported_at: data.exported_at,
+      }
+      const blob = new Blob([JSON.stringify(transformData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `neomind-transforms-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast({
+        title: tCommon('success'),
+        description: `Exported ${transformData.count} transforms`,
+      })
+    } catch (error) {
+      handleError(error, { operation: 'Export transforms', showToast: true })
+    }
+  }
+
+  const handleImportTransforms = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      const content = await file.text()
+      const data = JSON.parse(content)
+
+      let result: { imported?: number; skipped?: number; errors?: unknown[]; failed?: number; message?: string }
+
+      if (activeTab === 'rules') {
+        const rulesToImport = data.rules || data
+        result = await api.importRules(rulesToImport)
+
+        let description = `${tAuto('imported')} ${result.imported}`
+        if (result.skipped && result.skipped > 0) {
+          description += `, ${tAuto('skipped')} ${result.skipped}`
+        }
+        if (result.errors && result.errors.length > 0) {
+          description += `, ${result.errors.length} ${tAuto('importFailed')}`
+        }
+
+        toast({
+          title: tCommon('success'),
+          description,
+        })
+      } else {
+        // Transforms tab
+        const automationsToImport = data.automations || data
+        result = await api.importAutomations(automationsToImport)
+
+        let description = `${tAuto('imported')} ${result.imported}`
+        if (result.failed && result.failed > 0) {
+          description += `, ${result.failed} ${tAuto('importFailed')}`
+        }
+
+        toast({
+          title: tCommon('success'),
+          description: result.message || description,
+        })
+      }
+
+      await loadItems()
+    } catch (error) {
+      handleError(error, { operation: `Import ${activeTab}`, showToast: true })
+    } finally {
+      e.target.value = ''
+    }
+  }
+
   return (
     <PageLayout
       title={tAuto('title')}
@@ -417,6 +614,47 @@ export function AutomationPage() {
             disabled: loading,
           },
         ]}
+        actionsExtra={
+          activeTab === 'rules' ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-1">
+                  <Download className="h-4 w-4" />
+                  {tAuto('importExport')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportRules}>
+                  <Download className="h-4 w-4 mr-2" />
+                  {tAuto('export')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleImportRules}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  {tAuto('import')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : activeTab === 'transforms' ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-1">
+                  <Download className="h-4 w-4" />
+                  {tAuto('importExport')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportTransforms}>
+                  <Download className="h-4 w-4 mr-2" />
+                  {tAuto('export')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleImportTransforms}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  {tAuto('import')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null
+        }
       >
         {/* Rules Tab */}
         <PageTabsContent value="rules" activeTab={activeTab}>
@@ -444,6 +682,7 @@ export function AutomationPage() {
             onEdit={handleEditTransform}
             onDelete={handleDeleteTransform}
             onToggleStatus={handleToggleTransform}
+            onExport={handleExportSingleTransform}
           />
         </PageTabsContent>
       </PageTabs>
@@ -454,7 +693,7 @@ export function AutomationPage() {
         onOpenChange={setShowRuleDialog}
         rule={editingRule}
         onSave={handleSaveRule}
-        resources={{ devices: ruleDevices, deviceTypes }}
+        resources={{ devices: ruleDevices, deviceTypes, extensions, extensionDataSources, messageChannels }}
       />
 
       {/* Transform Builder Dialog */}
@@ -464,6 +703,15 @@ export function AutomationPage() {
         transform={editingTransform}
         devices={devices}
         onSave={handleSaveTransform}
+      />
+
+      {/* Hidden file input for import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        onChange={handleFileChange}
+        className="hidden"
       />
     </PageLayout>
   )

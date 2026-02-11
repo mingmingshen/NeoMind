@@ -34,6 +34,7 @@ futures = { workspace = true }
 async-stream = "0.3"
 tracing = { workspace = true }
 rand = { workspace = true }
+base64 = "0.22"
 # Cron scheduling libraries
 cron = "0.12"
 # Optional system info dependency

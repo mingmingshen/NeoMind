@@ -399,7 +399,7 @@ impl RuleGenerator {
 
         let threshold = extracted.threshold.unwrap_or(50.0);
 
-        let condition = RuleCondition::Simple {
+        let condition = RuleCondition::Device {
             device_id: device_id.clone(),
             metric,
             operator: Self::parse_operator(&operator)?,
@@ -516,11 +516,17 @@ impl RuleGenerator {
     /// Format a condition as human-readable string.
     fn format_condition(condition: &RuleCondition) -> String {
         match condition {
-            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            RuleCondition::Device { device_id, metric, operator, threshold } => {
                 format!("设备 {} 的 {} {} {}", device_id, metric, operator.as_str(), threshold)
             }
-            RuleCondition::Range { device_id, metric, min, max } => {
+            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                format!("扩展 {} 的 {} {} {}", extension_id, metric, operator.as_str(), threshold)
+            }
+            RuleCondition::DeviceRange { device_id, metric, min, max } => {
                 format!("设备 {} 的 {} 在 {} 到 {} 之间", device_id, metric, min, max)
+            }
+            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                format!("扩展 {} 的 {} 在 {} 到 {} 之间", extension_id, metric, min, max)
             }
             RuleCondition::And(conditions) => {
                 let parts: Vec<String> = conditions.iter().map(Self::format_condition).collect();

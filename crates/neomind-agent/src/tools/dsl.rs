@@ -71,8 +71,8 @@ impl ListRulesTool {
                 }
                 if let Some(d) = device_id {
                     let matches = match &rule.condition {
-                        RuleCondition::Simple { device_id, .. } |
-                        RuleCondition::Range { device_id, .. } => device_id == d,
+                        RuleCondition::Device { device_id, .. } |
+                        RuleCondition::DeviceRange { device_id, .. } => device_id == d,
                         _ => true, // Complex conditions (And/Or/Not) may involve multiple devices
                     };
                     if !matches {
@@ -161,7 +161,7 @@ impl GetRuleTool {
 
         // WHEN clause - handle different condition types
         match &rule.condition {
-            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            RuleCondition::Device { device_id, metric, operator, threshold } => {
                 dsl.push_str(&format!(
                     "WHEN {}.{} {} {}\n",
                     device_id,
@@ -170,7 +170,16 @@ impl GetRuleTool {
                     threshold
                 ));
             }
-            RuleCondition::Range { device_id, metric, min, max } => {
+            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                dsl.push_str(&format!(
+                    "WHEN EXTENSION {}.{} {} {}\n",
+                    extension_id,
+                    metric,
+                    operator.as_str(),
+                    threshold
+                ));
+            }
+            RuleCondition::DeviceRange { device_id, metric, min, max } => {
                 dsl.push_str(&format!(
                     "WHEN {}.{} BETWEEN {} AND {}\n",
                     device_id,
@@ -179,14 +188,29 @@ impl GetRuleTool {
                     max
                 ));
             }
+            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                dsl.push_str(&format!(
+                    "WHEN EXTENSION {}.{} BETWEEN {} AND {}\n",
+                    extension_id,
+                    metric,
+                    min,
+                    max
+                ));
+            }
             RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
                 let op = if matches!(&rule.condition, RuleCondition::And(_)) { "AND" } else { "OR" };
                 let conditions: Vec<String> = conditions.iter().map(|c| match c {
-                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                    RuleCondition::Device { device_id, metric, operator, threshold } => {
                         format!("{}.{} {} {}", device_id, metric, operator.as_str(), threshold)
                     }
-                    RuleCondition::Range { device_id, metric, min, max } => {
+                    RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                        format!("EXTENSION {}.{} {} {}", extension_id, metric, operator.as_str(), threshold)
+                    }
+                    RuleCondition::DeviceRange { device_id, metric, min, max } => {
                         format!("{}.{} BETWEEN {} AND {}", device_id, metric, min, max)
+                    }
+                    RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                        format!("EXTENSION {}.{} BETWEEN {} AND {}", extension_id, metric, min, max)
                     }
                     _ => "(complex)".to_string(),
                 }).collect();
@@ -194,10 +218,19 @@ impl GetRuleTool {
             }
             RuleCondition::Not(inner) => {
                 match inner.as_ref() {
-                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                    RuleCondition::Device { device_id, metric, operator, threshold } => {
                         dsl.push_str(&format!(
                             "WHEN NOT {}.{} {} {}\n",
                             device_id,
+                            metric,
+                            operator.as_str(),
+                            threshold
+                        ));
+                    }
+                    RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                        dsl.push_str(&format!(
+                            "WHEN NOT EXTENSION {}.{} {} {}\n",
+                            extension_id,
                             metric,
                             operator.as_str(),
                             threshold
@@ -303,7 +336,7 @@ impl Tool for GetRuleTool {
 
         // Extract condition info for JSON response
         let condition_info = match &rule.condition {
-            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            RuleCondition::Device { device_id, metric, operator, threshold } => {
                 serde_json::json!({
                     "type": "simple",
                     "device_id": device_id,
@@ -312,10 +345,28 @@ impl Tool for GetRuleTool {
                     "threshold": threshold
                 })
             }
-            RuleCondition::Range { device_id, metric, min, max } => {
+            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                serde_json::json!({
+                    "type": "extension",
+                    "extension_id": extension_id,
+                    "metric": metric,
+                    "operator": operator.as_str(),
+                    "threshold": threshold
+                })
+            }
+            RuleCondition::DeviceRange { device_id, metric, min, max } => {
                 serde_json::json!({
                     "type": "range",
                     "device_id": device_id,
+                    "metric": metric,
+                    "min": min,
+                    "max": max
+                })
+            }
+            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                serde_json::json!({
+                    "type": "extension_range",
+                    "extension_id": extension_id,
                     "metric": metric,
                     "min": min,
                     "max": max
@@ -438,7 +489,7 @@ impl ExplainRuleTool {
         };
 
         match &rule.condition {
-            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            RuleCondition::Device { device_id, metric, operator, threshold } => {
                 let operator_desc = match operator {
                     ComparisonOperator::GreaterThan => format!("大于 {}", threshold),
                     ComparisonOperator::LessThan => format!("小于 {}", threshold),
@@ -453,10 +504,31 @@ impl ExplainRuleTool {
                     device_id, metric, operator_desc, duration_desc
                 )
             }
-            RuleCondition::Range { device_id, metric, min, max } => {
+            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                let operator_desc = match operator {
+                    ComparisonOperator::GreaterThan => format!("大于 {}", threshold),
+                    ComparisonOperator::LessThan => format!("小于 {}", threshold),
+                    ComparisonOperator::GreaterEqual => format!("大于等于 {}", threshold),
+                    ComparisonOperator::LessEqual => format!("小于等于 {}", threshold),
+                    ComparisonOperator::Equal => format!("等于 {}", threshold),
+                    ComparisonOperator::NotEqual => format!("不等于 {}", threshold),
+                };
+
+                format!(
+                    "当扩展'{}'的指标'{}'{}时，{}触发。",
+                    extension_id, metric, operator_desc, duration_desc
+                )
+            }
+            RuleCondition::DeviceRange { device_id, metric, min, max } => {
                 format!(
                     "当设备'{}'的指标'{}'在{}到{}之间时，{}触发。",
                     device_id, metric, min, max, duration_desc
+                )
+            }
+            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                format!(
+                    "当扩展'{}'的指标'{}'在{}到{}之间时，{}触发。",
+                    extension_id, metric, min, max, duration_desc
                 )
             }
             RuleCondition::And(conditions) => {
@@ -495,7 +567,7 @@ impl ExplainRuleTool {
         };
 
         match &rule.condition {
-            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            RuleCondition::Device { device_id, metric, operator, threshold } => {
                 let operator_desc = match operator {
                     ComparisonOperator::GreaterThan => format!("greater than {}", threshold),
                     ComparisonOperator::LessThan => format!("less than {}", threshold),
@@ -514,10 +586,35 @@ impl ExplainRuleTool {
                     metric, device_id, operator_desc, duration_desc
                 )
             }
-            RuleCondition::Range { device_id, metric, min, max } => {
+            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                let operator_desc = match operator {
+                    ComparisonOperator::GreaterThan => format!("greater than {}", threshold),
+                    ComparisonOperator::LessThan => format!("less than {}", threshold),
+                    ComparisonOperator::GreaterEqual => {
+                        format!("greater than or equal to {}", threshold)
+                    }
+                    ComparisonOperator::LessEqual => {
+                        format!("less than or equal to {}", threshold)
+                    }
+                    ComparisonOperator::Equal => format!("equal to {}", threshold),
+                    ComparisonOperator::NotEqual => format!("not equal to {}", threshold),
+                };
+
+                format!(
+                    "When metric '{}' on extension '{}' is {}, trigger {}.",
+                    metric, extension_id, operator_desc, duration_desc
+                )
+            }
+            RuleCondition::DeviceRange { device_id, metric, min, max } => {
                 format!(
                     "When metric '{}' on device '{}' is between {} and {}, trigger {}.",
                     metric, device_id, min, max, duration_desc
+                )
+            }
+            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                format!(
+                    "When metric '{}' on extension '{}' is between {} and {}, trigger {}.",
+                    metric, extension_id, min, max, duration_desc
                 )
             }
             RuleCondition::And(conditions) => {
@@ -832,9 +929,13 @@ impl RuleSummary {
     fn from_compiled(rule: &CompiledRule) -> Self {
         // Extract device_id and metric from condition
         let (device_id, metric) = match &rule.condition {
-            RuleCondition::Simple { device_id, metric, .. } |
-            RuleCondition::Range { device_id, metric, .. } => {
+            RuleCondition::Device { device_id, metric, .. } |
+            RuleCondition::DeviceRange { device_id, metric, .. } => {
                 (device_id.clone(), metric.clone())
+            }
+            RuleCondition::Extension { extension_id, metric, .. } |
+            RuleCondition::ExtensionRange { extension_id, metric, .. } => {
+                (extension_id.clone(), metric.clone())
             }
             RuleCondition::And(_) | RuleCondition::Or(_) | RuleCondition::Not(_) => {
                 // For complex conditions, use placeholder

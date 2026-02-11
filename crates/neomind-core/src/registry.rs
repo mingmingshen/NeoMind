@@ -10,51 +10,6 @@ use std::fmt::Debug;
 ///
 /// This trait defines a minimal set of operations that all registries should support.
 /// Individual registries may extend this with additional domain-specific methods.
-///
-/// # Example
-///
-/// ```rust
-/// use neomind_core::registry::{Registry, RegistryError};
-///
-/// #[async_trait]
-/// impl Registry for MyRegistry {
-///     type Item = MyItem;
-///     type Id = String;
-///
-///     async fn get(&self, id: &Self::Id) -> Option<Self::Item> {
-///         self.items.get(id).cloned()
-///     }
-///
-///     async fn list(&self) -> Vec<Self::Item> {
-///         self.items.values().cloned().collect()
-///     }
-///
-///     async fn count(&self) -> usize {
-///         self.items.len()
-///     }
-///
-///     async fn contains(&self, id: &Self::Id) -> bool {
-///         self.items.contains_key(id)
-///     }
-///
-///     async fn add(&mut self, item: Self::Item) -> Result<(), RegistryError> {
-///         let id = item.id();
-///         if self.items.contains_key(&id) {
-///             return Err(RegistryError::AlreadyExists(id));
-///         }
-///         self.items.insert(id, item);
-///         Ok(())
-///     }
-///
-///     async fn remove(&mut self, id: &Self::Id) -> Result<Option<Self::Item>, RegistryError> {
-///         Ok(self.items.remove(id))
-///     }
-///
-///     async fn clear(&mut self) {
-///         self.items.clear();
-///     }
-/// }
-/// ```
 #[async_trait]
 pub trait Registry: Send + Sync {
     /// The item type stored in this registry.
@@ -209,7 +164,7 @@ mod tests {
             name: "Test Item 1".to_string(),
         };
 
-        registry.add(item).await.unwrap();
+        registry.add(item.clone()).await.unwrap();
 
         let result = registry.add(item).await;
         assert!(matches!(result, Err(RegistryError::AlreadyExists(_))));
@@ -228,7 +183,7 @@ mod tests {
 
         registry.add(item).await.unwrap();
         let removed = registry.remove(&"test-1".to_string()).await;
-        assert!(removed.is_some());
+        assert!(removed.is_ok());
         assert_eq!(registry.count().await, 0);
     }
 

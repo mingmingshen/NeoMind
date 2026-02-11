@@ -1,12 +1,21 @@
 # Web 前端模块
 
-**版本**: 0.4.0
+**版本**: 0.5.8
 **完成度**: 85%
 **用途**: React + TypeScript Web 应用 / Tauri 桌面应用
 
 ## 概述
 
 Web 模块是 NeoMind 的前端应用，支持 Web 浏览器和 Tauri 桌面应用（双模式）。基于 React 18 + TypeScript + Vite 构建，使用 Zustand 进行状态管理，Radix UI + Tailwind CSS 构建用户界面。
+
+## 重要变更 (v0.5.x)
+
+### Plugin → Extension 迁移
+
+- **`/plugins` 路由已迁移到 `/extensions`**
+- `plugins.tsx` → `extensions.tsx`
+- 扩展组件统一在 `components/extensions/` 目录
+- API调用从 `api.listPlugins()` 改为 `api.listExtensions()`
 
 ## 模块结构
 
@@ -54,8 +63,7 @@ web/src/
 │   │   ├── DeviceDetail.tsx
 │   │   └── ...
 │   ├── session/               # 会话管理组件
-│   ├── extensions/            # 扩展组件
-│   ├── plugins/               # 插件组件
+│   ├── extensions/            # 扩展组件（统一管理Extension）
 │   ├── shared/                # 共享组件
 │   └── design-system/         # 设计系统
 ├── pages/                     # 页面组件
@@ -69,7 +77,7 @@ web/src/
 │   ├── commands.tsx           # 命令页
 │   ├── decisions.tsx          # 决策页
 │   ├── messages.tsx           # 消息页
-│   └── plugins.tsx            # 插件页
+│   └── extensions.tsx         # 扩展页
 ├── store/                     # Zustand 状态管理
 │   ├── index.ts               # Store 入口
 │   ├── slices/                # 状态切片
@@ -195,10 +203,7 @@ web/src/
 /decisions               // 决策页
 /messages                // 消息页
 /messages/channels       // 消息通道页
-/plugins                 // 插件/扩展页
-/plugins/connections     // 设备连接页
-/plugins/alert-channels  // 告警通道页
-/plugins/extensions      // 扩展管理页
+/extensions              // 扩展管理页（统一Extension系统）
 /visual-dashboard        // 可视化仪表板
 /visual-dashboard/:id    // 指定仪表板
 ```

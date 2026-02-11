@@ -95,7 +95,6 @@ impl TransformEventService {
             std::sync::atomic::Ordering::SeqCst,
             std::sync::atomic::Ordering::SeqCst
         ).is_ok() {
-            let running = self.running.clone();
             let event_bus = self.event_bus.clone();
             let transform_engine = self.transform_engine.clone();
             let automation_store = self.automation_store.clone();

@@ -104,7 +104,7 @@
     "outerRadius": "外半径",
     "initialState": "初始状态",
     "commandOnly": "仅支持命令模式",
-    "commandOnlyHint": "此组件只能绑定到设备的命令接口，点击时发送开关命令。",
+    "commandOnlyHint": "点击发送开关指令。支持设备指令和扩展指令。",
     "showStatus": "显示状态，在收到命令响应前使用",
     "imageSource": "图片源",
     "urlPlaceholder": "https://example.com/image.jpg 或 data:image/png;base64,...",
@@ -169,7 +169,35 @@
     "dataMappingConfig": "数据映射配置",
     "devicePlaceholder": "如 主灯",
     "glowEffect": "发光效果",
-    "animationEffect": "动画效果"
+    "animationEffect": "动画效果",
+    "commandModeOnly": "命令接口",
+    "commandModeDesc": "点击发送开关指令。支持设备指令和扩展指令。",
+    "commandInterface": "命令按钮",
+    "commandInterfaceDesc": "点击打开命令对话框并发送指令。支持设备指令和扩展指令。",
+    "commandButtonHint": "配置命令数据源。点击按钮会打开对话框发送命令。"
+  },
+  "commandButton": {
+    "defaultLabel": "命令按钮",
+    "deviceCommand": "设备指令",
+    "extensionCommand": "扩展指令",
+    "notConfigured": "未配置",
+    "sendCommand": "发送命令",
+    "deviceCommandDesc": "向设备发送命令",
+    "extensionCommandDesc": "调用扩展命令",
+    "parameters": "参数",
+    "noParameters": "此命令没有参数",
+    "allParametersFixed": "所有参数已预设固定值，点击发送即可执行",
+    "loadingParameters": "加载命令参数中...",
+    "selectValue": "选择值",
+    "yes": "是",
+    "no": "否",
+    "cancel": "取消",
+    "send": "发送",
+    "sending": "发送中...",
+    "commandSent": "命令已发送",
+    "commandSentDesc": "命令发送成功",
+    "commandFailed": "命令发送失败",
+    "noCommandConfig": "未配置命令"
   },
   "componentPreview": {
     "title": "预览",
@@ -247,6 +275,8 @@
     "markdown": "Markdown"
   },
   "ruleBuilder": {
+    "value": "值",
+    "command": "命令",
     "operators": {
       "greaterThan": "大于",
       "lessThan": "小于",

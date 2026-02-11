@@ -54,12 +54,16 @@ export function SessionSidebar({
     createSession,
     switchSession,
     deleteSession,
+    loadMoreSessions,
+    sessionsHasMore,
+    sessionsLoading,
   } = useStore()
 
   const [searchQuery, setSearchQuery] = useState("")
   const [isCreating, setIsCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
 
   // Focus search when opened (mobile only)
   useEffect(() => {
@@ -69,6 +73,24 @@ export function SessionSidebar({
       }, 200)
     }
   }, [open, isDesktop])
+
+  // Infinite scroll using Intersection Observer
+  useEffect(() => {
+    const trigger = loadMoreTriggerRef.current
+    if (!trigger || !sessionsHasMore || sessionsLoading || searchQuery) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && sessionsHasMore && !sessionsLoading && !searchQuery) {
+          loadMoreSessions()
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    )
+
+    observer.observe(trigger)
+    return () => observer.disconnect()
+  }, [sessionsHasMore, sessionsLoading, searchQuery, loadMoreSessions])
 
   // Filter sessions
   const filteredSessions = sessions.filter((session) => {
@@ -185,7 +207,7 @@ export function SessionSidebar({
             <Plus className="h-4 w-4" />
           </Button>
           <div className="w-6 h-px bg-border/50 my-1" />
-          <ScrollArea className="flex-1 w-full">
+          <ScrollArea className="flex-1 w-full min-h-0">
             <div className="flex flex-col items-center gap-1 py-1">
               {sortedSessions.map((session) => {
                 const isActive = session.sessionId === currentSessionId
@@ -208,6 +230,14 @@ export function SessionSidebar({
                   </Button>
                 )
               })}
+              {/* Load more trigger */}
+              <div ref={loadMoreTriggerRef} className="h-1" />
+              {/* Loading indicator */}
+              {sessionsLoading && (
+                <div className="flex items-center justify-center py-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                </div>
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -242,7 +272,7 @@ export function SessionSidebar({
           </div>
 
           {/* Session List */}
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0">
             <div className="px-2 pb-2 space-y-0.5">
               {sortedSessions.length === 0 ? (
                 <div className="py-8 text-center">
@@ -252,63 +282,73 @@ export function SessionSidebar({
                   </p>
                 </div>
               ) : (
-                sortedSessions.map((session) => {
-                  const isActive = session.sessionId === currentSessionId
-                  const isDeleting = deletingId === session.sessionId
+                <>
+                  {sortedSessions.map((session) => {
+                    const isActive = session.sessionId === currentSessionId
+                    const isDeleting = deletingId === session.sessionId
 
-                  return (
-                    <div
-                      key={session.sessionId}
-                      onClick={() => handleSwitchSession(session.sessionId)}
-                      className={cn(
-                        "group relative p-2 rounded-lg cursor-pointer transition-all",
-                        isActive
-                          ? "bg-muted"
-                          : "hover:bg-muted/50"
-                      )}
-                    >
-                      <div className="flex items-start gap-2">
-                        <MessageSquare className={cn(
-                          "h-3.5 w-3.5 mt-0.5 shrink-0",
-                          isActive ? "text-foreground" : "text-muted-foreground"
-                        )} />
-                        <div className="flex-1 min-w-0">
-                          <h4 className={cn(
-                            "text-sm truncate",
-                            isActive ? "text-foreground font-medium" : "text-foreground/80"
-                          )}>
-                            {getSessionTitle(session)}
-                          </h4>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
-                            <Clock className="h-2.5 w-2.5" />
-                            <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
-                            {session.messageCount ? (
-                              <>
-                                <span>·</span>
-                                <span>{t('session.messages', { count: session.messageCount })}</span>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Delete button */}
-                      <button
-                        onClick={(e) => handleDeleteSession(e, session.sessionId)}
-                        disabled={isDeleting}
+                    return (
+                      <div
+                        key={session.sessionId}
+                        onClick={() => handleSwitchSession(session.sessionId)}
                         className={cn(
-                          "absolute right-1 top-1/2 -translate-y-1/2",
-                          "p-1 rounded transition-all",
-                          "text-muted-foreground hover:text-destructive hover:bg-destructive/10",
-                          "opacity-0 group-hover:opacity-100",
-                          isDeleting && "opacity-50"
+                          "group relative p-2 rounded-lg cursor-pointer transition-all",
+                          isActive
+                            ? "bg-muted"
+                            : "hover:bg-muted/50"
                         )}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                        <div className="flex items-start gap-2">
+                          <MessageSquare className={cn(
+                            "h-3.5 w-3.5 mt-0.5 shrink-0",
+                            isActive ? "text-foreground" : "text-muted-foreground"
+                          )} />
+                          <div className="flex-1 min-w-0">
+                            <h4 className={cn(
+                              "text-sm truncate",
+                              isActive ? "text-foreground font-medium" : "text-foreground/80"
+                            )}>
+                              {getSessionTitle(session)}
+                            </h4>
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-muted-foreground">
+                              <Clock className="h-2.5 w-2.5" />
+                              <span>{session.updatedAt ? formatTimestamp(session.updatedAt / 1000, false) : formatTimestamp(session.createdAt / 1000, false)}</span>
+                              {session.messageCount ? (
+                                <>
+                                  <span>·</span>
+                                  <span>{t('session.messages', { count: session.messageCount })}</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Delete button */}
+                        <button
+                          onClick={(e) => handleDeleteSession(e, session.sessionId)}
+                          disabled={isDeleting}
+                          className={cn(
+                            "absolute right-1 top-1/2 -translate-y-1/2",
+                            "p-1 rounded transition-all",
+                            "text-muted-foreground hover:text-destructive hover:bg-destructive/10",
+                            "opacity-0 group-hover:opacity-100",
+                            isDeleting && "opacity-50"
+                          )}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                  {/* Load more trigger */}
+                  <div ref={loadMoreTriggerRef} className="h-1" />
+                  {/* Loading indicator */}
+                  {sessionsLoading && (
+                    <div className="flex items-center justify-center py-3">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                     </div>
-                  )
-                })
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>

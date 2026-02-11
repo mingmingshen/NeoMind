@@ -31,6 +31,7 @@ impl TestContext {
             message_manager: None,
             llm_runtime: None,
             llm_backend_store: None,
+            extension_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -91,6 +92,8 @@ impl TestContext {
             user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
+            enable_tool_chaining: false,
+            max_chain_depth: 3,
         };
 
         self.store.save_agent(&agent).await?;

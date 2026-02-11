@@ -317,9 +317,14 @@ export function ChatContainer({ className = "" }: ChatContainerProps) {
     }
     addMessage(userMessage)
 
-    // Clear input
+    // Clear input and reset textarea height
     setInput("")
     setShowSuggestions(false)
+
+    // Reset textarea height to initial state
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto"
+    }
 
     // Start streaming - generate message ID once for the entire stream
     setIsStreaming(true)

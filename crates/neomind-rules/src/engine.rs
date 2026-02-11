@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::dependencies::DependencyManager;
 use super::dsl::{ParsedRule, RuleAction, RuleCondition, RuleError};
 use super::device_integration::DeviceActionExecutor;
+use super::extension_integration::{ExtensionActionExecutor, try_parse_extension_action};
 
 /// Optional message manager for creating messages from rule actions.
 /// Wrapped in Option to allow RuleEngine to function without it.
@@ -26,6 +27,9 @@ type OptionMessageManager = Arc<tokio::sync::RwLock<Option<Arc<neomind_messages:
 
 /// Optional device action executor for executing device commands.
 type OptionDeviceActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<DeviceActionExecutor>>>>;
+
+/// Optional extension action executor for executing extension commands.
+type OptionExtensionActionExecutor = Arc<tokio::sync::RwLock<Option<Arc<ExtensionActionExecutor>>>>;
 
 /// Scheduler task handle for managing the rule evaluation loop.
 type SchedulerHandle = Arc<StdRwLock<Option<JoinHandle<()>>>>;
@@ -248,7 +252,7 @@ impl CompiledRule {
         device_id_mapping: &std::collections::HashMap<String, String>,
     ) -> bool {
         match condition {
-            RuleCondition::Simple { device_id, metric, operator, threshold } => {
+            RuleCondition::Device { device_id, metric, operator, threshold } => {
                 let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
                 if let Some(value) = value_provider.get_value(&resolved_id, metric) {
                     operator.evaluate(value, *threshold)
@@ -256,9 +260,25 @@ impl CompiledRule {
                     false
                 }
             }
-            RuleCondition::Range { device_id, metric, min, max } => {
+            RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                // Extension conditions use extension_id directly, no mapping needed
+                if let Some(value) = value_provider.get_value(extension_id, metric) {
+                    operator.evaluate(value, *threshold)
+                } else {
+                    false
+                }
+            }
+            RuleCondition::DeviceRange { device_id, metric, min, max } => {
                 let resolved_id = self.resolve_device_id(device_id, device_id_mapping);
                 if let Some(value) = value_provider.get_value(&resolved_id, metric) {
+                    value >= *min && value <= *max
+                } else {
+                    false
+                }
+            }
+            RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                // Extension range conditions use extension_id directly, no mapping needed
+                if let Some(value) = value_provider.get_value(extension_id, metric) {
                     value >= *min && value <= *max
                 } else {
                     false
@@ -319,6 +339,8 @@ pub struct RuleEngine {
     message_manager: OptionMessageManager,
     /// Optional device action executor for executing device commands.
     device_action_executor: OptionDeviceActionExecutor,
+    /// Optional extension action executor for executing extension commands.
+    extension_action_executor: OptionExtensionActionExecutor,
     /// Scheduler task handle.
     scheduler_handle: SchedulerHandle,
     /// Scheduler interval (how often to evaluate rules).
@@ -338,6 +360,7 @@ impl RuleEngine {
             dependency_manager: Arc::new(StdRwLock::new(DependencyManager::new())),
             message_manager: Arc::new(tokio::sync::RwLock::new(None)),
             device_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
+            extension_action_executor: Arc::new(tokio::sync::RwLock::new(None)),
             scheduler_handle: Arc::new(StdRwLock::new(None)),
             scheduler_interval: Arc::new(StdRwLock::new(Duration::from_secs(5))),
             scheduler_running: Arc::new(StdRwLock::new(false)),
@@ -365,6 +388,18 @@ impl RuleEngine {
     /// Get a reference to the device action executor (if set).
     pub async fn get_device_action_executor(&self) -> Option<Arc<DeviceActionExecutor>> {
         let guard = self.device_action_executor.read().await;
+        guard.as_ref().map(Arc::clone)
+    }
+
+    /// Set the extension action executor for executing extension commands.
+    /// This must be called after construction as it requires async access.
+    pub async fn set_extension_action_executor(&self, executor: Arc<ExtensionActionExecutor>) {
+        *self.extension_action_executor.write().await = Some(executor);
+    }
+
+    /// Get a reference to the extension action executor (if set).
+    pub async fn get_extension_action_executor(&self) -> Option<Arc<ExtensionActionExecutor>> {
+        let guard = self.extension_action_executor.read().await;
         guard.as_ref().map(Arc::clone)
     }
 
@@ -779,29 +814,69 @@ impl RuleEngine {
                 command,
                 params,
             } => {
-                // Try to use DeviceActionExecutor if available
-                let executor = self.device_action_executor.read().await;
-                if let Some(ex) = executor.as_ref() {
-                    match ex.execute_action(action, None, None).await {
-                        Ok(result) if result.success => {
-                            Ok(result.actions_executed.join(", "))
+                // First, check if this is an extension action
+                // Extension IDs can be:
+                // - "extension:xxx:metric" format
+                // - "extension:xxx:command:field" format
+                // - device_id that starts with "extension:"
+                if let Some(ext_action) = try_parse_extension_action(action) {
+                    // This is an extension command - try extension executor
+                    let ext_executor = self.extension_action_executor.read().await;
+                    if let Some(ex) = ext_executor.as_ref() {
+                        match ex.execute(&ext_action).await {
+                            Ok(result) if result.success => {
+                                tracing::info!(
+                                    "EXTENSION EXECUTE: {}.{} -> success ({:?})",
+                                    result.extension_id,
+                                    result.command,
+                                    result.result
+                                );
+                                Ok(format!("EXTENSION: {}.{}", result.extension_id, result.command))
+                            }
+                            Ok(result) => {
+                                let err = result.error.unwrap_or_else(|| "Execution failed".to_string());
+                                tracing::error!("EXTENSION EXECUTE failed: {}", err);
+                                Err(err)
+                            }
+                            Err(e) => {
+                                tracing::error!("EXTENSION EXECUTE error: {}", e);
+                                Err(e)
+                            }
                         }
-                        Ok(result) => {
-                            Err(result.error.unwrap_or_else(|| "Execution failed".to_string()))
-                        }
-                        Err(e) => {
-                            Err(e.to_string())
-                        }
+                    } else {
+                        // Extension action but no executor - log and treat as success
+                        tracing::warn!(
+                            "EXTENSION EXECUTE: {}.{} (no ExtensionActionExecutor - logged only)",
+                            ext_action.extension_id,
+                            ext_action.command
+                        );
+                        Ok(format!("EXTENSION: {}.{} (logged only)", ext_action.extension_id, ext_action.command))
                     }
                 } else {
-                    // Fallback: just log (no actual execution)
-                    tracing::info!(
-                        "EXECUTE: {}.{} with params {:?} (no DeviceActionExecutor - logging only)",
-                        device_id,
-                        command,
-                        params
-                    );
-                    Ok(format!("EXECUTE: {}.{} (logged only)", device_id, command))
+                    // This is a device action - use device executor
+                    let executor = self.device_action_executor.read().await;
+                    if let Some(ex) = executor.as_ref() {
+                        match ex.execute_action(action, None, None).await {
+                            Ok(result) if result.success => {
+                                Ok(result.actions_executed.join(", "))
+                            }
+                            Ok(result) => {
+                                Err(result.error.unwrap_or_else(|| "Execution failed".to_string()))
+                            }
+                            Err(e) => {
+                                Err(e.to_string())
+                            }
+                        }
+                    } else {
+                        // Fallback: just log (no actual execution)
+                        tracing::info!(
+                            "EXECUTE: {}.{} with params {:?} (no DeviceActionExecutor - logging only)",
+                            device_id,
+                            command,
+                            params
+                        );
+                        Ok(format!("EXECUTE: {}.{} (logged only)", device_id, command))
+                    }
                 }
             }
             RuleAction::Log {

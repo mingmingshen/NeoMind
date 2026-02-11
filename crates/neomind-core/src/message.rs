@@ -15,6 +15,8 @@ pub enum MessageRole {
     User,
     /// Assistant message.
     Assistant,
+    /// Tool result message (for tool-calling workflows).
+    Tool,
 }
 
 impl fmt::Display for MessageRole {
@@ -23,6 +25,7 @@ impl fmt::Display for MessageRole {
             Self::System => write!(f, "system"),
             Self::User => write!(f, "user"),
             Self::Assistant => write!(f, "assistant"),
+            Self::Tool => write!(f, "tool"),
         }
     }
 }

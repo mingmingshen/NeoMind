@@ -9,8 +9,7 @@
 use crate::agent::ToolCall;
 use crate::error::Result;
 use neomind_core::tools::ToolRelationships;
-use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Execution plan for tool calls.
 ///
@@ -105,7 +104,7 @@ async fn build_dependency_graph(
     let mut nodes = Vec::new();
 
     // First pass: create nodes with relationships
-    for (idx, call) in tool_calls.iter().enumerate() {
+    for call in tool_calls.iter() {
         let relationships = get_tool_relationships(&call.name, tools).await?;
 
         nodes.push(DependencyNode {

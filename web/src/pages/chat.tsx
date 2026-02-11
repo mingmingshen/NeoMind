@@ -487,6 +487,12 @@ export function ChatPage() {
 
     setInput("")
     setAttachedImages([])
+
+    // Reset textarea height to initial state
+    if (inputRef.current) {
+      inputRef.current.style.height = "44px"
+    }
+
     setIsStreaming(true)
     streamingMessageIdRef.current = crypto.randomUUID()
     // Reset last assistant message ID (new response incoming)
@@ -613,7 +619,7 @@ export function ChatPage() {
             {t('chat:notConfigured.description')}
           </p>
           <Button
-            onClick={() => navigate('/plugins')}
+            onClick={() => navigate('/extensions')}
             className="gap-2"
             size="default"
           >
@@ -681,7 +687,7 @@ export function ChatPage() {
 
       {/* Desktop Sidebar - always show when there are sessions or in chat mode */}
       {isDesktop && (sessions.length > 0 || !isWelcomeMode) && (
-        <div className={sidebarCollapsed ? "w-12" : "w-64"}>
+        <div className={cn("h-full", sidebarCollapsed ? "w-12" : "w-64")}>
           <SessionSidebar
             open={true}
             onClose={() => {}}

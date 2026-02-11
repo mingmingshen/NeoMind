@@ -1,13 +1,33 @@
 # Automation 模块
 
 **包名**: `neomind-automation`
-**版本**: 0.1.0
+**版本**: 0.5.8
 **完成度**: 75%
 **用途**: 数据转换、自动化和意图分析
 
 ## 概述
 
 Automation模块提供数据转换引擎、自然语言转自动化、设备类型生成等功能。
+
+## 重要变更 (v0.5.x)
+
+### Transform Metrics 存储
+
+Transform产生的虚拟指标现在统一存储在 `data/timeseries.redb`：
+
+```
+DataSourceId: "transform:{transform_id}:{metric_name}"
+- device_part: "transform:{transform_id}"
+- metric_part: "{metric_name}"
+```
+
+示例：
+```
+transform:avg_temperature:temperature_avg
+transform:humidity_calc:indoor_humidity
+```
+
+这使得Transform指标可以被Agent、Rule等模块统一访问。
 
 ## 模块结构
 
@@ -361,28 +381,32 @@ pub enum DraftDeviceStatus {
 ## API端点
 
 ```
-# Transforms
-GET    /api/transforms                       # 列出转换
-POST   /api/transforms                       # 创建转换
-GET    /api/transforms/:id                   # 获取转换
-PUT    /api/transforms/:id                   # 更新转换
-DELETE /api/transforms/:id                   # 删除转换
-POST   /api/transforms/:id/enable            # 启用/禁用
-POST   /api/transforms/:id/test              # 测试转换
-GET    /api/transforms/:id/history           # 转换历史
+# Transforms (统一自动化API的一部分)
+GET    /api/automations/transforms              # 列出转换
+POST   /api/automations/transforms              # 创建转换
+GET    /api/automations/transforms/:id          # 获取转换
+PUT    /api/automations/transforms/:id          # 更新转换
+DELETE /api/automations/transforms/:id          # 删除转换
+POST   /api/automations/transforms/:id/test     # 测试转换
+POST   /api/automations/transforms/process      # 处理数据
+GET    /api/automations/transforms/metrics      # 获取虚拟指标
 
 # Discovery
-POST   /api/transforms/discover               # 数据发现
-POST   /api/transforms/generate-type         # 生成设备类型
+POST   /api/automations/analyze-intent          # 意图分析
+POST   /api/device-types/generate-from-samples  # 生成设备类型
 
 # Thresholds
-POST   /api/thresholds/recommend             # 推荐阈值
-POST   /api/thresholds/validate              # 验证阈值
+POST   /api/thresholds/recommend                # 推荐阈值
+POST   /api/thresholds/validate                 # 验证阈值
 
-# Draft Devices
-GET    /api/devices/pending                  # 待确认设备
-POST   /api/devices/pending/:id/confirm      # 确认设备
-DELETE /api/devices/pending/:id/dismiss      # 忽略设备
+# Draft Devices (自动入板)
+GET    /api/devices/drafts                      # 列出草稿设备
+GET    /api/devices/drafts/:id                  # 获取草稿
+PUT    /api/devices/drafts/:id                  # 更新草稿
+POST   /api/devices/drafts/:id/approve          # 批准设备
+POST   /api/devices/drafts/:id/reject           # 拒绝设备
+POST   /api/devices/drafts/:id/analyze          # LLM分析
+POST   /api/devices/drafts/cleanup              # 清理草稿
 ```
 
 ## 使用示例

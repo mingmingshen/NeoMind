@@ -1,95 +1,70 @@
-import { useMemo, useState } from "react"
+import { useState, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { ExtensionCard } from "./ExtensionCard"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  AlertCircle,
   Package,
   Search,
-  Cpu,
-  Shield,
-  Wrench,
-  Bell,
-  FileCode,
   X,
+  Filter,
+  Grid3x3,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { Extension } from "@/types"
 
 interface ExtensionGridProps {
   extensions: Extension[]
   loading?: boolean
-  onStart?: (id: string) => Promise<boolean>
-  onStop?: (id: string) => Promise<boolean>
   onConfigure?: (id: string) => void
-  onDelete?: (id: string) => Promise<boolean>
+  onUnregister?: (id: string) => Promise<boolean>
 }
 
-// Extension type icons
-const EXTENSION_ICONS: Record<string, React.ElementType> = {
-  llm_provider: Cpu,
-  device_protocol: Shield,
-  alert_channel_type: Bell,
-  tool: Wrench,
-  generic: FileCode,
-}
-
-// Extension type colors
-const EXTENSION_COLORS: Record<string, string> = {
-  llm_provider: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  device_protocol: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  alert_channel_type: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-  tool: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  generic: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
+// Status filter options with counts
+interface StatusOption {
+  value: string
+  label: string
+  icon: React.ReactNode
+  className: string
 }
 
 export function ExtensionGrid({
   extensions,
   loading = false,
-  onStart,
-  onStop,
   onConfigure,
-  onDelete,
+  onUnregister,
 }: ExtensionGridProps) {
   const { t } = useTranslation(["extensions", "common"])
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState("")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-
-  // Handle actions
-  const handleStart = async (id: string) => {
-    return await onStart?.(id) ?? false
-  }
-
-  const handleStop = async (id: string) => {
-    return await onStop?.(id) ?? false
-  }
-
-  const handleDelete = async (id: string) => {
-    return await onDelete?.(id) ?? false
-  }
 
   // Clear filters
   const clearFilters = () => {
     setSearchQuery("")
-    setTypeFilter("all")
     setStatusFilter("all")
   }
 
-  // Filter and group extensions
-  const { filteredExtensions, extensionsByType, typeStats, hasActiveFilters } = useMemo(() => {
-    let filtered = extensions
+  // Filter extensions and compute stats
+  const { filteredExtensions, stats, statusOptions, hasActiveFilters } = useMemo(() => {
+    const exts = extensions || []
+
+    // In V2 system, extensions are always active once registered
+    // Only Error state indicates a problem
+    const activeCount = exts.filter((ext) => ext.state !== "Error").length
+    const errorCount = exts.filter((ext) => ext.state === "Error").length
+
+    // Build status options
+    const options: StatusOption[] = [
+      { value: "all", label: t("allStatuses"), icon: <Grid3x3 className="h-3 w-3" />, className: "text-muted-foreground" },
+      { value: "active", label: t("categories.active", { defaultValue: "Active" }), icon: <div className="w-2 h-2 rounded-full bg-green-500" />, className: "text-green-600 dark:text-green-400" },
+      { value: "error", label: t("categories.error"), icon: <div className="w-2 h-2 rounded-full bg-red-500" />, className: "text-red-600 dark:text-red-400" },
+    ]
+
+    let filtered = exts
 
     // Search filter
     if (searchQuery.trim()) {
@@ -99,23 +74,19 @@ export function ExtensionGrid({
           ext.name.toLowerCase().includes(query) ||
           ext.id.toLowerCase().includes(query) ||
           ext.description?.toLowerCase().includes(query) ||
-          ext.extension_type.toLowerCase().includes(query)
+          ext.commands?.some((cmd) =>
+            cmd.id.toLowerCase().includes(query) ||
+            cmd.display_name.toLowerCase().includes(query)
+          )
       )
-    }
-
-    // Type filter
-    if (typeFilter !== "all") {
-      filtered = filtered.filter((ext) => ext.extension_type === typeFilter)
     }
 
     // Status filter
     if (statusFilter !== "all") {
       filtered = filtered.filter((ext) => {
         switch (statusFilter) {
-          case "running":
-            return ext.state === "Running"
-          case "stopped":
-            return ext.state === "Stopped" || ext.state === "Initialized"
+          case "active":
+            return ext.state !== "Error"
           case "error":
             return ext.state === "Error"
           default:
@@ -124,68 +95,43 @@ export function ExtensionGrid({
       })
     }
 
-    // Group by type
-    const grouped: Record<string, Extension[]> = {}
-    const stats: Record<string, { total: number; running: number }> = {}
-
-    // Get all unique types from filtered extensions
-    const uniqueTypes = Array.from(new Set(filtered.map((ext) => ext.extension_type)))
-
-    for (const type of uniqueTypes) {
-      const typeExtensions = filtered.filter((ext) => ext.extension_type === type)
-      grouped[type] = typeExtensions
-      stats[type] = {
-        total: typeExtensions.length,
-        running: typeExtensions.filter((ext) => ext.state === "Running").length,
-      }
+    const computedStats = {
+      total: exts.length,
+      active: activeCount,
+      error: errorCount,
     }
 
-    // Sort types by name (llm_provider first, then alphabetically)
-    const typeOrder = ["llm_provider", "device_protocol", "alert_channel_type", "tool", "generic"]
-    const sortedTypes = uniqueTypes.sort((a, b) => {
-      const aIndex = typeOrder.indexOf(a)
-      const bIndex = typeOrder.indexOf(b)
-      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
-      if (aIndex !== -1) return -1
-      if (bIndex !== -1) return 1
-      return a.localeCompare(b)
-    })
-
-    return {
-      filteredExtensions: filtered,
-      extensionsByType: Object.fromEntries(sortedTypes.map((type) => [type, grouped[type] || []])),
-      typeStats: stats,
-      hasActiveFilters: searchQuery || typeFilter !== "all" || statusFilter !== "all",
-    }
-  }, [extensions, searchQuery, typeFilter, statusFilter])
-
-  // Get available types from all extensions
-  const availableTypes = useMemo(() => {
-    const types = new Set(extensions.map((ext) => ext.extension_type))
-    return Array.from(types)
-  }, [extensions])
+    return { filteredExtensions: filtered, stats: computedStats, statusOptions: options, hasActiveFilters: searchQuery || statusFilter !== "all" }
+  }, [extensions, searchQuery, statusFilter, t])
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="border rounded-lg p-4 space-y-4">
-            <Skeleton className="h-5 w-3/4" />
-            <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="h-20 w-full" />
+          <div key={i} className="border rounded-xl p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            </div>
+            <Skeleton className="h-16 w-full" />
           </div>
         ))}
       </div>
     )
   }
 
-  if (extensions.length === 0) {
+  if (!extensions || extensions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 px-4 border-2 border-dashed rounded-lg">
-        <Package className="h-12 w-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-semibold mb-2">{t("noExtensions")}</h3>
-        <p className="text-sm text-muted-foreground text-center max-w-md">
-          {t("noExtensionsDesc")}
+      <div className="flex flex-col items-center justify-center py-16 px-4">
+        <div className="p-4 rounded-full bg-muted/50 mb-4">
+          <Package className="h-12 w-12 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">{t("noExtensions", { defaultValue: "No Extensions" })}</h3>
+        <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
+          {t("noExtensionsDesc", { defaultValue: "Install extensions to add new capabilities to NeoMind." })}
         </p>
       </div>
     )
@@ -194,10 +140,16 @@ export function ExtensionGrid({
   // Empty state for filtered results
   if (filteredExtensions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 px-4">
-        <Search className="h-12 w-12 text-muted-foreground mb-4" />
-        <h3 className="text-lg font-semibold mb-2">{t("noMatchingExtensions")}</h3>
-        <Button onClick={clearFilters} variant="outline" className="mt-4">
+      <div className="flex flex-col items-center justify-center py-16 px-4">
+        <div className="p-4 rounded-full bg-muted/50 mb-4">
+          <Search className="h-12 w-12 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold mb-2">{t("noMatchingExtensions", { defaultValue: "No Matching Extensions" })}</h3>
+        <p className="text-sm text-muted-foreground mb-6">
+          {t("tryDifferentFilters", { defaultValue: "Try adjusting your search or filters" })}
+        </p>
+        <Button onClick={clearFilters} variant="outline">
+          <X className="h-4 w-4 mr-2" />
           {t("clearFilters", { ns: "common" })}
         </Button>
       </div>
@@ -206,109 +158,110 @@ export function ExtensionGrid({
 
   return (
     <div className="space-y-6">
-      {/* Search and Filter Bar */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex flex-1 gap-2 w-full sm:w-auto">
-          {/* Search */}
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      {/* Enhanced Search and Filter Bar */}
+      <div className="flex flex-col gap-4">
+        {/* Search Bar */}
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder={t("searchPlaceholder")}
+              placeholder={t("searchPlaceholder", { defaultValue: "Search extensions by name, ID, or description..." })}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-10 h-10 bg-background"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
-
-          {/* Type Filter */}
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder={t("filterByType")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("allTypes")}</SelectItem>
-              {availableTypes.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {t(`types.${type}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Status Filter */}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder={t("filterByStatus")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("allStatuses")}</SelectItem>
-              <SelectItem value="running">{t("categories.running")}</SelectItem>
-              <SelectItem value="stopped">{t("categories.stopped")}</SelectItem>
-              <SelectItem value="error">{t("categories.error")}</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
 
-        {/* Clear Filters Button */}
-        {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1">
-            <X className="h-4 w-4" />
-            {t("clearFilters", { ns: "common" })}
-          </Button>
-        )}
-
-        {/* Result Count */}
-        {!hasActiveFilters && (
-          <div className="text-sm text-muted-foreground">
-            {t("totalCount", { count: extensions.length })}
+        {/* Status Filter Pills */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground mr-2">
+            <Filter className="h-4 w-4" />
+            <span>{t("filterByStatus", { defaultValue: "Filter by:" })}</span>
           </div>
-        )}
-      </div>
+          {statusOptions.map((option) => {
+            const isSelected = statusFilter === option.value
+            const count = option.value === "all" ? stats.total :
+                         option.value === "active" ? stats.active : stats.error
 
-      {/* Extension Groups by Type */}
-      <div className="space-y-6">
-        {Object.entries(extensionsByType).map(([type, typeExtensions]) => {
-          if (typeExtensions.length === 0) return null
-
-          const stats = typeStats[type]
-          const Icon = EXTENSION_ICONS[type] || FileCode
-          const colorClass = EXTENSION_COLORS[type] || EXTENSION_COLORS.generic
-
-          return (
-            <div key={type} className="space-y-4">
-              {/* Type Header */}
-              <div className="flex items-center gap-3">
-                <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${colorClass}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold">{t(`types.${type}`)}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {t(`typeDescriptions.${type}`)}
-                  </p>
-                </div>
-                <Badge className={colorClass} variant="secondary">
-                  {stats.running}/{stats.total} {t("running")}
+            return (
+              <button
+                key={option.value}
+                onClick={() => setStatusFilter(option.value)}
+                className={cn(
+                  "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                  isSelected
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-muted/50 hover:bg-muted text-muted-foreground"
+                )}
+              >
+                {option.icon}
+                <span>{option.label}</span>
+                <Badge variant={isSelected ? "secondary" : "outline"} className={cn(
+                  "h-5 px-1.5 text-xs",
+                  isSelected && "bg-primary-foreground/20 text-primary-foreground"
+                )}>
+                  {count}
                 </Badge>
-              </div>
-
-              {/* Extension Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {typeExtensions.map((extension) => (
-                  <ExtensionCard
-                    key={extension.id}
-                    extension={extension}
-                    onStart={() => handleStart(extension.id)}
-                    onStop={() => handleStop(extension.id)}
-                    onConfigure={() => onConfigure?.(extension.id)}
-                    onDelete={() => handleDelete(extension.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )
-        })}
+              </button>
+            )
+          })}
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 text-xs">
+              <X className="h-3 w-3 mr-1" />
+              {t("clearFilters", { ns: "common" })}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Results Summary */}
+      {!hasActiveFilters && (
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-4">
+            <span className="text-muted-foreground">
+              {t("showingResults", { count: filteredExtensions.length, defaultValue: "Showing {{count}} extensions" }).replace("{{count}}", String(filteredExtensions.length))}
+            </span>
+            {stats.active > 0 && (
+              <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                {stats.active} {t("active", { defaultValue: "active" })}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Extension Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+        {filteredExtensions.map((extension) => (
+          <ExtensionCard
+            key={extension.id}
+            extension={extension}
+            onConfigure={() => onConfigure?.(extension.id)}
+            onUnregister={() => onUnregister?.(extension.id)}
+          />
+        ))}
+      </div>
+
+      {/* Filter Active Summary */}
+      {hasActiveFilters && (
+        <div className="flex items-center justify-between text-sm pt-2 border-t">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">
+              {t("filteredResults", { count: filteredExtensions.length, total: stats.total }).replace("{{count}}", String(filteredExtensions.length)).replace("{{total}}", String(stats.total))}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

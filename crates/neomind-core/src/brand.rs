@@ -23,7 +23,7 @@ pub const APP_SHORT_NAME: &str = "NM";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Application homepage URL
-pub const APP_HOMEPAGE: &str = "https://github.com/your-org/NeoMind";
+pub const APP_HOMEPAGE: &str = "https://github.com/camthink-ai/NeoMind";
 
 /// Application documentation URL
 pub const APP_DOCS_URL: &str = "https://docs.example.com";

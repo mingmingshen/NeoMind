@@ -161,6 +161,16 @@ pub struct ValidationContext {
     pub alert_channels: HashMap<String, AlertChannelInfo>,
     /// Available workflows indexed by ID.
     pub workflows: Vec<WorkflowInfo>,
+    /// Available extensions indexed by ID (for extension-based rules).
+    pub extensions: HashMap<String, ExtensionInfo>,
+}
+
+/// Information about available extensions for validation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtensionInfo {
+    pub id: String,
+    pub name: String,
+    pub metrics: Vec<String>,
 }
 
 impl ValidationContext {
@@ -197,6 +207,21 @@ impl ValidationContext {
     /// Get alert channel info.
     pub fn get_alert_channel(&self, channel_id: &str) -> Option<&AlertChannelInfo> {
         self.alert_channels.get(channel_id)
+    }
+
+    /// Add an extension to the context.
+    pub fn add_extension(&mut self, extension: ExtensionInfo) {
+        self.extensions.insert(extension.id.clone(), extension);
+    }
+
+    /// Check if an extension exists.
+    pub fn has_extension(&self, extension_id: &str) -> bool {
+        self.extensions.contains_key(extension_id)
+    }
+
+    /// Get extension info.
+    pub fn get_extension(&self, extension_id: &str) -> Option<&ExtensionInfo> {
+        self.extensions.get(extension_id)
     }
 }
 
@@ -256,7 +281,7 @@ impl RuleValidator {
         let mut issues = Vec::new();
 
         match condition {
-            RuleCondition::Simple {
+            RuleCondition::Device {
                 device_id,
                 metric,
                 operator,
@@ -264,7 +289,25 @@ impl RuleValidator {
             } => {
                 issues.extend(Self::validate_simple_condition(device_id, metric, operator, threshold, context)?);
             }
-            RuleCondition::Range {
+            RuleCondition::Extension {
+                extension_id,
+                metric,
+                operator,
+                threshold,
+            } => {
+                // Extension validation - check if extension exists
+                if context.get_extension(extension_id).is_none() {
+                    issues.push(ValidationIssue {
+                        code: "EXTENSION_NOT_FOUND".to_string(),
+                        message: format!("Extension '{}' is not registered", extension_id),
+                        field: Some("condition.extension_id".to_string()),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
+                // Note: More detailed extension validation could be added here
+                let _ = (extension_id, metric, operator, threshold);
+            }
+            RuleCondition::DeviceRange {
                 device_id,
                 metric,
                 min: _,
@@ -296,6 +339,24 @@ impl RuleValidator {
                         device_id: device_id.clone(),
                         metric: metric.clone(),
                     })?;
+            }
+            RuleCondition::ExtensionRange {
+                extension_id,
+                metric,
+                min: _,
+                max: _,
+            } => {
+                // Extension range validation - check if extension exists
+                if context.get_extension(extension_id).is_none() {
+                    issues.push(ValidationIssue {
+                        code: "EXTENSION_NOT_FOUND".to_string(),
+                        message: format!("Extension '{}' is not registered", extension_id),
+                        field: Some("condition.extension_id".to_string()),
+                        severity: ValidationSeverity::Error,
+                    });
+                }
+                // Note: More detailed extension validation could be added here
+                let _ = (extension_id, metric);
             }
             RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
                 // Recursively validate each sub-condition
@@ -606,7 +667,7 @@ mod tests {
     #[test]
     fn test_validate_device_not_found() {
         let context = ValidationContext::new();
-        let condition = RuleCondition::Simple {
+        let condition = RuleCondition::Device {
             device_id: "nonexistent".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -632,7 +693,7 @@ mod tests {
             online: true,
         });
 
-        let condition = RuleCondition::Simple {
+        let condition = RuleCondition::Device {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -664,7 +725,7 @@ mod tests {
             online: true,
         });
 
-        let condition = RuleCondition::Simple {
+        let condition = RuleCondition::Device {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,
@@ -695,7 +756,7 @@ mod tests {
             online: true,
         });
 
-        let condition = RuleCondition::Simple {
+        let condition = RuleCondition::Device {
             device_id: "sensor1".to_string(),
             metric: "temperature".to_string(),
             operator: ComparisonOperator::GreaterThan,

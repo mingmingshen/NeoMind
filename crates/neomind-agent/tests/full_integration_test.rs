@@ -64,6 +64,7 @@ impl FullTestContext {
             message_manager: Some(message_manager.clone()),
             llm_runtime: Some(llm_runtime.clone() as Arc<dyn neomind_core::llm::backend::LlmRuntime + Send + Sync>),
             llm_backend_store: None,
+            extension_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -191,6 +192,8 @@ impl FullTestContext {
             user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
+            enable_tool_chaining: false,
+            max_chain_depth: 3,
         };
 
         self.store.save_agent(&agent).await?;
@@ -270,6 +273,8 @@ impl FullTestContext {
             user_messages: vec![],
             conversation_summary: None,
             context_window_size: 10,
+            enable_tool_chaining: false,
+            max_chain_depth: 3,
         };
 
         self.store.save_agent(&agent).await?;

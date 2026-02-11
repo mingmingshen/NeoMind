@@ -34,24 +34,31 @@ impl ToolNameMapper {
     /// 注册内置的工具名称映射
     fn register_builtin_mappings(&mut self) {
         // ===== 设备工具 (Device Tools) =====
-        self.register_simplified("device.discover", "list_devices");
-        self.register_simplified("device.query", "device.query");
-        self.register_simplified("device.control", "device.control");
-        self.register_simplified("device.analyze", "device.analyze");
+        // core_tools 使用下划线命名，与系统其他工具保持一致
+        self.register_simplified("device_discover", "device_discover");
+        self.register_simplified("device_query", "device_query");
+        self.register_simplified("device_control", "device_control");
+        self.register_simplified("device_analyze", "device_analyze");
 
-        // 设备工具别名
-        self.register_alias("设备列表", "list_devices");
-        self.register_alias("列出设备", "list_devices");
-        self.register_alias("查看设备", "list_devices");
-        self.register_alias("所有设备", "list_devices");
-        self.register_alias("devices", "list_devices");
+        // 设备工具别名 - 指向 core_tools 名称
+        self.register_alias("设备列表", "device_discover");
+        self.register_alias("列出设备", "device_discover");
+        self.register_alias("查看设备", "device_discover");
+        self.register_alias("所有设备", "device_discover");
+        self.register_alias("发现设备", "device_discover");
+        self.register_alias("devices", "device_discover");
+
+        // 旧工具名称的兼容映射（向后兼容）
+        self.register_alias("list_devices", "device_discover");
+        self.register_alias("control_device", "device_control");
+        self.register_alias("device_analyze", "device_analyze");
 
         // ===== 规则工具 (Rule Tools) =====
         self.register_simplified("rule.list", "list_rules");
         self.register_simplified("rules.list", "list_rules");
         self.register_simplified("rule.create", "create_rule");
         self.register_simplified("rule.delete", "delete_rule");
-        self.register_simplified("rule.from_context", "rule.from_context");
+        self.register_simplified("rule_from_context", "rule_from_context");
         self.register_simplified("rule.enable", "enable_rule");
         self.register_simplified("rule.disable", "disable_rule");
         self.register_simplified("rule.test", "test_rule");
@@ -124,13 +131,13 @@ impl ToolNameMapper {
     ///
     /// 将简化名称或别名解析为真实的工具名称
     pub fn resolve(&self, input: &str) -> String {
-        // 1. 简化名称映射 (如 device.discover -> list_devices)
+        // 1. 简化名称映射 (如 device.discover -> device.discover 自身)
         //    优先检查这个，因为它是 LLM 最常用的格式
         if let Some(real) = self.simplified_to_real.get(input) {
             return real.clone();
         }
 
-        // 2. 别名映射 (如 "设备列表" -> list_devices)
+        // 2. 别名映射 (如 "设备列表" -> device.discover, "list_devices" -> device.discover)
         if let Some(real) = self.alias_to_real.get(input) {
             return real.clone();
         }
@@ -251,6 +258,33 @@ pub fn resolve_tool_name(input: &str) -> String {
 pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
     let real_tool_name = resolve_tool_name(tool_name);
 
+    // Special handling for device_discover: build nested filter structure
+    if real_tool_name == "device_discover" {
+        if let Some(obj) = arguments.as_object() {
+            let mut mapped = serde_json::Map::new();
+            let mut filter = serde_json::Map::new();
+
+            for (key, value) in obj {
+                match key.as_str() {
+                    "type" => { filter.insert("type".to_string(), value.clone()); }
+                    "status" => { filter.insert("status".to_string(), value.clone()); }
+                    "name_contains" => { filter.insert("name_contains".to_string(), value.clone()); }
+                    "tags" => { filter.insert("tags".to_string(), value.clone()); }
+                    "group_by" => { mapped.insert("group_by".to_string(), value.clone()); }
+                    "include_data_preview" => { mapped.insert("include_data_preview".to_string(), value.clone()); }
+                    "include_capabilities" => { mapped.insert("include_capabilities".to_string(), value.clone()); }
+                    _ => { mapped.insert(key.clone(), value.clone()); }
+                }
+            }
+
+            if !filter.is_empty() {
+                mapped.insert("filter".to_string(), serde_json::Value::Object(filter));
+            }
+
+            return Value::Object(mapped);
+        }
+    }
+
     if let Some(obj) = arguments.as_object() {
         let mut mapped = serde_json::Map::new();
 
@@ -271,17 +305,17 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 }
                 ("query_data", other) => other,
 
-                // control_device mappings
+                // control_device mappings (legacy, for backward compatibility)
                 ("control_device", "device") => "device_id",
                 ("control_device", "action") => "command",
                 ("control_device", "value") => "parameters",
                 ("control_device", other) => other,
 
-                // device.control mappings (same as control_device)
-                ("device.control", "device") => "device_id",
-                ("device.control", "action") => "command",
-                ("device.control", "value") => "parameters",
-                ("device.control", other) => other,
+                // device_control mappings (core_tools - uses same parameters)
+                ("device_control", "device") => "device_id",
+                ("device_control", "action") => "command",
+                ("device_control", "value") => "parameters",
+                ("device_control", other) => other,
 
                 // create_rule mappings
                 ("create_rule", "name") => "name",
@@ -293,9 +327,24 @@ pub fn map_tool_parameters(tool_name: &str, arguments: &Value) -> Value {
                 ("disable_rule", "rule") | ("enable_rule", "rule") => "rule_id",
                 ("disable_rule", other) | ("enable_rule", other) => other,
 
-                // list_devices
-                ("list_devices", "type") => "device_type",
-                ("list_devices", "status") => "status",
+                // list_devices (legacy, maps to device_discover)
+                ("list_devices", "type") => {
+                    // Build nested filter for backward compatibility
+                    if let Some(filter_obj) = mapped.get_mut("filter").and_then(|v| v.as_object_mut()) {
+                        filter_obj.insert("type".to_string(), value.clone());
+                    } else {
+                        mapped.insert("filter".to_string(), serde_json::json!({"type": value}));
+                    }
+                    continue;
+                }
+                ("list_devices", "status") => {
+                    if let Some(filter_obj) = mapped.get_mut("filter").and_then(|v| v.as_object_mut()) {
+                        filter_obj.insert("status".to_string(), value.clone());
+                    } else {
+                        mapped.insert("filter".to_string(), serde_json::json!({"status": value}));
+                    }
+                    continue;
+                }
                 ("list_devices", other) => other,
 
                 // Default: keep original key
@@ -318,9 +367,23 @@ mod tests {
     #[test]
     fn test_device_discover_mapping() {
         let mapper = ToolNameMapper::new();
-        assert_eq!(mapper.resolve("device.discover"), "list_devices");
-        assert_eq!(mapper.resolve("设备列表"), "list_devices");
-        assert_eq!(mapper.resolve("devices"), "list_devices");
+        // Simplified names map to themselves (core_tools convention)
+        assert_eq!(mapper.resolve("device_discover"), "device_discover");
+        assert_eq!(mapper.resolve("device_query"), "device_query");
+        assert_eq!(mapper.resolve("device_control"), "device_control");
+        assert_eq!(mapper.resolve("device_analyze"), "device_analyze");
+
+        // Chinese aliases
+        assert_eq!(mapper.resolve("设备列表"), "device_discover");
+        assert_eq!(mapper.resolve("列出设备"), "device_discover");
+        assert_eq!(mapper.resolve("查看设备"), "device_discover");
+        assert_eq!(mapper.resolve("所有设备"), "device_discover");
+        assert_eq!(mapper.resolve("发现设备"), "device_discover");
+        assert_eq!(mapper.resolve("devices"), "device_discover");
+
+        // Legacy name compatibility
+        assert_eq!(mapper.resolve("list_devices"), "device_discover");
+        assert_eq!(mapper.resolve("control_device"), "device_control");
     }
 
     #[test]
@@ -343,23 +406,28 @@ mod tests {
     fn test_fuzzy_match() {
         let mapper = ToolNameMapper::new();
         // 部分匹配应该也能工作
-        assert_eq!(mapper.resolve("设备"), "list_devices");
+        assert_eq!(mapper.resolve("设备"), "device_discover");
     }
 
     #[test]
     fn test_real_name_passthrough() {
         let mapper = ToolNameMapper::new();
         // 真实名称应该原样返回
-        assert_eq!(mapper.resolve("list_devices"), "list_devices");
-        assert_eq!(mapper.resolve("control_device"), "control_device");
+        assert_eq!(mapper.resolve("device_discover"), "device_discover");
+        assert_eq!(mapper.resolve("device_query"), "device_query");
+        assert_eq!(mapper.resolve("device_control"), "device_control");
+        // 旧名称应该映射到新名称
+        assert_eq!(mapper.resolve("list_devices"), "device_discover");
+        assert_eq!(mapper.resolve("control_device"), "device_control");
     }
 
     #[test]
     fn test_get_aliases() {
         let mapper = ToolNameMapper::new();
-        let aliases = mapper.get_aliases("list_devices");
+        let aliases = mapper.get_aliases("device_discover");
         assert!(aliases.contains(&"设备列表".to_string()));
-        assert!(aliases.contains(&"device.discover".to_string()));
+        assert!(aliases.contains(&"list_devices".to_string()));
+        assert!(aliases.contains(&"device_discover".to_string()));
     }
 
     #[test]
@@ -370,10 +438,16 @@ mod tests {
             "value": "100"
         });
 
+        // Legacy control_device mapping
         let mapped = map_tool_parameters("control_device", &args);
         assert_eq!(mapped.get("device_id").unwrap(), "lamp_1");
         assert_eq!(mapped.get("command").unwrap(), "on");
         assert_eq!(mapped.get("parameters").unwrap(), "100");
+
+        // New device.control mapping (same parameters in core_tools)
+        let mapped = map_tool_parameters("device_control", &args);
+        assert_eq!(mapped.get("device_id").unwrap(), "lamp_1");
+        assert_eq!(mapped.get("command").unwrap(), "on");
     }
 
     #[test]
@@ -393,23 +467,74 @@ mod tests {
     #[test]
     fn test_global_mapper() {
         // 测试全局映射器
-        let resolved = resolve_tool_name("device.discover");
-        assert_eq!(resolved, "list_devices");
+        let resolved = resolve_tool_name("device_discover");
+        assert_eq!(resolved, "device_discover");
     }
 
     #[test]
     fn test_custom_registration() {
         let mut mapper = ToolNameMapper::new();
-        mapper.register_custom("custom_alias".to_string(), "list_devices".to_string());
-        assert_eq!(mapper.resolve("custom_alias"), "list_devices");
+        mapper.register_custom("custom_alias".to_string(), "device_discover".to_string());
+        assert_eq!(mapper.resolve("custom_alias"), "device_discover");
     }
 
     #[test]
     fn test_all_known_names() {
         let mapper = ToolNameMapper::new();
         let names = mapper.all_known_names();
-        assert!(names.contains(&"list_devices".to_string()));
+        assert!(names.contains(&"device_discover".to_string()));
         assert!(names.contains(&"list_rules".to_string()));
         assert!(names.contains(&"trigger_workflow".to_string()));
+    }
+
+    #[test]
+    fn test_parameter_mapping_device_discover_filter() {
+        // Test that flat parameters are converted to nested filter structure
+        let args = serde_json::json!({
+            "type": "sensor",
+            "status": "online"
+        });
+
+        let mapped = map_tool_parameters("device_discover", &args);
+
+        // Should have nested filter object
+        assert!(mapped.get("filter").is_some());
+        let filter = mapped.get("filter").unwrap().as_object().unwrap();
+        assert_eq!(filter.get("type").unwrap(), "sensor");
+        assert_eq!(filter.get("status").unwrap(), "online");
+    }
+
+    #[test]
+    fn test_parameter_mapping_device_discover_with_group_by() {
+        // Test that group_by is not nested inside filter
+        let args = serde_json::json!({
+            "type": "sensor",
+            "group_by": "type"
+        });
+
+        let mapped = map_tool_parameters("device_discover", &args);
+
+        // group_by should be at top level
+        assert_eq!(mapped.get("group_by").unwrap(), "type");
+        // type should be inside filter
+        let filter = mapped.get("filter").unwrap().as_object().unwrap();
+        assert_eq!(filter.get("type").unwrap(), "sensor");
+    }
+
+    #[test]
+    fn test_parameter_mapping_list_devices_legacy() {
+        // Test that legacy list_devices also builds nested filter
+        let args = serde_json::json!({
+            "type": "sensor",
+            "status": "online"
+        });
+
+        let mapped = map_tool_parameters("list_devices", &args);
+
+        // Should have nested filter object (for backward compatibility)
+        assert!(mapped.get("filter").is_some());
+        let filter = mapped.get("filter").unwrap().as_object().unwrap();
+        assert_eq!(filter.get("type").unwrap(), "sensor");
+        assert_eq!(filter.get("status").unwrap(), "online");
     }
 }

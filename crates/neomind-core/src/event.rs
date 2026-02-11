@@ -297,6 +297,103 @@ pub enum NeoMindEvent {
         timestamp: i64,
     },
 
+    // ========== Extension Events (Phase 2.1) ==========
+    /// Extension metric/output event
+    ///
+    /// Unified event for all extensions to publish their data outputs.
+    /// This replaces the old plugin-specific events with a single, consistent format.
+    ExtensionOutput {
+        /// Extension ID (e.g., "yolov8", "weather-api")
+        extension_id: String,
+        /// Metric/output name (e.g., "temperature", "detection_count")
+        output_name: String,
+        /// Metric/output value
+        value: MetricValue,
+        /// Timestamp
+        timestamp: i64,
+        /// Optional labels/dimensions for filtering
+        #[serde(skip_serializing_if = "Option::is_none")]
+        labels: Option<std::collections::HashMap<String, String>>,
+        /// Data quality indicator (0.0 to 1.0)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        quality: Option<f32>,
+    },
+
+    /// Extension lifecycle event
+    ///
+    /// Tracks extension state changes (loaded, started, stopped, error)
+    ExtensionLifecycle {
+        /// Extension ID
+        extension_id: String,
+        /// Lifecycle state
+        state: String,
+        /// Optional message
+        #[serde(skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        /// Timestamp
+        timestamp: i64,
+    },
+
+    /// Extension command started
+    ///
+    /// Published when an extension command begins execution
+    ExtensionCommandStarted {
+        /// Extension ID
+        extension_id: String,
+        /// Extension name
+        extension_name: String,
+        /// Command ID
+        command_id: String,
+        /// Unique execution ID
+        execution_id: String,
+        /// Command arguments
+        args: serde_json::Value,
+        /// Timestamp
+        timestamp: i64,
+    },
+
+    /// Extension command completed
+    ///
+    /// Published when an extension command completes successfully
+    ExtensionCommandCompleted {
+        /// Extension ID
+        extension_id: String,
+        /// Extension name
+        extension_name: String,
+        /// Command ID
+        command_id: String,
+        /// Unique execution ID
+        execution_id: String,
+        /// Command arguments
+        args: serde_json::Value,
+        /// Output values (metrics)
+        outputs: Vec<serde_json::Value>,
+        /// Execution duration
+        duration_ms: u64,
+        /// Timestamp
+        timestamp: i64,
+    },
+
+    /// Extension command failed
+    ///
+    /// Published when an extension command fails
+    ExtensionCommandFailed {
+        /// Extension ID
+        extension_id: String,
+        /// Extension name
+        extension_name: String,
+        /// Command ID
+        command_id: String,
+        /// Unique execution ID
+        execution_id: String,
+        /// Error message
+        error: String,
+        /// Execution duration before failure
+        duration_ms: u64,
+        /// Timestamp
+        timestamp: i64,
+    },
+
     /// Custom event for extensions and plugins
     ///
     /// Allows third-party components to publish their own events
@@ -342,6 +439,11 @@ impl NeoMindEvent {
             Self::ToolExecutionStart { .. } => "ToolExecutionStart",
             Self::ToolExecutionSuccess { .. } => "ToolExecutionSuccess",
             Self::ToolExecutionFailure { .. } => "ToolExecutionFailure",
+            Self::ExtensionOutput { .. } => "ExtensionOutput",
+            Self::ExtensionLifecycle { .. } => "ExtensionLifecycle",
+            Self::ExtensionCommandStarted { .. } => "ExtensionCommandStarted",
+            Self::ExtensionCommandCompleted { .. } => "ExtensionCommandCompleted",
+            Self::ExtensionCommandFailed { .. } => "ExtensionCommandFailed",
             Self::Custom { .. } => "Custom",
         }
     }
@@ -377,7 +479,12 @@ impl NeoMindEvent {
             | Self::LlmResponse { timestamp, .. }
             | Self::ToolExecutionStart { timestamp, .. }
             | Self::ToolExecutionSuccess { timestamp, .. }
-            | Self::ToolExecutionFailure { timestamp, .. } => *timestamp,
+            | Self::ToolExecutionFailure { timestamp, .. }
+            | Self::ExtensionOutput { timestamp, .. }
+            | Self::ExtensionLifecycle { timestamp, .. }
+            | Self::ExtensionCommandStarted { timestamp, .. }
+            | Self::ExtensionCommandCompleted { timestamp, .. }
+            | Self::ExtensionCommandFailed { timestamp, .. } => *timestamp,
             Self::Custom { .. } => {
                 // Custom events don't have a timestamp, use current time
                 chrono::Utc::now().timestamp()
@@ -472,6 +579,18 @@ impl NeoMindEvent {
             Self::ToolExecutionStart { .. }
                 | Self::ToolExecutionSuccess { .. }
                 | Self::ToolExecutionFailure { .. }
+        )
+    }
+
+    /// Phase 2.1: Check if this is an extension event.
+    pub fn is_extension_event(&self) -> bool {
+        matches!(
+            self,
+            Self::ExtensionOutput { .. }
+                | Self::ExtensionLifecycle { .. }
+                | Self::ExtensionCommandStarted { .. }
+                | Self::ExtensionCommandCompleted { .. }
+                | Self::ExtensionCommandFailed { .. }
         )
     }
 }
@@ -827,5 +946,86 @@ mod tests {
         assert_eq!(meta.source, "test_source");
         assert_eq!(meta.correlation_id, Some("corr-1".to_string()));
         assert_eq!(meta.causation_id, Some("caus-1".to_string()));
+    }
+
+    #[test]
+    fn test_extension_output_event() {
+        let mut labels = std::collections::HashMap::new();
+        labels.insert("location".to_string(), "room1".to_string());
+
+        let event = NeoMindEvent::ExtensionOutput {
+            extension_id: "yolov8".to_string(),
+            output_name: "person_count".to_string(),
+            value: MetricValue::integer(3),
+            timestamp: 1234567890,
+            labels: Some(labels),
+            quality: Some(0.95),
+        };
+
+        assert_eq!(event.type_name(), "ExtensionOutput");
+        assert!(event.is_extension_event());
+        assert_eq!(event.timestamp(), 1234567890);
+    }
+
+    #[test]
+    fn test_extension_lifecycle_event() {
+        let event = NeoMindEvent::ExtensionLifecycle {
+            extension_id: "weather-api".to_string(),
+            state: "started".to_string(),
+            message: Some("Extension started successfully".to_string()),
+            timestamp: 1234567890,
+        };
+
+        assert_eq!(event.type_name(), "ExtensionLifecycle");
+        assert!(event.is_extension_event());
+        assert_eq!(event.timestamp(), 1234567890);
+    }
+
+    #[test]
+    fn test_extension_output_serialization() {
+        let event = NeoMindEvent::ExtensionOutput {
+            extension_id: "test-ext".to_string(),
+            output_name: "temperature".to_string(),
+            value: MetricValue::float(23.5),
+            timestamp: 1234567890,
+            labels: None,
+            quality: Some(1.0),
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: NeoMindEvent = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.is_extension_event());
+        assert_eq!(parsed.type_name(), "ExtensionOutput");
+    }
+
+    #[test]
+    fn test_extension_event_with_labels() {
+        let mut labels = std::collections::HashMap::new();
+        labels.insert("room".to_string(), "living_room".to_string());
+        labels.insert("floor".to_string(), "1".to_string());
+
+        let event = NeoMindEvent::ExtensionOutput {
+            extension_id: "motion-detector".to_string(),
+            output_name: "motion_detected".to_string(),
+            value: MetricValue::boolean(true),
+            timestamp: 1234567890,
+            labels: Some(labels.clone()),
+            quality: None,
+        };
+
+        // Verify labels are preserved through serialization
+        let json = serde_json::to_string(&event).unwrap();
+        let parsed: NeoMindEvent = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            NeoMindEvent::ExtensionOutput { labels: l, .. } => {
+                assert!(l.is_some());
+                let l = l.unwrap();
+                assert_eq!(l.get("room"), Some(&"living_room".to_string()));
+                assert_eq!(l.get("floor"), Some(&"1".to_string()));
+            }
+            _ => panic!("Expected ExtensionOutput event"),
+        }
     }
 }

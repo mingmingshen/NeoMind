@@ -153,6 +153,7 @@ export interface SessionSlice extends SessionState {
   clearAllSessions: () => Promise<void>
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>
   loadSessions: () => Promise<void>
+  loadMoreSessions: () => Promise<void>
   fetchSessionHistory: (sessionId: string) => Promise<void>
 }
 
@@ -166,6 +167,9 @@ export const createSessionSlice: StateCreator<
   sessionId: null,
   messages: [],
   sessions: [],
+  sessionsPage: 1,
+  sessionsHasMore: true,
+  sessionsLoading: false,
 
   // Actions
   setSessionId: (id: string) => {
@@ -224,7 +228,7 @@ export const createSessionSlice: StateCreator<
 
       // Reload sessions from server to ensure consistency
       // This avoids issues where local state diverges from server state
-      const listResult = await api.listSessions()
+      const listResult = await api.listSessions(1, 100)
       const sessions = normalizeSessionsResponse(listResult)
 
       set({
@@ -287,7 +291,7 @@ export const createSessionSlice: StateCreator<
 
         // Try to reload sessions from server to get accurate list
         try {
-          const result = await api.listSessions()
+          const result = await api.listSessions(1, 100)
           const sessions = normalizeSessionsResponse(result)
 
           // Only update sessions if server returned a valid list
@@ -323,7 +327,7 @@ export const createSessionSlice: StateCreator<
 
       // After successful deletion, reload sessions from server
       // This ensures consistency between server and client state
-      const result = await api.listSessions()
+      const result = await api.listSessions(1, 100)
       const sessions = normalizeSessionsResponse(result)
 
       set((state) => {
@@ -447,17 +451,53 @@ export const createSessionSlice: StateCreator<
 
   loadSessions: async () => {
     try {
-      const result = await api.listSessions()
+      // Reset pagination and load first page
+      const pageSize = 50
+      const result = await api.listSessions(1, pageSize)
       const sessions = normalizeSessionsResponse(result)
 
-      // Only update sessions list, preserve sessionId and messages
-      // This prevents accidental session switching or message loss
-      set((state) => ({
-        ...state,
+      // Check if there might be more sessions
+      const hasMore = sessions.length >= pageSize
+
+      set({
         sessions,
-      }))
+        sessionsPage: 1,
+        sessionsHasMore: hasMore,
+        sessionsLoading: false,
+      })
     } catch (error) {
       logError(error, { operation: 'Load sessions' })
+      set({ sessionsLoading: false })
+    }
+  },
+
+  loadMoreSessions: async () => {
+    const state = get()
+    // Don't load if already loading or no more sessions
+    if (state.sessionsLoading || !state.sessionsHasMore) {
+      return
+    }
+
+    try {
+      set({ sessionsLoading: true })
+
+      const nextPage = state.sessionsPage + 1
+      const pageSize = 50
+      const result = await api.listSessions(nextPage, pageSize)
+      const newSessions = normalizeSessionsResponse(result)
+
+      // Check if there might be more sessions
+      const hasMore = newSessions.length >= pageSize
+
+      set((state) => ({
+        sessions: [...state.sessions, ...newSessions],
+        sessionsPage: nextPage,
+        sessionsHasMore: hasMore,
+        sessionsLoading: false,
+      }))
+    } catch (error) {
+      logError(error, { operation: 'Load more sessions' })
+      set({ sessionsLoading: false })
     }
   },
 

@@ -446,7 +446,7 @@ impl SessionManager {
         // Use tool registry if set, otherwise create default mock tools
         let tool_registry = self.tool_registry.read().await.clone();
 
-        let mut agent = if let Some(tools) = tool_registry {
+        let agent = if let Some(tools) = tool_registry {
             Agent::with_tools(
                 self.default_config.clone(),
                 session_id.clone(),
@@ -507,7 +507,7 @@ impl SessionManager {
         // Use tool registry if set, otherwise create default agent
         let tool_registry = self.tool_registry.read().await.clone();
 
-        let mut agent = if let Some(tools) = tool_registry {
+        let agent = if let Some(tools) = tool_registry {
             Agent::with_tools(
                 self.default_config.clone(),
                 session_id.to_string(),

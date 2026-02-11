@@ -71,6 +71,107 @@ use tokio::sync::RwLock;
 
 use super::mdl::{DeviceError, MetricDataType, MetricValue};
 
+/// Custom deserializer for `default_value` in `ParameterDefinition`
+///
+/// This function handles plain JSON values (true, false, 42, "hello", null)
+/// and automatically infers the correct `MetricValue` variant.
+///
+/// This is needed because GitHub device type definitions use plain values like:
+/// - "default_value": true  (not {"Boolean": true})
+/// - "default_value": 42    (not {"Integer": 42})
+fn deserialize_metric_value_option<'de, D>(
+    deserializer: D,
+) -> Result<Option<MetricValue>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct MetricValueVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for MetricValueVisitor {
+        type Value = Option<MetricValue>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("null, a boolean, number, string, or array")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            deserializer.deserialize_any(MetricValueVisitor)
+        }
+
+        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::Boolean(v)))
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::Integer(v)))
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::Integer(v as i64)))
+        }
+
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::Float(v)))
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::String(v.to_string())))
+        }
+
+        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::String(v)))
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut vec = Vec::new();
+            while let Some(elem) = seq.next_element()? {
+                vec.push(elem);
+            }
+            Ok(Some(MetricValue::Array(vec)))
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Some(MetricValue::Null))
+        }
+    }
+
+    deserializer.deserialize_option(MetricValueVisitor)
+}
+
 /// MDL Device Type Definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceTypeDefinition {
@@ -224,7 +325,9 @@ pub struct ParameterDefinition {
     pub data_type: MetricDataType,
 
     /// Default value
-    #[serde(default)]
+    /// Supports plain JSON values (true, false, 42, "hello") that are auto-converted
+    /// to the appropriate MetricValue variant
+    #[serde(default, deserialize_with = "deserialize_metric_value_option")]
     pub default_value: Option<MetricValue>,
 
     /// Minimum value (for numeric types)

@@ -611,7 +611,24 @@ impl TimeSeriesStore {
         end: i64,
     ) -> Result<TimeSeriesResult, Error> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(TIMESERIES_TABLE)?;
+
+        // Handle case where table doesn't exist yet (no data has been written)
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                tracing::debug!(
+                    "query_range: table 'timeseries' does not exist yet, returning empty result for device_id={}, metric={}",
+                    device_id, metric
+                );
+                return Ok(TimeSeriesResult {
+                    device_id: device_id.to_string(),
+                    metric: metric.to_string(),
+                    points: Vec::new(),
+                    total_count: None,
+                });
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
 
         let start_key = (device_id, metric, start);
         let end_key = (device_id, metric, end);
@@ -668,7 +685,19 @@ impl TimeSeriesStore {
 
         // Cache miss - query from database
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(TIMESERIES_TABLE)?;
+
+        // Handle case where table doesn't exist yet (no data has been written)
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                tracing::debug!(
+                    "query_latest: table 'timeseries' does not exist yet, returning None for device_id={}, metric={}",
+                    device_id, metric
+                );
+                return Ok(None);
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
 
         let start_key = (device_id, metric, i64::MIN);
         let end_key = (device_id, metric, i64::MAX);
@@ -772,7 +801,19 @@ impl TimeSeriesStore {
     /// Get all metrics for a device.
     pub async fn list_metrics(&self, device_id: &str) -> Result<Vec<String>, Error> {
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(TIMESERIES_TABLE)?;
+
+        // Handle case where table doesn't exist yet (no data has been written)
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                tracing::debug!(
+                    "list_metrics: table 'timeseries' does not exist yet, returning empty list for device_id={}",
+                    device_id
+                );
+                return Ok(Vec::new());
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
 
         let start_key = (device_id, "", i64::MIN);
         let end_key = (device_id, "\u{FF}", i64::MAX);
@@ -889,7 +930,21 @@ impl TimeSeriesStore {
         let mut metrics_cleaned: HashSet<String> = HashSet::new();
 
         let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(TIMESERIES_TABLE)?;
+
+        // Handle case where table doesn't exist yet (no data has been written)
+        let table = match read_txn.open_table(TIMESERIES_TABLE) {
+            Ok(t) => t,
+            Err(redb::TableError::TableDoesNotExist(_)) => {
+                tracing::debug!(
+                    "apply_retention: table 'timeseries' does not exist yet, returning empty result"
+                );
+                return Ok(RetentionPolicyCleanupResult {
+                    points_removed: 0,
+                    metrics_cleaned: Vec::new(),
+                });
+            }
+            Err(e) => return Err(Error::Storage(format!("Failed to open table: {}", e))),
+        };
 
         // Collect all (device_id, metric) pairs
         let mut metric_pairs: HashSet<(String, String)> = HashSet::new();

@@ -218,25 +218,23 @@ export function DataSourceSidebar({
     return map
   }, [devices, deviceTypes, t])
 
-  // Build device commands map
+  // Build device commands map - only show commands that are actually defined in the device template
   const deviceCommandsMap = useMemo(() => {
     const map = new Map<string, CommandDefinition[]>()
     for (const device of devices) {
       const deviceType = deviceTypes.find(dt => dt.device_type === device.device_type)
 
+      // Only include commands that are actually defined in the device type
+      // No fallback commands - this prevents users from selecting commands that don't exist
       if (deviceType?.commands && deviceType.commands.length > 0) {
         map.set(device.id, deviceType.commands)
       } else {
-        // Fallback commands
-        const fallbackCommands: CommandDefinition[] = [
-          { name: 'toggle', display_name: t('dataSource.commandToggle'), parameters: [] },
-          { name: 'setValue', display_name: t('dataSource.commandSetValue'), parameters: [{ name: 'value', data_type: 'float' }] },
-        ]
-        map.set(device.id, fallbackCommands)
+        // No commands defined - return empty array
+        map.set(device.id, [])
       }
     }
     return map
-  }, [devices, deviceTypes, t])
+  }, [devices, deviceTypes])
 
   // Toggle device expansion
   const toggleDevice = (deviceId: string) => {

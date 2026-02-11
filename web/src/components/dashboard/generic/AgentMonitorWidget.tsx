@@ -961,6 +961,7 @@ export function AgentMonitorWidget({
   // State
   const [agent, setAgent] = useState<AiAgent | null>(null)
   const [loading, setLoading] = useState(true)
+  const [agentNotFound, setAgentNotFound] = useState(false) // Track if agent doesn't exist
   const [executions, setExecutions] = useState<AgentExecution[]>([])
   const [isExecuting, setIsExecuting] = useState(false)
   const [newExecutionId, setNewExecutionId] = useState<string | null>(null)
@@ -996,6 +997,7 @@ export function AgentMonitorWidget({
   const loadAgent = useCallback(async () => {
     if (!agentId) {
       setAgent(null)
+      setAgentNotFound(false)
       setLoading(false)
       return
     }
@@ -1003,26 +1005,34 @@ export function AgentMonitorWidget({
     try {
       const data = await api.getAgent(agentId)
       setAgent(data)
+      setAgentNotFound(false)
     } catch (error) {
-      console.error('Failed to load agent:', error)
+      // Only log once when we first detect the agent is not found
+      if (!agentNotFound) {
+        console.warn('Agent not found:', agentId)
+      }
       setAgent(null)
+      setAgentNotFound(true)
     } finally {
       setLoading(false)
     }
-  }, [agentId])
+  }, [agentId, agentNotFound])
 
   // Fetch executions for the agent
   const loadExecutions = useCallback(async () => {
-    if (!agentId) return
+    if (!agentId || agentNotFound) return // Skip if agent doesn't exist
     try {
       const data = await api.getAgentExecutions(agentId, 50)
       setExecutions(data.executions || [])
       hasLoadedRef.current = true
     } catch (error) {
-      console.error('Failed to load executions:', error)
+      // Silently handle execution load errors when agent not found
+      if (!agentNotFound) {
+        console.warn('Failed to load executions for agent:', agentId)
+      }
       setExecutions([])
     }
-  }, [agentId])
+  }, [agentId, agentNotFound])
 
   // Fetch user messages
   const loadUserMessages = useCallback(async () => {
@@ -1087,6 +1097,7 @@ export function AgentMonitorWidget({
     setCurrentThinking(null)
     setThinkingSteps([])
     setAgent(null)  // Reset agent state when agentId changes
+    setAgentNotFound(false)  // Reset not found state
     setExecutions([])  // Reset executions when agentId changes
     loadAgent()
     loadExecutions()

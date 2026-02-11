@@ -334,6 +334,20 @@ pub enum TransformOperation {
         output_metrics: Vec<String>,
     },
 
+    /// Phase 4.2: Extension-based transform
+    /// Calls an extension to perform the transformation
+    Extension {
+        /// Extension ID that provides the transform
+        extension_id: String,
+        /// Command/Function name to call on the extension
+        command: String,
+        /// Input parameters (can reference data from device)
+        #[serde(default)]
+        parameters: HashMap<String, serde_json::Value>,
+        /// Output metric name(s)
+        output_metrics: Vec<String>,
+    },
+
     /// Multi-output transform - generates multiple metrics
     MultiOutput {
         /// Operations to run in parallel
@@ -504,6 +518,7 @@ impl TransformOperation {
             TransformOperation::TimeSeriesAggregation { output_metric, .. } => vec![output_metric.clone()],
             TransformOperation::Reference { output_metric, .. } => vec![output_metric.clone()],
             TransformOperation::Custom { output_metrics, .. } => output_metrics.clone(),
+            TransformOperation::Extension { output_metrics, .. } => output_metrics.clone(),
             TransformOperation::MultiOutput { operations } => {
                 operations.iter().flat_map(|op| op.output_metrics()).collect()
             }
@@ -540,6 +555,7 @@ impl TransformOperation {
             TransformOperation::TimeSeriesAggregation { .. } => 3,
             TransformOperation::Reference { .. } => 1,
             TransformOperation::Custom { .. } => 4,
+            TransformOperation::Extension { .. } => 3,
             TransformOperation::MultiOutput { operations } => {
                 operations.iter().map(|op| op.complexity_score()).sum::<u8>().min(5)
             }

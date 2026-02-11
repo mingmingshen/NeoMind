@@ -14,6 +14,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+async-trait = { workspace = true }
 
 # Utils
 uuid = { workspace = true, features = ["v4", "serde"] }

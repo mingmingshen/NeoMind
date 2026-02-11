@@ -126,10 +126,10 @@ fn show_main_window(app: &AppHandle) {
 /// Properly shutdown the server before exiting
 fn clean_shutdown(app_handle: &AppHandle) {
     // Try to get server state and shutdown
-    if let Ok(state) = app_handle.try_state::<ServerState>() {
+    if let Some(state) = app_handle.try_state::<ServerState>() {
         // Shutdown the tokio runtime
         if let Some(rt) = state.runtime.lock().unwrap().take() {
-            rt.shutdown_timeout(Duration::from_secs(2));
+            rt.shutdown_timeout(tokio::time::Duration::from_secs(2));
         }
         // The server thread will be joined when ServerState is dropped
     }
@@ -139,7 +139,7 @@ fn clean_shutdown(app_handle: &AppHandle) {
 fn create_tray_menu(app: &tauri::App) -> Result<tauri::tray::TrayIcon, Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
-    use tauri::image::Img;
+    use tauri::image::Image;
 
     let show = MenuItem::with_id(app, "show", "Show", true, None::<String>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide", true, None::<String>)?;
@@ -150,8 +150,15 @@ fn create_tray_menu(app: &tauri::App) -> Result<tauri::tray::TrayIcon, Box<dyn s
     let app_handle = app.handle().clone();
     let app_handle_for_tray = app_handle.clone();
 
-    // Load tray icon - use 32x32 PNG for better compatibility
-    let tray_icon = Img::from_bytes(include_bytes!("../icons/32x32.png"))?;
+    // Load tray icon - Tauri 2.x requires raw RGBA bytes
+    // For now, use a simple colored square (32x32)
+    let icon_size = 32 * 32;
+    let mut rgba = Vec::with_capacity(icon_size * 4);
+    for _ in 0..icon_size {
+        // Blue color (R=0, G=100, B=255, A=255)
+        rgba.extend_from_slice(&[0, 100, 255, 255]);
+    }
+    let tray_icon = Image::new_owned(rgba, 32, 32);
 
     // Try to load tray icon at compile time
     let tray = TrayIconBuilder::new()
@@ -243,10 +250,6 @@ pub fn run() {
                     // Perform clean shutdown before exiting
                     clean_shutdown(app_handle);
                     // Allow the exit to proceed
-                }
-                // Cleanup before app is destroyed
-                tauri::RunEvent::Destroy => {
-                    clean_shutdown(app_handle);
                 }
                 _ => {}
             }

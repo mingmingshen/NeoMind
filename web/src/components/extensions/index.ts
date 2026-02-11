@@ -2,10 +2,16 @@
  * Extension Components
  *
  * Components for managing dynamically loaded extensions.
- * Replaces the legacy plugin system.
  */
 
+// Extension Components
 export { ExtensionGrid } from './ExtensionGrid'
 export { ExtensionCard } from './ExtensionCard'
 export { ExtensionUploadDialog } from './ExtensionUploadDialog'
-export { ExtensionConfigDialog } from './ExtensionConfigDialog'
+export { ExtensionDetailsDialog } from './ExtensionDetailsDialog'
+export { DiscoverExtensionsDialog } from './DiscoverExtensionsDialog'
+export { MarketplaceDialog } from './MarketplaceDialog'
+export { ExtensionToolSelector, ExtensionToolSelectorCompact } from './ExtensionToolSelector'
+export { ExtensionMetricSelector, ExtensionMetricSelectorCompact } from './ExtensionMetricSelector'
+export { ExtensionTransformConfig } from './ExtensionTransformConfig'
+export { ExtensionDataSourceSelector, ExtensionDataSourceBrowser } from './ExtensionDataSourceSelector'

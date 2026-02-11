@@ -59,7 +59,7 @@ impl FallbackRule {
 pub fn default_fallback_rules() -> Vec<FallbackRule> {
     vec![
         // List devices rule
-        FallbackRule::new(vec!["设备", "device", "列表", "list"], "list_devices")
+        FallbackRule::new(vec!["设备", "device", "列表", "list"], "device_discover")
             .with_response_template("找到 {count} 个设备:\n{devices}"),
         // List rules rule
         FallbackRule::new(vec!["规则", "rule"], "list_rules")

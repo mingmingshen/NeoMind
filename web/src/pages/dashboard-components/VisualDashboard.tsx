@@ -645,8 +645,7 @@ function renderDashboardComponent(component: DashboardComponent, devices: Device
           {...spreadableProps}
           size={config.size || commonProps.size === 'xs' ? 'sm' : commonProps.size}
           dataSource={dataSource}
-          title={config.label || commonProps.title}
-          initialState={config.initialState ?? false}
+          title={commonProps.title}
           editMode={editMode}
         />
       )
@@ -1321,7 +1320,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
       // Controls
       case 'toggle-switch':
         defaultConfig = {
-          initialState: false
+          size: 'md'
         }
         break
       // Display & Content
@@ -1336,15 +1335,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
         break
       case 'image-history':
         defaultConfig = {
-          dataSource: {
-            type: 'static',
-            staticValue: [
-              { src: 'https://via.placeholder.com/400x200/8b5cf6/ffffff?text=Image+1', timestamp: Date.now() - 6000 },
-              { src: 'https://via.placeholder.com/400x200/22c55e/ffffff?text=Image+2', timestamp: Date.now() - 4000 },
-              { src: 'https://via.placeholder.com/400x200/f59e0b/ffffff?text=Image+3', timestamp: Date.now() - 2000 },
-              { src: 'https://via.placeholder.com/400x200/ec4899/ffffff?text=Image+4', timestamp: Date.now() },
-            ],
-          },
+          dataSource: undefined,
           fit: 'fill',
           rounded: true,
           limit: 50,
@@ -1985,7 +1976,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -2120,7 +2111,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -2268,7 +2259,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -2406,7 +2397,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -2509,7 +2500,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -2603,7 +2594,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
                 multiple: true,
                 maxSources: 5,
               },
@@ -2717,7 +2708,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
                 multiple: true,
                 maxSources: 3,
               },
@@ -2826,7 +2817,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -2858,33 +2849,10 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
             {
               type: 'custom' as const,
               render: () => (
-                <div className="space-y-3">
-                  <Field>
-                    <Label>{t('visualDashboard.label')}</Label>
-                    <Input
-                      value={config.label || ''}
-                      onChange={(e) => updateConfig('label')(e.target.value)}
-                      placeholder={t('visualDashboard.devicePlaceholder')}
-                      className="h-9"
-                    />
-                  </Field>
-
-                  <Field>
-                    <Label>{t('visualDashboard.initialState')}</Label>
-                    <Select
-                      value={config.initialState ? 'on' : 'off'}
-                      onValueChange={(val) => updateConfig('initialState')(val === 'on')}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="off">{t('visualDashboard.off')}</SelectItem>
-                        <SelectItem value="on">{t('visualDashboard.on')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">{t('visualDashboard.toggleStateHint')}</p>
-                  </Field>
+                <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    {t('visualDashboard.commandButtonHint')}
+                  </p>
                 </div>
               ),
             },
@@ -2895,17 +2863,17 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['command'],
+                allowedTypes: ['device-command', 'extension-command'],
               },
             },
             {
               type: 'custom' as const,
               render: () => (
                 <div className="space-y-3">
-                  <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <p className="text-sm text-amber-700 dark:text-amber-300">
-                      <strong>{t('visualDashboard.commandModeOnly')}</strong><br />
-                      {t('visualDashboard.commandModeDesc')}
+                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      <strong>{t('visualDashboard.commandInterface')}</strong><br />
+                      {t('visualDashboard.commandInterfaceDesc')}
                     </p>
                   </div>
                 </div>
@@ -2923,7 +2891,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -3050,7 +3018,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -3213,7 +3181,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -3320,7 +3288,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: updateDataSource,
-                allowedTypes: ['device-metric', 'system'],
+                allowedTypes: ['device-metric', 'system', 'extension'],
               },
             },
           ],
@@ -3579,8 +3547,8 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
               props: {
                 dataSource: config.dataSource,
                 onChange: (newSource: DataSourceOrList | DataSource | undefined) => {
-                  
-                  
+
+
 
                   updateDataSource(newSource)
                   // When data source changes, update bindings automatically
@@ -3657,7 +3625,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
                     updateConfig('bindings')(newBindings)
                   }
                 },
-                allowedTypes: ['device', 'metric', 'command'],
+                allowedTypes: ['device', 'metric', 'command', 'extension'],
                 multiple: true,
                 maxSources: 50,
               },
@@ -4134,7 +4102,7 @@ const VisualDashboardMemo = memo(function VisualDashboard() {
 
                   updateConfig('bindings')([...newBindings, ...existingTextIconBindings])
                 },
-                allowedTypes: ['device', 'metric', 'command'],
+                allowedTypes: ['device', 'metric', 'command', 'extension'],
                 multiple: true,
                 maxSources: 20,
               },

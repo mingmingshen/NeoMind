@@ -54,18 +54,18 @@ async fn scenario_1_discover_all_devices() {
     }
 }
 
-/// Scenario 2: User asks "What devices are in the living room?"
+/// Scenario 2: User asks "What sensors are available?"
 ///
-/// Flow: device.discover(filter: {location: "客厅"}) → List living room devices
+/// Flow: device.discover(filter: {type: "sensor"}) → List all sensors
 #[tokio::test]
-async fn scenario_2_discover_by_location() {
+async fn scenario_2_discover_by_type() {
     let registry = Arc::new(MockDeviceRegistry::new());
     let tool = DeviceDiscoverTool::new(registry);
 
     let result = tool
         .execute(json!({
-            "filter": {"location": "客厅"},
-            "group_by": "type",
+            "filter": {"type": "sensor"},
+            "group_by": "none",
             "include_data_preview": true
         }))
         .await
@@ -74,7 +74,7 @@ async fn scenario_2_discover_by_location() {
     assert!(result.success);
     let data = &result.data;
 
-    println!("\n=== 场景2: 查询客厅设备 ===");
+    println!("\n=== 场景2: 查询所有传感器 ===");
 
     if let Some(groups) = data["groups"].as_array() {
         for group in groups {
@@ -359,25 +359,25 @@ async fn scenario_7_all_rooms_sensor_data() {
     }
 }
 
-/// Scenario 8: User asks "Turn off all devices in the bedroom"
+/// Scenario 8: User asks "Turn off all lights"
 ///
-/// Flow: device.control with multiple targets
+/// Flow: device.control with multiple targets discovered by name filter
 #[tokio::test]
-async fn scenario_8_control_by_location() {
+async fn scenario_8_control_by_name_filter() {
     let registry = Arc::new(MockDeviceRegistry::new());
 
-    println!("\n=== 场景8: 关闭卧室所有设备 ===");
+    println!("\n=== 场景8: 关闭所有灯 ===");
 
-    // First discover what's in the bedroom
+    // First discover all lights (devices with name containing "light" or "灯")
     let discover_tool = DeviceDiscoverTool::new(registry.clone());
     let discover_result = discover_tool
         .execute(json!({
-            "filter": {"location": "卧室"}
+            "filter": {"name_contains": "light"}
         }))
         .await
         .expect("discover should succeed");
 
-    println!("发现卧室设备:");
+    println!("发现的灯具:");
     let device_ids: Vec<String> = discover_result.data["groups"].as_array()
         .unwrap()
         .iter()

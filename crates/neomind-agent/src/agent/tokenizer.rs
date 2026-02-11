@@ -216,7 +216,7 @@ pub fn select_messages_with_importance(
     });
 
     // Greedy selection: add high-importance messages that fit
-    for (score, _pos, msg) in scored_messages {
+    for (_score, _pos, msg) in scored_messages {
         let msg_tokens = estimate_message_tokens(msg);
         if used_tokens + msg_tokens <= max_tokens {
             // Insert at the beginning (before recent messages)

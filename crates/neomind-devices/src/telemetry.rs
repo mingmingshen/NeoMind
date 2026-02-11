@@ -376,6 +376,14 @@ impl TimeSeriesStorage {
 
         Ok(metrics)
     }
+
+    /// Get a reference to the underlying storage time series store
+    ///
+    /// This allows sharing the same storage instance between components.
+    /// For example, AI Agents can use the same time series database as devices.
+    pub fn inner_store(&self) -> Arc<StorageTimeSeriesStore> {
+        self.store.clone()
+    }
 }
 
 /// In-memory cache for recent metric values

@@ -96,7 +96,6 @@ pub struct DiscoverySummary {
     pub online: usize,
     pub offline: usize,
     pub by_type: HashMap<String, usize>,
-    pub by_location: HashMap<String, usize>,
 }
 
 // ============================================================================
@@ -139,6 +138,8 @@ pub struct RealDeviceRegistryAdapter {
     device_service: Arc<neomind_devices::DeviceService>,
     /// Cache for device type templates
     template_cache: Arc<RwLock<HashMap<String, DeviceTypeTemplate>>>,
+    /// Optional time series storage for historical data
+    storage: Option<Arc<neomind_devices::TimeSeriesStorage>>,
 }
 
 impl RealDeviceRegistryAdapter {
@@ -147,7 +148,55 @@ impl RealDeviceRegistryAdapter {
         Self {
             device_service,
             template_cache: Arc::new(RwLock::new(HashMap::new())),
+            storage: None,
         }
+    }
+
+    /// Create a new adapter with device service and time series storage.
+    pub fn with_storage(
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+    ) -> Self {
+        Self {
+            device_service,
+            template_cache: Arc::new(RwLock::new(HashMap::new())),
+            storage: Some(storage),
+        }
+    }
+
+    /// Get reference to the time series storage (if available).
+    pub fn storage(&self) -> Option<&Arc<neomind_devices::TimeSeriesStorage>> {
+        self.storage.as_ref()
+    }
+
+    /// Query time series data for a device.
+    pub async fn query_time_series(
+        &self,
+        device_id: &str,
+        metric: &str,
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<Vec<neomind_devices::DataPoint>, String> {
+        let storage = self.storage.as_ref()
+            .ok_or_else(|| "Time series storage not configured".to_string())?;
+
+        storage.query(device_id, metric, start_time, end_time).await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Get latest data point for a metric.
+    pub async fn get_latest_data(
+        &self,
+        device_id: &str,
+        metric: &str,
+    ) -> Option<neomind_devices::DataPoint> {
+        let storage = self.storage.as_ref()?;
+        let now = chrono::Utc::now().timestamp();
+        let one_hour_ago = now - 3600;
+
+        storage.query(device_id, metric, one_hour_ago, now).await.ok()?
+            .into_iter()
+            .max_by_key(|p| p.timestamp)
     }
 
     /// Convert DeviceConfig to DeviceInfo.
@@ -164,8 +213,35 @@ impl RealDeviceRegistryAdapter {
             neomind_devices::ConnectionStatus::Error => "error".to_string(),
         };
 
-        // For now, don't fetch latest data (can be added later with TimeSeries integration)
-        let latest_data = None;
+        // Fetch latest data from storage if available
+        let latest_data = if let Some(storage) = &self.storage {
+            let mut data_map = HashMap::new();
+            let now = chrono::Utc::now().timestamp();
+            let five_minutes_ago = now - 300;
+
+            for metric in &template.metrics {
+                if let Ok(points) = storage.query(
+                    &config.device_id,
+                    &metric.name,
+                    five_minutes_ago,
+                    now,
+                ).await {
+                    if let Some(latest) = points.into_iter().max_by_key(|p| p.timestamp) {
+                        let float_val = match latest.value {
+                            neomind_devices::MetricValue::Float(f) => Some(f),
+                            neomind_devices::MetricValue::Integer(i) => Some(i as f64),
+                            _ => None,
+                        };
+                        if let Some(v) = float_val {
+                            data_map.insert(metric.name.clone(), v);
+                        }
+                    }
+                }
+            }
+            if data_map.is_empty() { None } else { Some(data_map) }
+        } else {
+            None
+        };
 
         // Extract location from connection config extra metadata
         let location = config.connection_config.extra.get("location")
@@ -700,7 +776,6 @@ impl DeviceRegistryTrait for MockDeviceRegistry {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceFilter {
     pub r#type: Option<String>,
-    pub location: Option<String>,
     pub status: Option<String>,
     pub tags: Option<Vec<String>>,
     pub name_contains: Option<String>,
@@ -710,10 +785,6 @@ impl DeviceFilter {
     pub fn matches(&self, device: &DeviceInfo) -> bool {
         if let Some(ref t) = self.r#type
             && device.device_type != *t {
-                return false;
-            }
-        if let Some(ref loc) = self.location
-            && device.location.as_ref() != Some(loc) {
                 return false;
             }
         if let Some(ref status) = self.status
@@ -759,6 +830,15 @@ impl DeviceDiscoverTool {
         Self::new(adapter)
     }
 
+    /// Create with real device service and time series storage.
+    pub fn with_real_device_service_and_storage(
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+    ) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        Self::new(adapter)
+    }
+
     fn group_devices(&self, devices: Vec<DeviceInfo>, group_by: &str) -> Vec<DeviceGroup> {
         if group_by == "none" || devices.is_empty() {
             return vec![DeviceGroup {
@@ -773,7 +853,6 @@ impl DeviceDiscoverTool {
         for device in devices {
             let key = match group_by {
                 "type" => device.device_type.clone(),
-                "location" => device.location.clone().unwrap_or_else(|| "未知".to_string()),
                 "status" => match device.status.as_str() {
                     "online" => "在线".to_string(),
                     "offline" => "离线".to_string(),
@@ -802,13 +881,9 @@ impl DeviceDiscoverTool {
         let offline = total - online;
 
         let mut by_type = HashMap::new();
-        let mut by_location = HashMap::new();
 
         for device in devices {
             *by_type.entry(device.device_type.clone()).or_insert(0) += 1;
-            if let Some(ref loc) = device.location {
-                *by_location.entry(loc.clone()).or_insert(0) += 1;
-            }
         }
 
         DiscoverySummary {
@@ -816,7 +891,6 @@ impl DeviceDiscoverTool {
             online,
             offline,
             by_type,
-            by_location,
         }
     }
 }
@@ -832,18 +906,18 @@ impl Default for DeviceDiscoverTool {
 #[async_trait]
 impl Tool for DeviceDiscoverTool {
     fn name(&self) -> &str {
-        "device.discover"
+        "device_discover"
     }
 
     fn description(&self) -> &str {
-        "发现和列出系统中的所有设备。支持按位置、类型、状态过滤和分组。\
+        "发现和列出系统中的所有设备。支持按类型、名称关键词过滤和分组。\
         这是探索系统设备能力的入口工具。\
         \
         用法示例: \
         - '有什么设备？' → 列出所有设备 \
-        - '客厅有哪些设备？' → 按位置过滤 \
         - '有哪些传感器？' → 按类型过滤 \
-        - '在线的设备有哪些？' → 按状态过滤"
+        - '名称包含温度的设备？' → 按名称关键词过滤 \
+        - '按类型分组查看' → 按类型分组"
     }
 
     fn parameters(&self) -> Value {
@@ -853,13 +927,11 @@ impl Tool for DeviceDiscoverTool {
                     "description": "过滤条件",
                     "properties": {
                         "type": string_property("设备类型，如'sensor'、'actuator'、'DHT22'等"),
-                        "location": string_property("位置，如'客厅'、'卧室'、'厨房'等"),
-                        "status": string_property("状态：'online'在线、'offline'离线"),
-                        "tags": array_property("string", "标签过滤，如['sensor', 'temperature']"),
-                        "name_contains": string_property("名称包含关键词")
+                        "name_contains": string_property("名称包含关键词，如'温度'、'湿度'"),
+                        "tags": array_property("string", "标签过滤，如['sensor', 'temperature']")
                     }
                 }), vec![]),
-                "group_by": string_property("分组方式：'type'按类型、'location'按位置、'status'按状态、'none'不分组。默认'none'"),
+                "group_by": string_property("分组方式：'type'按类型、'none'不分组。默认'none'"),
                 "include_data_preview": boolean_property("是否包含最新数据预览。默认true"),
                 "include_capabilities": boolean_property("是否包含设备能力（指标和命令）。默认true")
             }),
@@ -876,22 +948,22 @@ impl Tool for DeviceDiscoverTool {
             UsageScenario {
                 description: "用户询问有什么设备".to_string(),
                 example_query: "有什么设备？".to_string(),
-                suggested_call: Some("device.discover()".to_string()),
-            },
-            UsageScenario {
-                description: "用户询问特定位置的设备".to_string(),
-                example_query: "客厅有哪些设备？".to_string(),
-                suggested_call: Some("device.discover({filter: {location: '客厅'}, group_by: 'type'})".to_string()),
+                suggested_call: Some("device_discover()".to_string()),
             },
             UsageScenario {
                 description: "用户询问特定类型的设备".to_string(),
                 example_query: "有哪些传感器？".to_string(),
-                suggested_call: Some("device.discover({filter: {tags: ['sensor']}, group_by: 'location'})".to_string()),
+                suggested_call: Some("device_discover({filter: {type: 'sensor'}})".to_string()),
             },
             UsageScenario {
-                description: "用户询问离线设备".to_string(),
-                example_query: "哪些设备离线了？".to_string(),
-                suggested_call: Some("device.discover({filter: {status: 'offline'}})".to_string()),
+                description: "用户询问名称包含关键词的设备".to_string(),
+                example_query: "名称包含温度的设备有哪些？".to_string(),
+                suggested_call: Some("device_discover({filter: {name_contains: '温度'}, group_by: 'type'})".to_string()),
+            },
+            UsageScenario {
+                description: "用户要按类型分组查看".to_string(),
+                example_query: "按类型显示所有设备".to_string(),
+                suggested_call: Some("device_discover({group_by: 'type'})".to_string()),
             },
         ]
     }
@@ -901,7 +973,6 @@ impl Tool for DeviceDiscoverTool {
         let filter = if let Some(filter_obj) = args.get("filter").and_then(|v| v.as_object()) {
             DeviceFilter {
                 r#type: filter_obj.get("type").and_then(|v| v.as_str()).map(String::from),
-                location: filter_obj.get("location").and_then(|v| v.as_str()).map(String::from),
                 status: filter_obj.get("status").and_then(|v| v.as_str()).map(String::from),
                 tags: filter_obj.get("tags").and_then(|v| v.as_array()).map(|arr| {
                     arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
@@ -959,8 +1030,7 @@ impl Tool for DeviceDiscoverTool {
                 "total": summary.total,
                 "online": summary.online,
                 "offline": summary.offline,
-                "by_type": summary.by_type,
-                "by_location": summary.by_location
+                "by_type": summary.by_type
             },
             "filter_applied": filter != DeviceFilter::default()
         });
@@ -970,7 +1040,7 @@ impl Tool for DeviceDiscoverTool {
 }
 
 // ============================================================================
-// Tool 2: device.query
+// Tool 2: device_query
 // ============================================================================
 
 /// Time range specification for queries.
@@ -1037,6 +1107,21 @@ impl DeviceQueryTool {
 
     pub fn mock() -> Self {
         Self::new(Arc::new(MockDeviceRegistry::new()))
+    }
+
+    /// Create with real device service.
+    pub fn with_real_device_service(device_service: Arc<neomind_devices::DeviceService>) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::new(device_service));
+        Self::new(adapter)
+    }
+
+    /// Create with real device service and time series storage.
+    pub fn with_real_device_service_and_storage(
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+    ) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        Self::new(adapter)
     }
 
     /// Generate analysis hint based on data trend.
@@ -1117,7 +1202,7 @@ impl Default for DeviceQueryTool {
 #[async_trait]
 impl Tool for DeviceQueryTool {
     fn name(&self) -> &str {
-        "device.query"
+        "device_query"
     }
 
     fn description(&self) -> &str {
@@ -1158,17 +1243,17 @@ impl Tool for DeviceQueryTool {
             UsageScenario {
                 description: "用户询问当前温度".to_string(),
                 example_query: "客厅温度多少？".to_string(),
-                suggested_call: Some("device.query({device_id: 'sensor_temp_living', metrics: ['temperature']})".to_string()),
+                suggested_call: Some("device_query({device_id: 'sensor_temp_living', metrics: ['temperature']})".to_string()),
             },
             UsageScenario {
                 description: "用户询问历史数据".to_string(),
                 example_query: "过去24小时的温度数据".to_string(),
-                suggested_call: Some("device.query({device_id: 'sensor_temp_living', metrics: ['temperature'], time_range: {start: '24h前'}, limit: 24})".to_string()),
+                suggested_call: Some("device_query({device_id: 'sensor_temp_living', metrics: ['temperature'], time_range: {start: '24h前'}, limit: 24})".to_string()),
             },
             UsageScenario {
                 description: "用户询问所有指标".to_string(),
                 example_query: "传感器有哪些数据？".to_string(),
-                suggested_call: Some("device.query({device_id: 'sensor_temp_living'})".to_string()),
+                suggested_call: Some("device_query({device_id: 'sensor_temp_living'})".to_string()),
             },
         ]
     }
@@ -1189,7 +1274,7 @@ impl Tool for DeviceQueryTool {
         if matched_devices.is_empty() {
             return Ok(ToolOutput::error_with_metadata(
                 format!("未找到设备: {}", device_id),
-                serde_json::json!({"device_id": device_id, "hint": "使用 device.discover() 查看可用设备"}),
+                serde_json::json!({"device_id": device_id, "hint": "使用 device_discover() 查看可用设备"}),
             ));
         }
 
@@ -1279,7 +1364,7 @@ impl Tool for DeviceQueryTool {
 }
 
 // ============================================================================
-// Tool 3: device.control
+// Tool 3: device_control
 // ============================================================================
 
 /// Control command types.
@@ -1325,6 +1410,21 @@ impl DeviceControlTool {
         Self::new(Arc::new(MockDeviceRegistry::new()))
     }
 
+    /// Create with real device service.
+    pub fn with_real_device_service(device_service: Arc<neomind_devices::DeviceService>) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::new(device_service));
+        Self::new(adapter)
+    }
+
+    /// Create with real device service and time series storage.
+    pub fn with_real_device_service_and_storage(
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+    ) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        Self::new(adapter)
+    }
+
     /// Find devices matching target specification.
     async fn find_targets(&self, args: &Value) -> ToolResult<Vec<DeviceInfo>> {
         let devices = self.registry.get_all().await;
@@ -1357,11 +1457,10 @@ impl DeviceControlTool {
             }
         }
 
-        // Method 3: Filter by location/type
+        // Method 3: Filter by type
         if let Some(filter) = args.get("filter").and_then(|v| v.as_object()) {
             let device_filter = DeviceFilter {
                 r#type: filter.get("type").and_then(|v| v.as_str()).map(String::from),
-                location: filter.get("location").and_then(|v| v.as_str()).map(String::from),
                 status: None,
                 tags: None,
                 name_contains: None,
@@ -1537,7 +1636,7 @@ impl Default for DeviceControlTool {
 #[async_trait]
 impl Tool for DeviceControlTool {
     fn name(&self) -> &str {
-        "device.control"
+        "device_control"
     }
 
     fn description(&self) -> &str {
@@ -1589,17 +1688,17 @@ impl Tool for DeviceControlTool {
             UsageScenario {
                 description: "用户打开单个设备".to_string(),
                 example_query: "打开客厅的灯".to_string(),
-                suggested_call: Some("device.control({device_id: 'light_living_main', command: 'turn_on'})".to_string()),
+                suggested_call: Some("device_control({device_id: 'light_living_main', command: 'turn_on'})".to_string()),
             },
             UsageScenario {
                 description: "用户批量控制".to_string(),
                 example_query: "打开所有灯".to_string(),
-                suggested_call: Some("device.control({filter: {type: 'light'}, command: 'turn_on'})".to_string()),
+                suggested_call: Some("device_control({filter: {type: 'light'}, command: 'turn_on'})".to_string()),
             },
             UsageScenario {
                 description: "用户设置空调温度".to_string(),
                 example_query: "把空调设为26度".to_string(),
-                suggested_call: Some("device.control({device_id: 'ac_bedroom', command: 'set_temperature', value: {temperature: 26}})".to_string()),
+                suggested_call: Some("device_control({device_id: 'ac_bedroom', command: 'set_temperature', value: {temperature: 26}})".to_string()),
             },
         ]
     }
@@ -1827,10 +1926,10 @@ mod tests {
 }
 
 // ============================================================================
-// Tool 4: device.analyze
+// Tool 4: device_analyze
 // ============================================================================
 
-/// Analysis types supported by device.analyze.
+/// Analysis types supported by device_analyze.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisType {
     /// Analysis type identifier
@@ -1918,6 +2017,21 @@ impl DeviceAnalyzeTool {
 
     pub fn mock() -> Self {
         Self::new(Arc::new(MockDeviceRegistry::new()))
+    }
+
+    /// Create with real device service.
+    pub fn with_real_device_service(device_service: Arc<neomind_devices::DeviceService>) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::new(device_service));
+        Self::new(adapter)
+    }
+
+    /// Create with real device service and time series storage.
+    pub fn with_real_device_service_and_storage(
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+    ) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        Self::new(adapter)
     }
 
     /// Perform trend analysis on metric data.
@@ -2164,7 +2278,7 @@ impl Default for DeviceAnalyzeTool {
 #[async_trait]
 impl Tool for DeviceAnalyzeTool {
     fn name(&self) -> &str {
-        "device.analyze"
+        "device_analyze"
     }
 
     fn description(&self) -> &str {
@@ -2197,17 +2311,17 @@ impl Tool for DeviceAnalyzeTool {
             UsageScenario {
                 description: "用户询问数据趋势".to_string(),
                 example_query: "分析温度趋势".to_string(),
-                suggested_call: Some("device.analyze({device_id: 'sensor_temp_living', metric: 'temperature', analysis_type: 'trend'})".to_string()),
+                suggested_call: Some("device_analyze({device_id: 'sensor_temp_living', metric: 'temperature', analysis_type: 'trend'})".to_string()),
             },
             UsageScenario {
                 description: "用户要求检测异常".to_string(),
                 example_query: "检测异常数据".to_string(),
-                suggested_call: Some("device.analyze({device_id: 'sensor_temp_living', analysis_type: 'anomaly'})".to_string()),
+                suggested_call: Some("device_analyze({device_id: 'sensor_temp_living', analysis_type: 'anomaly'})".to_string()),
             },
             UsageScenario {
                 description: "用户要求分析数据".to_string(),
                 example_query: "分析一下传感器数据".to_string(),
-                suggested_call: Some("device.analyze({device_id: 'sensor_temp_living', analysis_type: 'summary'})".to_string()),
+                suggested_call: Some("device_analyze({device_id: 'sensor_temp_living', analysis_type: 'summary'})".to_string()),
             },
         ]
     }
@@ -2332,18 +2446,33 @@ pub struct RuleActionDef {
 /// This tool extracts rule information from natural language descriptions
 /// and generates structured rule definitions with DSL.
 pub struct RuleFromContextTool {
-    registry: DeviceRegistryAdapter,
+    _registry: DeviceRegistryAdapter,
 }
 
 impl RuleFromContextTool {
     /// Create a new rule from context tool.
     pub fn new(registry: DeviceRegistryAdapter) -> Self {
-        Self { registry }
+        Self { _registry: registry }
     }
 
     /// Create with a mock registry for testing.
     pub fn mock() -> Self {
         Self::new(Arc::new(MockDeviceRegistry::new()))
+    }
+
+    /// Create with real device service.
+    pub fn with_real_device_service(device_service: Arc<neomind_devices::DeviceService>) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::new(device_service));
+        Self::new(adapter)
+    }
+
+    /// Create with real device service and time series storage.
+    pub fn with_real_device_service_and_storage(
+        device_service: Arc<neomind_devices::DeviceService>,
+        storage: Arc<neomind_devices::TimeSeriesStorage>,
+    ) -> Self {
+        let adapter = Arc::new(RealDeviceRegistryAdapter::with_storage(device_service, storage));
+        Self::new(adapter)
     }
 
     /// Extract rule information from natural language description.
@@ -2595,7 +2724,7 @@ impl Default for RuleFromContextTool {
 #[async_trait]
 impl Tool for RuleFromContextTool {
     fn name(&self) -> &str {
-        "rule.from_context"
+        "rule_from_context"
     }
 
     fn description(&self) -> &str {
@@ -2632,17 +2761,17 @@ impl Tool for RuleFromContextTool {
             UsageScenario {
                 description: "从自然语言创建高温告警规则".to_string(),
                 example_query: "温度超过50度时告警".to_string(),
-                suggested_call: Some(r#"{"name": "rule.from_context", "arguments": {"description": "温度超过50度时告警"}}"#.to_string()),
+                suggested_call: Some(r#"{"name": "rule_from_context", "arguments": {"description": "温度超过50度时告警"}}"#.to_string()),
             },
             UsageScenario {
                 description: "创建带持续时间和动作的规则".to_string(),
                 example_query: "温度持续5分钟超过30度时开风扇".to_string(),
-                suggested_call: Some(r#"{"name": "rule.from_context", "arguments": {"description": "温度持续5分钟超过30度时开风扇"}}"#.to_string()),
+                suggested_call: Some(r#"{"name": "rule_from_context", "arguments": {"description": "温度持续5分钟超过30度时开风扇"}}"#.to_string()),
             },
             UsageScenario {
                 description: "创建多动作规则".to_string(),
                 example_query: "湿度低于30%时告警并开启加湿器".to_string(),
-                suggested_call: Some(r#"{"name": "rule.from_context", "arguments": {"description": "湿度低于30%时告警并开启加湿器"}}"#.to_string()),
+                suggested_call: Some(r#"{"name": "rule_from_context", "arguments": {"description": "湿度低于30%时告警并开启加湿器"}}"#.to_string()),
             },
         ]
     }

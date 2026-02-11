@@ -1,7 +1,7 @@
 # API 模块
 
 **包名**: `neomind-api`
-**版本**: 0.1.0
+**版本**: 0.5.8
 **完成度**: 90%
 **用途**: REST/WebSocket API服务器
 
@@ -12,7 +12,7 @@ API模块基于Axum框架，提供REST API、WebSocket和SSE端点，是前端�
 ## 模块结构
 
 ```
-crates/api/src/
+crates/neomind-api/src/
 ├── lib.rs                      # 公开接口
 ├── main.rs                     # 程序入口
 ├── server/
@@ -20,6 +20,12 @@ crates/api/src/
 │   ├── router.rs               # 路由定义
 │   ├── types.rs                # 服务器状态
 │   ├── assets.rs               # 静态资源
+│   ├── extension_metrics.rs    # 扩展指标存储服务
+│   ├── state/
+│   │   ├── mod.rs              # 状态管理
+│   │   ├── agent_state.rs      # Agent状态
+│   │   ├── core_state.rs       # 核心状态
+│   │   └── extension_state.rs  # 扩展状态
 │   └── middleware/             # 中间件
 ├── handlers/                   # 请求处理器
 │   ├── mod.rs
@@ -72,6 +78,30 @@ crates/api/src/
 │   └── openapi.rs              # OpenAPI文档
 └── utils/                      # 工具函数
 ```
+
+## 重要变更 (v0.5.x)
+
+### 新增模块
+- `server/extension_metrics.rs` - 扩展指标存储服务，统一管理扩展时序数据
+- `server/state/extension_state.rs` - 扩展状态管理
+
+### 扩展指标存储
+扩展指标现在通过ExtensionMetricsStorage统一存储到`data/timeseries.redb`：
+
+```rust
+pub struct ExtensionMetricsStorage {
+    metrics_storage: Arc<TimeSeriesStore>,
+}
+```
+
+存储格式使用DataSourceId：
+- `device_part`: `extension:{extension_id}`
+- `metric_part`: `{metric_name}`
+
+### Agent状态更新优化
+修复了Agent执行完成后状态卡在"Executing"的问题：
+- 移除了事件处理后的`loadItems()`调用
+- WebSocket事件现在作为状态的唯一真实来源
 
 ## 路由概览
 

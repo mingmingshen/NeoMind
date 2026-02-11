@@ -25,9 +25,17 @@ import type {
   Extension,
   ExtensionStatsDto,
   ExtensionTypeDto,
+  ExtensionCapabilityDto,
   ExtensionDiscoveryResult,
   ExtensionRegistrationResponse,
   ExtensionHealthResponse,
+  // Unified Extension Types
+  ExtensionCommandDescriptor,
+  ExtensionExecuteRequest,
+  ExtensionExecuteResponse,
+  ExtensionDataSourceInfo,
+  ExtensionQueryParams,
+  ExtensionQueryResult,
   Tool,
   ToolSchema,
   ToolMetrics,
@@ -72,6 +80,8 @@ import type {
   CreateAgentRequest,
   UpdateAgentRequest,
   ExecuteAgentRequest,
+  ValidateLlmRequest,
+  ValidateLlmResponse,
   AgentListResponse,
   AgentExecutionsResponse,
   ParsedIntent,
@@ -82,6 +92,8 @@ import type {
   CreateDashboardRequest,
   UpdateDashboardRequest,
   DashboardTemplateResponse,
+  // Data Source Types
+  TransformDataSourceInfo,
 } from '@/types'
 import { notifyFromError, notifySuccess } from './notify'
 import { tokenManager as unifiedTokenManager } from './auth'
@@ -267,6 +279,31 @@ export async function fetchAPI<T>(
 // ============================================================================
 
 export const api = {
+  // ========== Generic HTTP Methods ==========
+  /**
+   * Generic GET request
+   */
+  get: <T>(path: string, options: Omit<FetchOptions, 'method' | 'body'> = {}) =>
+    fetchAPI<T>(path, { ...options, method: 'GET' }),
+
+  /**
+   * Generic POST request
+   */
+  post: <T>(path: string, body: unknown, options: Omit<FetchOptions, 'method' | 'body'> = {}) =>
+    fetchAPI<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+
+  /**
+   * Generic PUT request
+   */
+  put: <T>(path: string, body: unknown, options: Omit<FetchOptions, 'method' | 'body'> = {}) =>
+    fetchAPI<T>(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+
+  /**
+   * Generic DELETE request
+   */
+  delete: <T>(path: string, options: Omit<FetchOptions, 'method' | 'body'> = {}) =>
+    fetchAPI<T>(path, { ...options, method: 'DELETE' }),
+
   // ========== Authentication API ==========
   login: (username: string, password: string, rememberMe: boolean = false) =>
     fetchAPI<LoginResponse>('/auth/login', {
@@ -995,6 +1032,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(req),
     }),
+  // Test transform code directly without saving
+  testTransformCode: (req: {
+    code: string
+    input_data: unknown
+    output_prefix?: string
+  }) =>
+    fetchAPI<{
+      success: boolean
+      output: Record<string, unknown>
+      output_with_prefix: Record<string, unknown>
+      metrics: Array<{
+        device_id: string
+        metric: string
+        value: number
+        timestamp: number
+        quality: number | null
+      }>
+      count: number
+      error?: string
+    }>('/automations/transforms/test-code', {
+      method: 'POST',
+      body: JSON.stringify(req),
+    }),
   // List all transforms
   listTransforms: () =>
     fetchAPI<{ transforms: Array<import('@/types').TransformAutomation>; count: number }>('/automations/transforms'),
@@ -1137,30 +1197,6 @@ export const api = {
   // Extension system replaces the legacy Plugin system for dynamically loaded code.
 
   /**
-   * List all registered extensions
-   * GET /api/extensions
-   */
-  listExtensions: (params?: {
-    extension_type?: string  // Filter by extension type (llm_provider, device_protocol, etc.)
-    state?: string           // Filter by state (Loaded, Running, Stopped, etc.)
-  }) =>
-    fetchAPI<Extension[]>(
-      `/extensions${params ? `?${new URLSearchParams(
-        Object.entries(params).reduce((acc, [key, value]) => {
-          if (value !== undefined) acc[key] = String(value)
-          return acc
-        }, {} as Record<string, string>)
-      )}` : ''}`
-    ),
-
-  /**
-   * Get a specific extension
-   * GET /api/extensions/:id
-   */
-  getExtension: (id: string) =>
-    fetchAPI<Extension>(`/extensions/${id}`),
-
-  /**
    * Get extension statistics
    * GET /api/extensions/:id/stats
    */
@@ -1180,6 +1216,30 @@ export const api = {
    */
   discoverExtensions: () =>
     fetchAPI<ExtensionDiscoveryResult[]>('/extensions/discover', {
+      method: 'POST',
+    }),
+
+  /**
+   * Register all discovered extensions
+   * POST /api/extensions/register-all
+   */
+  registerAllDiscovered: () =>
+    fetchAPI<{
+      message: string
+      registered: number
+      failed: number
+      extensions: Array<{
+        id: string
+        name: string
+        version: string
+        file_path: string
+      }>
+      failed_extensions?: Array<{
+        id: string
+        name: string
+        error: string
+      }>
+    }>('/extensions/register-all', {
       method: 'POST',
     }),
 
@@ -1231,7 +1291,7 @@ export const api = {
     fetchAPI<ExtensionHealthResponse>(`/extensions/${id}/health`),
 
   /**
-   * Execute a command on an extension
+   * Execute a command on an extension (legacy endpoint)
    * POST /api/extensions/:id/command
    */
   executeExtensionCommand: (id: string, command: string, args?: Record<string, unknown>) =>
@@ -1239,6 +1299,172 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ command, args }),
     }),
+
+  /**
+   * Get all extension capabilities (for Agent tools, Transform operations, etc.)
+   * GET /api/extensions/capabilities
+   */
+  getExtensionCapabilities: () =>
+    fetchAPI<ExtensionCapabilityDto[]>('/extensions/capabilities'),
+
+  /**
+   * Get a specific extension's capabilities
+   * GET /api/extensions/:id/capabilities
+   */
+  getExtensionCapabilitiesById: (id: string) =>
+    fetchAPI<ExtensionCapabilityDto>(`/extensions/${id}/capabilities`),
+
+  /**
+   * Invoke an extension command (newer endpoint with better error handling)
+   * POST /api/extensions/:id/invoke
+   */
+  invokeExtension: (id: string, command: string, args?: Record<string, unknown>) =>
+    fetchAPI<Record<string, unknown>>(`/extensions/${id}/invoke`, {
+      method: 'POST',
+      body: JSON.stringify({ command, args }),
+    }),
+
+  // ========== Extension API (unified command-based) ==========
+
+  /**
+   * List all extensions with their commands
+   * GET /api/extensions
+   */
+  listExtensions: (params?: {
+    state?: string
+  }) =>
+    fetchAPI<Extension[]>(
+      `/extensions${params ? `?${new URLSearchParams(
+        Object.entries(params).reduce((acc, [key, value]) => {
+          if (value !== undefined) acc[key] = String(value)
+          return acc
+        }, {} as Record<string, string>)
+      )}` : ''}`
+    ),
+
+  /**
+   * Get a specific extension with its commands
+   * GET /api/extensions/:id
+   */
+  getExtension: (id: string) =>
+    fetchAPI<Extension>(`/extensions/${id}`),
+
+  /**
+   * Get commands for an extension
+   * GET /api/extensions/:id/commands
+   */
+  listCommands: (id: string) =>
+    fetchAPI<ExtensionCommandDescriptor[]>(`/extensions/${id}/commands`),
+
+  /**
+   * Execute an extension command
+   * POST /api/extensions/:id/command
+   */
+  executeCommand: (id: string, request: ExtensionExecuteRequest) =>
+    fetchAPI<ExtensionExecuteResponse>(`/extensions/${id}/command`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  /**
+   * Get data sources for an extension
+   * GET /api/extensions/:id/data-sources
+   */
+  listDataSources: (id: string) =>
+    fetchAPI<ExtensionDataSourceInfo[]>(`/extensions/${id}/data-sources`),
+
+  /**
+   * Get historical data for an extension metric
+   * GET /api/extensions/:id/metrics/:metric/data?start=&end=&limit=
+   */
+  getMetricData: (extensionId: string, metric: string, params?: { start?: number; end?: number; limit?: number }) =>
+    fetchAPI<{
+      source_id: string
+      extension_id: string
+      metric: string
+      start: number
+      end: number
+      count: number
+      data: Array<{ timestamp: number; value: unknown; quality: string }>
+    }>(`/extensions/${extensionId}/metrics/${metric}/data${params ? `?${new URLSearchParams(params as any).toString()}` : ''}`),
+
+  /**
+   * Query data from an extension
+   * Uses getMetricData to fetch historical data
+   */
+  queryData: async (params: ExtensionQueryParams): Promise<ExtensionQueryResult> => {
+    const { extension_id, command, field: metric, start_time, end_time, limit } = params
+
+    try {
+      // Convert milliseconds to seconds for backend (backend expects seconds)
+      const start_sec = start_time !== undefined ? Math.floor(start_time / 1000) : undefined
+      const end_sec = end_time !== undefined ? Math.floor(end_time / 1000) : undefined
+
+      const result = await fetchAPI<{
+        source_id: string
+        extension_id: string
+        metric: string
+        start: number
+        end: number
+        count: number
+        data: Array<{ timestamp: number; value: unknown; quality: string }>
+      }>(`/extensions/${extension_id}/metrics/${metric}/data${start_sec !== undefined || end_sec !== undefined || limit !== undefined ? `?${new URLSearchParams({
+          ...(start_sec !== undefined && { start: start_sec.toString() }),
+          ...(end_sec !== undefined && { end: end_sec.toString() }),
+          ...(limit !== undefined && { limit: limit.toString() }),
+        } as any).toString()}` : ''}`)
+
+      return {
+        source_id: result.source_id,
+        data_points: result.data.map(p => ({
+          timestamp: p.timestamp,
+          value: p.value as any,
+        })),
+      }
+    } catch (err) {
+      console.error('[API] Failed to query extension data:', err)
+      return {
+        source_id: `${params.extension_id}:${params.command}:${params.field}`,
+        data_points: [],
+      }
+    }
+  },
+
+  /**
+   * Get all extension data sources (for dashboard, rules, etc.)
+   * Fetches from all extensions and transforms, combining results
+   */
+  listAllDataSources: async () => {
+    const allSources: Array<ExtensionDataSourceInfo | TransformDataSourceInfo> = []
+
+    // Fetch extension data sources
+    try {
+      const extensions = await fetchAPI<Extension[]>('/extensions')
+
+      for (const ext of extensions) {
+        try {
+          const sources = await fetchAPI<ExtensionDataSourceInfo[]>(`/extensions/${ext.id}/data-sources`)
+          allSources.push(...sources)
+        } catch (err) {
+          // Log error but continue with other extensions
+          console.error(`[API] Failed to get data sources for extension ${ext.id}:`, err)
+        }
+      }
+    } catch (err) {
+      console.error('[API] Failed to fetch extensions:', err)
+    }
+
+    // Fetch transform output data sources (auto-registered)
+    try {
+      const transformSources = await fetchAPI<{ data_sources: TransformDataSourceInfo[]; count: number }>('/automations/transforms/data-sources')
+      allSources.push(...transformSources.data_sources)
+    } catch (err) {
+      // Transform data sources may not be available yet
+      console.debug('[API] Transform data sources not available:', err)
+    }
+
+    return allSources
+  },
 
   // ========== Bulk Operations API ==========
   bulkCreateMessages: (messages: Array<{ title: string; message: string; severity?: string; category?: string }>) =>
@@ -1476,6 +1702,16 @@ export const api = {
     fetchAPI<ParsedIntent>('/agents/parse-intent', {
       method: 'POST',
       body: JSON.stringify({ prompt, llm_backend_id: llmBackendId }),
+    }),
+
+  /**
+   * Validate LLM backend availability and configuration
+   * POST /api/agents/validate-llm
+   */
+  validateLlmBackend: (req: ValidateLlmRequest) =>
+    fetchAPI<ValidateLlmResponse>('/agents/validate-llm', {
+      method: 'POST',
+      body: JSON.stringify(req),
     }),
 
   // ==========================================================================

@@ -74,21 +74,30 @@ export function DeviceTypeList({
           {
             key: 'name',
             label: t('devices:types.headers.name'),
+            width: 'w-48',
+          },
+          {
+            key: 'description',
+            label: t('common:description'),
+            width: 'max-w-xs',
           },
           {
             key: 'metrics',
             label: t('devices:types.headers.metrics'),
             align: 'center',
+            width: 'w-16',
           },
           {
             key: 'commands',
             label: t('devices:types.headers.commands'),
             align: 'center',
+            width: 'w-16',
           },
           {
             key: 'transforms',
             label: t('automation:transforms', { defaultValue: 'Transforms' }),
             align: 'center',
+            width: 'w-24',
           },
         ]}
         data={paginatedDeviceTypes as unknown as Record<string, unknown>[]}
@@ -109,20 +118,20 @@ export function DeviceTypeList({
             case 'name':
               return (
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-600">
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-500/10 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400">
                     <Database className="h-4 w-4" />
                   </div>
-                  <div>
-                    <div className="font-medium text-sm">{type.name}</div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs text-muted-foreground font-mono">{type.device_type}</code>
-                      {type.description && (
-                        <span className="text-xs text-muted-foreground line-clamp-1">
-                          {type.description}
-                        </span>
-                      )}
-                    </div>
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm truncate">{type.name}</div>
+                    <code className="text-xs text-muted-foreground font-mono">{type.device_type}</code>
                   </div>
+                </div>
+              )
+
+            case 'description':
+              return (
+                <div className="text-sm text-muted-foreground line-clamp-2 leading-relaxed" title={type.description || undefined}>
+                  {type.description || <span className="text-muted-foreground/50">-</span>}
                 </div>
               )
 

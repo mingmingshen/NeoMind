@@ -548,8 +548,10 @@ impl ContextSelector {
             for rule in rules {
                 // Extract device_id from condition for matching
                 let device_id = match &rule.condition {
-                    RuleCondition::Simple { device_id, .. } |
-                    RuleCondition::Range { device_id, .. } => Some(device_id.clone()),
+                    RuleCondition::Device { device_id, .. } |
+                    RuleCondition::DeviceRange { device_id, .. } => Some(device_id.clone()),
+                    RuleCondition::Extension { extension_id, .. } |
+                    RuleCondition::ExtensionRange { extension_id, .. } => Some(extension_id.clone()),
                     _ => None, // Complex conditions don't have a single device
                 };
 
@@ -570,7 +572,7 @@ impl ContextSelector {
 
                     // Build condition description
                     let condition_desc = match &rule.condition {
-                        RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                        RuleCondition::Device { device_id, metric, operator, threshold } => {
                             format!(
                                 "{}.{} {} {}",
                                 device_id,
@@ -579,10 +581,28 @@ impl ContextSelector {
                                 threshold
                             )
                         }
-                        RuleCondition::Range { device_id, metric, min, max } => {
+                        RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                            format!(
+                                "{}.{} {} {}",
+                                extension_id,
+                                metric,
+                                operator.as_str(),
+                                threshold
+                            )
+                        }
+                        RuleCondition::DeviceRange { device_id, metric, min, max } => {
                             format!(
                                 "{}.{} BETWEEN {} AND {}",
                                 device_id,
+                                metric,
+                                min,
+                                max
+                            )
+                        }
+                        RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                            format!(
+                                "{}.{} BETWEEN {} AND {}",
+                                extension_id,
                                 metric,
                                 min,
                                 max

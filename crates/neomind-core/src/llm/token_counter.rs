@@ -155,6 +155,7 @@ impl TokenCounter {
             MessageRole::System => 3,   // "<|start|>system<|message|>"
             MessageRole::User => 3,     // "<|start|>user<|message|>"
             MessageRole::Assistant => 4, // "<|start|>assistant<|message|>"
+            MessageRole::Tool => 4,     // "<|start|>tool<|message|>"
         };
 
         role_tokens + self.count_content(&message.content)

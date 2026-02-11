@@ -52,7 +52,7 @@ import {
 import { ThemeToggle } from "./ThemeToggle"
 import { useState, useEffect } from "react"
 
-type PageType = "dashboard" | "visual-dashboard" | "devices" | "automation" | "agents" | "messages" | "plugins" | "settings"
+type PageType = "dashboard" | "visual-dashboard" | "devices" | "automation" | "agents" | "messages" | "extensions" | "settings"
 
 interface NavItem {
   id: PageType
@@ -68,7 +68,7 @@ const navItems: NavItem[] = [
   { id: "devices", path: "/devices", labelKey: "nav.devices", icon: Cpu },
   { id: "automation", path: "/automation", labelKey: "nav.automation", icon: Workflow },
   { id: "messages", path: "/messages", labelKey: "nav.messages", icon: Bell },
-  { id: "plugins", path: "/plugins", labelKey: "nav.plugins", icon: Puzzle },
+  { id: "extensions", path: "/extensions", labelKey: "nav.extensions", icon: Puzzle },
   { id: "settings", path: "/settings", labelKey: "nav.settings", icon: Settings },
 ]
 

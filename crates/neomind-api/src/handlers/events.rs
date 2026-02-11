@@ -25,6 +25,7 @@ enum EventBusReceiverWrapper {
     FilteredAgent(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
     FilteredLlm(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
     FilteredAlert(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
+    FilteredExtension(FilteredReceiver<fn(&NeoMindEvent) -> bool>),
 }
 
 impl EventBusReceiverWrapper {
@@ -37,6 +38,7 @@ impl EventBusReceiverWrapper {
             EventBusReceiverWrapper::FilteredAgent(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredLlm(rx) => rx.recv().await,
             EventBusReceiverWrapper::FilteredAlert(rx) => rx.recv().await,
+            EventBusReceiverWrapper::FilteredExtension(rx) => rx.recv().await,
         }
     }
 }
@@ -217,6 +219,7 @@ fn create_filtered_receiver(event_bus: &EventBus, category: &Option<String>) -> 
         Some("agent") => EventBusReceiverWrapper::FilteredAgent(event_bus.filter().agent_events()),
         Some("llm") => EventBusReceiverWrapper::FilteredLlm(event_bus.filter().llm_events()),
         Some("alert") => EventBusReceiverWrapper::FilteredAlert(event_bus.filter().alert_events()),
+        Some("extension") => EventBusReceiverWrapper::FilteredExtension(event_bus.filter().extension_events()),
         Some("tool") => {
             // Custom filter for tool events - use the FilteredDevice variant as they have the same type
             EventBusReceiverWrapper::FilteredDevice(event_bus.filter().custom(|e| e.is_tool_event()))

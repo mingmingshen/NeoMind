@@ -21,7 +21,7 @@ use crate::mdl::MetricValue;
 use crate::registry::DeviceRegistry;
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{debug, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 /// Configuration for the extraction process.
 #[derive(Debug, Clone)]
@@ -151,27 +151,35 @@ impl UnifiedExtractor {
         let template = self.device_registry.get_template(device_type).await;
 
         let mode = if let Some(template) = template {
-            // Check if device type is in Simple mode (raw data only)
-            if matches!(template.mode, crate::registry::DeviceTypeMode::Simple) {
+            // Check if template has defined metrics
+            if !template.metrics.is_empty() {
+                // Template has metrics defined - extract them regardless of mode
+                // Previously, Simple mode would skip metric extraction, but now we extract
+                // metrics if they are defined in the template
                 debug!(
-                    "Device '{}' of type '{}' is in Simple (Raw Data) mode - storing raw data only",
-                    device_id, device_type
-                );
-                ExtractionMode::RawOnly
-            } else if !template.metrics.is_empty() {
-                // Template has defined metrics - extract using dot notation
-                debug!(
-                    "Using template-driven extraction for device '{}' of type '{}': {} metrics defined",
+                    "Using template-driven extraction for device '{}' of type '{}': {} metrics defined, mode={:?}",
                     device_id,
                     device_type,
-                    template.metrics.len()
+                    template.metrics.len(),
+                    template.mode
                 );
 
                 for metric_def in &template.metrics {
+                    trace!(
+                        "Attempting to extract metric '{}' (path: {}) for device '{}'",
+                        metric_def.name,
+                        metric_def.name,
+                        device_id
+                    );
                     match self.extract_by_path(raw_data, &metric_def.name, 0) {
                         Ok(Some(value)) => {
                             let metric_value = self.value_to_metric_value(&value);
-                            trace!("Extracted metric '{}' = {:?}", metric_def.name, metric_value);
+                            info!(
+                                "Successfully extracted metric '{}' for device '{}': value={:?}",
+                                metric_def.name,
+                                device_id,
+                                metric_value
+                            );
                             metrics.push(ExtractedMetric {
                                 name: metric_def.name.clone(),
                                 value: metric_value,
@@ -180,8 +188,8 @@ impl UnifiedExtractor {
                         }
                         Ok(None) => {
                             // Path not found in data - not an error, metric might be optional
-                            trace!(
-                                "Metric '{}' not found in payload for device '{}'",
+                            debug!(
+                                "Metric '{}' not found in payload for device '{}', skipping",
                                 metric_def.name,
                                 device_id
                             );

@@ -67,12 +67,6 @@ function formatDataSourceLabel(ds: DataSource | undefined, t: (key: string) => s
       return `${tc('command')}: ${ds.deviceId} → ${ds.command || 'toggle'}`
     case 'telemetry':
       return `${tc('telemetry')}: ${ds.deviceId} / ${ds.metricId || 'raw'}`
-    case 'api':
-      return `API: ${ds.endpoint || t('componentPreview.custom')}`
-    case 'websocket':
-      return `WebSocket: ${ds.endpoint || tc('realTime')}`
-    case 'static':
-      return `${tc('static')}: ${JSON.stringify(ds.staticValue)?.slice(0, 20) || tc('value')}`
     default:
       return tc('unknownType')
   }

@@ -44,7 +44,6 @@ pub mod llm;
 pub mod prompts;
 pub mod session;
 pub mod smart_conversation;
-pub mod task_orchestrator;
 pub mod tools;
 pub mod translation;
 
@@ -53,6 +52,7 @@ pub use agent::{
     Agent, AgentConfig, AgentEvent, AgentMessage, AgentResponse, FallbackRule, LlmBackend,
     SessionState, ToolCall, default_fallback_rules, process_fallback,
 };
+pub use ai_agent::IntentParser;
 pub use config::{StreamingConfig, get_default_config, set_default_config};
 pub use error::{NeoMindError, Result};
 pub use session::SessionManager;

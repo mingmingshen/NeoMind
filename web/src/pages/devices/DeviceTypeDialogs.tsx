@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -21,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { toast } from "@/components/ui/use-toast"
+import { useToast } from "@/components/ui/use-toast"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,7 +35,9 @@ import {
   Trash2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Check,
+  X,
   AlertCircle,
   Sparkles,
   FileText,
@@ -44,9 +47,12 @@ import {
   Code,
   Database,
   MoreVertical,
+  Github,
+  Download,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { api } from "@/lib/api"
+import { api, fetchAPI } from "@/lib/api"
 import type { DeviceType, MetricDefinition, CommandDefinition } from "@/types"
 
 /**
@@ -115,6 +121,7 @@ export function AddDeviceTypeDialog({
   editDeviceType,
 }: AddDeviceTypeDialogProps) {
   const { t } = useTranslation(['common', 'devices'])
+  const { toast } = useToast()
   const isEditMode = !!editDeviceType
 
   // Step state
@@ -292,9 +299,9 @@ export function AddDeviceTypeDialog({
         </DialogHeader>
 
         {/* Step Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Step Indicator */}
-          <div className="flex items-center justify-center gap-2">
+          <div className="flex items-center justify-center gap-2 px-6 py-3 shrink-0">
             {steps.map((step, index) => {
               const isCompleted = completedSteps.has(step.key)
               const isCurrent = step.key === currentStep
@@ -332,51 +339,55 @@ export function AddDeviceTypeDialog({
               )
             })}
           </div>
-          {currentStep === 'basic' && (
-            <BasicInfoStep
-              data={formData}
-              onChange={updateField}
-              errors={formErrors}
-            />
-          )}
 
-          {currentStep === 'data' && (
-            <DataDefinitionStep
-              data={formData}
-              onChange={updateField}
-              errors={formErrors}
-            />
-          )}
+          {/* Scrollable Step Content */}
+          <div className="flex-1 overflow-y-auto px-6">
+            {currentStep === 'basic' && (
+              <BasicInfoStep
+                data={formData}
+                onChange={updateField}
+                errors={formErrors}
+              />
+            )}
 
-          {currentStep === 'commands' && (
-            <CommandsStep
-              data={formData}
-              onChange={setFormData}
-              errors={formErrors}
-            />
-          )}
+            {currentStep === 'data' && (
+              <DataDefinitionStep
+                data={formData}
+                onChange={updateField as (field: keyof DeviceType, value: unknown) => void}
+                errors={formErrors}
+              />
+            )}
 
-          {currentStep === 'review' && (
-            <ReviewStep
-              data={formData as DeviceType}
-              onEdit={(step) => setCurrentStep(step)}
-              onValidate={async () => {
-                const result = await onValidate(formData as DeviceType)
-                setValidationResult(result)
-                return result
-              }}
-              validating={validating}
-              validationResult={validationResult}
-            />
-          )}
+            {currentStep === 'commands' && (
+              <CommandsStep
+                data={formData}
+                onChange={setFormData}
+                errors={formErrors}
+              />
+            )}
 
-          {currentStep === 'finish' && (
-            <FinishStep
-              deviceType={formData.device_type || ""}
-              onOpenChange={onOpenChange}
-              isEditMode={isEditMode}
-            />
-          )}
+            {currentStep === 'review' && (
+              <ReviewStep
+                data={formData as DeviceType}
+                onEdit={(step) => setCurrentStep(step)}
+                onValidate={async () => {
+                  const result = await onValidate(formData as DeviceType)
+                  setValidationResult(result)
+                  return result
+                }}
+                validating={validating}
+                validationResult={validationResult}
+              />
+            )}
+
+            {currentStep === 'finish' && (
+              <FinishStep
+                deviceType={formData.device_type || ""}
+                onOpenChange={onOpenChange}
+                isEditMode={isEditMode}
+              />
+            )}
+          </div>
         </div>
 
         {/* Footer Navigation */}
@@ -470,11 +481,14 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto py-4">
-      <div className="text-center mb-6">
+    <div className="flex flex-col h-full py-4">
+      <div className="text-center mb-6 shrink-0">
         <h3 className="text-lg font-semibold">Basic Information</h3>
         <p className="text-sm text-muted-foreground">Enter the basic information for your device type</p>
       </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="space-y-6 max-w-2xl mx-auto">
 
       {/* Device Type (name) */}
       <div className="space-y-2">
@@ -559,6 +573,8 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
           </div>
         </div>
       </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -569,7 +585,7 @@ function BasicInfoStep({ data, onChange, errors }: BasicInfoStepProps) {
 
 interface DataDefinitionStepProps {
   data: Partial<DeviceType>
-  onChange: <K extends keyof DeviceType>(field: K, value: DeviceType[K]) => void
+  onChange: (field: keyof DeviceType, value: unknown) => void
   errors: FormErrors
 }
 
@@ -579,6 +595,7 @@ function DataDefinitionStep({
   errors,
 }: DataDefinitionStepProps) {
   const { t } = useTranslation(['devices'])
+  const { toast } = useToast()
   const isRawMode = data.mode === 'simple'
   const [showImportDialog, setShowImportDialog] = useState(false)
   const [jsonInput, setJsonInput] = useState('')
@@ -801,68 +818,70 @@ function DataDefinitionStep({
   }
 
   return (
-    <div className="space-y-6 py-4">
-      <div className="text-center mb-6">
+    <div className="flex flex-col h-full py-4">
+      <div className="text-center mb-4 shrink-0">
         <h3 className="text-lg font-semibold">Data Definition (Uplink)</h3>
         <p className="text-sm text-muted-foreground">Define how device data is parsed and stored</p>
       </div>
 
-      {/* Mode Selection */}
-      <div className="flex justify-center gap-4">
-        <button
-          onClick={() => onChange('mode', 'full')}
-          className={cn(
-            "flex-1 max-w-xs p-4 rounded-lg border-2 transition-all text-left",
-            !isRawMode
-              ? "border-primary bg-primary/5"
-              : "border-muted hover:border-muted-foreground/30"
-          )}
-        >
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "p-2 rounded-lg",
-              !isRawMode ? "bg-primary text-primary-foreground" : "bg-muted"
-            )}>
-              <Settings className="h-5 w-5" />
-            </div>
-            <div>
-              <p className={cn("font-medium", !isRawMode ? "text-foreground" : "text-muted-foreground")}>
-                Define Metrics
-              </p>
-              <p className="text-xs text-muted-foreground">Parse & store each field</p>
-            </div>
-          </div>
-        </button>
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="space-y-4">
+          {/* Mode Selection */}
+          <div className="flex justify-center gap-4 shrink-0">
+            <button
+              onClick={() => onChange('mode', 'full')}
+              className={cn(
+                "flex-1 max-w-xs p-4 rounded-lg border-2 transition-all text-left",
+                !isRawMode
+                  ? "border-primary bg-primary/5"
+                  : "border-muted hover:border-muted-foreground/30"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "p-2 rounded-lg",
+                  !isRawMode ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  <Settings className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className={cn("font-medium", !isRawMode ? "text-foreground" : "text-muted-foreground")}>
+                    Define Metrics
+                  </p>
+                  <p className="text-xs text-muted-foreground">Parse & store each field</p>
+                </div>
+              </div>
+            </button>
 
-        <button
-          onClick={() => onChange('mode', 'simple')}
-          className={cn(
-            "flex-1 max-w-xs p-4 rounded-lg border-2 transition-all text-left",
-            isRawMode
-              ? "border-primary bg-primary/5"
-              : "border-muted hover:border-muted-foreground/30"
-          )}
-        >
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "p-2 rounded-lg",
-              isRawMode ? "bg-primary text-primary-foreground" : "bg-muted"
-            )}>
-              <Zap className="h-5 w-5" />
-            </div>
-            <div>
-              <p className={cn("font-medium", isRawMode ? "text-foreground" : "text-muted-foreground")}>
-                Raw Data Mode
-              </p>
-              <p className="text-xs text-muted-foreground">Store payload as-is</p>
-            </div>
+            <button
+              onClick={() => onChange('mode', 'simple')}
+              className={cn(
+                "flex-1 max-w-xs p-4 rounded-lg border-2 transition-all text-left",
+                isRawMode
+                  ? "border-primary bg-primary/5"
+                  : "border-muted hover:border-muted-foreground/30"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className={cn(
+                  "p-2 rounded-lg",
+                  isRawMode ? "bg-primary text-primary-foreground" : "bg-muted"
+                )}>
+                  <Zap className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className={cn("font-medium", isRawMode ? "text-foreground" : "text-muted-foreground")}>
+                    Raw Data Mode
+                  </p>
+                  <p className="text-xs text-muted-foreground">Store payload as-is</p>
+                </div>
+              </div>
+            </button>
           </div>
-        </button>
-      </div>
 
       {/* Define Metrics Mode */}
       {!isRawMode && (
-        <div className="flex flex-col h-full space-y-4">
+        <div className="space-y-4">
           {/* Quick Start */}
           {(!data.metrics || data.metrics.length === 0) && (
             <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -887,8 +906,8 @@ function DataDefinitionStep({
           )}
 
           {/* Manual Entry List */}
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="flex items-center justify-between mb-3">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
               <h4 className="text-sm font-medium">
                 {t('devices:metricEditor.metricCount', { count: data.metrics?.length || 0 })}
               </h4>
@@ -910,17 +929,17 @@ function DataDefinitionStep({
             </div>
 
             {(!data.metrics || data.metrics.length === 0) ? (
-              <div className="flex-1 flex items-center justify-center border-2 border-dashed rounded-lg bg-muted/20">
-                <div className="text-center py-12">
+              <div className="flex items-center justify-center border-2 border-dashed rounded-lg bg-muted/20 py-12">
+                <div className="text-center">
                   <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">No metrics defined</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Add metrics manually or import from JSON
+                    {t('devices:metricEditor.orImportFromJson')}
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              <div className="space-y-2">
                 {data.metrics.map((metric, i) => (
                   <MetricEditorCompact
                     key={i}
@@ -953,6 +972,8 @@ function DataDefinitionStep({
           </div>
         </div>
       )}
+        </div>
+      </div>
 
       {/* JSON Import Dialog */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
@@ -1018,6 +1039,7 @@ function CommandsStep({
   errors,
 }: CommandsStepProps) {
   const { t } = useTranslation(['devices'])
+  const { toast } = useToast()
 
   // Add command
   const addCommand = () => {
@@ -1062,7 +1084,7 @@ function CommandsStep({
 
   // Import from JSON
   const importFromJson = () => {
-    const jsonInput = prompt('Paste JSON to import commands:')
+    const jsonInput = prompt(t('devices:commandsStep.promptJson', 'Paste JSON to import commands:'))
     if (!jsonInput) return
 
     try {
@@ -1072,7 +1094,7 @@ function CommandsStep({
       // Convert to CommandDefinition format
       const newCommands = commandsToAdd.map((cmd: any) => ({
         name: cmd.name || `cmd_${Date.now()}`,
-        display_name: cmd.display_name || cmd.name || 'Imported Command',
+        display_name: cmd.display_name || cmd.name || t('devices:commandsStep.importedCommand', 'Imported Command'),
         payload_template: cmd.payload_template || cmd.payload || JSON.stringify(cmd),
         parameters: cmd.parameters || [],
       }))
@@ -1083,13 +1105,13 @@ function CommandsStep({
       })
 
       toast({
-        title: 'Import Successful',
-        description: `Added ${newCommands.length} command${newCommands.length > 1 ? 's' : ''}`,
+        title: t('devices:commandsStep.importSuccess', 'Import Successful'),
+        description: t('devices:commandsStep.importSuccessDesc', `Added ${newCommands.length} command${newCommands.length > 1 ? 's' : ''}`, { count: newCommands.length }),
       })
     } catch {
       toast({
-        title: 'Import Failed',
-        description: 'Invalid JSON format',
+        title: t('devices:commandsStep.importFailed', 'Import Failed'),
+        description: t('devices:commandsStep.invalidJson', 'Invalid JSON format'),
         variant: 'destructive',
       })
     }
@@ -1110,7 +1132,7 @@ function CommandsStep({
 
         const newCommands = commandsToAdd.map((cmd: any) => ({
           name: cmd.name || `cmd_${Date.now()}`,
-          display_name: cmd.display_name || cmd.name || 'Imported Command',
+          display_name: cmd.display_name || cmd.name || t('devices:commandsStep.importedCommand', 'Imported Command'),
           payload_template: cmd.payload_template || cmd.payload || JSON.stringify(cmd),
           parameters: cmd.parameters || [],
         }))
@@ -1121,13 +1143,13 @@ function CommandsStep({
         })
 
         toast({
-          title: 'Import Successful',
-          description: `Added ${newCommands.length} command${newCommands.length > 1 ? 's' : ''}`,
+          title: t('devices:commandsStep.importSuccess', 'Import Successful'),
+          description: t('devices:commandsStep.importSuccessDesc', `Added ${newCommands.length} command${newCommands.length > 1 ? 's' : ''}`, { count: newCommands.length }),
         })
       } catch {
         toast({
-          title: 'Import Failed',
-          description: 'Invalid JSON format',
+          title: t('devices:commandsStep.importFailed', 'Import Failed'),
+          description: t('devices:commandsStep.invalidJson', 'Invalid JSON format'),
           variant: 'destructive',
         })
       } finally {
@@ -1140,73 +1162,77 @@ function CommandsStep({
   }
 
   return (
-    <div className="space-y-6 py-4">
-      <div className="text-center mb-2">
+    <div className="flex flex-col h-full py-4">
+      <div className="text-center mb-4 shrink-0">
         <h3 className="text-lg font-semibold">Commands (Downlink)</h3>
         <p className="text-sm text-muted-foreground">Define commands that can be sent to the device</p>
       </div>
 
-      {/* Manual Entry List */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium flex items-center gap-2">
-            <FileText className="h-4 w-4" />
-            Commands ({data.commands?.length || 0})
-          </h4>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-8">
-                <Plus className="mr-1 h-3 w-3" />
-                Add Command
-                <MoreVertical className="ml-1 h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={addCommand}>
-                <Plus className="mr-2 h-3 w-3" />
-                Empty Command
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={importFromJson}>
-                <Code className="mr-2 h-3 w-3" />
-                Import from JSON
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-                <Database className="mr-2 h-3 w-3" />
-                Import from File
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json"
-            className="hidden"
-            onChange={handleFileImport}
-          />
-        </div>
-
-        {(!data.commands || data.commands.length === 0) ? (
-          <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/20">
-            <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-            <p className="text-sm text-muted-foreground">No commands defined</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Add commands manually or import from JSON
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {data.commands.map((cmd, i) => (
-              <CommandEditorCompact
-                key={i}
-                command={cmd}
-                onChange={(c) => updateCommand(i, c)}
-                onRemove={() => removeCommand(i)}
-                error={errors.commands?.[i]}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="space-y-4">
+          {/* Manual Entry List */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Commands ({data.commands?.length || 0})
+              </h4>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" className="h-8">
+                    <Plus className="mr-1 h-3 w-3" />
+                    Add Command
+                    <MoreVertical className="ml-1 h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={addCommand}>
+                    <Plus className="mr-2 h-3 w-3" />
+                    Empty Command
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={importFromJson}>
+                    <Code className="mr-2 h-3 w-3" />
+                    {t('devices:commandsStep.importJson', 'Import from JSON')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
+                    <Database className="mr-2 h-3 w-3" />
+                    {t('devices:commandsStep.importFromFile', 'Import from File')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleFileImport}
               />
-            ))}
+            </div>
+
+            {(!data.commands || data.commands.length === 0) ? (
+              <div className="text-center py-12 border-2 border-dashed rounded-lg bg-muted/20">
+                <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p className="text-sm text-muted-foreground">No commands defined</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('devices:commandsStep.orImportFromJson', 'Add commands manually or import from JSON')}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {data.commands.map((cmd, i) => (
+                  <CommandEditorCompact
+                    key={i}
+                    command={cmd}
+                    onChange={(c) => updateCommand(i, c)}
+                    onRemove={() => removeCommand(i)}
+                    error={errors.commands?.[i]}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )
@@ -1230,162 +1256,166 @@ function ReviewStep({ data, onEdit, onValidate, validating, validationResult }: 
   }
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto py-4">
-      <div className="text-center mb-6">
+    <div className="flex flex-col h-full py-4">
+      <div className="text-center mb-4 shrink-0">
         <h3 className="text-lg font-semibold">Review & Confirm</h3>
         <p className="text-sm text-muted-foreground">Review your device type before saving</p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="rounded-lg border bg-card p-4 text-center">
-          <div className="text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
-          <div className="text-xs text-muted-foreground">Metrics</div>
-        </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
-          <div className="text-2xl font-bold text-blue-500">{data.commands?.length || 0}</div>
-          <div className="text-xs text-muted-foreground">Commands</div>
-        </div>
-        <div className="rounded-lg border bg-card p-4 text-center">
-          <div className="text-2xl font-bold text-green-500">
-            {data.mode === 'simple' ? 'Raw' : 'Full'}
-          </div>
-          <div className="text-xs text-muted-foreground">Mode</div>
-        </div>
-      </div>
-
-      {/* Basic Info */}
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-medium flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            Basic Info
-          </h4>
-          <Button variant="ghost" size="sm" onClick={() => onEdit('basic')}>
-            Edit
-          </Button>
-        </div>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span className="text-muted-foreground">Name:</span>
-            <span className="ml-2 font-medium">{data.name}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Type ID:</span>
-            <span className="ml-2 font-mono">{data.device_type}</span>
-          </div>
-          <div className="col-span-2">
-            <span className="text-muted-foreground">Description:</span>
-            <span className="ml-2">{data.description || '-'}</span>
-          </div>
-          <div className="col-span-2">
-            <span className="text-muted-foreground">Categories:</span>
-            <div className="ml-2 inline-flex gap-1">
-              {data.categories.length > 0 ? (
-                data.categories.map((cat, i) => (
-                  <Badge key={i} variant="secondary">{cat}</Badge>
-                ))
-              ) : (
-                <span className="text-muted-foreground">-</span>
-              )}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="space-y-6 max-w-3xl mx-auto">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="rounded-lg border bg-card p-4 text-center">
+              <div className="text-2xl font-bold text-primary">{data.metrics?.length || 0}</div>
+              <div className="text-xs text-muted-foreground">Metrics</div>
+            </div>
+            <div className="rounded-lg border bg-card p-4 text-center">
+              <div className="text-2xl font-bold text-blue-500">{data.commands?.length || 0}</div>
+              <div className="text-xs text-muted-foreground">Commands</div>
+            </div>
+            <div className="rounded-lg border bg-card p-4 text-center">
+              <div className="text-2xl font-bold text-green-500">
+                {data.mode === 'simple' ? 'Raw' : 'Full'}
+              </div>
+              <div className="text-xs text-muted-foreground">Mode</div>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Metrics */}
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h4 className="font-medium flex items-center gap-2">
-            <ArrowDown className="h-4 w-4 text-green-500" />
-            Metrics ({data.metrics?.length || 0})
-          </h4>
-          <Button variant="ghost" size="sm" onClick={() => onEdit('data')}>
-            Edit
-          </Button>
-        </div>
-        {(!data.metrics || data.metrics.length === 0) ? (
-          <p className="text-sm text-muted-foreground">
-            {data.mode === 'simple' ? 'Raw Data Mode - no metrics defined' : 'No metrics defined'}
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {data.metrics.map((metric, i) => (
-              <div key={i} className="p-3 bg-muted/50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-mono text-sm">{metric.name}</span>
-                    <span className="text-muted-foreground mx-2">•</span>
-                    <span className="text-sm">{metric.display_name}</span>
+          {/* Basic Info */}
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Basic Info
+              </h4>
+              <Button variant="ghost" size="sm" onClick={() => onEdit('basic')}>
+                Edit
+              </Button>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Name:</span>
+                <span className="ml-2 font-medium">{data.name}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Type ID:</span>
+                <span className="ml-2 font-mono">{data.device_type}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Description:</span>
+                <span className="ml-2">{data.description || '-'}</span>
+              </div>
+              <div className="col-span-2">
+                <span className="text-muted-foreground">Categories:</span>
+                <div className="ml-2 inline-flex gap-1">
+                  {data.categories.length > 0 ? (
+                    data.categories.map((cat, i) => (
+                      <Badge key={i} variant="secondary">{cat}</Badge>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Metrics */}
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-medium flex items-center gap-2">
+                <ArrowDown className="h-4 w-4 text-green-500" />
+                Metrics ({data.metrics?.length || 0})
+              </h4>
+              <Button variant="ghost" size="sm" onClick={() => onEdit('data')}>
+                Edit
+              </Button>
+            </div>
+            {(!data.metrics || data.metrics.length === 0) ? (
+              <p className="text-sm text-muted-foreground">
+                {data.mode === 'simple' ? 'Raw Data Mode - no metrics defined' : 'No metrics defined'}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {data.metrics.map((metric, i) => (
+                  <div key={i} className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-mono text-sm">{metric.name}</span>
+                        <span className="text-muted-foreground mx-2">•</span>
+                        <span className="text-sm">{metric.display_name}</span>
+                      </div>
+                      <Badge variant="outline" className="text-xs">{formatDataType(metric.data_type)}</Badge>
+                    </div>
                   </div>
-                  <Badge variant="outline" className="text-xs">{formatDataType(metric.data_type)}</Badge>
-                </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Commands */}
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-medium flex items-center gap-2">
-            <FileText className="h-4 w-4 text-blue-500" />
-            Commands ({data.commands?.length || 0})
-          </h4>
-          <Button variant="ghost" size="sm" onClick={() => onEdit('commands')}>
-            Edit
-          </Button>
-        </div>
-        {(!data.commands || data.commands.length === 0) ? (
-          <p className="text-sm text-muted-foreground">No commands defined</p>
-        ) : (
-          <div className="space-y-2">
-            {data.commands.map((cmd, i) => (
-              <div key={i} className="text-sm p-2 bg-muted/50 rounded flex items-center justify-between">
-                <div>
-                  <span className="font-mono">{cmd.name}</span>
-                  <span className="text-muted-foreground mx-2">•</span>
-                  <span>{cmd.display_name}</span>
-                </div>
-                <Badge variant="secondary" className="text-xs">
-                  {cmd.parameters?.length || 0} params
-                </Badge>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Validation */}
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-medium">Validation</h4>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleValidate}
-            disabled={validating}
-          >
-            {validating ? 'Validating...' : 'Validate Definition'}
-          </Button>
-        </div>
-        {validationResult && (
-          <div className={cn(
-            "p-3 rounded-lg text-sm",
-            validationResult.valid ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-destructive/10 text-destructive"
-          )}>
-            <div className="flex items-center gap-2 font-medium">
-              {validationResult.valid ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-              {validationResult.message}
-            </div>
-            {validationResult.errors && validationResult.errors.length > 0 && (
-              <ul className="mt-2 ml-6 list-disc space-y-1">
-                {validationResult.errors.map((err, i) => <li key={i}>{err}</li>)}
-              </ul>
             )}
           </div>
-        )}
+
+          {/* Commands */}
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium flex items-center gap-2">
+                <FileText className="h-4 w-4 text-blue-500" />
+                Commands ({data.commands?.length || 0})
+              </h4>
+              <Button variant="ghost" size="sm" onClick={() => onEdit('commands')}>
+                Edit
+              </Button>
+            </div>
+            {(!data.commands || data.commands.length === 0) ? (
+              <p className="text-sm text-muted-foreground">No commands defined</p>
+            ) : (
+              <div className="space-y-2">
+                {data.commands.map((cmd, i) => (
+                  <div key={i} className="text-sm p-2 bg-muted/50 rounded flex items-center justify-between">
+                    <div>
+                      <span className="font-mono">{cmd.name}</span>
+                      <span className="text-muted-foreground mx-2">•</span>
+                      <span>{cmd.display_name}</span>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">
+                      {cmd.parameters?.length || 0} params
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Validation */}
+          <div className="rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium">Validation</h4>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleValidate}
+                disabled={validating}
+              >
+                {validating ? 'Validating...' : 'Validate Definition'}
+              </Button>
+            </div>
+            {validationResult && (
+              <div className={cn(
+                "p-3 rounded-lg text-sm",
+                validationResult.valid ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-destructive/10 text-destructive"
+              )}>
+                <div className="flex items-center gap-2 font-medium">
+                  {validationResult.valid ? <Check className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                  {validationResult.message}
+                </div>
+                {validationResult.errors && validationResult.errors.length > 0 && (
+                  <ul className="mt-2 ml-6 list-disc space-y-1">
+                    {validationResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -2504,5 +2534,273 @@ export function EditDeviceTypeDialog({ open, onOpenChange, deviceType, onEdit, e
       validating={false}
       editDeviceType={deviceType}
     />
+  )
+}
+
+// ============================================================================
+// GITHUB IMPORT DIALOG - Simplified for importing from official repository
+// ============================================================================
+
+interface CloudImportDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onImportComplete?: () => void
+}
+
+interface CloudDeviceType {
+  device_type: string
+  name: string
+  description: string
+  categories: string[]
+  url?: string
+  selected?: boolean
+}
+
+interface CloudImportResponse {
+  device_types: CloudDeviceType[]
+  total: number
+}
+
+export function CloudImportDialog({ open, onOpenChange, onImportComplete }: CloudImportDialogProps) {
+  const { t } = useTranslation(['common', 'devices'])
+  const { toast } = useToast()
+
+  // UI state
+  const [loading, setLoading] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [deviceTypes, setDeviceTypes] = useState<CloudDeviceType[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+  // Load device types from cloud repository
+  useEffect(() => {
+    if (open) {
+      loadDeviceTypes()
+    }
+  }, [open])
+
+  const loadDeviceTypes = async () => {
+    setLoading(true)
+    try {
+      const res = await fetchAPI<CloudImportResponse & { error?: string; message?: string }>("/device-types/cloud/list")
+      setDeviceTypes(res.device_types || [])
+
+      // Show warning if there was an error but still got some results
+      if (res.error && res.device_types?.length === 0) {
+        toast({
+          title: res.message || t('devices:cloud.loadFailed', "加载失败"),
+          description: res.error === 'network_error'
+            ? t('devices:cloud.networkError', "无法连接到 GitHub，请检查网络连接")
+            : t('devices:cloud.loadFailedDesc', "无法加载云端设备类型"),
+          variant: "destructive"
+        })
+      }
+    } catch (e) {
+      console.error("Failed to load device types:", e)
+      toast({
+        title: t('devices:cloud.loadFailed', "加载失败"),
+        description: t('devices:cloud.loadFailedDesc', "无法加载云端设备类型"),
+        variant: "destructive"
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const toggleSelection = (id: string) => {
+    const newSelected = new Set(selectedIds)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedIds(newSelected)
+  }
+
+  const selectAll = () => {
+    setSelectedIds(new Set(deviceTypes.map(d => d.device_type)))
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+  }
+
+  const handleImport = async () => {
+    if (selectedIds.size === 0) {
+      toast({
+        title: t('devices:cloud.noSelection', "未选择"),
+        description: t('devices:cloud.noSelectionDesc', "请至少选择一个设备类型"),
+        variant: "destructive"
+      })
+      return
+    }
+
+    setImporting(true)
+    try {
+      const response = await fetchAPI<{ imported: number; skipped: number; failed: number; failures?: Array<{ device_type: string; reason: string }> }>("/device-types/cloud/import", {
+        method: "POST",
+        body: JSON.stringify({
+          device_types: Array.from(selectedIds)
+        })
+      })
+
+      // Build detailed description
+      let description = `导入 ${response.imported} 个`
+      if (response.skipped > 0) {
+        description += `，跳过 ${response.skipped} 个（已存在）`
+      }
+      if (response.failed > 0) {
+        description += `，失败 ${response.failed} 个`
+      }
+
+      const variant = response.failed > 0 ? "destructive" : "default"
+
+      toast({
+        title: response.imported > 0
+          ? t('devices:cloud.importSuccess', "导入成功")
+          : t('devices:cloud.importPartial', "导入完成"),
+        description,
+        variant,
+      })
+
+      // Log failures for debugging
+      if (response.failures && response.failures.length > 0) {
+        console.warn("Failed device type imports:", response.failures)
+      }
+
+      onImportComplete?.()
+      setTimeout(() => {
+        onOpenChange(false)
+        setSelectedIds(new Set())
+      }, 1000)
+    } catch (e: any) {
+      toast({
+        title: t('devices:cloud.importFailed', "导入失败"),
+        description: e?.message || t('devices:cloud.importFailedDesc', "导入设备类型失败"),
+        variant: "destructive"
+      })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5" />
+            {t('devices:cloud.importTitle', "从云端导入设备类型")}
+          </DialogTitle>
+          <DialogDescription>
+            {t('devices:cloud.importDescription', "选择需要的设备类型快速添加到系统")}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto -mx-6 px-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">
+                {t('devices:cloud.loading', "加载中...")}
+              </span>
+            </div>
+          ) : deviceTypes.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {t('devices:cloud.noDeviceTypes', "暂无可用设备类型")}
+            </div>
+          ) : (
+            <div className="space-y-4 py-4">
+              {/* Select All / Clear */}
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {t('devices:cloud.selectedCount', `已选择 {{count}} 个`, { count: selectedIds.size })}
+                </span>
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={selectAll}>
+                    {t('devices:cloud.selectAll', "全选")}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={clearSelection}>
+                    {t('devices:cloud.clear', "清空")}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Device Type List */}
+              <div className="grid gap-2">
+                {deviceTypes.map((dt) => (
+                  <div
+                    key={dt.device_type}
+                    className={cn(
+                      "flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                      selectedIds.has(dt.device_type)
+                        ? "bg-primary/10 border-primary"
+                        : "hover:bg-accent"
+                    )}
+                    onClick={() => toggleSelection(dt.device_type)}
+                  >
+                    <div className="mt-0.5">
+                      <div className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center",
+                        selectedIds.has(dt.device_type)
+                          ? "bg-primary border-primary"
+                          : "border-muted-foreground"
+                      )}>
+                        {selectedIds.has(dt.device_type) && (
+                          <Check className="h-3 w-3 text-primary-foreground" />
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">{dt.name}</div>
+                      <div className="text-xs text-muted-foreground">{dt.device_type}</div>
+                      {dt.description && (
+                        <div className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                          {dt.description}
+                        </div>
+                      )}
+                      {dt.categories.length > 0 && (
+                        <div className="flex gap-1 mt-2">
+                          {dt.categories.map((cat) => (
+                            <Badge key={cat} variant="outline" className="text-xs">
+                              {cat}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={importing}
+          >
+            {t('common:cancel')}
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={importing || selectedIds.size === 0}
+          >
+            {importing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {t('devices:cloud.importing', "导入中...")}
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                {t('devices:cloud.importButton', "导入 ({{count}})", { count: selectedIds.size })}
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

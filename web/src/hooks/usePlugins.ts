@@ -325,14 +325,6 @@ export function usePlugins(): UsePluginsReturn {
     discoverExtensions,
   } = useStore()
 
-  // Map extension type to plugin category
-  const mapExtensionToCategory = (extensionType: string): 'ai' | 'devices' | 'notify' => {
-    const type = extensionType.toLowerCase()
-    if (type === 'llm_provider') return 'ai'
-    if (type === 'device_protocol') return 'devices'
-    return 'notify' // Default to notify for other types
-  }
-
   // Refresh all extension data
   const refresh = useCallback(async () => {
     await fetchExtensions()
@@ -349,7 +341,7 @@ export function usePlugins(): UsePluginsReturn {
       const plugin: Plugin = {
         id: extension.id,
         name: extension.name,
-        plugin_type: extension.extension_type,
+        plugin_type: 'integration', // V2: All extensions are treated as integration type
         state: extension.state,
         enabled: extension.state === 'Running',
         version: extension.version,
@@ -365,7 +357,7 @@ export function usePlugins(): UsePluginsReturn {
         },
         loaded_at: extension.loaded_at ? new Date(extension.loaded_at * 1000).toISOString() : new Date().toISOString(),
         path: extension.file_path,
-        category: mapExtensionToCategory(extension.extension_type),
+        category: 'integration', // V2: Default category for all extensions
       }
       result.push(toUnifiedPluginData(plugin))
     }

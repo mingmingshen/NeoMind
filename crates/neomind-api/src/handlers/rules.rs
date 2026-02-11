@@ -100,7 +100,7 @@ fn http_method_to_string(method: &HttpMethod) -> &'static str {
 /// Convert RuleCondition to frontend-compatible JSON Value
 fn condition_to_json(cond: &RuleCondition) -> Value {
     match cond {
-        RuleCondition::Simple { device_id, metric, operator, threshold } => {
+        RuleCondition::Device { device_id, metric, operator, threshold } => {
             json!({
                 "device_id": device_id,
                 "metric": metric,
@@ -108,9 +108,26 @@ fn condition_to_json(cond: &RuleCondition) -> Value {
                 "threshold": threshold,
             })
         }
-        RuleCondition::Range { device_id, metric, min, max } => {
+        RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+            json!({
+                "extension_id": extension_id,
+                "metric": metric,
+                "operator": operator_to_symbol(operator),
+                "threshold": threshold,
+            })
+        }
+        RuleCondition::DeviceRange { device_id, metric, min, max } => {
             json!({
                 "device_id": device_id,
+                "metric": metric,
+                "operator": "between",
+                "range_min": min,
+                "threshold": max,
+            })
+        }
+        RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+            json!({
+                "extension_id": extension_id,
                 "metric": metric,
                 "operator": "between",
                 "range_min": min,
@@ -502,10 +519,10 @@ pub async fn test_rule_handler(
 
     // Extract condition fields using pattern matching
     let (dsl_device_id, metric, operator, threshold) = match &rule.condition {
-        RuleCondition::Simple { device_id, metric, operator, threshold } => {
+        RuleCondition::Device { device_id, metric, operator, threshold } => {
             (device_id.clone(), metric.clone(), *operator, *threshold)
         }
-        RuleCondition::Range { device_id, metric, min: _, max } => {
+        RuleCondition::DeviceRange { device_id, metric, min: _, max } => {
             // For range conditions, use the max as threshold for testing
             (device_id.clone(), metric.clone(), ComparisonOperator::GreaterThan, *max)
         }
@@ -951,7 +968,7 @@ pub async fn validate_rule_handler(
         .and_then(|v| v.as_f64())
         .ok_or_else(|| ErrorResponse::bad_request("Missing or invalid 'condition.threshold'"))?;
 
-    let condition = RuleCondition::Simple {
+    let condition = RuleCondition::Device {
         device_id: device_id.to_string(),
         metric: metric.to_string(),
         operator,

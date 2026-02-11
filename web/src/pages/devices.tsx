@@ -7,7 +7,7 @@ import { confirm } from "@/hooks/use-confirm"
 import { useNavigate, useLocation, useParams } from "react-router-dom"
 import { PageLayout } from "@/components/layout/PageLayout"
 import { PageTabs, PageTabsContent, Pagination } from "@/components/shared"
-import { Upload, Download, Settings, Server, Layers, FileEdit } from "lucide-react"
+import { Upload, Download, Settings, Server, Layers, FileEdit, Cloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -32,6 +32,7 @@ import {
   ViewDeviceTypeDialog,
   EditDeviceTypeDialog,
 } from "./devices/index"
+import { CloudImportDialog } from "@/pages/devices/DeviceTypeDialogs"
 import { DeviceTypeGeneratorDialog } from "@/components/devices/DeviceTypeGeneratorDialog"
 import { PendingDevicesList } from "./devices/PendingDevicesList"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
@@ -458,6 +459,7 @@ export function DevicesPage() {
   const [viewDeviceTypeOpen, setViewDeviceTypeOpen] = useState(false)
   const [editDeviceTypeOpen, setEditDeviceTypeOpen] = useState(false)
   const [generatorOpen, setGeneratorOpen] = useState(false)
+  const [cloudImportOpen, setCloudImportOpen] = useState(false)
   const [importingDeviceType, setImportingDeviceType] = useState(false)
   const deviceTypeImportRef = useRef<HTMLInputElement>(null)
   const [selectedDeviceType, setSelectedDeviceType] = useState<DeviceType | null>(null)
@@ -698,6 +700,12 @@ export function DevicesPage() {
                     disabled: importingDeviceType,
                   },
                   {
+                    label: t('devices:cloud.fromCloud'),
+                    icon: <Cloud className="h-4 w-4" />,
+                    variant: 'outline',
+                    onClick: () => setCloudImportOpen(true),
+                  },
+                  {
                     label: t('common:export') + ' All',
                     icon: <Download className="h-4 w-4" />,
                     variant: 'outline',
@@ -828,6 +836,16 @@ export function DevicesPage() {
         onDeviceTypeCreated={() => {
           fetchDeviceTypes()
           setGeneratorOpen(false)
+        }}
+      />
+
+      {/* Cloud Import Dialog */}
+      <CloudImportDialog
+        open={cloudImportOpen}
+        onOpenChange={setCloudImportOpen}
+        onImportComplete={() => {
+          fetchDeviceTypes()
+          setCloudImportOpen(false)
         }}
       />
 

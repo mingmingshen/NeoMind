@@ -38,6 +38,8 @@ pub mod device_integration;
 pub mod dsl;
 pub mod engine;
 pub mod error;
+pub mod extension_integration;
+pub mod unified_provider;
 
 pub mod history;
 pub mod store;
@@ -49,9 +51,18 @@ pub use dependencies::{
 pub use device_integration::{
     CommandActionResult, CommandExecutionStats, CommandResultHistory, CommandResultValue,
     DeviceActionExecutor, DeviceIntegratedRuleEngine, DeviceIntegrationError,
-    DeviceIntegrationResult, DeviceValueProvider,
+    DeviceIntegrationResult, DeviceValueProvider, CoreExtensionRegistryAdapter,
 };
 pub use dsl::{ComparisonOperator, LogLevel, ParsedRule, RuleAction, RuleCondition, RuleDslParser};
+pub use extension_integration::{
+    ConditionOperator as ExtensionConditionOperator, ExecutionResult, ExtensionActionExecutor,
+    ExtensionCommandAction, ExtensionCondition, ExtensionRegistry, ExtensionValueProvider,
+    try_parse_extension_action,
+};
+pub use unified_provider::{
+    CacheStats, DeviceStorageLike, ExtensionMetricsStorageAdapter, ExtensionStorageLike,
+    TimeSeriesStorageAdapter, UnifiedValueProvider,
+};
 pub use engine::{
     CompiledRule, InMemoryValueProvider, RuleEngine, RuleExecutionResult, RuleId, RuleState,
     RuleStatus, ValueProvider,

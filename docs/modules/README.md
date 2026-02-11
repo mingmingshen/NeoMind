@@ -82,21 +82,21 @@ graph TB
 
 | 模块 | 完成度 | 用途 |
 |------|--------|------|
-| [Core](01-core.md) | 90% | 核心trait定义、事件总线 |
+| [Core](01-core.md) | 90% | 核心trait定义、事件总线、DataSourceId |
 | [LLM](02-llm.md) | 90% | 多后端LLM支持 |
-| [Agent](03-agent.md) | 85% | AI会话代理 |
+| [Agent](03-agent.md) | 90% | AI会话代理、扩展指标采集 |
 | [Devices](04-devices.md) | 85% | 设备管理与适配器 |
 | [Automation](05-automation.md) | 75% | 数据转换与自动化 |
 | [Rules](06-rules.md) | 75% | DSL规则引擎 |
 | [Tools](07-tools.md) | 80% | 函数调用工具 |
 | [Memory](08-memory.md) | 85% | 三层内存系统 |
 | [Messages](09-messages.md) | 70% | 消息通知 |
-| [Storage](10-storage.md) | 95% | 持久化存储 |
+| [Storage](10-storage.md) | 95% | 持久化存储、统一时序数据库 |
 | [Integrations](11-integrations.md) | 65% | 外部系统集成 |
 | [Commands](12-commands.md) | 70% | 设备命令队列 |
-| [Plugin SDK](13-plugin-sdk.md) | 60% | 动态插件SDK |
-| [API](14-api.md) | 90% | REST/WebSocket API |
-| [Web](15-web.md) | 80% | React前端 |
+| [Plugin SDK](13-plugin-sdk.md) | 60% | 动态插件SDK（已迁移到Extension） |
+| [API](14-api.md) | 90% | REST/WebSocket API、扩展指标 |
+| [Web](15-web.md) | 80% | React前端、Zustand状态管理 |
 
 ## 技术栈
 
@@ -111,5 +111,5 @@ graph TB
 - **语言**: TypeScript
 - **框架**: React 18
 - **构建**: Vite
-- **状态**: Redux Toolkit
+- **状态**: Zustand (替代Redux Toolkit)
 - **UI**: Radix UI + Tailwind CSS

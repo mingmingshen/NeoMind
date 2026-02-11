@@ -67,6 +67,7 @@ pub mod dashboards;
 pub mod device_registry;
 pub mod device_state;
 pub mod error;
+pub mod extensions;
 pub mod knowledge;
 pub mod llm_backends;
 pub mod llm_data;
@@ -108,6 +109,8 @@ pub use settings::{
 pub use llm_backends::{
     BackendCapabilities, ConnectionTestResult, LlmBackendInstance, LlmBackendStats, LlmBackendStore,
 };
+
+pub use extensions::{ExtensionRecord, ExtensionStats, ExtensionStore};
 
 pub use agents::{
     ActionExecuted, AgentExecutionRecord, AgentFilter, AgentMemory, AgentResource, AgentSchedule,

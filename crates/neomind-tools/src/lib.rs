@@ -27,11 +27,11 @@
 //!     let storage = Arc::new(TimeSeriesStorage::memory()?);
 //!     let rule_engine = Arc::new(RuleEngine::new());
 //!
-//!     // Create a registry with real tools
+//!     // Create a registry with core_tools (preferred)
 //!     let registry = ToolRegistryBuilder::new()
-//!         .with_query_data_tool(storage.clone())
-//!         .with_control_device_tool(device_service.clone())
-//!         .with_list_devices_tool(device_service)
+//!         .with_device_discover_tool_with_storage(device_service.clone(), storage.clone())
+//!         .with_device_query_tool_with_storage(device_service.clone(), storage.clone())
+//!         .with_core_device_control_tool_with_storage(device_service.clone(), storage.clone())
 //!         .with_create_rule_tool(rule_engine)
 //!         .build();
 //!
@@ -40,7 +40,7 @@
 //!
 //!     // Execute a tool
 //!     let result = registry.execute(
-//!         "query_data",
+//!         "device.query",
 //!         serde_json::json!({"device_id": "sensor_1", "metric": "temperature"})
 //!     ).await?;
 //!
@@ -54,6 +54,7 @@ use std::sync::Arc;
 pub mod agent_tools;
 pub mod core_tools;
 pub mod error;
+pub mod extension_tools;
 pub mod real;
 pub mod registry;
 pub mod system_tools;
@@ -82,14 +83,12 @@ pub use neomind_core::tools::{
 // ============================================================================
 // Real Tools (Primary Exports)
 // ============================================================================
-
-/// Device tools
+/// Device tools (QueryDataTool and GetDeviceDataTool remain - core_tools may not fully replace them yet)
 pub use real::{
-    QueryDataTool, ControlDeviceTool, ListDevicesTool,
-    GetDeviceDataTool, DeviceAnalyzeTool, QueryRuleHistoryTool,
+    QueryDataTool, GetDeviceDataTool, QueryRuleHistoryTool,
 };
 
-/// Rule tools
+/// Rule tools (CreateRuleTool, ListRulesTool, DeleteRuleTool - no core_tools equivalent yet)
 pub use real::{
     CreateRuleTool, ListRulesTool, DeleteRuleTool,
 };
@@ -101,7 +100,8 @@ pub use real::{
 /// Core business-scenario tools with device registry abstraction
 pub use core_tools::{
     // Device tools
-    DeviceDiscoverTool,
+    DeviceDiscoverTool, DeviceQueryTool, DeviceControlTool,
+    DeviceAnalyzeTool as CoreDeviceAnalyzeTool,
     // Rule tools
     RuleFromContextTool,
     // Types
@@ -116,6 +116,8 @@ pub use core_tools::{
     AnalysisType, AnalysisResult,
     // Rule types
     ExtractedRuleDefinition, RuleActionDef,
+    // Registry trait and adapters
+    DeviceRegistryTrait, RealDeviceRegistryAdapter, DeviceRegistryAdapter,
 };
 
 // ============================================================================
@@ -140,6 +142,18 @@ pub use agent_tools::{
     CreateAgentTool, AgentMemoryTool,
     GetAgentExecutionsTool, GetAgentExecutionDetailTool, GetAgentConversationTool,
 };
+
+// ============================================================================
+// Extension Tools
+// ============================================================================
+
+pub use extension_tools::{
+    ExtensionTool, ExtensionToolGenerator, ExtensionToolExecutor,
+    ExtensionFilter,
+};
+
+// Note: ExtensionRegistry is now defined in neomind_core::extension
+// and is re-exported from neomind_core directly
 
 /// Version information
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

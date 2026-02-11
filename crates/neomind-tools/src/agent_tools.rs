@@ -18,7 +18,10 @@ use super::error::ToolError;
 use neomind_core::tools::{ToolExample, UsageScenario, ToolCategory, ToolRelationships};
 
 use neomind_storage::AgentStore;
-use neomind_storage::agents::{AgentFilter, AgentStatus, ScheduleType, LearnedPattern};
+use neomind_storage::agents::{AgentFilter, AgentStatus, ScheduleType, LearnedPattern, ParsedIntent, IntentType, AgentResource, ResourceType};
+
+// Optional dependency for device resolution
+use neomind_devices::DeviceService;
 
 // ============================================================================
 // Agent Query Tools
@@ -585,12 +588,33 @@ impl Tool for ControlAgentTool {
 /// Tool for creating a new agent via natural language.
 pub struct CreateAgentTool {
     agent_store: Arc<AgentStore>,
+    device_service: Option<Arc<DeviceService>>,
 }
 
 impl CreateAgentTool {
-    /// Create a new create agent tool.
+    /// Create a new create agent tool (basic version with keyword-based parsing).
     pub fn new(agent_store: Arc<AgentStore>) -> Self {
-        Self { agent_store }
+        Self {
+            agent_store,
+            device_service: None,
+        }
+    }
+
+    /// Create a new create agent tool with device service for device resolution.
+    pub fn with_device_service(mut self, device_service: Arc<DeviceService>) -> Self {
+        self.device_service = Some(device_service);
+        self
+    }
+
+    /// Create a fully configured create agent tool with device service.
+    pub fn with_dependencies(
+        agent_store: Arc<AgentStore>,
+        device_service: Option<Arc<DeviceService>>,
+    ) -> Self {
+        Self {
+            agent_store,
+            device_service,
+        }
     }
 }
 
@@ -675,23 +699,32 @@ impl Tool for CreateAgentTool {
         // Generate new agent ID
         let agent_id = format!("agent_{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
 
-        // Create a basic agent structure
-        // In production, this would use LLM to parse the intent
+        // Step 1: Parse intent using keyword-based parsing
+        let (parsed_intent, resources, schedule) = self.parse_intent(description)?;
+
+        // Step 2: Resolve device names to actual device IDs (if device service available)
+        let resolved_resources = if let Some(device_service) = &self.device_service {
+            self.resolve_device_resources(device_service, &resources).await?
+        } else {
+            resources
+        };
+
+        // Step 3: Create the agent with parsed intent and bound resources
         let new_agent = neomind_storage::agents::AiAgent {
             id: agent_id.clone(),
             name: name.clone(),
             description: Some(description.to_string()),
             user_prompt: description.to_string(),
             llm_backend_id: None,
-            parsed_intent: None, // Would be filled by LLM parsing
-            resources: vec![],
-            schedule: neomind_storage::agents::AgentSchedule {
+            parsed_intent: Some(parsed_intent),
+            resources: resolved_resources,
+            schedule: schedule.unwrap_or(neomind_storage::agents::AgentSchedule {
                 schedule_type: neomind_storage::agents::ScheduleType::Interval,
                 cron_expression: None,
                 interval_seconds: Some(300), // Default 5 minutes
                 event_filter: None,
                 timezone: Some("UTC".to_string()),
-            },
+            }),
             status: neomind_storage::agents::AgentStatus::Active,
             priority: 128, // Default middle priority
             created_at: chrono::Utc::now().timestamp(),
@@ -704,25 +737,380 @@ impl Tool for CreateAgentTool {
             conversation_summary: None,
             context_window_size: 10,
             error_message: None,
+            enable_tool_chaining: false, // Default disabled for backward compatibility
+            max_chain_depth: 3, // Default max depth
         };
 
         // Save the agent
         self.agent_store.save_agent(&new_agent).await
             .map_err(|e| ToolError::Execution(format!("Failed to save agent: {}", e)))?;
 
-        Ok(ToolOutput::success(serde_json::json!({
+        // Build response with parsed intent details
+        let response = serde_json::json!({
             "agent_id": agent_id,
             "name": name,
             "description": description,
             "status": "created",
             "message": format!("Agent '{}' 已创建并启动", name),
-            "schedule": {
-                "schedule_type": "interval",
-                "interval_seconds": 300,
-                "description": "每5分钟执行一次"
+            "parsed_intent": {
+                "intent_type": format!("{:?}", new_agent.parsed_intent.as_ref().map(|i| &i.intent_type).unwrap_or(&IntentType::Monitoring)).to_lowercase(),
+                "target_metrics": new_agent.parsed_intent.as_ref().map(|i| i.target_metrics.clone()).unwrap_or_default(),
+                "conditions": new_agent.parsed_intent.as_ref().map(|i| i.conditions.clone()).unwrap_or_default(),
+                "actions": new_agent.parsed_intent.as_ref().map(|i| i.actions.clone()).unwrap_or_default(),
+                "confidence": new_agent.parsed_intent.as_ref().map(|i| i.confidence).unwrap_or(0.5)
             },
-            "next_action": "使用 list_agents 查看所有Agent，使用 get_agent 查看Agent详情"
-        })))
+            "resources": {
+                "count": new_agent.resources.len(),
+                "devices": new_agent.resources.iter().filter(|r| r.resource_type == ResourceType::Device).map(|r| serde_json::json!({
+                    "id": r.resource_id,
+                    "name": r.name
+                })).collect::<Vec<_>>(),
+                "metrics": new_agent.resources.iter().filter(|r| r.resource_type == ResourceType::Metric).map(|r| serde_json::json!({
+                    "id": r.resource_id,
+                    "name": r.name
+                })).collect::<Vec<_>>()
+            },
+            "schedule": {
+                "schedule_type": format!("{:?}", new_agent.schedule.schedule_type).to_lowercase(),
+                "interval_seconds": new_agent.schedule.interval_seconds,
+                "description": if new_agent.schedule.interval_seconds == Some(300) {
+                    "每5分钟执行一次".to_string()
+                } else {
+                    format!("每{}秒执行一次", new_agent.schedule.interval_seconds.unwrap_or(300))
+                }
+            },
+            "next_action": "使用 list_agents 查看所有Agent，使用 get_agent 查看Agent详情，使用 execute_agent 立即执行"
+        });
+
+        Ok(ToolOutput::success(response))
+    }
+}
+
+impl CreateAgentTool {
+    /// Parse intent using keyword-based parsing.
+    fn parse_intent(&self, description: &str) -> Result<(ParsedIntent, Vec<AgentResource>, Option<neomind_storage::agents::AgentSchedule>)> {
+        let prompt_lower = description.to_lowercase();
+
+        // Detect intent type
+        let intent_type = self.detect_intent_type(&prompt_lower);
+
+        // Extract target metrics
+        let target_metrics = self.extract_metrics(&prompt_lower);
+
+        // Extract conditions
+        let conditions = self.extract_conditions(&prompt_lower);
+
+        // Extract actions
+        let actions = self.extract_actions(&prompt_lower);
+
+        // Calculate confidence
+        let confidence = self.calculate_confidence(&intent_type, &target_metrics, &conditions);
+
+        let parsed_intent = ParsedIntent {
+            intent_type,
+            target_metrics,
+            conditions,
+            actions,
+            confidence,
+        };
+
+        // Extract device names from description (simple pattern matching)
+        let mut resources = Vec::new();
+
+        // Look for device IDs (pattern like "ne101", "test device", etc.)
+        let words: Vec<&str> = description.split_whitespace().collect();
+        for word in words {
+            // Check if it looks like a device ID (alphanumeric, 4-20 chars)
+            if word.len() >= 3 && word.len() <= 20 && word.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                // Skip common words
+                if !["每", "分", "钟", "小", "时", "天", "周", "月", "度", "超", "过", "低", "于", "高", "于"].contains(&word) {
+                    resources.push(AgentResource {
+                        resource_type: ResourceType::Device,
+                        resource_id: word.to_string(),
+                        name: word.to_string(),
+                        config: serde_json::json!({}),
+                    });
+                }
+            }
+        }
+
+        // Add metric resources from parsed intent
+        for metric in &parsed_intent.target_metrics {
+            resources.push(AgentResource {
+                resource_type: ResourceType::Metric,
+                resource_id: metric.clone(),
+                name: metric.clone(),
+                config: serde_json::json!({}),
+            });
+        }
+
+        // Parse schedule hint from description
+        let schedule = self.parse_schedule_hint_from_description(description);
+
+        Ok((parsed_intent, resources, schedule))
+    }
+
+    /// Parse schedule hint from description to determine execution frequency.
+    fn parse_schedule_hint_from_description(&self, description: &str) -> Option<neomind_storage::agents::AgentSchedule> {
+        let hint = description.to_lowercase();
+
+        let (schedule_type, interval_seconds, cron_expression) = if hint.contains("每5分钟") || hint.contains("5分钟") {
+            (neomind_storage::agents::ScheduleType::Interval, Some(300), None)
+        } else if hint.contains("每10分钟") || hint.contains("10分钟") {
+            (neomind_storage::agents::ScheduleType::Interval, Some(600), None)
+        } else if hint.contains("每15分钟") || hint.contains("15分钟") {
+            (neomind_storage::agents::ScheduleType::Interval, Some(900), None)
+        } else if hint.contains("每30分钟") || hint.contains("30分钟") || hint.contains("半小时") {
+            (neomind_storage::agents::ScheduleType::Interval, Some(1800), None)
+        } else if hint.contains("每小时") || hint.contains("1小时") {
+            (neomind_storage::agents::ScheduleType::Interval, Some(3600), None)
+        } else if hint.contains("每天") || hint.contains("每日") {
+            (neomind_storage::agents::ScheduleType::Cron, None, Some("0 0 * * *".to_string()))
+        } else if hint.contains("每周") {
+            (neomind_storage::agents::ScheduleType::Cron, None, Some("0 0 * * 1".to_string()))
+        } else if hint.contains("每月") {
+            (neomind_storage::agents::ScheduleType::Cron, None, Some("0 0 1 * *".to_string()))
+        } else {
+            // Default to 5 minutes
+            (neomind_storage::agents::ScheduleType::Interval, Some(300), None)
+        };
+
+        Some(neomind_storage::agents::AgentSchedule {
+            schedule_type,
+            cron_expression,
+            interval_seconds,
+            event_filter: None,
+            timezone: Some("UTC".to_string()),
+        })
+    }
+
+    /// Detect the type of intent from the user prompt.
+    fn detect_intent_type(&self, prompt: &str) -> IntentType {
+        // Keywords for different intent types
+        let report_keywords = ["报告", "汇总", "总结", "日报", "周报", "生成报告"];
+        let anomaly_keywords = ["异常", "检测", "异常检测", "偏离", "不正常"];
+        let control_keywords = ["控制", "开关", "打开", "关闭", "执行命令", "调节"];
+        let automation_keywords = ["自动化", "联动", "自动", "多条件", "级联"];
+
+        // Check for report generation
+        if report_keywords.iter().any(|kw| prompt.contains(kw)) {
+            return IntentType::ReportGeneration;
+        }
+
+        // Check for anomaly detection
+        if anomaly_keywords.iter().any(|kw| prompt.contains(kw)) {
+            return IntentType::AnomalyDetection;
+        }
+
+        // Check for control
+        if control_keywords.iter().any(|kw| prompt.contains(kw)) {
+            return IntentType::Control;
+        }
+
+        // Check for automation
+        if automation_keywords.iter().any(|kw| prompt.contains(kw)) {
+            return IntentType::Automation;
+        }
+
+        // Default to monitoring
+        IntentType::Monitoring
+    }
+
+    /// Extract target metrics from the user prompt.
+    fn extract_metrics(&self, prompt: &str) -> Vec<String> {
+        let mut metrics = Vec::new();
+
+        // Common metric keywords
+        let metric_mappings = [
+            ("温度", "temperature"),
+            ("湿度", "humidity"),
+            ("气压", "pressure"),
+            ("光照", "illuminance"),
+            ("能耗", "power"),
+            ("功率", "power"),
+            ("电量", "energy"),
+            ("aqi", "aqi"),
+            ("空气质量", "air_quality"),
+            ("二氧化碳", "co2"),
+            ("pm2.5", "pm25"),
+            ("pm10", "pm10"),
+            ("运动", "motion"),
+            ("开关", "state"),
+            ("门磁", "door"),
+            ("窗户", "window"),
+        ];
+
+        for (keyword, metric) in metric_mappings {
+            if prompt.contains(keyword)
+                && !metrics.contains(&metric.to_string()) {
+                metrics.push(metric.to_string());
+            }
+        }
+
+        // If no metrics found, add temperature as default for monitoring
+        if metrics.is_empty() {
+            metrics.push("temperature".to_string());
+        }
+
+        metrics
+    }
+
+    /// Extract conditions from the user prompt.
+    fn extract_conditions(&self, prompt: &str) -> Vec<String> {
+        let mut conditions = Vec::new();
+
+        // Pattern: "大于X", "小于X", "超过X", "低于X", "高于X"
+        let comparison_patterns = [
+            ("大于", ">"),
+            ("小于", "<"),
+            ("超过", ">"),
+            ("低于", "<"),
+            ("高于", ">"),
+            ("等于", "=="),
+        ];
+
+        for (keyword, operator) in comparison_patterns {
+            if let Some(pos) = prompt.find(keyword) {
+                let after = &prompt[pos..];
+                // Try to extract a number
+                let keyword_char_count = keyword.chars().count();
+                let number_match: Vec<char> = after
+                    .chars()
+                    .skip(keyword_char_count)
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+
+                if !number_match.is_empty() {
+                    let number: String = number_match.iter().collect();
+                    conditions.push(format!("{}{}", operator, number));
+                }
+            }
+        }
+
+        conditions
+    }
+
+    /// Extract actions from the user prompt.
+    fn extract_actions(&self, prompt: &str) -> Vec<String> {
+        let mut actions = Vec::new();
+
+        let action_keywords = [
+            ("报警", "send_alert"),
+            ("通知", "send_notification"),
+            ("发送消息", "send_notification"),
+            ("打开", "turn_on"),
+            ("关闭", "turn_off"),
+            ("调节", "adjust"),
+            ("生成报告", "generate_report"),
+            ("记录", "log_data"),
+            ("控制", "send_command"),
+        ];
+
+        for (keyword, action) in action_keywords {
+            if prompt.contains(keyword) {
+                actions.push(action.to_string());
+            }
+        }
+
+        actions
+    }
+
+    /// Calculate confidence in the parsing result.
+    fn calculate_confidence(&self, intent_type: &IntentType, metrics: &[String], conditions: &[String]) -> f32 {
+        let mut confidence: f32 = 0.5; // Base confidence
+
+        // Increase confidence if we found metrics
+        if !metrics.is_empty() {
+            confidence += 0.2;
+        }
+
+        // Increase confidence if we found conditions
+        if !conditions.is_empty() {
+            confidence += 0.2;
+        }
+
+        // Adjust based on intent type
+        match intent_type {
+            IntentType::Monitoring => confidence += 0.1,
+            IntentType::ReportGeneration => confidence += 0.1,
+            IntentType::AnomalyDetection => confidence += 0.0,
+            IntentType::Control => confidence += 0.1,
+            IntentType::Automation => confidence -= 0.1, // Complex, lower confidence
+        }
+
+        confidence.min(1.0)
+    }
+
+    /// Resolve device names to actual device IDs using the device service.
+    async fn resolve_device_resources(
+        &self,
+        device_service: &Arc<DeviceService>,
+        resources: &[AgentResource],
+    ) -> Result<Vec<AgentResource>> {
+        let mut resolved = Vec::new();
+
+        for resource in resources {
+            if resource.resource_type == ResourceType::Device {
+                // Try to find the device by name or ID
+                match self.find_device_by_name(device_service, &resource.resource_id).await {
+                    Ok(Some((device_id, device_name))) => {
+                        resolved.push(AgentResource {
+                            resource_type: ResourceType::Device,
+                            resource_id: device_id,
+                            name: device_name,
+                            config: resource.config.clone(),
+                        });
+                    }
+                    Ok(None) => {
+                        // Device not found, keep original (might be created later)
+                        resolved.push(resource.clone());
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to resolve device '{}': {}", resource.resource_id, e);
+                        resolved.push(resource.clone());
+                    }
+                }
+            } else {
+                resolved.push(resource.clone());
+            }
+        }
+
+        Ok(resolved)
+    }
+
+    /// Find a device by name or partial ID match.
+    async fn find_device_by_name(
+        &self,
+        device_service: &Arc<DeviceService>,
+        name: &str,
+    ) -> Result<Option<(String, String)>> {
+        // Try exact ID match first
+        if let Some(device) = device_service.get_device(name).await {
+            return Ok(Some((device.device_id.clone(), device.name.clone())));
+        }
+
+        // Try partial name match
+        let devices = device_service.list_devices().await;
+        let name_lower = name.to_lowercase();
+
+        // First try exact name match
+        for device in &devices {
+            if device.name.to_lowercase() == name_lower {
+                return Ok(Some((device.device_id.clone(), device.name.clone())));
+            }
+        }
+
+        // Then try partial match (e.g., "ne101" matches "ne101 test")
+        for device in &devices {
+            let device_id_lower = device.device_id.to_lowercase();
+            let device_name_lower = device.name.to_lowercase();
+
+            if device_id_lower.contains(&name_lower) || device_name_lower.contains(&name_lower) {
+                return Ok(Some((device.device_id.clone(), device.name.clone())));
+            }
+        }
+
+        Ok(None)
     }
 }
 

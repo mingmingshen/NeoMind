@@ -44,6 +44,7 @@ impl LlmTestContext {
             message_manager: None,
             llm_runtime: Some(llm_runtime.clone()),
             llm_backend_store: None,
+            extension_registry: None,
         };
 
         let executor = AgentExecutor::new(executor_config).await?;
@@ -105,6 +106,8 @@ impl LlmTestContext {
             conversation_summary: None,
             context_window_size: 5,
             error_message: None,
+            enable_tool_chaining: false,
+            max_chain_depth: 3,
         };
 
         self.store.save_agent(&agent).await?;

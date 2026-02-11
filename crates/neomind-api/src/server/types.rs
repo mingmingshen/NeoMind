@@ -9,7 +9,7 @@ use neomind_commands::{CommandManager, CommandQueue, CommandStateStore};
 use neomind_core::{EventBus, extension::ExtensionRegistry};
 use neomind_devices::adapter::AdapterResult;
 use neomind_devices::{DeviceRegistry, DeviceService, TimeSeriesStorage};
-use neomind_rules::{InMemoryValueProvider, RuleEngine, device_integration::DeviceActionExecutor, store::RuleStore};
+use neomind_rules::{UnifiedValueProvider, RuleEngine, device_integration::DeviceActionExecutor, extension_integration::ExtensionActionExecutor, store::RuleStore};
 use neomind_storage::dashboards::DashboardStore;
 use neomind_storage::llm_backends::LlmBackendStore;
 
@@ -22,7 +22,8 @@ use crate::auth_users::AuthUserState;
 use crate::config::LlmSettingsRequest;
 use crate::rate_limit::{RateLimitConfig, RateLimiter};
 use crate::server::state::{
-    AuthState, AgentState, AgentManager, AutomationState, CoreState, DeviceState,
+    AuthState, AgentState, AgentManager, AutomationState, CoreState, DeviceState, ExtensionState, ExtensionMetricsStorage,
+    ExtensionRegistryAdapter,
 };
 
 #[cfg(feature = "embedded-broker")]
@@ -36,11 +37,14 @@ pub const MAX_REQUEST_BODY_SIZE: usize = 10 * 1024 * 1024;
 /// Organized into logical sub-states for better maintainability.
 #[derive(Clone)]
 pub struct ServerState {
-    /// Core system services (EventBus, CommandManager, MessageManager, Extensions)
+    /// Core system services (EventBus, CommandManager, MessageManager)
     pub core: CoreState,
 
     /// Device management (Registry, Service, Telemetry, Broker)
     pub devices: DeviceState,
+
+    /// Extension management (Registry, Metrics Storage) - Decoupled from devices
+    pub extensions: ExtensionState,
 
     /// Automation and rules (RuleEngine, Stores, IntentAnalyzer, TransformEngine)
     pub automation: AutomationState,
@@ -145,8 +149,8 @@ impl ServerState {
     }
 
     /// Get extension registry (backward compatibility).
-    pub fn extension_registry(&self) -> Arc<tokio::sync::RwLock<ExtensionRegistry>> {
-        self.core.extension_registry.clone()
+    pub fn extension_registry(&self) -> Arc<ExtensionRegistry> {
+        self.extensions.registry.clone()
     }
 
     /// Get device registry (backward compatibility).
@@ -185,7 +189,10 @@ impl ServerState {
     /// This is now async to support persistent device registry initialization.
     pub async fn new() -> Self {
         let started_at = chrono::Utc::now().timestamp();
-        let value_provider = Arc::new(InMemoryValueProvider::new());
+
+        // ========== Create Unified Value Provider ==========
+        // This will be wired up with device and extension storage later
+        let value_provider = Arc::new(UnifiedValueProvider::new().with_ttl(5000));
 
         // Ensure data directory exists
         if let Err(e) = std::fs::create_dir_all("data") {
@@ -214,14 +221,10 @@ impl ServerState {
         };
         message_manager.register_default_channels().await;
 
-        // Create extension registry
-        let extension_registry = Arc::new(tokio::sync::RwLock::new(ExtensionRegistry::new()));
-
         let core = CoreState::new(
             event_bus.clone(),
             command_manager,
             message_manager.clone(),
-            extension_registry,
         );
 
         // ========== Build DEVICE STATE ==========
@@ -271,9 +274,36 @@ impl ServerState {
         let devices = DeviceState::new(
             device_registry,
             device_service,
-            time_series_storage,
+            time_series_storage.clone(),
             device_update_tx,
         );
+
+        // ========== Build EXTENSION STATE ==========
+        // Create extension registry with default directories
+        let default_ext_dirs = vec![
+            std::path::PathBuf::from("extensions"),           // Local extensions dir
+            std::path::PathBuf::from("data/extensions"),      // Data directory extensions
+        ];
+
+        let mut registry_builder = ExtensionRegistry::new();
+        for ext_dir in &default_ext_dirs {
+            if ext_dir.exists() {
+                registry_builder.add_extension_dir(ext_dir.clone());
+                tracing::info!("Added extension discovery directory: {:?}", ext_dir);
+            }
+        }
+        let extension_registry = Arc::new(registry_builder);
+
+        // Create extension metrics storage (shares device telemetry.redb)
+        let extension_metrics_storage = Arc::new(ExtensionMetricsStorage::with_shared_storage(time_series_storage.clone()));
+
+        // Create the extension state with registry and storage
+        let extensions = ExtensionState::new(
+            extension_registry,
+            extension_metrics_storage,
+        );
+
+        tracing::info!("Extension state initialized");
 
         // ========== Build AUTOMATION STATE ==========
         let rule_engine = Arc::new(RuleEngine::new(value_provider.clone()));
@@ -289,6 +319,11 @@ impl ServerState {
             device_service_for_action,
         ));
         rule_engine.set_device_action_executor(device_action_executor).await;
+
+        // Wire rule engine to extension registry for extension command execution
+        let extension_registry_adapter = Arc::new(ExtensionRegistryAdapter::new(extensions.registry.clone()));
+        let extension_action_executor = Arc::new(ExtensionActionExecutor::new(extension_registry_adapter));
+        rule_engine.set_extension_action_executor(extension_action_executor).await;
 
         // Wire event bus to message manager
         if let Some(ref bus) = event_bus {
@@ -349,9 +384,11 @@ impl ServerState {
             }
         };
 
-        // Create transform engine
-        let transform_engine = Some(Arc::new(TransformEngine::new()));
-        tracing::info!("Transform engine initialized");
+        // Create transform engine with extension registry support
+        let transform_engine = Some(Arc::new(
+            TransformEngine::with_extension_registry(extensions.registry.clone())
+        ));
+        tracing::info!("Transform engine initialized with extension registry");
 
         // Create rule history store
         let rule_history_store = match neomind_storage::business::RuleHistoryStore::open("data/rule_history.redb") {
@@ -437,6 +474,7 @@ impl ServerState {
         Self {
             core,
             devices,
+            extensions,
             automation,
             agents,
             auth,
@@ -459,6 +497,31 @@ impl ServerState {
 
         // Device registry storage is initialized automatically on first use
         tracing::info!(category = "storage", "Data directory created/verified");
+    }
+
+    /// Initialize extensions from persistent storage.
+    ///
+    /// This loads all extensions marked with `auto_start=true` from the extension store.
+    /// Must be called after the server is fully initialized.
+    pub async fn init_extensions(&self) {
+        match self.extensions.load_from_storage().await {
+            Ok(count) => {
+                if count > 0 {
+                    tracing::info!(
+                        category = "extensions",
+                        loaded = count,
+                        "Loaded extensions from storage"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    category = "extensions",
+                    error = %e,
+                    "Failed to load extensions from storage (continuing without stored extensions)"
+                );
+            }
+        }
     }
 
     /// Initialize LLM backend using the unified config loader.
@@ -752,7 +815,7 @@ impl ServerState {
             tracing::warn!("Rule engine event service failed to start");
         }
 
-        // Start a task to update the InMemoryValueProvider when device metrics arrive
+        // Start a task to update the UnifiedValueProvider when device metrics arrive
         // This is needed for rule evaluation to work with current values
         let mut rx = event_bus.filter().device_events();
         let value_provider = rule_engine.get_value_provider();
@@ -786,17 +849,17 @@ impl ServerState {
                     };
 
                     if let Some(num_value) = numeric_value {
-                        // Update the InMemoryValueProvider with the new value
-                        if let Some(provider) = value_provider.as_any().downcast_ref::<InMemoryValueProvider>() {
+                        // Update the UnifiedValueProvider with the new value
+                        if let Some(provider) = value_provider.as_any().downcast_ref::<UnifiedValueProvider>() {
                             // Store with original metric key
-                            provider.set_value(&device_id, &metric, num_value);
+                            provider.update_value("device", &device_id, &metric, num_value).await;
 
                             // Also store with common prefixes stripped for rule matching
                             // Rules might reference "battery" while events use "values.battery"
                             let common_prefixes = ["values.", "value.", "data.", "telemetry.", "metrics.", "state."];
                             for prefix in &common_prefixes {
                                 if let Some(stripped_metric) = metric.strip_prefix(prefix) {
-                                    provider.set_value(&device_id, stripped_metric, num_value);
+                                    provider.update_value("device", &device_id, stripped_metric, num_value).await;
                                     break;
                                 }
                             }
@@ -1063,7 +1126,8 @@ impl ServerState {
         }
 
         // Create or open TimeSeriesStore for agent data collection
-        let time_series_store = match neomind_storage::TimeSeriesStore::open("data/timeseries_agents.redb") {
+        // Use the same telemetry.redb as DeviceService to access device telemetry data
+        let time_series_store = match neomind_storage::TimeSeriesStore::open("data/telemetry.redb") {
             Ok(store) => Some(store),
             Err(e) => {
                 tracing::warn!(category = "storage", error = %e, "Failed to open TimeSeriesStore, agents will not collect data");
@@ -1131,6 +1195,7 @@ impl ServerState {
             store: self.agents.agent_store.clone(),
             time_series_storage: time_series_store,
             device_service: Some(self.devices.service.clone()),
+            extension_registry: Some(self.extensions.registry.clone()),
             event_bus: self.core.event_bus.clone(),
             message_manager: Some(self.core.message_manager.clone()),
             llm_runtime,

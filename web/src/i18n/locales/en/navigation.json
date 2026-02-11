@@ -8,6 +8,6 @@
   "alerts": "Alerts",
   "commands": "Commands",
   "events": "Events",
-  "plugins": "Plugins",
+  "extensions": "Extensions",
   "settings": "Settings"
 }

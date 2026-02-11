@@ -76,6 +76,12 @@ pub struct AiAgent {
     /// How many recent turns to include in LLM context
     #[serde(default = "default_context_window")]
     pub context_window_size: usize,
+    /// Enable tool chaining - allows tool outputs to be used as inputs for subsequent tools
+    #[serde(default)]
+    pub enable_tool_chaining: bool,
+    /// Maximum chain depth (prevents infinite loops)
+    #[serde(default = "default_max_chain_depth")]
+    pub max_chain_depth: usize,
     /// Error message (if status is error)
     pub error_message: Option<String>,
 }
@@ -83,6 +89,11 @@ pub struct AiAgent {
 /// Default value for context window size.
 fn default_context_window() -> usize {
     10
+}
+
+/// Default value for max chain depth.
+fn default_max_chain_depth() -> usize {
+    3  // Allow up to 3 chain steps by default
 }
 
 /// Default value for agent priority.
@@ -142,6 +153,8 @@ pub enum ResourceType {
     Metric,
     Command,
     DataStream,
+    ExtensionTool,
+    ExtensionMetric,
 }
 
 /// Agent schedule configuration.

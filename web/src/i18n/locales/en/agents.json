@@ -3,6 +3,56 @@
   "description": "User-defined AI automation agents with persistent memory",
   "createButton": "Create",
   "detailTitle": "Agent Details",
+  "preview": {
+    "title": "Logic Preview",
+    "trigger": {
+      "title": "Trigger",
+      "interval": "Every {{minutes}} minutes",
+      "daily": "Daily at {{hour}}:{{minute}}",
+      "weekly": "Weekly on {{days}}",
+      "manual": "Manual trigger only",
+      "event": "On data change ({{device}})"
+    },
+    "dataInput": {
+      "title": "Data Input",
+      "metrics": "metrics",
+      "commands": "commands",
+      "devices": "Devices",
+      "extensions": "Extensions",
+      "extension": "Extension"
+    },
+    "processing": {
+      "title": "Processing Logic",
+      "monitor": "Monitor selected metrics and detect anomalies",
+      "control": "Check conditions and execute control commands",
+      "analysis": "Analyze data trends and generate insights",
+      "default": "Process data and make decisions"
+    },
+    "actions": {
+      "title": "Available Actions",
+      "noCommands": "No commands selected",
+      "canAlert": "Can send alerts/notifications"
+    },
+    "issues": {
+      "title": "Configuration Check",
+      "none": "Configuration looks good",
+      "noName": "Please enter an agent name",
+      "noPrompt": "Please describe what the agent should do",
+      "noResources": "No resources selected - add devices or extensions",
+      "noMetrics": "No metrics selected - agent won't have data to analyze",
+      "unclearIntent": "Intent unclear - consider being more specific",
+      "controlNoCommands": "Control intent detected but no commands selected"
+    },
+    "confidence": "confidence",
+    "intent": {
+      "monitor": "Monitor",
+      "control": "Control",
+      "analysis": "Analysis",
+      "unknown": "General"
+    },
+    "moreCommands": "more commands",
+    "noResources": "No resources - click \"Add Resources\" to get started"
+  },
   "card": {
     "createAgent": "Create Agent",
     "noDescription": "No description",
@@ -200,12 +250,21 @@
       "requirementHint": "Describe the goals you want the agent to accomplish in natural language",
       "requirementPlaceholder": "e.g.:\n• Send alert when temperature exceeds 30°C\n• Generate device status report at 9 AM daily\n• Detect abnormal energy consumption and analyze causes",
       "autoParseHint": "The system will automatically parse your description and configure the execution logic",
-      "llmBackend": "LLM Model",
+      "llmBackend": "LLM Model (Optional)",
       "llmBackendHint": "Select the LLM model for this agent. Uses the default model if not specified.",
       "selectLlmBackend": "Select LLM Model",
       "defaultBackend": "Default Model",
       "useActiveBackend": "Use the currently active model",
-      "active": "Active"
+      "active": "Active",
+      "scheduleLabel": "Execution Schedule",
+      "promptPlaceholder": "Describe what this agent should do in natural language. For example:\n\n• Monitor temperature sensors in the warehouse\n• Send an alert when temperature exceeds 30°C for 3 consecutive readings\n• Notify all alert channels: email, SMS, and push notifications",
+      "promptTip": "Be specific about devices, conditions, and actions. The more details you provide, the better the agent can help you.",
+      "runOn": "Run on",
+      "triggerWhen": "Trigger when",
+      "metricUpdates": "Metric updates",
+      "manualTrigger": "Manual trigger",
+      "fromDevice": "From device",
+      "manualHint": "The agent will only run when manually triggered via API or UI"
     },
     "promptTemplates": {
       "label": "Template",
@@ -216,17 +275,22 @@
       "monitor": {
         "label": "Monitor",
         "description": "Continuously monitor data changes, detect anomalies, and send alerts",
-        "template": "Please monitor the following data metrics and alert when anomalies are detected:\n\nMonitoring Targets:\n- Data Range:\n- Anomaly Threshold:\n- Alert Method:\n\nPlease analyze historical data to identify normal fluctuation ranges, and send alert notifications when data exceeds normal ranges."
+        "template": "Monitor the following metrics and alert when anomalies are detected:\n\nMonitoring Targets:\n- Data Range: Check if values exceed thresholds (e.g., temperature > 30°C)\n- Anomaly Detection: Look for sudden changes or abnormal patterns\n- Alert Method: Send notification when conditions are met\n\nPlease analyze the current data and compare with historical baselines to identify:\n1. Values outside normal range\n2. Sudden spikes or drops\n3. Data gaps or missing readings\n\nWhen an anomaly is detected, send an alert with:\n- What metric is affected\n- Current value vs expected range\n- Severity level (info/warning/critical)"
       },
       "control": {
         "label": "Control",
         "description": "Automatically execute device control operations based on conditions",
-        "template": "Please automatically control devices based on the following conditions:\n\nTrigger Conditions:\n- Device Status:\n- Data Threshold:\n\nExecution Actions:\n- Target Device:\n- Control Command:\n\nPlease verify conditions before execution and avoid frequent repetitive operations."
+        "template": "Automatically control devices based on the following conditions:\n\nTrigger Conditions:\n- Check current sensor readings\n- Compare against threshold values\n- Verify device states before taking action\n\nControl Actions:\n- Device ID: [target device]\n- Command: [turn_on / turn_off / adjust]\n- Parameters: [any required settings]\n\nPlease:\n1. First verify the current condition by checking sensor data\n2. Only execute commands when the condition is clearly met\n3. Confirm the action was successful\n4. Avoid rapid repeated switching (add a cooldown between same actions)"
       },
       "analysis": {
         "label": "Analysis",
         "description": "Periodically analyze data trends and generate reports",
-        "template": "Please periodically analyze the following data and generate reports:\n\nAnalysis Scope:\n- Data Metrics:\n- Time Range:\n\nReport Contents:\n1. Data trend analysis\n2. Anomaly event records\n3. Root cause analysis\n4. Optimization recommendations\n\nPlease compare with historical data and provide valuable insights and action recommendations."
+        "template": "Analyze the following data and generate a comprehensive report:\n\nAnalysis Scope:\n- Time Range: Use available historical data\n- Metrics: All selected metrics\n- Comparison: Compare with previous periods if available\n\nReport Contents:\n1. **Data Overview**: Summary of current values and status\n2. **Trend Analysis**: Increasing, decreasing, or stable patterns\n3. **Anomalies**: Any unusual readings or deviations\n4. **Correlations**: Relationships between different metrics\n5. **Recommendations**: Actionable insights based on the data\n\nPlease provide specific numbers and percentages when describing trends and changes."
+      },
+      "alert": {
+        "label": "Alert",
+        "description": "Send notifications based on conditions",
+        "template": "Monitor the selected metrics and send alerts when specific conditions occur:\n\nAlert Conditions:\n- Threshold exceeded: When metric goes above/below a value\n- Rate of change: When value changes too quickly\n- Status change: When device state changes\n\nAlert Content:\n- Which metric/device triggered the alert\n- Current value and threshold\n- Time of occurrence\n- Suggested actions if applicable\n\nPlease avoid duplicate alerts - only alert when:\n1. This is a new incident (not previously reported)\n2. The condition has significantly worsened\n3. A sufficient cooldown period has passed since the last alert"
       }
     },
     "schedule": {
@@ -271,43 +335,14 @@
       "event": {
         "triggerEvent": "Trigger Event",
         "relatedDevice": "Related Device",
-        "manualHint": "Requires manual trigger via API",
+        "manualHint": "Triggered when selected device metrics update. Backend filters by configured resources.",
         "events": {
-          "device.online": "Device Online",
-          "device.offline": "Device Offline",
-          "device.metric": "Data Update",
-          "metric.threshold": "Metric Threshold",
-          "metric.anomaly": "Anomaly Detection",
+          "device.metric": "Metric Update",
           "manual": "Manual Trigger"
         },
-        "preview": "Triggered when '{{event}}' event occurs",
-        "deviceOnline": {
-          "title": "Device Online Trigger",
-          "description": "Execute agent analysis immediately when device comes back online",
-          "relatedDevice": "Related Device"
-        },
-        "deviceOffline": {
-          "title": "Device Offline Trigger",
-          "description": "Execute agent analysis immediately when device disconnects",
-          "relatedDevice": "Related Device"
-        },
-        "metricThreshold": {
-          "title": "Threshold Trigger",
-          "condition": "Trigger Condition",
-          "conditionPlaceholder": "temperature > 30",
-          "conditionHint": "Supports conditional expressions, e.g.: temperature > 30",
-          "monitorDevice": "Monitor Device"
-        },
-        "metricAnomaly": {
-          "title": "Anomaly Detection Trigger",
-          "description": "AI automatically detects data anomalies, supports custom thresholds",
-          "threshold": "Anomaly Threshold (optional)",
-          "thresholdPlaceholder": "Leave empty for auto-detection",
-          "monitorDevice": "Monitor Device"
-        },
-        "manual": {
-          "title": "Manual Trigger",
-          "description": "Only runs when manually clicking execute button, suitable for on-demand analysis"
+        "descriptions": {
+          "device.metric": "Triggered when a device metric updates. Filter by specific device or monitor all.",
+          "manual": "Only triggered manually via API or UI"
         },
         "allDevices": "All Devices"
       },
@@ -345,7 +380,7 @@
       }
     },
     "resources": {
-      "title": "Data Resources",
+      "title": "Resources",
       "searchPlaceholder": "Search resource name or type...",
       "selectedCount": "{{count}} selected",
       "noResourcesFound": "No resources found",
@@ -371,7 +406,18 @@
       "deselectAll": "Deselect All",
       "dataStream": "Data Stream",
       "device": "Device",
-      "externalData": "External Data"
+      "externalData": "External Data",
+      "addResources": "Add Resources",
+      "dialog": {
+        "title": "Select Resources",
+        "available": "Available Resources",
+        "selected": "Selected Resources",
+        "recommended": "Recommended for you",
+        "searchPlaceholder": "Search resources...",
+        "noResourcesHint": "Click \"Add Resources\" to select devices and extensions",
+        "done": "Done",
+        "selectedCount": "{{count}} resource{{s}} selected"
+      }
     },
     "advanced": {
       "title": "Advanced",

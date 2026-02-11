@@ -275,12 +275,13 @@ impl OllamaRuntime {
                         MessageRole::User => "user",
                         MessageRole::Assistant => "assistant",
                         MessageRole::System => "system",
+                        MessageRole::Tool => "tool",
                     }
                     .to_string(),
                     content: text,
                     images,
-                    tool_calls: None, // Will be populated from AgentMessage.tool_calls if needed
-                    tool_call_id: None,
+                    tool_calls: None,
+                    tool_name: None, // Tool results should use ExtendedMessage.tool_result_ollama() instead
                 }
             })
             .collect()
@@ -507,6 +508,8 @@ impl LlmRuntime for OllamaRuntime {
             None => None,  // Use model default
         };
 
+        // When tools are present, disable thinking to prevent wasting tokens
+        // and ensure tool calls are generated efficiently
         let format: Option<String> = None;
 
         // Convert messages with tool injection for non-native models
@@ -810,7 +813,8 @@ impl LlmRuntime for OllamaRuntime {
             !supports_native_tools && has_tools
         );
 
-        // No format parameter needed - let Ollama handle thinking naturally
+        // When tools are present, disable thinking to prevent wasting tokens
+        // and ensure tool calls are generated efficiently
         let format: Option<String> = None;
 
         // Log request details before creating the request
@@ -872,7 +876,7 @@ impl LlmRuntime for OllamaRuntime {
                     use futures::StreamExt as _;
                     let mut byte_stream = response.bytes_stream();
                     let mut buffer = Vec::new();
-                    let mut sent_done = false;
+                    let mut _sent_done = false;
                     let mut tool_calls_sent = false; // Track if tool_calls have been sent
                     let mut total_bytes = 0usize;
                     let mut total_chars = 0usize; // Track total output characters
@@ -1232,7 +1236,7 @@ impl LlmRuntime for OllamaRuntime {
                                                     );
                                                 }
 
-                                                sent_done = true;
+                                                _sent_done = true;
                                                 return;
                                             }
                                         }
@@ -1248,7 +1252,7 @@ impl LlmRuntime for OllamaRuntime {
                         }
                     }
 
-                    if !sent_done {
+                    if !_sent_done {
                         // Channel closed without done signal - log this as it might indicate a problem
                         println!(
                             "[ollama.rs] Stream closed without done=true signal, total_bytes: {}",
@@ -1352,16 +1356,19 @@ impl From<&str> for OllamaThink {
 
 #[derive(Debug, Serialize)]
 struct OllamaMessage {
+    #[serde(skip_serializing_if = "String::is_empty")]
     role: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     content: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     images: Vec<String>,
     /// Tool calls made by the assistant (for multi-turn conversations)
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_calls: Option<Vec<serde_json::Value>>,
-    /// Tool call ID (for tool response messages)
+    /// Tool name for tool result messages (Ollama-specific format)
+    /// When role is "tool", this field specifies which tool this result is for
     #[serde(skip_serializing_if = "Option::is_none")]
-    tool_call_id: Option<String>,
+    tool_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1435,8 +1442,15 @@ fn detect_model_capabilities(model_name: &str) -> ModelCapability {
         && !name_lower.contains("nano");
 
     // Models that support multimodal (vision)
-    let supports_multimodal =
-        name_lower.contains("vl") || name_lower.contains("vision") || name_lower.contains("mm");
+    // Common Ollama vision models: qwen3-vl, llava, bakllava, moondream, minigpt, clip, etc.
+    let supports_multimodal = name_lower.contains("vl")
+        || name_lower.contains("vision")
+        || name_lower.contains("mm")
+        || name_lower.contains("llava")
+        || name_lower.contains("moondream")
+        || name_lower.contains("minigpt")
+        || name_lower.contains("clip")
+        || name_lower.contains("multimodal");
 
     // Detect maximum context window based on model family
     let max_context = detect_model_context(model_name);
@@ -1607,6 +1621,9 @@ struct OllamaToolCall {
 /// Function call details.
 #[derive(Debug, Clone, Deserialize)]
 struct OllamaCalledFunction {
+    /// Index of this function call in multi-tool scenarios (Ollama-specific, reserved)
+    #[serde(default)]
+    _index: Option<usize>,
     /// Function name
     name: String,
     /// Function arguments - can be either a JSON object or string
@@ -1671,7 +1688,7 @@ struct OllamaStreamResponse {
 #[derive(Debug, Deserialize, Default)]
 struct OllamaResponseMessage {
     #[serde(default)]
-    role: String,
+    _role: String,
     #[serde(default)]
     content: String,
     #[serde(default)]

@@ -90,8 +90,7 @@ pub async fn aggregate_metric_handler(
     let end = query.end.unwrap_or_else(|| chrono::Utc::now().timestamp());
     let start = query.start.unwrap_or(end - 86400); // Default 24 hours
 
-    // Use time_series_storage directly for aggregation
-    // TODO: Add aggregate method to DeviceService
+    // Use telemetry service for aggregation
     let aggregated = state
         .devices.telemetry
         .aggregate(&device_id, &metric, start, end)

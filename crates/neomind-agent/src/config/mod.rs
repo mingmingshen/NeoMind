@@ -69,8 +69,8 @@ fn default_heartbeat_interval() -> u64 { 30 }
 fn default_heartbeat_timeout() -> u64 { 60 }
 fn default_max_thinking() -> usize { 100_000 }
 fn default_max_content() -> usize { 50_000 }
-fn default_max_tool_iterations() -> usize { 5 }
-fn default_max_tools_per_request() -> usize { 5 }
+fn default_max_tool_iterations() -> usize { 10 }
+fn default_max_tools_per_request() -> usize { 10 }
 fn default_progress_interval() -> u64 { 5 }
 fn default_cache_ttl() -> u64 { 300 }
 
@@ -101,8 +101,8 @@ impl StreamingConfig {
             heartbeat_timeout_secs: 60,
             max_thinking_chars: 10_000,
             max_content_chars: 20_000,
-            max_tool_iterations: 3,
-            max_tools_per_request: 3,
+            max_tool_iterations: 8,
+            max_tools_per_request: 8,
             progress_interval_secs: 5,
             tool_cache_ttl_secs: 300,
         }
@@ -118,8 +118,8 @@ impl StreamingConfig {
             heartbeat_timeout_secs: 120,
             max_thinking_chars: 200_000,
             max_content_chars: 100_000,
-            max_tool_iterations: 8,
-            max_tools_per_request: 8,
+            max_tool_iterations: 15,
+            max_tools_per_request: 15,
             progress_interval_secs: 5,
             tool_cache_ttl_secs: 600,
         }
@@ -201,8 +201,8 @@ impl StreamingConfig {
             return Err("max_tools_per_request must be at least 1".to_string());
         }
 
-        if self.max_tool_iterations > 10 {
-            return Err("max_tool_iterations should not exceed 10 to prevent excessive loops".to_string());
+        if self.max_tool_iterations > 20 {
+            return Err("max_tool_iterations should not exceed 20 to prevent excessive loops".to_string());
         }
 
         Ok(())
@@ -236,21 +236,21 @@ mod tests {
         let config = StreamingConfig::default();
         assert_eq!(config.max_stream_duration_secs, 300);
         assert_eq!(config.heartbeat_interval_secs, 30);
-        assert_eq!(config.max_tool_iterations, 5);
+        assert_eq!(config.max_tool_iterations, 10);
     }
 
     #[test]
     fn test_fast_model_config() {
         let config = StreamingConfig::fast_model();
         assert_eq!(config.max_stream_duration_secs, 120);
-        assert_eq!(config.max_tool_iterations, 3);
+        assert_eq!(config.max_tool_iterations, 8);
     }
 
     #[test]
     fn test_reasoning_model_config() {
         let config = StreamingConfig::reasoning_model();
         assert_eq!(config.max_stream_duration_secs, 600);
-        assert_eq!(config.max_tool_iterations, 8);
+        assert_eq!(config.max_tool_iterations, 15);
     }
 
     #[test]
@@ -282,9 +282,9 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_too_many_iterations() {
+    fn test_validate_zero_iterations() {
         let mut config = StreamingConfig::default();
-        config.max_tool_iterations = 15;
+        config.max_tool_iterations = 0;
         assert!(config.validate().is_err());
     }
 

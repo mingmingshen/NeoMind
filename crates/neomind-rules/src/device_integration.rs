@@ -2,10 +2,12 @@
 //!
 //! This module integrates the rule engine with device management,
 //! enabling rule actions to control devices and send notifications.
+//! Also supports extension command execution.
 
 use crate::dsl::{RuleAction, RuleError};
 use crate::engine::{CompiledRule, RuleExecutionResult, RuleId, ValueProvider};
-use neomind_core::{EventBus, MetricValue as CoreMetricValue, NeoMindEvent};
+use crate::extension_integration::ExtensionRegistry;
+use neomind_core::{datasource::DataSourceId, EventBus, MetricValue as CoreMetricValue, NeoMindEvent};
 use neomind_devices::{DeviceService, MetricValue as DeviceMetricValue};
 use std::any::Any;
 use std::collections::HashMap;
@@ -136,6 +138,47 @@ impl RetryConfig {
             .min(self.max_delay_ms as f64) as u64;
 
         std::time::Duration::from_millis(delay_ms)
+    }
+}
+
+// ============================================================================
+// Extension Registry Adapter
+// ============================================================================
+
+/// Adapter that implements `extension_integration::ExtensionRegistry`
+/// for `neomind_core::extension::ExtensionRegistry`.
+pub struct CoreExtensionRegistryAdapter {
+    inner: Arc<neomind_core::extension::registry::ExtensionRegistry>,
+}
+
+impl CoreExtensionRegistryAdapter {
+    /// Create a new adapter from a core extension registry.
+    pub fn new(registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) -> Self {
+        Self { inner: registry }
+    }
+
+    /// Get the inner registry.
+    pub fn inner(&self) -> &Arc<neomind_core::extension::registry::ExtensionRegistry> {
+        &self.inner
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::extension_integration::ExtensionRegistry for CoreExtensionRegistryAdapter {
+    async fn execute_command(
+        &self,
+        extension_id: &str,
+        command: &str,
+        args: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        self.inner
+            .execute_command(extension_id, command, args)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn has_extension(&self, extension_id: &str) -> bool {
+        self.inner.get(extension_id).await.is_some()
     }
 }
 
@@ -349,6 +392,7 @@ impl ValueProvider for DeviceValueProvider {
 /// Device action executor for rule engine.
 ///
 /// Executes rule actions by interacting with devices via the event bus.
+/// Also supports executing commands on extensions.
 pub struct DeviceActionExecutor {
     /// Event bus for sending commands
     event_bus: EventBus,
@@ -356,6 +400,8 @@ pub struct DeviceActionExecutor {
     history: Arc<CommandResultHistory>,
     /// Optional device service for actual command execution
     device_service: Option<Arc<DeviceService>>,
+    /// Optional extension registry for extension command execution
+    extension_registry: Option<Arc<dyn ExtensionRegistry>>,
     /// Retry configuration for command execution
     retry_config: RetryConfig,
 }
@@ -367,6 +413,7 @@ impl DeviceActionExecutor {
             event_bus,
             history: Arc::new(CommandResultHistory::new()),
             device_service: None,
+            extension_registry: None,
             retry_config: RetryConfig::default(),
         }
     }
@@ -377,6 +424,7 @@ impl DeviceActionExecutor {
             event_bus,
             history: Arc::new(CommandResultHistory::new()),
             device_service: None,
+            extension_registry: None,
             retry_config,
         }
     }
@@ -387,6 +435,7 @@ impl DeviceActionExecutor {
             event_bus,
             history: Arc::new(CommandResultHistory::new()),
             device_service: Some(device_service),
+            extension_registry: None,
             retry_config: RetryConfig::default(),
         }
     }
@@ -401,6 +450,37 @@ impl DeviceActionExecutor {
             event_bus,
             history: Arc::new(CommandResultHistory::new()),
             device_service: Some(device_service),
+            extension_registry: None,
+            retry_config,
+        }
+    }
+
+    /// Create a new device action executor with extension registry.
+    pub fn with_extension_registry(
+        event_bus: EventBus,
+        extension_registry: Arc<dyn ExtensionRegistry>,
+    ) -> Self {
+        Self {
+            event_bus,
+            history: Arc::new(CommandResultHistory::new()),
+            device_service: None,
+            extension_registry: Some(extension_registry),
+            retry_config: RetryConfig::default(),
+        }
+    }
+
+    /// Create a fully configured device action executor.
+    pub fn with_all(
+        event_bus: EventBus,
+        device_service: Option<Arc<DeviceService>>,
+        extension_registry: Option<Arc<dyn ExtensionRegistry>>,
+        retry_config: RetryConfig,
+    ) -> Self {
+        Self {
+            event_bus,
+            history: Arc::new(CommandResultHistory::new()),
+            device_service,
+            extension_registry,
             retry_config,
         }
     }
@@ -408,6 +488,11 @@ impl DeviceActionExecutor {
     /// Set the device service.
     pub fn set_device_service(&mut self, device_service: Arc<DeviceService>) {
         self.device_service = Some(device_service);
+    }
+
+    /// Set the extension registry.
+    pub fn set_extension_registry(&mut self, extension_registry: Arc<dyn ExtensionRegistry>) {
+        self.extension_registry = Some(extension_registry);
     }
 
     /// Set the retry configuration.
@@ -551,100 +636,186 @@ impl DeviceActionExecutor {
                 let target = device_id.unwrap_or(target_device);
                 actions_executed.push(format!("execute:{}", command));
 
-                // Try to execute via device service with retry logic
-                let execution_result = if let Some(ref _device_service) = self.device_service {
-                    match self.execute_command_with_retry(target, command, params).await {
-                        Ok(result) => {
-                            info!(
-                                "Executed command '{}' on device '{}' via DeviceService (rule: {})",
-                                command,
-                                target,
-                                rule_id.unwrap_or("none")
-                            );
-                            // Publish success event
-                            let _ = self
-                                .event_bus
-                                .publish(NeoMindEvent::DeviceCommandResult {
-                                    device_id: target.to_string(),
+                // Check if this is an extension command
+                // Extension ID formats: "extension:id", "extension:id:metric", "extension:id:command:field"
+                let is_extension = target.starts_with("extension:") ||
+                    DataSourceId::parse(target).map_or(false, |ds_id| {
+                        matches!(ds_id.source_type, neomind_core::datasource::DataSourceType::Extension)
+                    });
+
+                if is_extension {
+                    // Execute via extension registry
+                    let execution_result = if let Some(ref registry) = self.extension_registry {
+                        // Parse extension_id from target (remove "extension:" prefix if present)
+                        let extension_id = target.strip_prefix("extension:")
+                            .unwrap_or(target)
+                            .split(':')
+                            .next()
+                            .unwrap_or(target);
+
+                        match registry.execute_command(extension_id, command, &serde_json::to_value(params).unwrap_or_default()).await {
+                            Ok(result) => {
+                                info!(
+                                    "Executed command '{}' on extension '{}' (rule: {})",
+                                    command,
+                                    extension_id,
+                                    rule_id.unwrap_or("none")
+                                );
+                                CommandActionResult {
+                                    device_id: extension_id.to_string(),
                                     command: command.clone(),
+                                    params: params.clone(),
                                     success: true,
-                                    result: Some(serde_json::json!({"status": "executed", "rule_id": rule_id})),
+                                    result: Some(CommandResultValue::Json(result)),
+                                    error: None,
+                                    duration_ms: start.elapsed().as_millis() as u64,
                                     timestamp: chrono::Utc::now().timestamp(),
-                                })
-                                .await;
-
-                            CommandActionResult {
-                                device_id: target.to_string(),
-                                command: command.clone(),
-                                params: params.clone(),
-                                success: true,
-                                result: result.map(|v| CommandResultValue::from(convert_metric_value(v))),
-                                error: None,
-                                duration_ms: start.elapsed().as_millis() as u64,
-                                timestamp: chrono::Utc::now().timestamp(),
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to execute command '{}' on extension '{}': {}",
+                                    command, extension_id, e
+                                );
+                                CommandActionResult {
+                                    device_id: extension_id.to_string(),
+                                    command: command.clone(),
+                                    params: params.clone(),
+                                    success: false,
+                                    result: None,
+                                    error: Some(e),
+                                    duration_ms: start.elapsed().as_millis() as u64,
+                                    timestamp: chrono::Utc::now().timestamp(),
+                                }
                             }
                         }
-                        Err(e) => {
-                            error!(
-                                "Failed to execute command '{}' on device '{}' after retries: {}",
-                                command, target, e
-                            );
-                            // Publish failure event
-                            let _ = self
-                                .event_bus
-                                .publish(NeoMindEvent::DeviceCommandResult {
+                    } else {
+                        // No extension registry configured
+                        warn!(
+                            "Extension command '{}' on '{}' requested but no extension registry configured",
+                            command, target
+                        );
+                        CommandActionResult {
+                            device_id: target.to_string(),
+                            command: command.clone(),
+                            params: params.clone(),
+                            success: false,
+                            result: None,
+                            error: Some("Extension registry not configured".to_string()),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            timestamp: chrono::Utc::now().timestamp(),
+                        }
+                    };
+
+                    // Store in history if rule_id is provided
+                    if let Some(rid) = rule_id {
+                        self.history.add(rid, execution_result.clone()).await;
+                    }
+
+                    return Ok(RuleExecutionResult {
+                        rule_id: rule_id.map(|s| RuleId::from_string(s).unwrap_or_default()).unwrap_or_default(),
+                        rule_name: "extension_command".to_string(),
+                        success: execution_result.success,
+                        actions_executed,
+                        error: execution_result.error,
+                        duration_ms: execution_result.duration_ms,
+                    });
+                } else {
+                    // Device command - try to execute via device service with retry logic
+                    let execution_result = if let Some(ref _device_service) = self.device_service {
+                        match self.execute_command_with_retry(target, command, params).await {
+                            Ok(result) => {
+                                info!(
+                                    "Executed command '{}' on device '{}' via DeviceService (rule: {})",
+                                    command,
+                                    target,
+                                    rule_id.unwrap_or("none")
+                                );
+                                // Publish success event
+                                let _ = self
+                                    .event_bus
+                                    .publish(NeoMindEvent::DeviceCommandResult {
+                                        device_id: target.to_string(),
+                                        command: command.clone(),
+                                        success: true,
+                                        result: Some(serde_json::json!({"status": "executed", "rule_id": rule_id})),
+                                        timestamp: chrono::Utc::now().timestamp(),
+                                    })
+                                    .await;
+
+                                CommandActionResult {
                                     device_id: target.to_string(),
                                     command: command.clone(),
-                                    success: false,
-                                    result: Some(serde_json::json!({"error": e})),
+                                    params: params.clone(),
+                                    success: true,
+                                    result: result.map(|v| CommandResultValue::from(convert_metric_value(v))),
+                                    error: None,
+                                    duration_ms: start.elapsed().as_millis() as u64,
                                     timestamp: chrono::Utc::now().timestamp(),
-                                })
-                                .await;
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to execute command '{}' on device '{}' after retries: {}",
+                                    command, target, e
+                                );
+                                // Publish failure event
+                                let _ = self
+                                    .event_bus
+                                    .publish(NeoMindEvent::DeviceCommandResult {
+                                        device_id: target.to_string(),
+                                        command: command.clone(),
+                                        success: false,
+                                        result: Some(serde_json::json!({"error": e})),
+                                        timestamp: chrono::Utc::now().timestamp(),
+                                    })
+                                    .await;
 
-                            CommandActionResult {
-                                device_id: target.to_string(),
-                                command: command.clone(),
-                                params: params.clone(),
-                                success: false,
-                                result: None,
-                                error: Some(e),
-                                duration_ms: start.elapsed().as_millis() as u64,
-                                timestamp: chrono::Utc::now().timestamp(),
+                                CommandActionResult {
+                                    device_id: target.to_string(),
+                                    command: command.clone(),
+                                    params: params.clone(),
+                                    success: false,
+                                    result: None,
+                                    error: Some(e),
+                                    duration_ms: start.elapsed().as_millis() as u64,
+                                    timestamp: chrono::Utc::now().timestamp(),
+                                }
                             }
                         }
-                    }
-                } else {
-                    // Fallback to event bus only (no actual execution)
-                    warn!(
-                        "No DeviceService configured, command '{}' on device '{}' only published to event bus",
-                        command, target
-                    );
+                    } else {
+                        // Fallback to event bus only (no actual execution)
+                        warn!(
+                            "No DeviceService configured, command '{}' on device '{}' only published to event bus",
+                            command, target
+                        );
 
-                    CommandActionResult {
-                        device_id: target.to_string(),
-                        command: command.clone(),
-                        params: params.clone(),
-                        success: true,
-                        result: Some(CommandResultValue::String("Published to event bus (no actual execution)".to_string())),
-                        error: None,
-                        duration_ms: 0,
-                        timestamp: chrono::Utc::now().timestamp(),
-                    }
-                };
+                        CommandActionResult {
+                            device_id: target.to_string(),
+                            command: command.clone(),
+                            params: params.clone(),
+                            success: true,
+                            result: Some(CommandResultValue::String("Published to event bus (no actual execution)".to_string())),
+                            error: None,
+                            duration_ms: 0,
+                            timestamp: chrono::Utc::now().timestamp(),
+                        }
+                    };
 
-                // Store in history if rule_id is provided
-                if let Some(rid) = rule_id {
-                    self.history.add(rid, execution_result.clone()).await;
+                    // Store in history if rule_id is provided
+                    if let Some(rid) = rule_id {
+                        self.history.add(rid, execution_result.clone()).await;
+                    }
+
+                    return Ok(RuleExecutionResult {
+                        rule_id: rule_id.map(|s| RuleId::from_string(s).unwrap_or_default()).unwrap_or_default(),
+                        rule_name: "device_command".to_string(),
+                        success: execution_result.success,
+                        actions_executed,
+                        error: execution_result.error,
+                        duration_ms: execution_result.duration_ms,
+                    });
                 }
-
-                return Ok(RuleExecutionResult {
-                    rule_id: rule_id.map(|s| RuleId::from_string(s).unwrap_or_default()).unwrap_or_default(),
-                    rule_name: "device_command".to_string(),
-                    success: execution_result.success,
-                    actions_executed,
-                    error: execution_result.error,
-                    duration_ms: execution_result.duration_ms,
-                });
             }
             RuleAction::Notify { message, channels: _ } => {
                 actions_executed.push(format!("notify:{}", message));

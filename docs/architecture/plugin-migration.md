@@ -1,207 +1,247 @@
 # Plugin 到 Extension 迁移分析
 
-> NeoMind v0.4.2
-> 创建时间: 2025-02-05
+> NeoMind v0.5.8 (Unified Extension System)
+> 更新时间: 2025-02-12
 
-## 当前状态
+## 迁移完成状态
 
-### 两个并行系统
+### 统一扩展系统 (v0.5.x)
 
-| 系统 | 位置 | 主要用途 | 状态 |
-|------|------|----------|------|
-| **Plugin** | `neomind-core/src/plugin/` | 设备适配器插件 | 活跃使用 |
-| **Extension** | `neomind-core/src/extension/` | 第三方扩展 | 新系统 |
+当前分支 `feature/unified-extension-system` 已完成Plugin到Extension的统一迁移：
 
-### Plugin 系统
+| 系统 | 位置 | 状态 |
+|------|------|------|
+| **Extension** | `neomind-core/src/extension/` | ✅ 主系统 |
+| **Plugin** | `neomind-core/src/plugin/` | ⚠️ 已废弃，兼容性保留 |
 
-**功能**:
-- 编译时注册 + 运行时加载
-- 支持 WASM 和 Native (.so/.dylib/.dll)
-- 动态配置热重载
-- 版本兼容性检查
+---
 
-**使用者**:
-- `neomind-devices/src/adapters/plugins.rs` - 设备适配器插件
-- `neomind-devices/src/plugin_adapter.rs` - 插件适配器
-- 测试代码中的插件加载
+## Extension 系统 (当前)
 
-**核心组件**:
+### 核心组件
+
 ```rust
-pub trait Plugin {
-    fn metadata(&self) -> &PluginMetadata;
-    fn initialize(&mut self, config: &Value) -> Result<()>;
-    fn is_initialized(&self) -> bool;
-    fn shutdown(&mut self) -> Result<()>;
-}
-
-pub struct UnifiedPluginRegistry {
-    // 管理所有插件类型
-}
-
-pub struct WasmPluginLoader {
-    // WASM 插件加载器
-}
-
-pub struct NativePluginLoader {
-    // Native 插件加载器
-}
+// neomind-core/src/extension/
+mod.rs           # Extension trait 和类型定义
+loader/
+├── mod.rs       # 加载器抽象
+├── native.rs    # Native 加载器 (.so/.dylib/.dll)
+└── wasm.rs      # WASM 加载器
+types.rs         # ExtensionMetadata, ExtensionState 等
+registry.rs      # ExtensionRegistry 生命周期管理
+executor.rs      # 扩展执行器
+safety.rs        # 沙箱安全检查
+system.rs        # 系统扩展管理
 ```
 
-### Extension 系统
+### Extension Trait
 
-**功能**:
-- 运行时动态加载 (.so/.dylib/.dll/.wasm)
-- 生命周期管理 (start/stop)
-- 健康检查
-- 发现机制
-
-**使用者**:
-- `neomind-cli` - CLI 工具的扩展管理
-- API 端点: `/api/extensions/*`
-
-**核心组件**:
 ```rust
-pub trait Extension {
+pub trait Extension: Send + Sync {
+    /// 获取扩展元数据
     fn metadata(&self) -> &ExtensionMetadata;
-    fn start(&mut self) -> Result<()>;
-    fn stop(&mut self) -> Result<()>;
+
+    /// 启动扩展
+    fn start(&mut self) -> Result<(), ExtensionError>;
+
+    /// 停止扩展
+    fn stop(&mut self) -> Result<(), ExtensionError>;
+
+    /// 获取当前状态
     fn state(&self) -> ExtensionState;
-}
 
-pub struct ExtensionRegistry {
-    // 管理扩展生命周期
-}
+    /// 健康检查
+    fn health(&self) -> HealthStatus;
 
-pub struct WasmExtensionLoader {
-    // WASM 扩展加载器
+    /// 执行命令
+    fn execute_command(&mut self, cmd: &str, args: &Value) -> Result<Value>;
 }
+```
 
-pub struct NativeExtensionLoader {
-    // Native 扩展加载器
+### 扩展类型
+
+```rust
+pub enum ExtensionType {
+    /// 设备适配器
+    DeviceAdapter,
+    /// 数据源
+    DataSource,
+    /// 告警通道
+    AlertChannel,
+    /// LLM后端
+    LlmBackend,
+    /// 工具
+    Tool,
+    /// 通用扩展
+    Generic,
 }
 ```
 
 ---
 
-## 两个系统的差异
+## 扩展指标存储
 
-| 特性 | Plugin 系统 | Extension 系统 |
-|------|------------|---------------|
-| **注册方式** | compile-time + runtime | runtime only |
-| **生命周期** | initialize/shutdown | start/stop |
-| **状态管理** | PluginState (Loaded, Running, etc.) | ExtensionState (Loaded, Running, Stopped) |
-| **元数据** | PluginMetadata | ExtensionMetadata |
-| **热重载** | 支持 (ConfigWatcher) | 不直接支持 |
-| **健康检查** | 无 | 有 (health endpoint) |
-| **API 端点** | 无 | `/api/extensions/*` |
-| **发现机制** | 无 | `discover_extensions()` |
-| **ABI 版本** | `PLUGIN_ABI_VERSION` | 无 |
+### ExtensionMetricsStorage
+
+新增 `neomind-api/src/server/extension_metrics.rs` 统一管理扩展时序数据：
+
+```rust
+pub struct ExtensionMetricsStorage {
+    metrics_storage: Arc<TimeSeriesStore>,
+}
+
+impl ExtensionMetricsStorage {
+    /// 存储扩展指标到 timeseries.redb
+    pub async fn store_metric_value(
+        &self,
+        extension_id: &str,
+        metric_value: &MetricValue,
+    ) -> Result<()> {
+        let source_id = DataSourceId::new(
+            &format!("extension:{}:{}", extension_id, metric_value.name)
+        )?;
+
+        self.metrics_storage.write(
+            &source_id.device_part(),  // "extension:extension_id"
+            source_id.metric_part(),   // metric_name
+            data_point,
+        ).await?;
+
+        Ok(())
+    }
+}
+```
+
+### DataSourceId 格式
+
+扩展指标使用DataSourceId进行类型安全的存储和查询：
+
+```
+extension:{extension_id}:{metric_name}
+
+示例:
+extension:weather:temperature
+extension:weather:humidity
+extension:stock:price
+```
 
 ---
 
-## 迁移策略
+## API 端点
 
-### 方案 A: 统一到 Extension 系统（推荐）
+### Extensions API
 
-**优点**:
-- 单一系统，减少维护成本
-- 更完整的生命周期管理
-- 有 HTTP API 支持
-- 有健康检查机制
+```
+GET    /api/extensions                     # 列出扩展
+POST   /api/extensions                     # 注册扩展
+GET    /api/extensions/:id                 # 获取扩展详情
+DELETE /api/extensions/:id                 # 注销扩展
+POST   /api/extensions/:id/start           # 启动扩展
+POST   /api/extensions/:id/stop            # 停止扩展
+GET    /api/extensions/:id/health          # 健康检查
+POST   /api/extensions/:id/command         # 执行命令
+GET    /api/extensions/:id/stats           # 获取统计
+POST   /api/extensions/discover            # 自动发现扩展
+GET    /api/extensions/types               # 扩展类型
 
-**缺点**:
-- 需要大量重构
-- 可能破坏现有功能
-- 需要重新实现 Plugin 的某些功能（如热重载）
+# 扩展指标
+GET    /api/extensions/:id/metrics         # 列出扩展指标
+POST   /api/extensions/:id/metrics         # 注册指标
+DELETE /api/extensions/:id/metrics/:name   # 删除指标
+```
 
-**迁移步骤**:
+### Plugins API (已废弃)
 
-1. **扩展 Extension trait**
+```
+GET    /api/plugins                        # 重定向到 /api/extensions
+POST   /api/plugins                        # 重定向到 /api/extensions
+```
+
+---
+
+## 数据库统一
+
+### 时序数据库
+
+所有时序数据现在统一存储在 `data/timeseries.redb`：
+
+| 数据类型 | device_part | metric_part |
+|---------|-------------|-------------|
+| 设备遥测 | `{device_id}` | `{metric_name}` |
+| 扩展指标 | `extension:{ext_id}` | `{metric_name}` |
+| 转换指标 | `transform:{trans_id}` | `{metric_name}` |
+
+**重要**: AgentExecutor 现在使用 `data/timeseries.redb` 而不是 `data/timeseries_agents.redb`，这使得Agent可以访问所有设备和扩展指标。
+
+---
+
+## 前端集成
+
+### 新增组件
+
+```
+web/src/components/extensions/
+├── DiscoverExtensionsDialog.tsx    # 扩展发现对话框
+├── ExtensionDataSourceSelector.tsx # 扩展数据源选择器
+├── ExtensionDetailsDialog.tsx      # 扩展详情对话框
+├── ExtensionMetricSelector.tsx     # 扩展指标选择器
+├── ExtensionToolSelector.tsx       # 扩展工具选择器
+├── ExtensionTransformConfig.tsx    # 扩展转换配置
+└── MarketplaceDialog.tsx           # 扩展市场对话框
+```
+
+### 扩展页面
+
+```
+web/src/pages/extensions.tsx        # 统一的扩展管理页面（替代 plugins.tsx）
+```
+
+---
+
+## 迁移指南
+
+### 对于开发者
+
+1. **使用Extension trait替代Plugin trait**:
    ```rust
-   pub trait Extension {
-       fn metadata(&self) -> &ExtensionMetadata;
-       fn start(&mut self) -> Result<()>;
-       fn stop(&mut self) -> Result<()>;
-       fn state(&self) -> ExtensionState;
-       
-       // 添加 Plugin 兼容方法
-       fn initialize(&mut self, config: &Value) -> Result<()> {
-           // 默认实现，调用 start
-           self.start()
-       }
-   }
+   // 旧代码
+   impl Plugin for MyPlugin { ... }
+
+   // 新代码
+   impl Extension for MyExtension { ... }
    ```
 
-2. **合并 Registry**
+2. **更新导入路径**:
    ```rust
-   pub struct UnifiedExtensionRegistry {
-       // 合并两者的功能
-       plugins: HashMap<String, DynExtension>,
-       loaders: HashMap<ExtensionType, Box<dyn ExtensionLoader>>,
-   }
+   // 旧代码
+   use neomind_core::plugin::{Plugin, PluginRegistry};
+
+   // 新代码
+   use neomind_core::extension::{Extension, ExtensionRegistry};
    ```
 
-3. **更新设备适配器**
-   - 修改 `neomind-devices/src/adapters/plugins.rs`
-   - 使用 Extension trait 替代 Plugin trait
+3. **API 调用更新**:
+   ```typescript
+   // 旧代码
+   await api.listPlugins()
 
-4. **保留热重载功能**
-   - 在 ExtensionRegistry 中添加 ConfigWatcher
-
----
-
-### 方案 B: 并行保留（保守）
-
-**优点**:
-- 无需重构现有代码
-- 零风险
-
-**缺点**:
-- 两个系统并行，维护成本高
-- 概念混淆
-- 未来技术债务增加
-
-**实施**:
-- 保持现状
-- 文档化两个系统的使用场景
-- 在新代码中优先使用 Extension 系统
+   // 新代码
+   await api.listExtensions()
+   ```
 
 ---
 
-## 建议
+## 当前状态总结
 
-### 短期 (v0.4.x)
-采用 **方案 B** - 并行保留:
-1. 文档化两个系统的职责边界
-2. 新功能使用 Extension 系统
-3. Plugin 系统保持不变
-
-### 中期 (v0.5.x)
-开始 **方案 A** 的迁移:
-1. 扩展 Extension trait 以支持 Plugin 功能
-2. 创建适配层保持兼容
-3. 逐步迁移设备适配器
-
-### 长期 (v0.6.x)
-完全统一到 Extension 系统:
-1. 删除 Plugin 系统
-2. 所有扩展使用统一 API
-3. 清理技术债务
-
----
-
-## 当前推荐
-
-**保持现状，暂不迁移**。
-
-原因:
-1. Plugin 系统在设备适配器中工作正常
-2. Extension 系统主要用于第三方扩展
-3. 两者服务不同的使用场景
-4. 强行迁移风险大于收益
-
-**文档更新**:
-- Plugin 系统: 用于设备适配器插件（内置功能）
-- Extension 系统: 用于第三方开发者扩展
+| 功能 | 状态 |
+|------|------|
+| Extension Trait | ✅ 完成 |
+| Native Loader | ✅ 完成 |
+| WASM Loader | 🟡 部分支持 |
+| ExtensionRegistry | ✅ 完成 |
+| ExtensionMetricsStorage | ✅ 完成 |
+| API 端点 | ✅ 完成 |
+| 前端UI | ✅ 完成 |
+| Plugin兼容层 | ✅ 保留 |
 
 ---

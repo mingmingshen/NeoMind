@@ -21,6 +21,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use executor::{AgentExecutor, AgentExecutorConfig, ExecutionContext, AgentExecutionResult};
+pub use intent_parser::IntentParser;
 pub use scheduler::{AgentScheduler, ScheduledTask, SchedulerConfig, SchedulerError};
 
 /// AI Agent manager - the main entry point for user-defined agents.
@@ -156,6 +157,8 @@ impl AiAgentManager {
             user_messages: Default::default(),
             conversation_summary: Default::default(),
             context_window_size: Default::default(),
+            enable_tool_chaining: false, // Default disabled for backward compatibility
+            max_chain_depth: 3, // Default max depth
         };
 
         // Save agent to storage
@@ -280,8 +283,11 @@ impl AiAgentManager {
 
     /// Delete an agent.
     pub async fn delete_agent(&self, id: &str) -> Result<(), crate::error::NeoMindError> {
-        // Unschedule first
+        // Unschedule first (removes interval/cron tasks)
         self.scheduler.unschedule_agent(id).await?;
+
+        // Remove from event-triggered cache immediately
+        self.executor.remove_event_agent(id).await;
 
         // Delete from storage
         Ok(self.executor.store().delete_agent(id).await?)

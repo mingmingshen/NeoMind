@@ -371,14 +371,6 @@ function normalizeDataSourceForImages(
     }
   }
 
-  // For static or other types, add image-friendly limit and time range
-  if (ds.type === 'static' || ds.type === 'api') {
-    return {
-      ...ds,
-      limit: Math.max(ds.limit ?? 0, limit),
-    }
-  }
-
   return ds
 }
 

@@ -811,7 +811,8 @@
     "parseAndGenerate": "Parse and Generate Metrics",
     "importSuccess": "Import Successful",
     "importSuccessDesc": "Parsed {{count}} metrics from JSON",
-    "jsonError": "Invalid JSON format, please check and try again"
+    "jsonError": "Invalid JSON format, please check and try again",
+    "orImportFromJson": "Add metrics manually or import from JSON"
   },
   "commandEditor": {
     "templates": {
@@ -887,10 +888,14 @@
     "commandsCount": "Command Definitions ({{count}})",
     "commandsDesc": "Define commands that can be executed on the device",
     "importJson": "Import JSON",
+    "importFromFile": "Import from File",
     "importFailed": "Import Failed",
     "importSuccess": "Import Successful",
     "importSuccessDesc": "Added {{count}} command(s)",
-    "invalidJson": "Invalid JSON format"
+    "invalidJson": "Invalid JSON format",
+    "promptJson": "Paste JSON to import commands:",
+    "importedCommand": "Imported Command",
+    "orImportFromJson": "Add commands manually or import from JSON"
   },
   "control": {
     "title": "Device Commands",
@@ -979,5 +984,61 @@
     "result": "Result:",
     "error": "Error:",
     "executionTime": "Execution time: {{time}}ms"
+  },
+  "cloud": {
+    "fromCloud": "Import from Cloud",
+    "importTitle": "Import Device Types from Cloud",
+    "importDescription": "Browse and import device types from the official cloud repository",
+    "loading": "Loading...",
+    "loadFailed": "Load Failed",
+    "loadFailedDesc": "Unable to load cloud device types",
+    "networkError": "Unable to connect to GitHub, please check your internet connection",
+    "noDeviceTypes": "No device types available",
+    "selectedCount": "Selected {{count}}",
+    "selectAll": "Select All",
+    "clear": "Clear",
+    "noSelection": "No Selection",
+    "noSelectionDesc": "Please select at least one device type",
+    "importing": "Importing...",
+    "importButton": "Import ({{count}})",
+    "importSuccess": "Import Successful",
+    "importSuccessDesc": "Successfully imported {{count}} device type(s)",
+    "importPartial": "Import Complete",
+    "importFailed": "Import Failed",
+    "importFailedDesc": "Failed to import device types",
+    "skipped": "Skipped",
+    "failed": "Failed"
+  },
+  "github": {
+    "importTitle": "Import Device Types from GitHub",
+    "importDescription": "Import device type definitions from a GitHub repository",
+    "quickImport": "Quick Import",
+    "customRepo": "Custom Repository",
+    "official": "Official",
+    "repoLabel": "Repository",
+    "repoPlaceholder": "owner/repo format",
+    "repoRequired": "Repository is required",
+    "invalidRepoFormat": "Repository must be in format 'owner/repo'",
+    "pathLabel": "Path",
+    "refLabel": "Branch / Tag",
+    "tokenLabel": "GitHub Token (Optional)",
+    "tokenHint": "Required for private repositories",
+    "overwriteLabel": "Overwrite existing device types",
+    "showAdvanced": "Show Advanced",
+    "hideAdvanced": "Hide Advanced",
+    "importButton": "Import",
+    "importing": "Importing...",
+    "importSuccessTitle": "Import Completed",
+    "importSuccessDesc": "Successfully imported {{count}} device type(s)",
+    "importPartialTitle": "Partial Import",
+    "importPartialDesc": "{{count}} device type(s) failed to import",
+    "importFailedTitle": "Import Failed",
+    "importFailedDesc": "Failed to import device types from GitHub",
+    "importResults": "Import Results",
+    "importAnother": "Import More",
+    "imported": "Imported",
+    "skipped": "Skipped",
+    "failed": "Failed",
+    "details": "Details"
   }
 }

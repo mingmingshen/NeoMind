@@ -14,8 +14,10 @@ pub struct ExtendedMessage {
     pub content: Content,
     /// Tool calls (if any)
     pub tool_calls: Option<Vec<ToolCall>>,
-    /// Tool call ID (for tool responses)
+    /// Tool call ID (for tool responses in OpenAI-compatible format)
     pub tool_call_id: Option<String>,
+    /// Tool name (for tool responses in Ollama format)
+    pub tool_name: Option<String>,
     /// Thinking content (for AI reasoning process)
     pub thinking: Option<String>,
     /// Timestamp
@@ -41,6 +43,7 @@ impl ExtendedMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -71,18 +74,33 @@ impl ExtendedMessage {
             content: content.into(),
             tool_calls: None,
             tool_call_id: None,
+            tool_name: None,
             thinking: Some(thinking.into()),
             timestamp: chrono::Utc::now().timestamp(),
         }
     }
 
-    /// Create a tool result message.
+    /// Create a tool result message (OpenAI-compatible format with tool_call_id).
     pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<Content>) -> Self {
         Self {
-            role: MessageRole::User, // Tool results are sent as user messages
+            role: MessageRole::User, // OpenAI uses user role for tool results
             content: content.into(),
             tool_calls: None,
             tool_call_id: Some(tool_call_id.into()),
+            tool_name: None,
+            thinking: None,
+            timestamp: chrono::Utc::now().timestamp(),
+        }
+    }
+
+    /// Create a tool result message (Ollama format with tool_name).
+    pub fn tool_result_ollama(tool_name: impl Into<String>, content: impl Into<Content>) -> Self {
+        Self {
+            role: MessageRole::Tool, // Ollama uses "tool" role
+            content: content.into(),
+            tool_calls: None,
+            tool_call_id: None,
+            tool_name: Some(tool_name.into()),
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -95,6 +113,7 @@ impl ExtendedMessage {
             content: content.into(),
             tool_calls: Some(tool_calls),
             tool_call_id: None,
+            tool_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -112,6 +131,7 @@ impl ExtendedMessage {
             content: msg.content.clone(),
             tool_calls: None,
             tool_call_id: None,
+            tool_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -134,6 +154,12 @@ impl ExtendedMessage {
         self.tool_call_id = Some(id.into());
         self
     }
+
+    /// Set tool name (for Ollama format).
+    pub fn with_tool_name(mut self, name: impl Into<String>) -> Self {
+        self.tool_name = Some(name.into());
+        self
+    }
 }
 
 impl From<Message> for ExtendedMessage {
@@ -143,6 +169,7 @@ impl From<Message> for ExtendedMessage {
             content: msg.content,
             tool_calls: None,
             tool_call_id: None,
+            tool_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }
@@ -162,6 +189,7 @@ impl From<&Message> for ExtendedMessage {
             content: msg.content.clone(),
             tool_calls: None,
             tool_call_id: None,
+            tool_name: None,
             thinking: None,
             timestamp: chrono::Utc::now().timestamp(),
         }

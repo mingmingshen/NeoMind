@@ -749,23 +749,39 @@ impl SessionStore {
     }
 
     /// Get all pending stream states (e.g., for recovery after server restart).
+    /// Returns empty vec if the table doesn't exist yet (graceful handling for new databases).
     pub fn get_all_pending_streams(&self) -> Result<Vec<PendingStreamState>, Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(PENDING_STREAM_TABLE)?;
+        let read_txn = match self.db.begin_read() {
+            Ok(txn) => txn,
+            Err(_) => return Ok(vec![]), // Database error, return empty
+        };
+        
+        let table = match read_txn.open_table(PENDING_STREAM_TABLE) {
+            Ok(t) => t,
+            Err(e) => {
+                // Table doesn't exist yet - this is normal for new databases
+                let error_msg = e.to_string();
+                if error_msg.contains("does not exist") || error_msg.contains("Table") {
+                    return Ok(vec![]);
+                }
+                return Err(Error::Storage(format!("Redb table error: {}", e)));
+            }
+        };
 
         let mut states = Vec::new();
         for result in table.iter()? {
-            let (_key, value) = result?;
+            let (key, value) = result?;
             let value_vec = value.value();
             match serde_json::from_slice::<PendingStreamState>(value_vec.as_slice()) {
                 Ok(state) => {
-                    // Skip stale states
-                    if !state.is_stale() {
-                        states.push(state);
-                    }
+                    states.push(state);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to deserialize pending stream state: {}", e);
+                    tracing::warn!(
+                        "Failed to deserialize pending stream state for key '{}': {}",
+                        key.value(),
+                        e
+                    );
                 }
             }
         }
@@ -773,9 +789,24 @@ impl SessionStore {
     }
 
     /// Clean up stale pending stream states (older than 10 minutes).
+    /// Returns Ok(0) if the table doesn't exist yet (graceful handling for new databases).
     pub fn cleanup_stale_pending_streams(&self) -> Result<usize, Error> {
-        let read_txn = self.db.begin_read()?;
-        let table = read_txn.open_table(PENDING_STREAM_TABLE)?;
+        let read_txn = match self.db.begin_read() {
+            Ok(txn) => txn,
+            Err(_) => return Ok(0), // Database error, nothing to clean
+        };
+        
+        let table = match read_txn.open_table(PENDING_STREAM_TABLE) {
+            Ok(t) => t,
+            Err(e) => {
+                // Table doesn't exist yet - this is normal for new databases
+                let error_msg = e.to_string();
+                if error_msg.contains("does not exist") || error_msg.contains("Table") {
+                    return Ok(0);
+                }
+                return Err(Error::Storage(format!("Redb table error: {}", e)));
+            }
+        };
 
         let mut stale_session_ids = Vec::new();
         for result in table.iter()? {

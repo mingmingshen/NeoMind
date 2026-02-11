@@ -530,3 +530,295 @@ pub async fn generate_device_type_from_samples_handler(
 
     ok(response)
 }
+
+// ============================================================================
+// CLOUD DEVICE TYPE IMPORT
+// ============================================================================
+
+/// Configuration for cloud device type repository
+const CLOUD_REPO: &str = "camthink-ai/NeoMind-DeviceTypes";
+const CLOUD_BRANCH: &str = "main";
+
+/// Cloud device type metadata
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CloudDeviceType {
+    pub device_type: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
+}
+
+/// Response for listing cloud device types
+#[derive(Debug, Serialize)]
+pub struct CloudDeviceTypesResponse {
+    pub device_types: Vec<CloudDeviceType>,
+    pub total: usize,
+}
+
+/// Request for importing selected device types
+#[derive(Debug, Deserialize)]
+pub struct CloudImportRequest {
+    pub device_types: Vec<String>,
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
+/// Details about a failed import
+#[derive(Debug, Serialize)]
+pub struct ImportFailure {
+    pub device_type: String,
+    pub reason: String,
+}
+
+/// Response for import operation
+#[derive(Debug, Serialize)]
+pub struct CloudImportResponse {
+    pub imported: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    #[serde(default)]
+    pub failures: Vec<ImportFailure>,
+}
+
+/// List available device types from cloud repository
+/// Uses GitHub Contents API to list files in types/ directory
+///
+/// GET /api/device-types/cloud/list
+pub async fn list_cloud_device_types_handler(
+    State(_state): State<ServerState>,
+) -> HandlerResult<serde_json::Value> {
+    let api_url = format!(
+        "https://api.github.com/repos/{}/contents/types?ref={}",
+        CLOUD_REPO, CLOUD_BRANCH
+    );
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))?;
+
+    let response = match client.get(&api_url)
+        .header("User-Agent", "NeoMind-DeviceType-Importer")
+        .send().await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to connect to GitHub API: {}", e);
+            // Return empty list on network error (graceful degradation)
+            return ok(json!({
+                "device_types": [],
+                "total": 0,
+                "error": "network_error",
+                "message": "Unable to connect to GitHub. Please check your internet connection."
+            }));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response".to_string());
+        tracing::error!("GitHub API returned status {}: {}", status, error_text);
+        
+        // Return empty list if fetch fails (graceful degradation)
+        return ok(json!({
+            "device_types": [],
+            "total": 0,
+            "error": format!("GitHub API returned status {}", status),
+        }));
+    }
+
+    #[derive(Deserialize)]
+    struct GitHubFile {
+        name: String,
+        #[serde(default)]
+        _size: u64,
+    }
+
+    let files: Vec<GitHubFile> = match response.json().await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to parse GitHub API response: {}", e);
+            // Return empty list on parse error (graceful degradation)
+            return ok(json!({
+                "device_types": [],
+                "total": 0,
+                "error": "parse_error",
+                "message": "Unable to parse GitHub response."
+            }));
+        }
+    };
+
+    // Extract device_type_id from filenames (remove .json extension)
+    let cloud_types: Vec<CloudDeviceType> = files
+        .into_iter()
+        .filter(|f| f.name.ends_with(".json"))
+        .map(|f| {
+            let device_type_id = f.name.trim_end_matches(".json");
+            CloudDeviceType {
+                device_type: device_type_id.to_string(),
+                name: device_type_id.replace('_', " ").to_string(), // Simple name from ID
+                description: String::new(),
+                categories: Vec::new(),
+            }
+        })
+        .collect();
+
+    ok(json!({
+        "device_types": cloud_types,
+        "total": cloud_types.len(),
+    }))
+}
+
+/// Result of fetching a single device type from cloud
+#[derive(Debug)]
+struct FetchedDeviceType {
+    id: String,
+    template: Option<DeviceTypeTemplate>,
+    error: Option<String>,
+}
+
+/// Fetch a single device type from cloud
+async fn fetch_device_type(
+    client: &reqwest::Client,
+    repo: &str,
+    branch: &str,
+    device_type_id: &str,
+) -> FetchedDeviceType {
+    let file_url = format!(
+        "https://raw.githubusercontent.com/{}/{}/types/{}.json",
+        repo, branch, device_type_id
+    );
+
+    let response = match client.get(&file_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return FetchedDeviceType {
+                id: device_type_id.to_string(),
+                template: None,
+                error: Some(format!("Network error: {}", e)),
+            };
+        }
+    };
+
+    if !response.status().is_success() {
+        return FetchedDeviceType {
+            id: device_type_id.to_string(),
+            template: None,
+            error: Some(format!("HTTP status: {}", response.status())),
+        };
+    }
+
+    let content = match response.text().await {
+        Ok(c) => c,
+        Err(e) => {
+            return FetchedDeviceType {
+                id: device_type_id.to_string(),
+                template: None,
+                error: Some(format!("Failed to read response: {}", e)),
+            };
+        }
+    };
+
+    match serde_json::from_str::<DeviceTypeTemplate>(&content) {
+        Ok(template) => FetchedDeviceType {
+            id: device_type_id.to_string(),
+            template: Some(template),
+            error: None,
+        },
+        Err(e) => {
+            tracing::error!("Failed to parse device type '{}': {}", device_type_id, e);
+            FetchedDeviceType {
+                id: device_type_id.to_string(),
+                template: None,
+                error: Some(format!("Invalid JSON: {}", e)),
+            }
+        }
+    }
+}
+
+/// Import selected device types from cloud
+///
+/// POST /api/device-types/cloud/import
+pub async fn import_cloud_device_types_handler(
+    State(state): State<ServerState>,
+    Json(request): Json<CloudImportRequest>,
+) -> HandlerResult<CloudImportResponse> {
+    let branch = request.branch.as_deref().unwrap_or(CLOUD_BRANCH);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| ErrorResponse::internal(format!("Failed to build HTTP client: {}", e)))?;
+
+    let mut imported = 0;
+    let mut skipped = 0;
+    let mut failed = 0;
+    let mut failures = Vec::new();
+
+    // Fetch all device types in parallel
+    let fetch_futures: Vec<_> = request
+        .device_types
+        .iter()
+        .map(|id| fetch_device_type(&client, CLOUD_REPO, branch, id))
+        .collect();
+
+    let fetched = futures::future::join_all(fetch_futures).await;
+
+    // Process fetched device types
+    for result in fetched {
+        let device_type_id = result.id;
+        
+        let template = match result.template {
+            Some(t) => t,
+            None => {
+                failed += 1;
+                if let Some(error) = result.error {
+                    failures.push(ImportFailure {
+                        device_type: device_type_id.clone(),
+                        reason: error,
+                    });
+                }
+                continue;
+            }
+        };
+
+        // Check if already exists (re-check for each import to reduce race condition window)
+        let exists = state
+            .devices
+            .service
+            .get_template(&template.device_type)
+            .await
+            .is_some();
+
+        if exists {
+            skipped += 1;
+            continue;
+        }
+
+        // Save device_type ID before moving template
+        let device_type_id_for_log = template.device_type.clone();
+
+        // Register the device type
+        match state.devices.service.register_template(template).await {
+            Ok(()) => {
+                imported += 1;
+                tracing::info!("Successfully imported device type: {}", device_type_id_for_log);
+            }
+            Err(e) => {
+                failed += 1;
+                failures.push(ImportFailure {
+                    device_type: device_type_id_for_log,
+                    reason: format!("Registration failed: {}", e),
+                });
+            }
+        }
+    }
+
+    ok(CloudImportResponse {
+        imported,
+        skipped,
+        failed,
+        failures,
+    })
+}

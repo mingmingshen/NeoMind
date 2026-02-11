@@ -70,9 +70,6 @@ export const useStore = create<NeoMindStore>()(
           messages: state.messages,
           sessionId: state.sessionId,
         }),
-        onRehydrateStorage: () => (_state) => {
-          // Store rehydrated
-        },
       }
     ),
     // Performance optimization: Disable Redux DevTools in production

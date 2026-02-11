@@ -10,7 +10,7 @@
 // Data Source Types
 // ============================================================================
 
-export type DataSourceType = 'api' | 'websocket' | 'static' | 'computed' | 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system'
+export type DataSourceType = 'device' | 'metric' | 'command' | 'telemetry' | 'device-info' | 'system' | 'extension' | 'extension-metric' | 'extension-command'
 
 export interface ValueMapping {
   on?: unknown
@@ -153,6 +153,14 @@ export interface DataSource {
 
   // === System fields ===
   systemMetric?: 'uptime' | 'cpu_count' | 'total_memory' | 'used_memory' | 'free_memory' | 'available_memory' | 'memory_percent' | 'platform' | 'arch' | 'version'
+
+  // === Extension fields ===
+  extensionId?: string
+  extensionMetric?: string
+  extensionCommand?: string
+  extensionDisplayName?: string
+  extensionDataType?: string
+  extensionUnit?: string
 }
 
 // Union type for single or multiple data sources

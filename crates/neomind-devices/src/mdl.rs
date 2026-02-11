@@ -29,6 +29,102 @@ mod metric_value_serde {
     }
 }
 
+// Custom deserialization module for MetricDataType
+// Handles both string form ("Array") and object form ({ "Array": { "element_type": ... }})
+mod metric_data_type_serde {
+    use super::*;
+    use serde::de::{MapAccess, Visitor, Error};
+    use std::fmt;
+
+    /// Helper to parse MetricDataType from a string value
+    fn parse_from_str(s: &str) -> Option<MetricDataType> {
+        match s.to_lowercase().as_str() {
+            "integer" => Some(MetricDataType::Integer),
+            "float" => Some(MetricDataType::Float),
+            "string" => Some(MetricDataType::String),
+            "boolean" => Some(MetricDataType::Boolean),
+            "array" => Some(MetricDataType::Array { element_type: None }),
+            "binary" => Some(MetricDataType::Binary),
+            // "enum" can't be created from string alone - needs options
+            _ => None,
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<MetricDataType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct MetricDataTypeVisitor;
+
+        impl<'de> Visitor<'de> for MetricDataTypeVisitor {
+            type Value = MetricDataType;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or an object representing MetricDataType")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                parse_from_str(value).ok_or_else(|| {
+                    E::custom(format!(
+                        "unknown data type '{}', expected one of: integer, float, string, boolean, array, binary",
+                        value
+                    ))
+                })
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                // Expecting a single key like "Array", "Enum", etc.
+                let key = map.next_key::<String>()?.ok_or_else(|| {
+                    serde::de::Error::custom("expected a non-empty object for MetricDataType")
+                })?;
+
+                let key_lower = key.to_lowercase();
+
+                match key_lower.as_str() {
+                    "integer" => Ok(MetricDataType::Integer),
+                    "float" => Ok(MetricDataType::Float),
+                    "string" => Ok(MetricDataType::String),
+                    "boolean" => Ok(MetricDataType::Boolean),
+                    "binary" => Ok(MetricDataType::Binary),
+                    "array" => {
+                        // Parse optional element_type field
+                        #[derive(Deserialize)]
+                        struct ArrayData {
+                            #[serde(default)]
+                            element_type: Option<Box<MetricDataType>>,
+                        }
+                        let data = map.next_value::<ArrayData>()?;
+                        Ok(MetricDataType::Array {
+                            element_type: data.element_type,
+                        })
+                    }
+                    "enum" => {
+                        // Parse required options field
+                        #[derive(Deserialize)]
+                        struct EnumData {
+                            options: Vec<String>,
+                        }
+                        let data = map.next_value::<EnumData>()?;
+                        Ok(MetricDataType::Enum { options: data.options })
+                    }
+                    _ => Err(serde::de::Error::custom(format!(
+                        "unknown data type '{}'",
+                        key
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(MetricDataTypeVisitor)
+    }
+}
+
 /// Unique identifier for a device.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DeviceId(pub Uuid);
@@ -210,26 +306,49 @@ pub struct MetricDefinition {
 }
 
 /// Data type for metrics.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Supports both lowercase (e.g., "string", "integer") and Title Case (e.g., "String", "Integer")
+/// for compatibility with external device type definitions like neomind-device-types.
+///
+/// The Array variant can be deserialized from either:
+/// - A string: "Array" or "array" → Array { element_type: None }
+/// - An object: { "Array": { "element_type": "String" } } → Array with specific element type
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
 pub enum MetricDataType {
+    /// Integer type - supports both "integer" and "Integer"
     Integer,
+    /// Float type - supports both "float" and "Float"
     Float,
+    /// String type - supports both "string" and "String"
     #[default]
     String,
+    /// Boolean type - supports both "boolean" and "Boolean"
     Boolean,
     /// Array type (optionally with element type hint)
+    /// Can be deserialized from string "Array" or "array"
+    /// or object { "Array": { "element_type": ... } }
     Array {
         /// Element type hint (for homogeneous arrays)
-        #[serde(default)]
         element_type: Option<Box<MetricDataType>>,
     },
+    /// Binary type - supports both "binary" and "Binary"
     Binary,
     /// Enum type with fixed set of string options
+    /// Must be deserialized from object: { "Enum": { "options": [...] } }
     Enum {
         options: Vec<String>,
     },
+}
+
+impl<'de> Deserialize<'de> for MetricDataType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        metric_data_type_serde::deserialize(deserializer)
+    }
 }
 
 
@@ -378,6 +497,7 @@ pub enum DeviceError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_device_id() {
@@ -413,5 +533,87 @@ mod tests {
         assert_eq!(cmd.name, "set_speed");
         assert_eq!(cmd.parameters.len(), 2);
         assert_eq!(cmd.timeout_ms, Some(5000));
+    }
+
+    #[test]
+    fn test_metric_data_type_deserialize_array_string() {
+        // Test GitHub JSON format - plain string "Array"
+        // This is the format used by neomind-device-types repository
+        let json = json!({"name": "detections", "data_type": "Array"});
+        let result: serde_json::Value = serde_json::from_str(&json.to_string()).unwrap();
+
+        // Deserialize to MetricDataType
+        let data_type: MetricDataType = serde_json::from_value(result["data_type"].clone()).unwrap();
+
+        match data_type {
+            MetricDataType::Array { element_type } => {
+                assert!(element_type.is_none(), "element_type should be None for plain string");
+            }
+            _ => panic!("Expected Array variant, got {:?}", data_type),
+        }
+    }
+
+    #[test]
+    fn test_metric_data_type_deserialize_lowercase_strings() {
+        // Test lowercase variants
+        for (s, expected) in [
+            ("integer", MetricDataType::Integer),
+            ("float", MetricDataType::Float),
+            ("string", MetricDataType::String),
+            ("boolean", MetricDataType::Boolean),
+            ("binary", MetricDataType::Binary),
+            ("array", MetricDataType::Array { element_type: None }),
+        ] {
+            let result: MetricDataType = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
+            assert_eq!(result, expected, "Failed for '{}'", s);
+        }
+    }
+
+    #[test]
+    fn test_metric_data_type_deserialize_titlecase_strings() {
+        // Test TitleCase variants (for GitHub compatibility)
+        for (s, expected) in [
+            ("Integer", MetricDataType::Integer),
+            ("Float", MetricDataType::Float),
+            ("String", MetricDataType::String),
+            ("Boolean", MetricDataType::Boolean),
+            ("Binary", MetricDataType::Binary),
+            ("Array", MetricDataType::Array { element_type: None }),
+        ] {
+            let result: MetricDataType = serde_json::from_str(&format!("\"{}\"", s)).unwrap();
+            assert_eq!(result, expected, "Failed for '{}'", s);
+        }
+    }
+
+    #[test]
+    fn test_metric_data_type_deserialize_array_with_element_type() {
+        // Test object form with element_type
+        let json = r#"{"array": {"element_type": "String"}}"#;
+        let result: MetricDataType = serde_json::from_str(json).unwrap();
+
+        match result {
+            MetricDataType::Array { element_type } => {
+                assert!(element_type.is_some(), "element_type should be Some");
+                match *element_type.unwrap() {
+                    MetricDataType::String => {},
+                    _ => panic!("Expected String element_type"),
+                }
+            }
+            _ => panic!("Expected Array variant"),
+        }
+    }
+
+    #[test]
+    fn test_metric_data_type_deserialize_enum_with_options() {
+        // Test Enum variant with options
+        let json = r#"{"enum": {"options": ["on", "off", "auto"]}}"#;
+        let result: MetricDataType = serde_json::from_str(json).unwrap();
+
+        match result {
+            MetricDataType::Enum { options } => {
+                assert_eq!(options, vec!["on", "off", "auto"]);
+            }
+            _ => panic!("Expected Enum variant"),
+        }
     }
 }

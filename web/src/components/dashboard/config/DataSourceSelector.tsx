@@ -2,12 +2,13 @@
  * DataSourceSelector Component
  *
  * Dialog for selecting data sources with device metrics/commands/basic info.
- * New design: Devices are containers that expand to show their data types.
+ * Also supports extension metrics/commands.
+ * New design: Devices and Extensions are containers that expand to show their data types.
  */
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Server, Database, Check, Zap, ChevronRight, Info, Layers, Activity } from 'lucide-react'
+import { Search, Server, Database, Check, Zap, ChevronRight, Info, Layers, Activity, Puzzle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -20,7 +21,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useStore } from '@/store'
 import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
-import type { MetricDefinition, CommandDefinition } from '@/types'
+import type { MetricDefinition, CommandDefinition, ExtensionDataSourceInfo } from '@/types'
 import { cn } from '@/lib/utils'
 
 export interface DataSourceSelectorProps {
@@ -29,15 +30,15 @@ export interface DataSourceSelectorProps {
   onSelect: (dataSource: DataSourceOrList | DataSource | undefined) => void
   currentDataSource?: DataSourceOrList
   // Optional: filter which source types to show
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension-metric' | 'extension-command'>
   // Optional: enable multiple data source selection
   multiple?: boolean
   // Optional: max number of data sources (only used when multiple is true)
   maxSources?: number
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device-info' | 'system'
-type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" etc.
+type CategoryType = 'device-metric' | 'device-command' | 'device-info' | 'system' | 'extension-metric' | 'extension-command'
+type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "extension-metric:extensionId:metric" etc.
 
 // Device info property definitions factory (uses translations)
 function getDeviceInfoProperties(t: (key: string) => string) {
@@ -74,15 +75,17 @@ function getCategories(t: (key: string) => string) {
     { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
     { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
     { id: 'device-info' as const, name: t('dataSource.basicInfo'), icon: Info, description: t('dataSource.basicInfoDesc') },
+    { id: 'extension-metric' as const, name: t('extensions.metrics'), icon: Layers, description: t('extensions.metricsDesc') },
+    { id: 'extension-command' as const, name: t('extensions.commands'), icon: Puzzle, description: t('extensions.commandsDesc') },
     { id: 'system' as const, name: t('systemDataSource.title'), icon: Activity, description: t('systemDataSource.description') },
   ]
 }
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension-metric' | 'extension-command'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info', 'system']
+  if (!allowedTypes) return ['device-metric', 'device-command', 'device-info', 'extension-metric', 'extension-command', 'system']
 
   const result: CategoryType[] = []
 
@@ -90,6 +93,8 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
   if (allowedTypes.includes('device-info')) result.push('device-info')
+  if (allowedTypes.includes('extension-metric')) result.push('extension-metric')
+  if (allowedTypes.includes('extension-command')) result.push('extension-command')
   if (allowedTypes.includes('system')) result.push('system')
 
   // Old format types - map to new format
@@ -113,17 +118,18 @@ export function DataSourceSelector({
   maxSources = 10,
 }: DataSourceSelectorProps) {
   const { t } = useTranslation('dashboardComponents')
-  const { devices, deviceTypes, fetchDeviceTypes, fetchDevices } = useStore()
+  const { devices, deviceTypes, fetchDeviceTypes, fetchDevices, extensions, fetchExtensions, extensionDataSources, fetchExtensionDataSources } = useStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('device-metric')
   const [selectedItems, setSelectedItems] = useState<Set<SelectedItem>>(new Set())
   const [expandedDevices, setExpandedDevices] = useState<Set<string>>(new Set())
+  const [expandedExtensions, setExpandedExtensions] = useState<Set<string>>(new Set())
 
   // Track initialization
   const initializedRef = useRef(false)
   const prevOpenRef = useRef(false)
 
-  // Fetch device types and devices when dialog opens
+  // Fetch device types, devices, extensions, and extension data sources when dialog opens
   useEffect(() => {
     if (open) {
       if (deviceTypes.length === 0) {
@@ -132,8 +138,14 @@ export function DataSourceSelector({
       if (devices.length === 0) {
         fetchDevices()
       }
+      if (extensions.length === 0) {
+        fetchExtensions()
+      }
+      if (extensionDataSources.length === 0) {
+        fetchExtensionDataSources()
+      }
     }
-  }, [open, deviceTypes.length, devices.length, fetchDeviceTypes, fetchDevices])
+  }, [open, deviceTypes.length, devices.length, extensions.length, extensionDataSources.length, fetchDeviceTypes, fetchDevices, fetchExtensions, fetchExtensionDataSources])
 
   // Filter allowed categories
   const availableCategories = useMemo(() => {
@@ -216,27 +228,23 @@ export function DataSourceSelector({
     return map
   }, [devices, deviceTypes, t])
 
-  // Build device commands map
+  // Build device commands map - only show commands that are actually defined in the device template
   const deviceCommandsMap = useMemo(() => {
     const map = new Map<string, CommandDefinition[]>()
     for (const device of devices) {
       const deviceType = deviceTypes.find(dt => dt.device_type === device.device_type)
 
+      // Only include commands that are actually defined in the device type
+      // No fallback commands - this prevents users from selecting commands that don't exist
       if (deviceType?.commands && deviceType.commands.length > 0) {
         map.set(device.id, deviceType.commands)
       } else {
-        // Fallback commands for devices without type definition
-        const fallbackCommands: CommandDefinition[] = [
-          { name: 'setValue', display_name: t('dataSource.command.setValue'), payload_template: '${value}', parameters: [] },
-          { name: 'toggle', display_name: t('dataSource.command.toggle'), payload_template: '', parameters: [] },
-          { name: 'on', display_name: t('dataSource.command.on'), payload_template: '{"state":"on"}', parameters: [] },
-          { name: 'off', display_name: t('dataSource.command.off'), payload_template: '{"state":"off"}', parameters: [] },
-        ]
-        map.set(device.id, fallbackCommands)
+        // No commands defined - return empty array
+        map.set(device.id, [])
       }
     }
     return map
-  }, [devices, deviceTypes, t])
+  }, [devices, deviceTypes])
 
   // Toggle device expansion
   const toggleDeviceExpansion = (deviceId: string) => {
@@ -248,6 +256,55 @@ export function DataSourceSelector({
     }
     setExpandedDevices(newExpanded)
   }
+
+  // Toggle extension expansion
+  const toggleExtensionExpansion = (extensionId: string) => {
+    const newExpanded = new Set(expandedExtensions)
+    if (newExpanded.has(extensionId)) {
+      newExpanded.delete(extensionId)
+    } else {
+      newExpanded.add(extensionId)
+    }
+    setExpandedExtensions(newExpanded)
+  }
+
+  // Build extension metrics map (group by extension)
+  const extensionMetricsMap = useMemo(() => {
+    const map = new Map<string, ExtensionDataSourceInfo[]>()
+    for (const ds of extensionDataSources) {
+      if (!map.has(ds.extension_id)) {
+        map.set(ds.extension_id, [])
+      }
+      map.get(ds.extension_id)!.push(ds)
+    }
+    return map
+  }, [extensionDataSources])
+
+  // Build extension commands map
+  const extensionCommandsMap = useMemo(() => {
+    const map = new Map<string, Array<{ id: string; name: string; description: string }>>()
+    for (const ext of extensions) {
+      if (ext.commands && ext.commands.length > 0) {
+        map.set(ext.id, ext.commands.map((c: any) => ({
+          id: c.id,
+          name: c.display_name || c.id,
+          description: c.description
+        })))
+      }
+    }
+    return map
+  }, [extensions])
+
+  // Filter extensions based on search query
+  const filteredExtensions = useMemo(() => {
+    if (!searchQuery) return extensions
+    const query = searchQuery.toLowerCase()
+    return extensions.filter(ext =>
+      ext.name.toLowerCase().includes(query) ||
+      ext.id.toLowerCase().includes(query) ||
+      ext.description?.toLowerCase().includes(query)
+    )
+  }, [extensions, searchQuery])
 
   // Handle item selection
   const handleItemClick = (itemId: SelectedItem) => {
@@ -271,7 +328,7 @@ export function DataSourceSelector({
   const handleSelect = () => {
     if (selectedItems.size === 0) return
 
-    const createDataSource = (itemId: SelectedItem): DataSource => {
+    const createDataSource = (itemId: SelectedItem): DataSource | undefined => {
       const [category, ...rest] = itemId.split(':')
 
       if (category === 'device-metric') {
@@ -300,6 +357,38 @@ export function DataSourceSelector({
           infoProperty: infoProperty as any,
           refresh: 10,
         }
+      } else if (category === 'extension-metric') {
+        const [extensionId, ...metricParts] = rest
+        // The metricId might be the full storage key like "extension:as-hello:counter"
+        // We need to reconstruct it or find it in extensionDataSources
+        const metricId = metricParts.join(':')  // Rejoin in case there are colons in the ID
+
+        // Find the metric in extensionDataSources to get command and field
+        const metricInfo = extensionDataSources.find(m =>
+          m.id === metricId || m.id === `extension:${extensionId}:${metricParts[metricParts.length - 1]}`
+        )
+
+        // Use command:field format for V2 API if available, otherwise fall back to just the field
+        // For provider extensions, command is empty, so we use a special format like "produce:field"
+        const extensionMetric = metricInfo
+          ? (metricInfo.command ? `${metricInfo.command}:${metricInfo.field}` : `produce:${metricInfo.field}`)
+          : metricId
+
+        return {
+          type: 'extension',
+          extensionId,
+          extensionMetric,
+          refresh: 10,
+        }
+      } else if (category === 'extension-command') {
+        const [extensionId, commandId] = rest
+        // Commands are treated as metrics with "command:" prefix
+        return {
+          type: 'extension',
+          extensionId,
+          extensionMetric: `${commandId}:result`, // Command results use "command:field" format
+          refresh: 10,
+        }
       } else if (category === 'system') {
         // Format: system:metricId (not system:deviceId:metricId)
         return {
@@ -309,14 +398,18 @@ export function DataSourceSelector({
         }
       }
 
-      // Fallback
-      return {
-        type: 'static',
-        staticValue: 0,
-      }
+      // Fallback - invalid selection, return undefined
+      return undefined
     }
 
-    const dataSources = Array.from(selectedItems).map(createDataSource)
+    const dataSources = Array.from(selectedItems)
+      .map(createDataSource)
+      .filter((ds): ds is DataSource => ds !== undefined)
+
+    if (dataSources.length === 0) {
+      // No valid data sources selected
+      return
+    }
 
     if (multiple || dataSources.length > 1) {
       onSelect(dataSources)
@@ -393,7 +486,7 @@ export function DataSourceSelector({
           {/* Category Tabs */}
           <Tabs value={selectedCategory} onValueChange={(v) => setSelectedCategory(v as CategoryType)} className="flex-1 flex flex-col">
             <div className="px-6 pt-3">
-              <TabsList className="grid w-full grid-cols-4 h-9 bg-muted/50">
+              <TabsList className={`grid w-full h-9 bg-muted/50 ${availableCategories.length >= 6 ? 'grid-cols-6' : availableCategories.length >= 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
                 {availableCategories.map(cat => {
                   const Icon = cat.icon
                   const count = getCategoryCount(cat.id)
@@ -750,6 +843,188 @@ export function DataSourceSelector({
                   )
                 })}
               </div>
+            </TabsContent>
+
+            {/* Extension Metrics Content */}
+            <TabsContent value="extension-metric" className="flex-1 overflow-y-auto px-6 py-4 mt-0">
+              {filteredExtensions.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredExtensions.map(ext => {
+                    const metrics = extensionMetricsMap.get(ext.id) || []
+                    const isExpanded = expandedExtensions.has(ext.id)
+                    const hasMatchingMetric = metrics.some(m =>
+                      filterMatches(m.display_name) || filterMatches(m.id) || filterMatches(ext.name)
+                    )
+
+                    if (metrics.length === 0) return null
+                    if (!hasMatchingMetric && searchQuery) return null
+
+                    return (
+                      <div key={ext.id} className="border rounded-lg overflow-hidden">
+                        {/* Extension header */}
+                        <button
+                          onClick={() => toggleExtensionExpansion(ext.id)}
+                          className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Puzzle className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">{ext.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {metrics.length} {t('dataSource.metrics')}
+                            </span>
+                          </div>
+                          <ChevronRight className={cn(
+                            "h-4 w-4 text-muted-foreground transition-transform",
+                            isExpanded && 'rotate-90'
+                          )} />
+                        </button>
+
+                        {/* Expanded metrics */}
+                        {isExpanded && (
+                          <div className="border-t divide-y max-h-60 overflow-y-auto">
+                            {metrics.map(metric => {
+                              const itemId = `extension-metric:${ext.id}:${metric.id}`
+                              const selected = isSelected(itemId)
+                              const disabled = multiple && !selected && !canSelectMore
+
+                              if (!filterMatches(metric.display_name) && !filterMatches(metric.id)) return null
+
+                              return (
+                                <button
+                                  key={metric.id}
+                                  onClick={() => !disabled && handleItemClick(itemId)}
+                                  disabled={disabled}
+                                  className={cn(
+                                    "w-full flex items-center justify-between px-3 py-2.5",
+                                    "hover:bg-accent/50 transition-colors text-left",
+                                    selected && 'bg-primary/5',
+                                    disabled && 'opacity-50 cursor-not-allowed'
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2 flex-1">
+                                    {multiple && (
+                                      <div className={cn(
+                                        "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                                        selected ? 'bg-primary border-primary' : 'border-border'
+                                      )}>
+                                        {selected && <Check className="h-3 w-3 text-white" />}
+                                      </div>
+                                    )}
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium">{metric.display_name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {metric.command}.{metric.field} {metric.unit && `· ${metric.unit}`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {!multiple && selected && (
+                                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Layers className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">{t('extensions.noDataSources')}</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Extension Commands Content */}
+            <TabsContent value="extension-command" className="flex-1 overflow-y-auto px-6 py-4 mt-0">
+              {filteredExtensions.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredExtensions.map(ext => {
+                    const commands = extensionCommandsMap.get(ext.id) || []
+                    const isExpanded = expandedExtensions.has(ext.id)
+                    const hasMatchingCommand = commands.some(c =>
+                      filterMatches(c.name) || filterMatches(c.description) || filterMatches(ext.name)
+                    )
+
+                    if (commands.length === 0) return null
+                    if (!hasMatchingCommand && searchQuery) return null
+
+                    return (
+                      <div key={ext.id} className="border rounded-lg overflow-hidden">
+                        {/* Extension header */}
+                        <button
+                          onClick={() => toggleExtensionExpansion(ext.id)}
+                          className="w-full flex items-center justify-between p-3 bg-muted/30 hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Puzzle className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">{ext.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {commands.length} {t('dataSource.commands')}
+                            </span>
+                          </div>
+                          <ChevronRight className={cn(
+                            "h-4 w-4 text-muted-foreground transition-transform",
+                            isExpanded && 'rotate-90'
+                          )} />
+                        </button>
+
+                        {/* Expanded commands */}
+                        {isExpanded && (
+                          <div className="border-t divide-y max-h-60 overflow-y-auto">
+                            {commands.map(cmd => {
+                              const itemId = `extension-command:${ext.id}:${cmd.id}`
+                              const selected = isSelected(itemId)
+                              const disabled = multiple && !selected && !canSelectMore
+
+                              if (!filterMatches(cmd.name) && !filterMatches(cmd.description)) return null
+
+                              return (
+                                <button
+                                  key={cmd.id}
+                                  onClick={() => !disabled && handleItemClick(itemId)}
+                                  disabled={disabled}
+                                  className={cn(
+                                    "w-full flex items-center justify-between px-3 py-2.5",
+                                    "hover:bg-accent/50 transition-colors text-left",
+                                    selected && 'bg-primary/5',
+                                    disabled && 'opacity-50 cursor-not-allowed'
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2 flex-1">
+                                    {multiple && (
+                                      <div className={cn(
+                                        "w-4 h-4 rounded border flex items-center justify-center flex-shrink-0",
+                                        selected ? 'bg-primary border-primary' : 'border-border'
+                                      )}>
+                                        {selected && <Check className="h-3 w-3 text-white" />}
+                                      </div>
+                                    )}
+                                    <div className="flex-1">
+                                      <p className="text-sm font-medium">{cmd.name}</p>
+                                      <p className="text-xs text-muted-foreground">{cmd.description}</p>
+                                    </div>
+                                  </div>
+                                  {!multiple && selected && (
+                                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-10 text-muted-foreground">
+                  <Puzzle className="h-10 w-10 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">{t('extensions.noCommands')}</p>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         </div>

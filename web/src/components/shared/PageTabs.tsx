@@ -25,6 +25,7 @@ export interface PageTabsProps {
   activeTab: string
   onTabChange: (value: string) => void
   actions?: TabAction[]
+  actionsExtra?: ReactNode
   className?: string
   tabsClassName?: string
   children: ReactNode
@@ -44,6 +45,7 @@ export function PageTabs({
   activeTab,
   onTabChange,
   actions = [],
+  actionsExtra,
   className,
   tabsClassName,
   children,
@@ -97,6 +99,7 @@ export function PageTabs({
                   <span className="whitespace-nowrap">{action.label}</span>
                 </Button>
               ))}
+              {actionsExtra}
             </div>
           )}
         </div>
@@ -120,6 +123,7 @@ export function PageTabs({
               <span className="text-sm">{action.label}</span>
             </Button>
           ))}
+          {actionsExtra}
         </div>
 
         {/* Content area - add bottom padding on mobile for bottom nav */}
@@ -225,6 +229,7 @@ export function PageTabs({
                 <span className="whitespace-nowrap">{action.label}</span>
               </Button>
             ))}
+            {actionsExtra}
           </div>
         )}
       </div>
@@ -270,6 +275,7 @@ export function PageTabsGrid({
   activeTab,
   onTabChange,
   actions = [],
+  actionsExtra,
   className,
   gridCols = 3,
   children,
@@ -339,6 +345,7 @@ export function PageTabsGrid({
                 <span className="whitespace-nowrap">{action.label}</span>
               </Button>
             ))}
+            {actionsExtra}
           </div>
         )}
       </div>

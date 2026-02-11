@@ -4,6 +4,7 @@
 //! and REST API for devices, rules, alerts, and session management.
 
 pub mod assets;
+pub mod extension_metrics;
 pub mod middleware;
 pub mod router;
 pub mod state;
@@ -22,6 +23,9 @@ use std::time::Duration;
 /// This is the main entry point for running the server.
 pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     use crate::startup::{ServiceStatus, StartupLogger};
+
+    // Note: V2 extension system doesn't require panic hook installation
+    // The V2 system uses safer FFI boundaries directly
 
     let mut startup = StartupLogger::new();
     startup.banner();
@@ -53,6 +57,28 @@ pub async fn run(bind: SocketAddr) -> anyhow::Result<()> {
     // Initialize auto-onboarding event listener
     state.init_auto_onboarding_events().await;
     startup.service("Auto-onboarding events", ServiceStatus::Started);
+
+    // Initialize extension metrics collector (decoupled from device system)
+    let extension_registry = state.extensions.registry.clone();
+    let metrics_storage = state.extensions.metrics_storage.clone();
+    let event_bus = state.core.event_bus.clone();
+    let _metrics_task = tokio::spawn(async move {
+        use crate::server::extension_metrics::ExtensionMetricsCollector;
+        use std::time::Duration;
+
+        let collector = ExtensionMetricsCollector::new(
+            extension_registry,
+            metrics_storage,
+            event_bus,
+        ).with_interval(Duration::from_secs(60));
+
+        collector.run().await;
+    });
+    startup.service("Extension metrics collector", ServiceStatus::Started);
+
+    // Initialize extensions from persistent storage
+    // This loads all extensions marked with auto_start=true
+    state.init_extensions().await;
 
     // Initialize AI Agent manager
     let _ = state.start_agent_manager().await;

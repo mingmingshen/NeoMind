@@ -64,6 +64,14 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/extensions/:id", get(extensions::get_extension_handler))
         .route("/api/extensions/:id/health", get(extensions::extension_health_handler))
         .route("/api/extensions/:id/stats", get(extensions::get_extension_stats_handler))
+        .route("/api/extensions/:id/commands", get(extensions::list_extension_commands_handler))
+        .route("/api/extensions/:id/data-sources", get(extensions::list_extension_data_sources_handler))
+        .route("/api/extensions/:id/metrics/:metric/data", get(extensions::query_extension_metric_data_handler))
+        .route("/api/extensions/capabilities", get(extensions::list_extension_capabilities_handler))
+        // Discover extensions (public - scans filesystem for available extensions)
+        .route("/api/extensions/discover", post(extensions::discover_extensions_handler))
+        // Extension streaming API (public)
+        .route("/api/extensions/:id/stream", get(extensions::stream_extension_handler))
         // Test data generation (public - for development)
         .route("/api/test-data/alerts", post(test_data::generate_test_alerts_handler))
         .route("/api/test-data/all", post(test_data::generate_test_data_handler))
@@ -72,6 +80,12 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         // Suggestions API (public - provides intelligent input suggestions)
         .route("/api/suggestions", get(suggestions::get_suggestions_handler))
         .route("/api/suggestions/categories", get(suggestions::get_suggestions_categories_handler))
+        // Device Types Cloud API (public - read-only for browsing cloud repository)
+        .route("/api/device-types/cloud/list", get(devices::list_cloud_device_types_handler))
+        // Extension Marketplace API (public - read-only for browsing marketplace)
+        .route("/api/extensions/market/list", get(extensions::list_marketplace_extensions_handler))
+        .route("/api/extensions/market/:id", get(extensions::get_marketplace_extension_handler))
+        .route("/api/extensions/market/updates", get(extensions::check_marketplace_updates_handler))
         // API documentation (public)
         .merge(crate::openapi::swagger_ui());
 
@@ -210,6 +224,11 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             "/api/device-types/generate-from-samples",
             post(devices::generate_device_type_from_samples_handler),
         )
+        // Device Type Import from Cloud API
+        .route(
+            "/api/device-types/cloud/import",
+            post(devices::import_cloud_device_types_handler),
+        )
         // Device Discovery API
         .route(
             "/api/devices/discover",
@@ -336,12 +355,29 @@ pub fn create_router_with_state(state: ServerState) -> Router {
             post(automations::test_transform_handler),
         )
         .route(
+            "/api/automations/transforms/test-code",
+            post(automations::test_transform_code_handler),
+        )
+        .route(
             "/api/automations/transforms",
             get(automations::list_transforms_handler),
         )
         .route(
             "/api/automations/transforms/metrics",
             get(automations::list_virtual_metrics_handler),
+        )
+        // Transform Output Data Source API (auto-registered outputs)
+        .route(
+            "/api/automations/transforms/data-sources",
+            get(automations::list_transform_data_sources_handler),
+        )
+        .route(
+            "/api/automations/transforms/:id/data-sources",
+            get(automations::get_transform_data_sources_handler),
+        )
+        .route(
+            "/api/automations/transforms/data-sources/:data_source_id",
+            get(automations::get_transform_data_source_handler),
         )
         // AI Agents API - User-defined automation agents
         .route("/api/agents", get(agents::list_agents))
@@ -357,6 +393,7 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         .route("/api/agents/:id/memory", delete(agents::clear_agent_memory))
         .route("/api/agents/:id/stats", get(agents::get_agent_stats))
         .route("/api/agents/validate-cron", post(agents::validate_cron_expression))
+        .route("/api/agents/validate-llm", post(agents::validate_llm_backend))
         // User messages API
         .route("/api/agents/:id/messages", get(agents::get_user_messages))
         .route("/api/agents/:id/messages", post(agents::add_user_message))
@@ -545,11 +582,18 @@ pub fn create_router_with_state(state: ServerState) -> Router {
         )
         // Extensions API (write operations - protected)
         .route("/api/extensions", post(extensions::register_extension_handler))
-        .route("/api/extensions/discover", post(extensions::discover_extensions_handler))
+        .route("/api/extensions/register-all", post(extensions::register_all_discovered_handler))
         .route("/api/extensions/:id", delete(extensions::unregister_extension_handler))
         .route("/api/extensions/:id/start", post(extensions::start_extension_handler))
         .route("/api/extensions/:id/stop", post(extensions::stop_extension_handler))
         .route("/api/extensions/:id/command", post(extensions::execute_extension_command_handler))
+        .route("/api/extensions/:id/invoke", post(extensions::invoke_extension_handler))
+        // Extension Configuration (protected)
+        .route("/api/extensions/:id/config", get(extensions::get_extension_config_handler))
+        .route("/api/extensions/:id/config", put(extensions::update_extension_config_handler))
+        .route("/api/extensions/:id/reload", post(extensions::reload_extension_handler))
+        // Extension Marketplace (install endpoint - protected)
+        .route("/api/extensions/market/install", post(extensions::install_marketplace_extension_handler))
         // LLM Backends API (write operations - protected)
         .route("/api/llm-backends", post(llm_backends::create_backend_handler))
         .route("/api/llm-backends/:id", put(llm_backends::update_backend_handler))

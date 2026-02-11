@@ -21,7 +21,7 @@ const AutomationPage = lazy(() => import('@/pages/automation').then(m => ({ defa
 const AgentsPage = lazy(() => import('@/pages/agents').then(m => ({ default: m.AgentsPage })))
 const SettingsPage = lazy(() => import('@/pages/settings').then(m => ({ default: m.SettingsPage })))
 const MessagesPage = lazy(() => import('@/pages/messages').then(m => ({ default: m.default })))
-const PluginsPage = lazy(() => import('@/pages/plugins').then(m => ({ default: m.PluginsPage })))
+const ExtensionsPage = lazy(() => import('@/pages/extensions').then(m => ({ default: m.ExtensionsPage })))
 
 // Suppress Radix UI Portal cleanup errors during page transitions
 // This is a known issue with React 18 + Radix UI + fast page navigation
@@ -313,11 +313,9 @@ function App() {
                     {/* Messages with tab routes */}
                     <Route path="/messages" element={<MessagesPage />} />
                     <Route path="/messages/channels" element={<MessagesPage />} />
-                    {/* Plugins with tab routes */}
-                    <Route path="/plugins" element={<PluginsPage />} />
-                    <Route path="/plugins/connections" element={<PluginsPage />} />
-                    <Route path="/plugins/alert-channels" element={<PluginsPage />} />
-                    <Route path="/plugins/extensions" element={<PluginsPage />} />
+                    {/* Extensions */}
+                    <Route path="/extensions" element={<ExtensionsPage />} />
+                    <Route path="/plugins" element={<Navigate to="/extensions" replace />} />
                     {/* Catch all - redirect to chat */}
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>

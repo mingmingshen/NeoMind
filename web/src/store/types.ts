@@ -38,6 +38,10 @@ export interface SessionState {
   sessionId: string | null
   messages: Message[]
   sessions: ChatSession[]
+  // Pagination state for sessions
+  sessionsPage: number
+  sessionsHasMore: boolean
+  sessionsLoading: boolean
 }
 
 // ============================================================================

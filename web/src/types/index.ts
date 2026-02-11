@@ -750,6 +750,7 @@ export interface Rule {
   description?: string
   enabled: boolean
   trigger_count: number
+  tags?: string[]  // Rule tags for categorization
   // Backend sends ISO 8601 strings, frontend may also use number timestamps
   last_triggered?: string | number
   created_at: string | number  // ISO 8601 from backend, number in UI
@@ -768,6 +769,7 @@ export interface Rule {
     uiActions?: RuleAction[]
     forDuration?: number
     forUnit?: 'seconds' | 'minutes' | 'hours'
+    tags?: string[]  // Store tags in source for restoration
   }
 }
 
@@ -777,29 +779,38 @@ export type RuleTrigger =
   | { type: 'manual' }
   | { type: 'event'; event_type: string; filters?: Record<string, unknown> }
 
-// Rule condition - supports simple, range, and logical (AND/OR/NOT) conditions
+// Rule condition - supports simple, range, extension, and logical (AND/OR/NOT) conditions
 export interface RuleCondition {
-  // Simple condition properties
+  // Condition type discriminator
+  condition_type?: 'device' | 'extension' | 'logical' | 'range'
+
+  // Device condition properties (when condition_type === 'device')
   device_id?: string
   metric?: string
   operator?: string
   threshold?: number | string  // Supports numeric and string values for matching
 
+  // Extension condition properties (when condition_type === 'extension')
+  extension_id?: string
+  extension_metric?: string
+
   // Range condition properties
   range_min?: number
+  range_max?: number
 
   // Logical condition properties
+  logical_operator?: 'and' | 'or' | 'not'
   conditions?: RuleCondition[]
 }
 
 export type RuleAction =
-  | { type: 'Notify'; message: string }
+  | { type: 'Notify'; message: string; channels?: string[] }
   | { type: 'Execute'; device_id: string; command: string; params: Record<string, unknown> }
-  | { type: 'Log'; level: string; message: string }
+  | { type: 'Log'; level: string; message: string; severity?: string }
   | { type: 'Set'; device_id: string; property: string; value: unknown }
   | { type: 'Delay'; duration: number }
   | { type: 'CreateAlert'; title: string; message: string; severity: 'info' | 'warning' | 'error' | 'critical' }
-  | { type: 'HttpRequest'; method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; url: string }
+  | { type: 'HttpRequest'; method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; url: string; headers?: Record<string, string>; body?: string }
 
 // ========== Memory Types ==========
 
@@ -875,7 +886,7 @@ export interface Plugin {
   id: string
   name: string
   plugin_type: string
-  category: 'ai' | 'devices' | 'notify'
+  category: 'ai' | 'devices' | 'notify' | 'integration' | 'storage' | 'tools'
   state: string
   enabled: boolean
   version: string
@@ -930,23 +941,6 @@ export enum ExtensionStateEnum {
 }
 
 /**
- * Extension DTO - matches backend ExtensionDto exactly
- *
- * Backend: crates/api/src/handlers/extensions.rs:18-39
- */
-export interface Extension {
-  id: string
-  name: string
-  extension_type: string  // ExtensionType.as_str() - snake_case
-  version: string
-  description?: string
-  author?: string
-  state: string  // ExtensionState - "Discovered", "Loaded", "Initialized", "Running", "Stopped", "Error"
-  file_path?: string
-  loaded_at?: number  // Unix timestamp
-}
-
-/**
  * Extension statistics DTO - matches backend ExtensionStatsDto exactly
  *
  * Backend: crates/api/src/handlers/extensions.rs:42-52
@@ -976,7 +970,6 @@ export interface ExtensionDiscoveryResult {
   id: string
   name: string
   version: string
-  extension_type: string
   file_path?: string
 }
 
@@ -988,8 +981,7 @@ export interface ExtensionRegistrationResponse {
   extension_id: string
   name: string
   version: string
-  extension_type: string
-  note?: string
+  auto_start?: boolean
 }
 
 /**
@@ -999,6 +991,303 @@ export interface ExtensionHealthResponse {
   extension_id: string
   healthy: boolean
 }
+
+// ========== Extension Capability Types ==========
+//
+// These types describe the capabilities that extensions can provide
+
+/**
+ * Extension capability types - matches backend ExtensionCapability
+ * Backend: crates/core/src/extension/types.rs
+ */
+export type ExtensionCapabilityType = 'tool' | 'provider' | 'processor' | 'notifier' | 'hybrid'
+
+/**
+ * Tool descriptor - describes a tool provided by an extension
+ */
+export interface ToolDescriptor {
+  name: string
+  description: string
+  parameters: Record<string, unknown>  // JSON Schema for parameters
+  returns?: string
+}
+
+/**
+ * Metric descriptor - describes a metric provided by an extension
+ */
+export interface MetricDescriptor {
+  name: string
+  data_type: string
+  unit?: string
+  description?: string
+}
+
+/**
+ * Channel descriptor - describes a notification channel provided by an extension
+ */
+export interface ChannelDescriptor {
+  name: string
+  display_name: string
+  description: string
+  config_schema: Record<string, unknown>
+}
+
+/**
+ * Extension capability DTO - describes an extension's capabilities
+ * Backend: crates/api/src/handlers/extensions.rs
+ */
+export interface ExtensionCapabilityDto {
+  extension_id: string
+  extension_name: string
+  type: ExtensionCapabilityType
+
+  // Tool capability
+  tools?: ToolDescriptor[]
+
+  // Provider capability
+  metrics?: MetricDescriptor[]
+
+  // Processor capability
+  input_schema?: Record<string, unknown>
+  output_schema?: Record<string, unknown>
+
+  // Notifier capability
+  channels?: ChannelDescriptor[]
+
+  // Hybrid capability - nested capabilities
+  capabilities?: ExtensionCapabilityDto[]
+
+  // Commands for processor extensions
+  commands?: Array<{
+    name: string
+    description: string
+  }>
+}
+
+/**
+ * Extension tool for UI display
+ */
+export interface ExtensionTool {
+  extension_id: string
+  extension_name: string
+  tool_name: string
+  description: string
+  parameters: Record<string, unknown>
+  returns?: string
+}
+
+/**
+ * Extension transform operation for automation
+ */
+export interface ExtensionTransformOperation {
+  extension_id: string
+  command: string
+  parameters: Record<string, unknown>
+  output_metrics: string[]
+}
+
+/**
+ * Extension data source for dashboard
+ */
+export interface ExtensionDataSource {
+  extension_id: string
+  metric_name: string
+  display_name: string
+  data_type: string
+  unit?: string
+}
+
+// ========== Extension Types ==========
+//
+// Extension system - unified command-based approach
+// - Metrics and commands are separate
+// - Commands don't declare output fields
+
+/**
+ * Data type for extension metrics
+ * Matches backend MetricDataType enum
+ */
+export type ExtensionDataType = 'integer' | 'number' | 'string' | 'boolean' | 'array' | 'object' | 'binary'
+
+/**
+ * Aggregation functions for extension metrics
+ * Matches backend AggFunc enum
+ */
+export type ExtensionAggFunc = 'avg' | 'sum' | 'min' | 'max' | 'count' | 'last'
+
+/**
+ * Metric descriptor DTO - describes a metric provided by an extension
+ */
+export interface ExtensionMetricDto {
+  name: string
+  display_name: string
+  data_type: string
+  unit: string
+  description?: string
+  min?: number
+  max?: number
+  required: boolean
+}
+
+/**
+ * Command descriptor
+ * Matches backend ExtensionCommand struct
+ */
+export interface ExtensionCommandDescriptor {
+  id: string  // Command name (from cmd.name)
+  display_name: string
+  description: string  // AI hints (from llm_hints)
+  input_schema: Record<string, unknown>  // Built from parameters
+  // output_fields removed - commands no longer declare output
+  // config removed - no execution config
+}
+
+/**
+ * Extension DTO
+ * Matches backend ExtensionDto exactly
+ */
+export interface Extension {
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  state: string
+  commands: ExtensionCommandDescriptor[]
+  metrics: ExtensionMetricDto[]
+  file_path?: string
+  loaded_at?: number
+}
+
+/**
+ * Extension command execution request
+ */
+export interface ExtensionExecuteRequest {
+  command: string
+  args?: Record<string, unknown>
+}
+
+/**
+ * Extension command execution response
+ */
+export interface ExtensionExecuteResponse {
+  success: boolean
+  output: Record<string, unknown>
+  outputs: Array<{
+    name: string
+    value: unknown
+    unit?: string
+    quality?: number
+  }>
+  duration_ms: number
+  error?: string
+}
+
+/**
+ * Extension configuration parameter definition
+ */
+export interface ExtensionConfigParameter {
+  name: string
+  title?: string
+  description?: string
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array'
+  default?: unknown
+  enum?: string[]
+  minimum?: number
+  maximum?: number
+}
+
+/**
+ * Extension configuration schema
+ */
+export interface ExtensionConfigSchema {
+  type: 'object'
+  properties: Record<string, ExtensionConfigParameter>
+  required: string[]
+}
+
+/**
+ * Extension configuration response
+ */
+export interface ExtensionConfigResponse {
+  extension_id: string
+  extension_name: string
+  config_schema: ExtensionConfigSchema
+  current_config: Record<string, unknown>
+}
+
+/**
+ * Data source info for query integration
+ * Format: "extension:{extension_id}:{metric}"
+ */
+export interface ExtensionDataSourceInfo {
+  id: string
+  extension_id: string
+  command: string
+  field: string
+  display_name: string
+  data_type: ExtensionDataType
+  unit?: string
+  description: string
+  aggregatable: boolean
+  default_agg_func: ExtensionAggFunc
+}
+
+/**
+ * Transform output data source info
+ * Format: "transform:{transform_id}:{metric_name}"
+ */
+export interface TransformDataSourceInfo {
+  id: string
+  transform_id: string
+  transform_name: string
+  metric_name: string
+  display_name: string
+  data_type: string
+  unit?: string
+  description: string
+  last_update?: number
+}
+
+/**
+ * Unified query parameters
+ */
+export interface ExtensionQueryParams {
+  extension_id: string
+  command: string
+  field: string
+  start_time?: number
+  end_time?: number
+  aggregation?: ExtensionAggFunc
+  limit?: number
+}
+
+/**
+ * Query result
+ */
+export interface ExtensionQueryResult {
+  source_id: string
+  data_points: Array<{
+    timestamp: number
+    value: unknown
+    quality?: number
+  }>
+  aggregation?: {
+    func: ExtensionAggFunc
+    value: unknown
+  }
+}
+
+// Legacy type aliases for backward compatibility
+export type ExtensionV2DataType = ExtensionDataType
+export type ExtensionV2AggFunc = ExtensionAggFunc
+export type ExtensionV2CommandDescriptor = ExtensionCommandDescriptor
+export type ExtensionV2 = Extension
+export type ExtensionV2ExecuteRequest = ExtensionExecuteRequest
+export type ExtensionV2ExecuteResponse = ExtensionExecuteResponse
+export type ExtensionV2DataSourceInfo = ExtensionDataSourceInfo
+export type ExtensionV2QueryParams = ExtensionQueryParams
+export type ExtensionV2QueryResult = ExtensionQueryResult
 
 // ========== Extended Device Types ==========
 
@@ -1307,6 +1596,7 @@ export interface TransformAutomation extends BaseAutomation {
   // New AI-Native fields
   intent?: string // User's natural language intent
   js_code?: string // AI-generated JavaScript code
+  extension_operation?: ExtensionTransformOperation // Extension-based transform
   output_prefix: string // Prefix for output metrics (default: "transform")
   complexity: number // 1-5, for execution ordering
 
@@ -1582,9 +1872,9 @@ export type AgentStatus = 'Active' | 'Paused' | 'Error' | 'Executing'
 export type AgentScheduleType = 'interval' | 'cron' | 'event'
 
 /**
- * Resource type for agent resources
+ * Resource type for agent resources (lowercase to match backend)
  */
-export type AgentResourceType = 'Device' | 'Metric' | 'Command'
+export type AgentResourceType = 'device' | 'metric' | 'command' | 'extension_tool' | 'extension_metric' | 'data_stream'
 
 /**
  * AI Agent list item - matches backend AgentDto
@@ -1621,6 +1911,10 @@ export interface AiAgentDetail extends AiAgent {
   user_messages: UserMessage[]
   conversation_summary: string | null
   context_window_size: number
+  // Tool chaining configuration
+  enable_tool_chaining?: boolean
+  max_chain_depth?: number
+  priority?: number
 }
 
 /**
@@ -1875,11 +2169,30 @@ export interface CreateAgentRequest {
   name: string
   description?: string
   user_prompt: string
-  device_ids: string[]
-  metrics: MetricSelectionRequest[]
-  commands: CommandSelectionRequest[]
+  device_ids?: string[]
+  metrics?: MetricSelectionRequest[]
+  commands?: CommandSelectionRequest[]
+  resources?: ResourceRequest[]
   schedule: AgentScheduleRequest
   llm_backend_id?: string
+  /** Enable tool chaining (default: false) */
+  enable_tool_chaining?: boolean
+  /** Maximum chain depth (default: 3) */
+  max_chain_depth?: number
+  /** Agent priority 1-10 (default: 5) */
+  priority?: number
+  /** Context window size in tokens (default: 8192) */
+  context_window_size?: number
+}
+
+/**
+ * Unified resource request format (supports devices and extensions)
+ */
+export interface ResourceRequest {
+  resource_id: string
+  resource_type: 'device' | 'metric' | 'command' | 'extension_tool' | 'extension_metric' | 'data_stream'
+  name: string
+  config?: Record<string, unknown>
 }
 
 /**
@@ -1923,12 +2236,32 @@ export interface AgentScheduleRequest {
 }
 
 /**
- * Request to update an agent
+ * Request to update an agent - all fields optional, matches backend UpdateAgentRequest
  */
 export interface UpdateAgentRequest {
   name?: string
+  description?: string
   user_prompt?: string
   status?: string
+  llm_backend_id?: string
+  /** Schedule configuration */
+  schedule?: AgentScheduleRequest
+  /** New resource format */
+  resources?: ResourceRequest[]
+  /** Legacy device IDs (for backward compatibility) */
+  device_ids?: string[]
+  /** Legacy metric selections */
+  metrics?: MetricSelectionRequest[]
+  /** Legacy command selections */
+  commands?: CommandSelectionRequest[]
+  /** Enable tool chaining (default: false) */
+  enable_tool_chaining?: boolean
+  /** Maximum chain depth (default: 3) */
+  max_chain_depth?: number
+  /** Agent priority 1-10 (default: 5) */
+  priority?: number
+  /** Context window size in tokens (default: 8192) */
+  context_window_size?: number
 }
 
 /**
@@ -1937,6 +2270,26 @@ export interface UpdateAgentRequest {
 export interface ExecuteAgentRequest {
   trigger_type?: string
   event_data?: Record<string, unknown>
+}
+
+/**
+ * Request to validate LLM backend
+ */
+export interface ValidateLlmRequest {
+  backend_id?: string
+  model?: string
+  test_prompt?: string
+}
+
+/**
+ * Response from LLM validation
+ */
+export interface ValidateLlmResponse {
+  valid: boolean
+  backend_name?: string
+  model?: string
+  error?: string
+  response_time_ms?: number
 }
 
 /**

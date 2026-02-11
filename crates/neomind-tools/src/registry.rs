@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::error::{Result, ToolError};
-use super::tool::{DynTool, ToolDefinition, ToolOutput, Tool};
+use super::tool::{DynTool, ToolDefinition, ToolOutput};
 
 /// Tool registry for managing available tools.
 pub struct ToolRegistry {
@@ -247,9 +247,10 @@ pub struct ToolResult {
 ///     .build();
 /// # Ok(())
 /// # }
-/// ```
+///```
 pub struct ToolRegistryBuilder {
     registry: ToolRegistry,
+    extension_registry: Option<Arc<neomind_core::extension::registry::ExtensionRegistry>>,
 }
 
 impl ToolRegistryBuilder {
@@ -257,12 +258,37 @@ impl ToolRegistryBuilder {
     pub fn new() -> Self {
         Self {
             registry: ToolRegistry::new(),
+            extension_registry: None,
         }
     }
 
     /// Add a custom tool.
     pub fn with_tool(mut self, tool: DynTool) -> Self {
         self.registry.register(tool);
+        self
+    }
+
+    /// Set the extension registry for scanning extension tools.
+    pub fn with_extension_registry(mut self, registry: Arc<neomind_core::extension::registry::ExtensionRegistry>) -> Self {
+        self.extension_registry = Some(registry);
+        self
+    }
+
+    /// Scan extensions and add their tools to the registry.
+    ///
+    /// Returns the builder on success (with extension tools added), or the original builder on error.
+    /// Call `.build()` after this method to get the final registry.
+    pub async fn with_extensions_scanned(mut self) -> Self {
+        if let Some(ext_registry) = &self.extension_registry {
+            use crate::extension_tools::ExtensionToolExecutor;
+
+            let executor = ExtensionToolExecutor::new(ext_registry.clone());
+            let tools = executor.generate_tools().await;
+
+            for tool in tools {
+                self.registry.register(Arc::new(tool));
+            }
+        }
         self
     }
 
@@ -290,12 +316,12 @@ impl ToolRegistryBuilder {
         self,
         service: Arc<neomind_devices::DeviceService>,
     ) -> Self {
-        self.with_tool(Arc::new(super::real::ControlDeviceTool::new(service)))
+        self.with_tool(Arc::new(super::core_tools::DeviceControlTool::with_real_device_service(service)))
     }
 
     /// Add the list devices tool.
     pub fn with_list_devices_tool(self, service: Arc<neomind_devices::DeviceService>) -> Self {
-        self.with_tool(Arc::new(super::real::ListDevicesTool::new(service)))
+        self.with_tool(Arc::new(super::core_tools::DeviceDiscoverTool::with_real_device_service(service)))
     }
 
     /// Add the device analyze tool.
@@ -304,7 +330,7 @@ impl ToolRegistryBuilder {
         service: Arc<neomind_devices::DeviceService>,
         storage: Arc<neomind_devices::TimeSeriesStorage>,
     ) -> Self {
-        self.with_tool(Arc::new(super::real::DeviceAnalyzeTool::new(service, storage)))
+        self.with_tool(Arc::new(super::core_tools::DeviceAnalyzeTool::with_real_device_service_and_storage(service, storage)))
     }
 
     /// Add the get device data tool (simplified interface for device status and latest data).
@@ -369,6 +395,32 @@ impl ToolRegistryBuilder {
         self.with_tool(Arc::new(super::agent_tools::CreateAgentTool::new(agent_store)))
     }
 
+    /// Add the create agent tool with device service for device resolution.
+    pub fn with_create_agent_tool_with_device_service(
+        self,
+        agent_store: Arc<neomind_storage::AgentStore>,
+        device_service: Arc<neomind_devices::DeviceService>,
+    ) -> Self {
+        let tool = super::agent_tools::CreateAgentTool::new(agent_store)
+            .with_device_service(device_service);
+        self.with_tool(Arc::new(tool))
+    }
+
+    /// Add the create agent tool with device service (optional).
+    pub fn with_create_agent_tool_with_device_service_optional(
+        self,
+        agent_store: Arc<neomind_storage::AgentStore>,
+        device_service: Option<Arc<neomind_devices::DeviceService>>,
+    ) -> Self {
+        let tool = if let Some(ds) = device_service {
+            super::agent_tools::CreateAgentTool::new(agent_store)
+                .with_device_service(ds)
+        } else {
+            super::agent_tools::CreateAgentTool::new(agent_store)
+        };
+        self.with_tool(Arc::new(tool))
+    }
+
     /// Add the agent memory tool.
     pub fn with_agent_memory_tool(self, agent_store: Arc<neomind_storage::AgentStore>) -> Self {
         self.with_tool(Arc::new(super::agent_tools::AgentMemoryTool::new(agent_store)))
@@ -396,6 +448,26 @@ impl ToolRegistryBuilder {
             .with_execute_agent_tool(agent_store.clone())
             .with_control_agent_tool(agent_store.clone())
             .with_create_agent_tool(agent_store.clone())
+            .with_agent_memory_tool(agent_store.clone())
+            .with_get_agent_executions_tool(agent_store.clone())
+            .with_get_agent_execution_detail_tool(agent_store.clone())
+            .with_get_agent_conversation_tool(agent_store)
+    }
+
+    /// Add all agent tools with device service for create_agent tool.
+    pub fn with_agent_tools_with_dependencies(
+        self,
+        agent_store: Arc<neomind_storage::AgentStore>,
+        device_service: Option<Arc<neomind_devices::DeviceService>>,
+    ) -> Self {
+        self.with_list_agents_tool(agent_store.clone())
+            .with_get_agent_tool(agent_store.clone())
+            .with_execute_agent_tool(agent_store.clone())
+            .with_control_agent_tool(agent_store.clone())
+            .with_create_agent_tool_with_device_service_optional(
+                agent_store.clone(),
+                device_service,
+            )
             .with_agent_memory_tool(agent_store.clone())
             .with_get_agent_executions_tool(agent_store.clone())
             .with_get_agent_execution_detail_tool(agent_store.clone())

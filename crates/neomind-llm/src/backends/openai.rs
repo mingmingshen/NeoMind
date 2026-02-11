@@ -309,6 +309,7 @@ impl CloudRuntime {
                         MessageRole::System => "system",
                         MessageRole::User => "user",
                         MessageRole::Assistant => "assistant",
+                        MessageRole::Tool => "user", // OpenAI uses "user" role for tool results
                     }
                     .to_string(),
                     content,

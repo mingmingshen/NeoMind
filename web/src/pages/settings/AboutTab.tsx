@@ -266,13 +266,13 @@ export function AboutTab() {
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">{t("settings:repository")}</span>
             <a
-              href="https://github.com/shenmingming/NeoMind"
+              href="https://github.com/camthink-ai/NeoMind"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-500 hover:underline flex items-center gap-1"
             >
               <Globe className="h-3 w-3" />
-              github.com/shenmingming/NeoMind
+              github.com/camthink-ai/NeoMind
             </a>
           </div>
         </CardContent>

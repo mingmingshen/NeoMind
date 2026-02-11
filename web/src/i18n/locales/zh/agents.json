@@ -3,6 +3,56 @@
   "description": "用户定义的自动化智能体，具有持久化记忆能力",
   "createButton": "创建",
   "detailTitle": "智能体详情",
+  "preview": {
+    "title": "逻辑预览",
+    "trigger": {
+      "title": "触发方式",
+      "interval": "每 {{minutes}} 分钟执行一次",
+      "daily": "每天 {{hour}}:{{minute}} 执行",
+      "weekly": "每周 {{days}} 执行",
+      "manual": "仅手动触发",
+      "event": "数据变化时触发 ({{device}})"
+    },
+    "dataInput": {
+      "title": "数据输入",
+      "metrics": "个指标",
+      "commands": "个指令",
+      "devices": "设备",
+      "extensions": "扩展",
+      "extension": "扩展"
+    },
+    "processing": {
+      "title": "处理逻辑",
+      "monitor": "监控选定指标并检测异常",
+      "control": "检查条件并执行控制指令",
+      "analysis": "分析数据趋势并生成洞察",
+      "default": "处理数据并做出决策"
+    },
+    "actions": {
+      "title": "可用操作",
+      "noCommands": "未选择指令",
+      "canAlert": "可发送告警/通知"
+    },
+    "issues": {
+      "title": "配置检查",
+      "none": "配置完整",
+      "noName": "请输入智能体名称",
+      "noPrompt": "请描述智能体应该做什么",
+      "noResources": "未选择资源 - 请添加设备或扩展",
+      "noMetrics": "未选择指标 - 智能体将没有数据可分析",
+      "unclearIntent": "意图不明确 - 建议更具体地描述",
+      "controlNoCommands": "检测到控制意图但未选择指令"
+    },
+    "confidence": "置信度",
+    "intent": {
+      "monitor": "监控",
+      "control": "控制",
+      "analysis": "分析",
+      "unknown": "通用"
+    },
+    "moreCommands": "更多指令",
+    "noResources": "暂无资源 - 点击\"添加资源\"开始配置"
+  },
   "card": {
     "createAgent": "创建智能体",
     "noDescription": "暂无描述",
@@ -200,12 +250,21 @@
       "requirementHint": "用自然语言描述你希望智能体完成的目标",
       "requirementPlaceholder": "例如：\n• 当温度超过30度时发送告警\n• 每天早上9点生成设备状态报告\n• 检测异常能耗并分析原因",
       "autoParseHint": "系统会自动解析你的描述并配置相应的执行逻辑",
-      "llmBackend": "LLM 模型",
+      "llmBackend": "LLM 模型（可选）",
       "llmBackendHint": "选择此智能体使用的 LLM 模型。如未指定则使用默认模型。",
       "selectLlmBackend": "选择 LLM 模型",
       "defaultBackend": "默认模型",
       "useActiveBackend": "使用当前激活的模型",
-      "active": "已激活"
+      "active": "已激活",
+      "scheduleLabel": "执行计划",
+      "promptPlaceholder": "用自然语言描述这个智能体应该做什么。例如：\n\n• 监控仓库温度传感器\n• 当温度连续3次超过30°C时发送告警\n• 通知所有告警渠道：邮件、短信和推送通知",
+      "promptTip": "具体说明设备、条件和操作。您提供的细节越多，智能体就能更好地帮助您。",
+      "runOn": "执行于",
+      "triggerWhen": "触发条件",
+      "metricUpdates": "指标更新",
+      "manualTrigger": "手动触发",
+      "fromDevice": "来自设备",
+      "manualHint": "智能体仅在通过 API 或 UI 手动触发时运行"
     },
     "promptTemplates": {
       "label": "模板",
@@ -216,17 +275,22 @@
       "monitor": {
         "label": "监控告警",
         "description": "持续监控数据变化，检测异常并发送告警",
-        "template": "请监控以下数据指标，当出现异常时及时告警：\n\n监控目标：\n- 数据范围：\n- 异常阈值：\n- 告警方式：\n\n请分析历史数据，识别正常波动范围，当数据超出正常范围时发送告警通知。"
+        "template": "请监控以下数据指标，当出现异常时及时告警：\n\n监控目标：\n- 数据范围：检查数值是否超出阈值（如温度 > 30°C）\n- 异常检测：查找突变或异常模式\n- 告警方式：满足条件时发送通知\n\n请分析当前数据并与历史基线对比，识别：\n1. 超出正常范围的数值\n2. 突然上升或下降\n3. 数据缺失或空白\n\n检测到异常时，发送包含以下内容的告警：\n- 受影响的指标\n- 当前值与预期范围的对比\n- 严重级别（信息/警告/严重）"
       },
       "control": {
         "label": "自动控制",
         "description": "根据条件自动执行设备控制操作",
-        "template": "请根据以下条件自动控制设备：\n\n触发条件：\n- 设备状态：\n- 数据阈值：\n\n执行动作：\n- 目标设备：\n- 控制指令：\n\n请确保在执行前验证条件，避免频繁重复操作。"
+        "template": "请根据以下条件自动控制设备：\n\n触发条件：\n- 检查当前传感器读数\n- 与阈值进行对比\n- 验证设备状态后再执行\n\n控制动作：\n- 设备ID：[目标设备]\n- 指令：[turn_on / turn_off / adjust]\n- 参数：[任何必需的设置]\n\n请按以下步骤执行：\n1. 首先通过检查传感器数据验证当前条件\n2. 仅在条件明确满足时执行指令\n3. 确认操作已成功执行\n4. 避免频繁重复切换（相同操作间添加冷却时间）"
       },
       "analysis": {
         "label": "数据分析",
         "description": "定期分析数据趋势并生成报告",
-        "template": "请定期分析以下数据并生成报告：\n\n分析范围：\n- 数据指标：\n- 时间范围：\n\n报告内容：\n1. 数据趋势分析\n2. 异常事件记录\n3. 变化原因分析\n4. 优化建议\n\n请对比历史数据，提供有价值的洞察和行动建议。"
+        "template": "请分析以下数据并生成综合报告：\n\n分析范围：\n- 时间范围：使用可用的历史数据\n- 指标：所有选定的指标\n- 对比：如有可能与之前的数据进行对比\n\n报告内容：\n1. **数据概览**：当前值和状态摘要\n2. **趋势分析**：上升、下降或稳定模式\n3. **异常**：任何异常读数或偏差\n4. **关联性**：不同指标之间的关系\n5. **建议**：基于数据的可操作洞察\n\n请在描述趋势和变化时提供具体数字和百分比。"
+      },
+      "alert": {
+        "label": "告警通知",
+        "description": "基于条件发送通知",
+        "template": "请监控选定的指标，在特定条件发生时发送告警：\n\n告警条件：\n- 阈值超出：当指标高于/低于某个值\n- 变化速率：当数值变化过快\n- 状态变化：当设备状态改变\n\n告警内容：\n- 哪个指标/设备触发了告警\n- 当前值和阈值\n- 发生时间\n- 适用时的建议操作\n\n请避免重复告警 - 仅在以下情况告警：\n1. 这是一个新事件（之前未报告过）\n2. 情况明显恶化\n3. 距上次告警已过足够长的冷却时间"
       }
     },
     "schedule": {
@@ -271,43 +335,14 @@
       "event": {
         "triggerEvent": "触发事件",
         "relatedDevice": "关联设备",
-        "manualHint": "需要通过API手动触发执行",
+        "manualHint": "当选择的设备指标更新时触发。后端根据配置的资源进行过滤。",
         "events": {
-          "device.online": "设备上线",
-          "device.offline": "设备离线",
-          "device.metric": "数据更新",
-          "metric.threshold": "指标阈值",
-          "metric.anomaly": "异常检测",
+          "device.metric": "指标更新",
           "manual": "手动触发"
         },
-        "preview": "当「{{event}}」事件发生时触发",
-        "deviceOnline": {
-          "title": "设备上线触发",
-          "description": "当设备重新连接上线时，立即执行智能体分析",
-          "relatedDevice": "关联设备"
-        },
-        "deviceOffline": {
-          "title": "设备离线触发",
-          "description": "当设备断开连接时，立即执行智能体分析",
-          "relatedDevice": "关联设备"
-        },
-        "metricThreshold": {
-          "title": "阈值触发",
-          "condition": "触发条件",
-          "conditionPlaceholder": "temperature > 30",
-          "conditionHint": "支持条件表达式，如: temperature > 30",
-          "monitorDevice": "监控设备"
-        },
-        "metricAnomaly": {
-          "title": "异常检测触发",
-          "description": "AI 自动检测数据异常，支持自定义阈值",
-          "threshold": "异常阈值（可选）",
-          "thresholdPlaceholder": "留空使用自动检测",
-          "monitorDevice": "监控设备"
-        },
-        "manual": {
-          "title": "手动触发",
-          "description": "仅在手动点击执行按钮时运行，适合按需分析"
+        "descriptions": {
+          "device.metric": "当设备指标更新时触发。可选择特定设备或监控全部设备。",
+          "manual": "仅通过API或UI手动触发"
         },
         "allDevices": "全部设备"
       },
@@ -345,7 +380,7 @@
       }
     },
     "resources": {
-      "title": "数据资源",
+      "title": "资源",
       "searchPlaceholder": "搜索资源名称或类型...",
       "selectedCount": "已选 {{count}} 项",
       "noResourcesFound": "暂无可用资源",
@@ -371,7 +406,18 @@
       "deselectAll": "取消全选",
       "dataStream": "数据流",
       "device": "设备",
-      "externalData": "外部数据"
+      "externalData": "外部数据",
+      "addResources": "添加资源",
+      "dialog": {
+        "title": "选择资源",
+        "available": "可用资源",
+        "selected": "已选资源",
+        "recommended": "为您推荐",
+        "searchPlaceholder": "搜索资源...",
+        "noResourcesHint": "点击\"添加资源\"来选择设备和扩展",
+        "done": "完成",
+        "selectedCount": "已选 {{count}} 个资源"
+      }
     },
     "advanced": {
       "title": "高级配置",

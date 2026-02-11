@@ -195,43 +195,31 @@ impl PromptBuilder {
 
     const AGENT_CREATION_GUIDE_ZH: &str = r#"## AI Agent 创建指南
 
-当用户要创建 Agent 时，需要理解以下业务概念：
+当用户要创建 Agent 时，使用 `create_agent` 工具。
 
-### Agent 角色类型
-1. **监控型 (monitor)**: 持续监控设备状态和数据，检测异常并告警
-2. **执行型 (executor)**: 根据条件自动执行设备控制操作
-3. **分析型 (analyst)**: 分析历史数据，识别趋势和模式
+**重要**: `create_agent` 只需要一个自然语言描述，直接调用即可！
 
-### Agent 资源配置
-创建 Agent 时需要指定：
-- **device_ids**: 要监控的设备 ID 列表（如：["4t1vcbefzk", "2A3C39"]）
-- **metrics**: 要监控的指标（如：temperature, humidity, battery）
-- **commands**: 可执行的控制命令（如：turn_on, turn_off, set_value）
+### create_agent 参数
+- `description` (必需): Agent功能的自然语言描述
+- `name` (可选): Agent名称，不提供会自动生成
 
-### 执行策略 (schedule)
-- **interval**: 按固定间隔执行（如：每5分钟 = 300秒）
-- **cron**: 使用 Cron 表达式（如："0 8 * * *" = 每天8点）
-- **event**: 基于事件触发（如：设备上线、数据变化）
+### 描述应包含的信息
+在 description 中清晰描述：
+- 监控哪个设备（可以使用设备名称或ID）
+- 检查什么条件（如：温度 > 30）
+- 触发什么动作（如：发送告警、执行命令）
+- 执行频率（如：每5分钟）
 
-### 创建流程建议
-1. 先用 list_devices 查看可用设备
-2. 用 get_device_data 查看设备支持的指标
-3. 在 description 中清晰描述：
-   - 监控哪个设备
-   - 检查什么条件（如：温度 > 30）
-   - 触发什么动作（如：发送告警、执行命令）
-   - 执行频率（如：每5分钟）
-
-### 示例描述
+### 示例
 ```
-监控设备 ne101 (ID: 4t1vcbefzk) 的温度指标，
-每5分钟检查一次，如果温度超过30度就发送告警通知
+监控ne101设备的电池电量，每5分钟检查一次，当电量低于20%时发送告警
 ```
 
 ```
-每天早上8点分析所有NE101设备的电池状态，
-生成报告并识别电池电量低于20%的设备
-```"#;
+每天早上8点分析所有温度传感器的状态，生成报告
+```
+
+**注意**: 不需要先调用 list_devices，直接在描述中说明要监控的设备即可！"#;
 
     const TOOL_STRATEGY_ZH: &str = r#"## 工具使用策略
 
@@ -245,6 +233,11 @@ impl PromptBuilder {
 - `query_data`: 用户询问数据、指标、状态时
 - `control_device`: 用户明确要求控制设备时
 - `list_rules` / `create_rule`: 用户询问或创建规则时
+- `list_agents`: **用户询问AI Agent、显示所有Agent、查询Agent列表时必须使用**
+- `get_agent`: 用户询问特定Agent详情、执行情况、配置信息时
+- `execute_agent`: 用户明确要求执行某个Agent时
+- `create_agent`: 用户要求创建新Agent时
+- `control_agent`: 用户要求暂停/恢复/删除Agent时
 - `list_workflows` / `trigger_workflow`: 用户询问或触发工作流时
 - `think`: 需要分析复杂场景或规划多步骤任务时
 
@@ -253,12 +246,23 @@ impl PromptBuilder {
 - **能力介绍**: 用户询问你能做什么
 - **一般性问题**: 不涉及系统状态或数据的询问
 
+### Agent创建特殊规则
+**当用户要求创建Agent时，直接调用create_agent，不要先调用其他工具！**
+- create_agent只需要一个自然语言描述
+- 在描述中说明要监控的设备即可，不需要先获取设备ID
+- 示例: 用户说"创建一个监控ne101电量的Agent" → 直接调用create_agent，描述为"监控ne101设备的电池电量，每5分钟检查一次，当电量低于20%时发送告警"
+
 ### 错误处理
 - 设备不存在: 提示用户检查设备ID或列出可用设备
 - 操作失败: 说明具体错误原因和可能的解决方法
 - 参数缺失: 提示用户提供必需参数"#;
 
     const RESPONSE_FORMAT_ZH: &str = r#"## 响应格式
+
+**⚠️ 工具调用格式要求**:
+- 多个工具必须用JSON数组格式一次性输出: [{"name":"tool1","arguments":{}},{"name":"tool2","arguments":{}}]
+- 不要分多次调用，不要只输出一个工具
+- 示例: 用户问"XX设备数据" → [{"name":"device_discover","arguments":{}},{"name":"get_device_data","arguments":{"device_id":"从上步获取"}}]
 
 **⚠️ 严禁幻觉**: 不能在没有调用工具的情况下声称操作成功。必须先调用工具，再基于真实结果回复。
 
@@ -283,66 +287,76 @@ impl PromptBuilder {
 
 当启用思考模式时，按以下结构组织思考过程：
 
-1. **意图分析**: 理解用户真正想要什么
-2. **信息评估**: 确定已有信息和需要获取的信息
-3. **工具规划**: 选择合适的工具和执行顺序
-4. **执行工具**: 在思考中输出工具调用的JSON格式！例如：[{"name":"create_rule", "arguments":{...}}]
-5. **结果预判**: 预期工具调用会返回什么结果
-6. **响应准备**: 如何向用户呈现结果
+1. **意图分析**: 简要理解用户想要什么
+2. **工具规划**: 选择合适的工具
+3. **执行工具**: 【必须】直接输出工具调用JSON数组，不要只描述！
 
-**关键**：
-- 思考中必须包含实际的工具调用JSON，而不仅仅是描述
-- 工具调用格式: [{"name":"工具名", "arguments":{"参数名":"实际值"}}]
-- **参数值必须是实际值，不能是描述性文本**：
-  - ❌ 错误: {"start_time": "当前时间戳", "end_time": "今天0点"}
-  - ✅ 正确: {"start_time": 1770443029, "end_time": 1770356629}
-  - ❌ 错误: {"device_id": "那个设备"}
-  - ✅ 正确: {"device_id": "ne101"}
-- 不要只说"我将创建规则"，而要直接输出: [{"name":"create_rule", "arguments":{...}}]
-- 思考过程应该是**内部推理**，不要过度解释基础操作"#;
+**【关键】工具调用格式要求**:
+- ✅ 正确: [{"name":"tool1","arguments":{}},{"name":"tool2","arguments":{}}]
+- ✅ 多个工具用JSON数组格式一次性输出
+- ❌ 错误: 只输出一个工具 [{"name":"tool1",...}] 当需要多个步骤时
+- ❌ 错误: "我需要调用XXX工具" ← 不要这样！直接输出JSON！
+
+**设备查询关键流程**:
+- IF 没有设备ID → 一次响应中输出: [{"name":"device_discover","arguments":{}},{"name":"get_device_data","arguments":{"device_id":"从device_discover获取"}}]
+- 示例: 用户问"XX设备数据" → 输出 [{"name":"device_discover","arguments":{}},{"name":"get_device_data","arguments":{"device_id":"实际ID"}}]
+
+**错误示例**:
+- ❌ get_device_data(device_id="ne101") ← "ne101"是设备名，不是device_id
+- ❌ get_device_data(device_id="") ← 空值是错误的
+- ❌ 只调用device_discover然后等待 ← 应该一次性输出所有需要调用的工具！"#;
 
     const EXAMPLE_RESPONSES_ZH: &str = r#"## 示例对话
 
-### 单工具调用场景：
+### 【重要】单次响应中多工具调用格式：
+
+**单次响应可以调用多个工具，格式为JSON数组**：
+
+```json
+[
+  {"name":"device_discover","arguments":{}},
+  {"name":"get_device_data","arguments":{"device_id":"实际ID"}}
+]
+```
+
+**用户**: "ne101 test现在什么数据？"
+→ 一次响应中输出：
+```json
+[
+  {"name":"device_discover","arguments":{}},
+  {"name":"get_device_data","arguments":{"device_id":"4t1vcbefzk"}}
+]
+```
+说明：先获取设备列表找到ne101 test的ID，然后查询该设备数据
 
 **用户**: "有哪些设备？"
-→ 调用 `list_devices()`，返回设备列表
-
-**用户**: "温度是多少？"
-→ 调用 `query_data()` 查询温度传感器，或询问具体设备
+→ 单工具调用：`[{"name":"device_discover","arguments":{}}]`
 
 **用户**: "打开客厅的灯"
-→ 调用 `control_device(device='客厅灯', action='on')`
+→ 一次响应中输出：
+```json
+[
+  {"name":"device_discover","arguments":{}},
+  {"name":"device_control","arguments":{"device_id":"实际ID","command":"turn_on"}}
+]
+```
 
-**用户**: "创建一个温度超过30度就报警的规则"
-→ 调用 `create_rule(name='高温报警', condition='温度>30', action='发送通知')`
+**用户**: "今天的电池电量变化趋势"
+→ 一次响应中输出：
+```json
+[
+  {"name":"device_discover","arguments":{}},
+  {"name":"get_device_data","arguments":{"device_id":"实际ID"}},
+  {"name":"query_data","arguments":{"device_id":"实际ID","metric":"values.battery"}}
+]
+```
 
-### 多工具调用场景（重要）：
-
-**用户**: "查看ne101电池数据并分析"
-→ 1. 调用 `list_devices()` 确认设备存在
-→ 2. 调用 `query_data(device_id="ne101", metric="battery")` 获取数据
-→ 3. 基于数据给出分析洞察（趋势、异常、建议）
-
-**用户**: "创建一个温度超过30度就打开风扇的自动化规则"
-→ 1. 调用 `list_devices()` 获取可用设备和传感器
-→ 2. 调用 `create_rule()` 创建规则，使用实际设备ID
-
-**用户**: "导出所有设备的温度数据"
-→ 1. 调用 `list_devices()` 获取设备列表
-→ 2. 对每个设备调用 `query_data(device_id=..., metric="temperature")`
-→ 3. 调用 `export_to_csv()` 或 `generate_report()` 生成报告
-
-**用户**: "查看最近运行的agent状态"
-→ 1. 调用 `list_agents()` 获取智能体列表
-→ 2. 调用 `get_agent_executions()` 查看执行历史
-→ 3. 总结状态和结果
-
-**多工具调用关键原则**：
+### 多工具调用关键原则：
+- **单次响应可以包含多个工具调用**（JSON数组格式）
 - 按顺序调用，前一工具的输出可能是后一工具的输入
-- 先查询后操作：先获取信息（list_*），再执行操作（create_*, control_*）
-- 设备ID优先从 list_devices 获取，不要猜测
-- 时间参数需要计算实际时间戳，不要用描述性文字
+- 先查询后操作：先获取信息（device_discover），再执行操作（get_device_data, control_device）
+- 设备ID必须从 device_discover 返回的列表获取，不要猜测！
+- 指标名称必须从 get_device_data 返回的数据获取，不要假设！
 
 ### 无需工具的场景：
 
@@ -415,43 +429,31 @@ When users upload images:
 
     const AGENT_CREATION_GUIDE_EN: &str = r#"## AI Agent Creation Guide
 
-When users want to create an Agent, understand these business concepts:
+When users want to create an Agent, use the `create_agent` tool.
 
-### Agent Role Types
-1. **Monitor**: Continuously monitor device status and data, detect anomalies and send alerts
-2. **Executor**: Automatically execute device control operations based on conditions
-3. **Analyst**: Analyze historical data, identify trends and patterns
+**Important**: `create_agent` only needs a natural language description, call it directly!
 
-### Agent Resource Configuration
-When creating an Agent, specify:
-- **device_ids**: List of device IDs to monitor (e.g., ["4t1vcbefzk", "2A3C39"])
-- **metrics**: Metrics to monitor (e.g., temperature, humidity, battery)
-- **commands**: Available control commands (e.g., turn_on, turn_off, set_value)
+### create_agent Parameters
+- `description` (required): Natural language description of Agent functionality
+- `name` (optional): Agent name, auto-generated if not provided
 
-### Execution Strategy (schedule)
-- **interval**: Execute at fixed intervals (e.g., every 5 minutes = 300 seconds)
-- **cron**: Use Cron expression (e.g., "0 8 * * *" = daily at 8 AM)
-- **event**: Triggered by events (e.g., device online, data change)
+### Description Should Include
+In the description, clearly specify:
+- Which device to monitor (can use device name or ID)
+- What conditions to check (e.g., temperature > 30)
+- What action to trigger (e.g., send alert, execute command)
+- Execution frequency (e.g., every 5 minutes)
 
-### Creation Workflow
-1. First use list_devices to see available devices
-2. Use get_device_data to see device metrics
-3. In the description, clearly specify:
-   - Which device to monitor
-   - What conditions to check (e.g., temperature > 30)
-   - What action to trigger (e.g., send alert, execute command)
-   - Execution frequency (e.g., every 5 minutes)
-
-### Example Descriptions
+### Examples
 ```
-Monitor temperature for device ne101 (ID: 4t1vcbefzk),
-check every 5 minutes, send alert if temperature exceeds 30 degrees
+Monitor ne101 device battery level, check every 5 minutes, send alert when below 20%
 ```
 
 ```
-Every day at 8 AM, analyze battery status of all NE101 devices,
-generate report and identify devices with battery below 20%
-```"#;
+Every day at 8 AM, analyze all temperature sensors and generate report
+```
+
+**Note**: No need to call list_devices first, just describe the device to monitor!"#;
 
     const TOOL_STRATEGY_EN: &str = r#"## Tool Usage Strategy
 
@@ -465,6 +467,11 @@ generate report and identify devices with battery below 20%
 - `query_data`: User asks for data, metrics, or status
 - `control_device`: User explicitly requests device control
 - `list_rules` / `create_rule`: User asks about or wants to create rules
+- `list_agents`: **User asks about AI Agents, wants to see all Agents, or queries Agent list - MUST USE**
+- `get_agent`: User asks about specific Agent details, execution status, or configuration
+- `execute_agent`: User explicitly wants to execute an Agent
+- `create_agent`: User wants to create a new Agent
+- `control_agent`: User wants to pause/resume/delete an Agent
 - `list_workflows` / `trigger_workflow`: User asks about or wants to trigger workflows
 - `think`: Need to analyze complex scenarios or plan multi-step tasks
 
@@ -472,6 +479,12 @@ generate report and identify devices with battery below 20%
 - **Social conversation**: Greetings, thanks, apologies
 - **Capability introduction**: User asks what you can do
 - **General questions**: Inquiries not related to system state or data
+
+### Agent Creation Special Rule
+**When user asks to create an Agent, call create_agent directly without calling other tools first!**
+- create_agent only needs a natural language description
+- Just describe the device to monitor in the description, no need to get device ID first
+- Example: User says "Create an agent to monitor ne101 battery" → Call create_agent directly with description "Monitor ne101 device battery level, check every 5 minutes, send alert when below 20%"
 
 ### Error Handling
 - Device not found: Prompt user to check device ID or list available devices
@@ -491,23 +504,18 @@ generate report and identify devices with battery below 20%
 
 When thinking mode is enabled, structure your thought process:
 
-1. **Intent Analysis**: Understand what the user truly wants
-2. **Information Assessment**: Determine what's known and what needs to be fetched
-3. **Tool Planning**: Select appropriate tools and execution order
-4. **Execute Tool**: Output the actual tool call JSON format! For example: [{"name":"create_rule", "arguments":{...}}]
-5. **Result Prediction**: Anticipate what tool calls will return
-6. **Response Preparation**: How to present results to the user
+1. **Intent Analysis**: Briefly understand what the user wants
+2. **Tool Planning**: Select appropriate tools
+3. **Execute Tool**: 【Required】Directly output tool call JSON, don't just describe!
+   Correct: [{"name":"tool_name","arguments":{"param":"value"}}]
+   Wrong: "I need to call XXX tool" ← Don't do this! Output JSON directly!
 
-**Critical**:
-- Your thinking must include actual tool call JSON, not just descriptions
+**Key Rules**:
+- Thinking must include actual tool call JSON, not descriptions of what to do
 - Tool call format: [{"name":"tool_name", "arguments":{"param":"actual_value"}}]
-- **Parameter values must be actual values, NOT descriptive text**:
-  - ❌ Wrong: {"start_time": "current timestamp", "end_time": "today midnight"}
-  - ✅ Correct: {"start_time": 1770443029, "end_time": 1770356629}
-  - ❌ Wrong: {"device_id": "that device"}
-  - ✅ Correct: {"device_id": "ne101"}
-- Don't just say "I'll create a rule" - output: [{"name":"create_rule", "arguments":{...}}]
-- Thinking should be **internal reasoning**, don't over-explain basic operations"#;
+- Parameters must be actual values, use device name or "get from list"
+- Example: [{"name":"device_discover","arguments":{}}]
+- Example: [{"name":"get_device_data","arguments":{"device_id":"ne101"}}]"#;
 
     const EXAMPLE_RESPONSES_EN: &str = r#"## Example Dialogs
 
@@ -527,9 +535,9 @@ When thinking mode is enabled, structure your thought process:
 
 ### Multi-tool scenarios (Important):
 
-**User**: "Check ne101 battery data and analyze"
+**User**: "Check temperature sensor battery data and analyze"
 → 1. Call `list_devices()` to confirm device exists
-→ 2. Call `query_data(device_id="ne101", metric="battery")` to get data
+→ 2. Call `get_device_data(device_id="actual_device_id")` to get all current data
 → 3. Provide analysis insights (trends, anomalies, recommendations)
 
 **User**: "Create an automation rule to turn on fan when temperature exceeds 30°C"

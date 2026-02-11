@@ -1,7 +1,7 @@
 # Storage 模块
 
 **包名**: `neomind-storage`
-**版本**: 0.1.0
+**版本**: 0.5.8
 **完成度**: 95%
 **用途**: 持久化存储层
 
@@ -79,6 +79,14 @@ pub fn create_backend(
 ```
 
 ## 时序存储
+
+**重要变更 (v0.5.x)**: 所有时序数据现在统一存储在 `data/timeseries.redb`：
+
+| 数据类型 | device_part | metric_part | 说明 |
+|---------|-------------|-------------|------|
+| 设备遥测 | `{device_id}` | `{metric_name}` | 设备上报的指标数据 |
+| 扩展指标 | `extension:{ext_id}` | `{metric_name}` | 扩展采集的指标数据 |
+| 转换指标 | `transform:{trans_id}` | `{metric_name}` | 转换后的虚拟指标 |
 
 ```rust
 pub struct TimeSeriesStore {
@@ -304,6 +312,56 @@ pub struct MqttSettings {
     pub port: u16,
     pub external_brokers: Vec<ExternalBroker>,
 }
+```
+
+## 扩展存储
+
+**新增 (v0.5.x)**: 统一的扩展指标存储服务。
+
+```rust
+pub struct ExtensionMetricsStorage {
+    metrics_storage: Arc<TimeSeriesStore>,
+}
+
+impl ExtensionMetricsStorage {
+    /// 存储扩展指标到统一时序数据库
+    pub async fn store_metric_value(
+        &self,
+        extension_id: &str,
+        metric_value: &MetricValue,
+    ) -> Result<()>;
+
+    /// 查询扩展指标最新值
+    pub async fn query_latest(
+        &self,
+        extension_id: &str,
+        metric_name: &str,
+    ) -> Result<Option<DataPoint>>;
+
+    /// 查询扩展指标历史范围
+    pub async fn query_range(
+        &self,
+        extension_id: &str,
+        metric_name: &str,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<DataPoint>>;
+}
+```
+
+**存储格式**: 扩展指标使用DataSourceId格式存储在 `timeseries.redb`：
+
+```
+DataSourceId: "extension:weather:temperature"
+- device_part: "extension:weather"
+- metric_part: "temperature"
+```
+
+**API端点**:
+```
+GET    /api/extensions/:id/metrics         # 列出扩展指标
+POST   /api/extensions/:id/metrics         # 注册指标
+DELETE /api/extensions/:id/metrics/:name   # 删除指标
 ```
 
 ## 备份管理

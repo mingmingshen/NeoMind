@@ -5,6 +5,7 @@
 // alerts module removed - use neomind_messages instead
 pub mod brand;
 pub mod config;
+pub mod datasource;
 pub mod error;
 pub mod event;
 pub mod eventbus;
@@ -77,10 +78,22 @@ pub mod prelude {
     // Tools
     pub use crate::tools::{DynTool, Parameter, Tool, ToolDefinition, ToolError, ToolOutput};
 
-    // Extension system (replaces legacy Plugin system)
+    // Extension system V2 (device-standard compatible)
     pub use crate::extension::{
-        DynExtension, Extension, ExtensionError, ExtensionMetadata, ExtensionRegistry,
-        ExtensionState, ExtensionStats, ExtensionType,
+        DynExtension, Extension, ExtensionError, ExtensionMetadata,
+        ExtensionRegistry, ExtensionState, ExtensionStats,
+        // Extension types V2
+        ExtensionCommand, MetricDescriptor, ExtensionMetricValue,
+        CommandExecutor, CommandResult,
+        // Re-exported device types
+        MetricDefinition, CommandDefinition, ParameterDefinition,
+        MetricDataType, ParamMetricValue, ParameterGroup, ValidationRule,
+    };
+
+    // Unified data source system
+    pub use crate::datasource::{
+        AggregatedValue, DataPoint, DataSourceCatalog, DataSourceId, DataSourceInfo,
+        DataSourceType, QueryError, QueryParams, QueryResult, UnifiedQueryService,
     };
 
     // Registry system

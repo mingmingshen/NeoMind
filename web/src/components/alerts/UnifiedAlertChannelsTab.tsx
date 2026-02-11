@@ -8,6 +8,7 @@ import {
   Mail,
   Terminal,
   Database,
+  Puzzle,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { UniversalPluginConfigDialog, type PluginInstance, type UnifiedPluginType } from "@/components/plugins/UniversalPluginConfigDialog"
-import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema } from "@/types"
+import type { AlertChannel, ChannelTypeInfo, ChannelSchemaResponse, PluginConfigSchema, ExtensionCapabilityDto } from "@/types"
 
 type View = 'list' | 'detail'
 
@@ -51,6 +52,11 @@ const CHANNEL_TYPE_INFO: Record<string, {
   memory: {
     name: 'Memory',
     icon: <Database className="h-6 w-6" />,
+    iconBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400',
+  },
+  extension: {
+    name: 'Extension',
+    icon: <Puzzle className="h-6 w-6" />,
     iconBg: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400',
   },
 }
@@ -155,6 +161,7 @@ export function UnifiedAlertChannelsTab({
   const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([])
   const [channels, setChannels] = useState<AlertChannel[]>([])
   const [selectedType, setSelectedType] = useState<UnifiedPluginType | null>(null)
+  const [extensionCapabilities, setExtensionCapabilities] = useState<ExtensionCapabilityDto[]>([])
 
   // Config dialog state
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
@@ -174,7 +181,51 @@ export function UnifiedAlertChannelsTab({
     try {
       // Load channel types
       const typesResponse = await api.listChannelTypes()
-      setChannelTypes(typesResponse.types || [])
+      const builtInTypes = typesResponse.types || []
+      setChannelTypes(builtInTypes)
+
+      // Load extension capabilities for notifier channels
+      try {
+        const capabilities = await api.getExtensionCapabilities()
+        setExtensionCapabilities(capabilities)
+
+        // Convert extension channels to channel types
+        const extensionChannelTypes: ChannelTypeInfo[] = []
+        for (const cap of capabilities) {
+          if (cap.type === 'notifier' && cap.channels) {
+            for (const channel of cap.channels) {
+              extensionChannelTypes.push({
+                id: `extension:${cap.extension_id}:${channel.name}`,
+                name: channel.name,
+                name_zh: channel.name,
+                description: channel.description || `Extension channel from ${cap.extension_name}`,
+                description_zh: channel.description || `来自 ${cap.extension_name} 的扩展通道`,
+                icon: 'extension',
+                category: 'extension',
+              })
+            }
+          } else if (cap.type === 'hybrid' && cap.channels) {
+            // Hybrid extensions can also provide channels
+            for (const channel of cap.channels) {
+              extensionChannelTypes.push({
+                id: `extension:${cap.extension_id}:${channel.name}`,
+                name: channel.name,
+                name_zh: channel.name,
+                description: channel.description || `Extension channel from ${cap.extension_name}`,
+                description_zh: channel.description || `来自 ${cap.extension_name} 的扩展通道`,
+                icon: 'extension',
+                category: 'extension',
+              })
+            }
+          }
+        }
+
+        // Combine built-in and extension channel types
+        setChannelTypes([...builtInTypes, ...extensionChannelTypes])
+      } catch {
+        // If extension capabilities fail, just use built-in types
+        setChannelTypes(builtInTypes)
+      }
 
       // Load channels
       if (onListChannels) {
@@ -201,8 +252,64 @@ export function UnifiedAlertChannelsTab({
   const handleTypeSelect = async (type: ChannelTypeInfo) => {
     setSchemaLoading(true)
     try {
-      const schema = await api.getChannelSchema(type.id)
-      setSelectedType(toUnifiedPluginType(schema))
+      // Check if this is an extension channel
+      if (type.id.startsWith('extension:')) {
+        // Parse the extension ID and channel name from the type ID
+        const [, extensionId, channelName] = type.id.split(':')
+
+        // Find the extension capability
+        const extension = extensionCapabilities.find(cap => cap.extension_id === extensionId)
+        if (!extension) {
+          throw new Error('Extension not found')
+        }
+
+        // Find the channel descriptor
+        const channel = extension.channels?.find(ch => ch.name === channelName)
+        if (!channel) {
+          throw new Error('Channel not found in extension')
+        }
+
+        // Convert the extension's channel schema to UnifiedPluginType
+        const pluginType: UnifiedPluginType = {
+          id: type.id,
+          type: 'alert_channel',
+          name: channel.name,
+          description: channel.description,
+          icon: <Puzzle className="h-6 w-6" />,
+          color: CHANNEL_TYPE_INFO.extension.iconBg,
+          config_schema: channel.config_schema ? {
+            type: 'object',
+            properties: Object.fromEntries(
+              Object.entries(channel.config_schema).map(([key, prop]) => {
+                const typedProp = prop as any
+                return [key, {
+                  type: typedProp.type || 'string',
+                  description: typedProp.description,
+                  default: typedProp.default,
+                  enum: typedProp.enum,
+                  minimum: typedProp.minimum,
+                  maximum: typedProp.maximum,
+                  secret: typedProp.secret || false,
+                }]
+              })
+            ),
+            required: [],
+            ui_hints: {},
+          } : {
+            type: 'object',
+            properties: {},
+            required: [],
+            ui_hints: {},
+          },
+          can_add_multiple: true,
+          builtin: false,
+        }
+        setSelectedType(pluginType)
+      } else {
+        // Built-in channel type
+        const schema = await api.getChannelSchema(type.id)
+        setSelectedType(toUnifiedPluginType(schema))
+      }
       setView('detail')
     } catch (error) {
       handleError(error, { operation: 'Load channel schema', showToast: false })

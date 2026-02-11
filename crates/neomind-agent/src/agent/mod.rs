@@ -29,12 +29,12 @@ pub mod tokenizer;
 pub mod types;
 pub mod conversation_context;
 pub mod smart_followup;
-pub mod intent_classifier;
 pub mod scheduler;
 pub mod cache;
 
 use std::pin::Pin;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use futures::Stream;
 use tokio::sync::RwLock;
@@ -45,6 +45,7 @@ use serde_json::Value;
 
 use super::error::Result;
 use super::llm::{ChatConfig, LlmInterface};
+use super::tools::mapper::map_tool_parameters;
 use crate::context::ResourceIndex;
 use neomind_core::{
     Message,
@@ -84,10 +85,6 @@ pub use conversation_context::{
 pub use smart_followup::{
     SmartFollowUpManager, FollowUpAnalysis, FollowUpItem, FollowUpType,
     FollowUpPriority, DetectedIntent, AvailableDevice,
-};
-pub use crate::task_orchestrator::{
-    TaskOrchestrator, TaskSession, TaskStep, TaskResponse, TaskContext,
-    TaskStatus, StepType, ResponseType,
 };
 pub use crate::context_selector::{
     ContextSelector, IntentAnalyzer, IntentAnalysis, ContextBundle,
@@ -192,6 +189,7 @@ pub fn compact_conversation(
     }
 
     let mut result = Vec::new();
+    #[allow(unused_assignments)]
     let mut current_tokens = 0;
 
     // First pass: keep recent messages intact
@@ -219,7 +217,7 @@ pub fn compact_conversation(
     let mut compressed_older = Vec::new();
     let mut topic_batches: Vec<String> = Vec::new();
 
-    for (i, msg) in messages[..recent_start].iter().enumerate() {
+    for msg in messages[..recent_start].iter() {
         // Always keep system messages
         if msg.role == "system" {
             compressed_older.push(msg.clone());
@@ -528,6 +526,97 @@ fn calculate_adaptive_context_adjustment(messages: &[AgentMessage]) -> f64 {
 #[allow(dead_code)]
 const DEFAULT_CONTEXT_TOKENS: usize = 8_000;
 
+/// Tool result cache to avoid redundant executions.
+///
+/// Caches tool results with TTL-based expiration:
+/// - Device queries: 60 seconds TTL
+/// - Static data (list_rules, list_agents): 300 seconds TTL
+/// - Other tools: 30 seconds default TTL
+///
+/// Cache key format: (tool_name, serialized_arguments)
+struct ToolResultCache {
+    entries: HashMap<(String, String), (String, std::time::Instant)>,
+    default_ttl_seconds: u64,
+}
+
+impl ToolResultCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            default_ttl_seconds: 30,
+        }
+    }
+
+    fn get_ttl_for_tool(&self, tool_name: &str) -> std::time::Duration {
+        match tool_name {
+            // Device data changes frequently - shorter TTL
+            t if t.contains("device_discover") => std::time::Duration::from_secs(60),
+            t if t.contains("device_query") => std::time::Duration::from_secs(30),
+            t if t.contains("query_data") => std::time::Duration::from_secs(30),
+            // Static data - longer TTL
+            t if t.contains("list_rules") => std::time::Duration::from_secs(300),
+            t if t.contains("list_agents") => std::time::Duration::from_secs(300),
+            t if t.contains("get_agent") => std::time::Duration::from_secs(120),
+            // Default TTL
+            _ => std::time::Duration::from_secs(self.default_ttl_seconds),
+        }
+    }
+
+    fn get(&self, tool_name: &str, args: &str) -> Option<String> {
+        let key = (tool_name.to_string(), args.to_string());
+        if let Some((result, timestamp)) = self.entries.get(&key) {
+            let ttl = self.get_ttl_for_tool(tool_name);
+            if timestamp.elapsed() < ttl {
+                tracing::debug!(tool = %tool_name, "Cache hit");
+                return Some(result.clone());
+            } else {
+                tracing::debug!(tool = %tool_name, "Cache entry expired");
+            }
+        }
+        None
+    }
+
+    fn put(&mut self, tool_name: &str, args: String, result: String) {
+        let key = (tool_name.to_string(), args);
+        self.entries.insert(key, (result, std::time::Instant::now()));
+
+        // Clean up expired entries periodically
+        self.cleanup();
+    }
+
+    fn cleanup(&mut self) {
+        let now = std::time::Instant::now();
+        // Remove entries older than 5 minutes (max TTL)
+        self.entries.retain(|_, (_, timestamp)| {
+            now.duration_since(*timestamp) < std::time::Duration::from_secs(300)
+        });
+    }
+
+    /// Invalidate all cache entries for a specific tool or prefix.
+    fn invalidate(&mut self, tool_prefix: &str) {
+        let keys_to_remove: Vec<_> = self.entries
+            .keys()
+            .filter(|(name, _)| name.starts_with(tool_prefix))
+            .cloned()
+            .collect();
+        let count = keys_to_remove.len();
+        for key in keys_to_remove {
+            self.entries.remove(&key);
+        }
+        tracing::debug!(prefix = %tool_prefix, count = count, "Invalidated cache entries");
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+    }
+}
+
+impl Default for ToolResultCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// AI Agent that orchestrates components.
 pub struct Agent {
     /// Configuration
@@ -557,6 +646,8 @@ pub struct Agent {
     context_selector: Arc<tokio::sync::RwLock<crate::context_selector::ContextSelector>>,
     /// Last injected context summary hash (for deduplication)
     last_injected_context_hash: Arc<tokio::sync::RwLock<u64>>,
+    /// Tool result cache - caches recent tool executions to avoid redundant calls
+    tool_result_cache: Arc<tokio::sync::RwLock<ToolResultCache>>,
 }
 
 impl Agent {
@@ -608,6 +699,7 @@ impl Agent {
             smart_followup,
             context_selector: Arc::new(tokio::sync::RwLock::new(crate::context_selector::ContextSelector::new())),
             last_injected_context_hash: Arc::new(tokio::sync::RwLock::new(0)),
+            tool_result_cache: Arc::new(tokio::sync::RwLock::new(ToolResultCache::new())),
         }
     }
 
@@ -819,62 +911,147 @@ impl Agent {
         let mut device_tools = Vec::new();
         let mut data_tools = Vec::new();
         let mut rule_tools = Vec::new();
+        let mut agent_tools = Vec::new();
         let mut system_tools = Vec::new();
 
         for tool in simplified_tools {
-            if tool.name.contains("device") || tool.name.contains("control") {
+            if tool.name.contains("device_discover") || tool.name.contains("device_control") {
+                device_tools.push(tool);
+            } else if tool.name.contains("device") || tool.name.contains("control") {
                 device_tools.push(tool);
             } else if tool.name.contains("data") || tool.name.contains("query") || tool.name.contains("metrics") {
                 data_tools.push(tool);
             } else if tool.name.contains("rule") {
                 rule_tools.push(tool);
+            } else if tool.name.contains("agent") {
+                agent_tools.push(tool);
             } else {
                 system_tools.push(tool);
             }
         }
 
-        // Add tool sections
+        // Add tool sections with examples
         if !device_tools.is_empty() {
             prompt.push_str("### 设备管理\n");
             for tool in device_tools {
-                prompt.push_str(&format!("- **{}**: {} (别名: {})\n",
+                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
                     tool.name, tool.description, tool.aliases.join(", ")));
+
+                // Add use_when conditions
+                if !tool.use_when.is_empty() {
+                    prompt.push_str("  *调用条件*: ");
+                    for (i, condition) in tool.use_when.iter().enumerate() {
+                        if i > 0 { prompt.push_str(" 或 "); }
+                        prompt.push_str(condition);
+                    }
+                    prompt.push('\n');
+                }
+
+                // Add examples (especially important for chains)
+                if !tool.examples.is_empty() {
+                    prompt.push_str("  *示例*:\n");
+                    for example in &tool.examples {
+                        prompt.push_str(&format!("    - 用户: \"{}\"\n", example.user_query));
+                        prompt.push_str(&format!("      调用: {}\n", example.tool_call));
+                        if !example.explanation.is_empty() {
+                            prompt.push_str(&format!("      说明: {}\n", example.explanation));
+                        }
+                    }
+                }
+                prompt.push('\n');
             }
-            prompt.push('\n');
         }
 
         if !data_tools.is_empty() {
             prompt.push_str("### 数据查询\n");
             for tool in data_tools {
-                prompt.push_str(&format!("- **{}**: {} (别名: {})\n",
+                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
                     tool.name, tool.description, tool.aliases.join(", ")));
+
+                if !tool.use_when.is_empty() {
+                    prompt.push_str("  *调用条件*: ");
+                    for (i, condition) in tool.use_when.iter().enumerate() {
+                        if i > 0 { prompt.push_str(" 或 "); }
+                        prompt.push_str(condition);
+                    }
+                    prompt.push('\n');
+                }
+
+                if !tool.examples.is_empty() {
+                    prompt.push_str("  *示例*:\n");
+                    for example in &tool.examples {
+                        prompt.push_str(&format!("    - 用户: \"{}\"\n", example.user_query));
+                        prompt.push_str(&format!("      调用: {}\n", example.tool_call));
+                        if !example.explanation.is_empty() {
+                            prompt.push_str(&format!("      说明: {}\n", example.explanation));
+                        }
+                    }
+                }
+                prompt.push('\n');
             }
-            prompt.push('\n');
         }
 
         if !rule_tools.is_empty() {
             prompt.push_str("### 规则管理\n");
             for tool in rule_tools {
-                prompt.push_str(&format!("- **{}**: {} (别名: {})\n",
+                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
                     tool.name, tool.description, tool.aliases.join(", ")));
+
+                if !tool.examples.is_empty() {
+                    prompt.push_str("  *示例*:\n");
+                    for example in &tool.examples {
+                        prompt.push_str(&format!("    - 用户: \"{}\" → {}\n", example.user_query, example.tool_call));
+                    }
+                }
+                prompt.push('\n');
             }
-            prompt.push('\n');
+        }
+
+        if !agent_tools.is_empty() {
+            prompt.push_str("### AI Agent\n");
+            for tool in agent_tools {
+                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
+                    tool.name, tool.description, tool.aliases.join(", ")));
+
+                if !tool.examples.is_empty() {
+                    prompt.push_str("  *示例*:\n");
+                    for example in &tool.examples {
+                        prompt.push_str(&format!("    - 用户: \"{}\" → {}\n", example.user_query, example.tool_call));
+                    }
+                }
+                prompt.push('\n');
+            }
         }
 
         if !system_tools.is_empty() {
             prompt.push_str("### 系统工具\n");
             for tool in system_tools {
-                prompt.push_str(&format!("- **{}**: {} (别名: {})\n",
+                prompt.push_str(&format!("**{}**: {} (别名: {})\n",
                     tool.name, tool.description, tool.aliases.join(", ")));
             }
             prompt.push('\n');
         }
 
-        // Add usage guidance
+        // Add usage guidance with chain instructions
+        prompt.push_str("## 调用顺序规则\n\n");
+
+        prompt.push_str("### 设备数据查询链路\n");
+        prompt.push_str("**快速路径**（推荐）：\n");
+        prompt.push_str("- **get_device_data(device_id='设备名称')** → 工具会自动解析名称为ID，返回所有当前指标\n");
+        prompt.push_str("- **query_data(device_id='设备名称', metric='实际指标名')** → 查询历史趋势（必须先用get_device_data确认指标名）\n\n");
+
+        prompt.push_str("**完整路径**（当用户问\"有哪些设备\"时）：\n");
+        prompt.push_str("- **device_discover** → 显示所有设备列表\n");
+        prompt.push_str("- **get_device_data(device_id)** → 获取设备详细数据\n\n");
+
+        prompt.push_str("⚠️ 关键要点：\n");
+        prompt.push_str("- ✅ get_device_data 和 query_data 都支持直接使用设备名称（如 'ne101'、'ne101 test'）\n");
+        prompt.push_str("- ❌ 不要跳过 get_device_data 直接调用 query_data（需要先确认指标名称）\n");
+        prompt.push_str("- ❌ query_data 的 metric 参数必须是实际的指标名（如 values.battery），不能是 'battery' 或 '温度'\n\n");
+
         prompt.push_str("## 使用指南\n");
         prompt.push_str("- 多个工具调用可以并行执行，提高响应速度\n");
         prompt.push_str("- 设备别名和工具别名都可以使用，系统会自动识别\n");
-        prompt.push_str("- 直接回答问题，不要过度思考或展开冗长的推理过程\n");
 
         prompt
     }
@@ -1827,58 +2004,76 @@ impl Agent {
         // Tool calls detected - DON'T save the initial assistant message yet
         // We'll save a complete message (with tool_calls and final response) after tool execution
 
-        // Execute tools in PARALLEL for better performance
-        // Independent tools can run simultaneously, dependent tools wait for results
+        // === DEPENDENCY-AWARE TOOL SCHEDULING ===
+        // Group tools into execution batches based on dependencies:
+        // - Tools in the same batch can execute in parallel
+        // - Tools in later batches wait for results from earlier batches
+        // - Mutually exclusive tools are detected and handled
+        let execution_batches = self.build_execution_batches(&tool_calls).await;
+
+        tracing::debug!(
+            count = execution_batches.len(),
+            batches = ?execution_batches.iter().map(|b| b.len()).collect::<Vec<_>>(),
+            "Tool execution batches (dependency-aware)"
+        );
+
         let mut tool_results = Vec::new();
         let mut tools_used = Vec::new();
         let mut tool_calls_with_results = Vec::new();
 
-        // Clone tool_calls for parallel execution
-        let tool_calls_clone = tool_calls.clone();
+        // Execute each batch in sequence
+        for (batch_idx, batch) in execution_batches.iter().enumerate() {
+            if batch.len() > 1 {
+                tracing::debug!(batch = batch_idx, size = batch.len(), "Executing batch in parallel");
+            }
 
-        // Use futures for parallel execution
-        let futures: Vec<_> = tool_calls_clone
-            .into_iter()
-            .map(|tool_call| {
-                let name = tool_call.name.clone();
-                let arguments = tool_call.arguments.clone();
-                let id = tool_call.id.clone();
+            // Clone tool_calls for parallel execution within this batch
+            let batch_clone: Vec<_> = batch.iter().cloned().collect();
 
-                // Spawn each tool execution as a separate task
-                async move {
-                    let result = self.execute_tool(&name, &arguments).await;
-                    (name, id, arguments, result)
-                }
-            })
-            .collect();
+            // Use futures for parallel execution within batch
+            let futures: Vec<_> = batch_clone
+                .into_iter()
+                .map(|tool_call| {
+                    let name = tool_call.name.clone();
+                    let arguments = tool_call.arguments.clone();
+                    let id = tool_call.id.clone();
 
-        // Execute all tools in parallel and wait for completion
-        let results = futures::future::join_all(futures).await;
+                    // Spawn each tool execution as a separate task
+                    async move {
+                        let result = self.execute_tool(&name, &arguments).await;
+                        (name, id, arguments, result)
+                    }
+                })
+                .collect();
 
-        // Process results in original order
-        for (name, id, arguments, result) in results {
-            tracing::debug!(name = %name, result = ?result, "Tool execution result");
-            match result {
-                Ok(ok_result) => {
-                    tools_used.push(name.clone());
-                    tracing::debug!(name = %name, count = tools_used.len(), "Added to tools_used");
-                    tool_results.push((name.clone(), ok_result.clone()));
-                    tool_calls_with_results.push(ToolCall {
-                        name,
-                        id,
-                        arguments,
-                        result: Some(serde_json::json!(ok_result)),
-                    });
-                }
-                Err(e) => {
-                    let error_msg = format!("Error: {}", e);
-                    tool_results.push((name.clone(), error_msg.clone()));
-                    tool_calls_with_results.push(ToolCall {
-                        name,
-                        id,
-                        arguments,
-                        result: Some(serde_json::json!({ "error": error_msg })),
-                    });
+            // Execute all tools in this batch in parallel and wait for completion
+            let results = futures::future::join_all(futures).await;
+
+            // Process results in original order
+            for (name, id, arguments, result) in results {
+                tracing::debug!(name = %name, result = ?result, "Tool execution result");
+                match result {
+                    Ok(ok_result) => {
+                        tools_used.push(name.clone());
+                        tracing::debug!(name = %name, count = tools_used.len(), "Added to tools_used");
+                        tool_results.push((name.clone(), ok_result.clone()));
+                        tool_calls_with_results.push(ToolCall {
+                            name,
+                            id,
+                            arguments,
+                            result: Some(serde_json::json!(ok_result)),
+                        });
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Error: {}", e);
+                        tool_results.push((name.clone(), error_msg.clone()));
+                        tool_calls_with_results.push(ToolCall {
+                            name,
+                            id,
+                            arguments,
+                            result: Some(serde_json::json!({ "error": error_msg })),
+                        });
+                    }
                 }
             }
         }
@@ -1926,7 +2121,7 @@ impl Agent {
     fn map_simplified_parameters(&self, tool_name: &str, arguments: &Value) -> Value {
         if let Some(args_obj) = arguments.as_object() {
             // Special handling for create_rule: convert simplified (name, condition, action) to DSL
-            if tool_name == "create_rule" || tool_name == "rule.from_context" {
+            if tool_name == "create_rule" || tool_name == "rule_from_context" {
                 // Check if we have simplified parameters (condition + action) but no dsl
                 let has_condition = args_obj.contains_key("condition");
                 let has_action = args_obj.contains_key("action");
@@ -1940,7 +2135,7 @@ impl Agent {
                         .unwrap_or("未命名规则");
 
                     let dsl = if has_description {
-                        // rule.from_context: extract structured rule from description
+                        // rule_from_context: extract structured rule from description
                         let description = args_obj.get("description")
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
@@ -1989,65 +2184,8 @@ END"#)
                 }
             }
 
-            // Standard parameter mapping for other tools
-            let mut mapped = serde_json::Map::new();
-
-            for (key, value) in args_obj {
-                // Map simplified names to actual parameter names based on tool
-                let actual_key = match (tool_name, key.as_str()) {
-                    // query_data mappings
-                    ("query_data", "device") => "device_id",
-                    ("query_data", "hours") => {
-                        // Convert hours to start_time timestamp
-                        if let Some(hours) = value.as_i64() {
-                            let end_time = chrono::Utc::now().timestamp();
-                            let start_time = end_time - (hours * 3600);
-                            mapped.insert("end_time".to_string(), serde_json::json!(end_time));
-                            mapped.insert("start_time".to_string(), serde_json::json!(start_time));
-                            continue;
-                        }
-                        "start_time"
-                    }
-                    ("query_data", other) => other,
-
-                    // control_device mappings - FIXED: action maps to command for real tool
-                    ("control_device", "device") => "device_id",
-                    ("control_device", "action") => "command",
-                    ("control_device", "value") => "parameters",
-                    ("control_device", other) => other,
-
-                    // device.control mappings (simplified name, same as control_device)
-                    ("device.control", "device") => "device_id",
-                    ("device.control", "action") => "command",
-                    ("device.control", "value") => "parameters",
-                    ("device.control", other) => other,
-
-                    // create_rule mappings (only used if DSL is already provided)
-                    ("create_rule", "name") => "name",
-                    ("create_rule", "dsl") => "dsl",
-                    ("create_rule", "description") => "description",
-                    ("create_rule", other) => other,
-
-                    // disable_rule / enable_rule: rule -> rule_id
-                    ("disable_rule", "rule") | ("enable_rule", "rule") => "rule_id",
-                    ("disable_rule", other) | ("enable_rule", other) => other,
-
-                    // list_devices mappings
-                    ("list_devices", "type") => "device_type",
-                    ("list_devices", "status") => "status",
-                    ("list_devices", other) => other,
-
-                    // list_rules mappings
-                    ("list_rules", _) => key,
-
-                    // Default: keep original key
-                    (_, other) => other,
-                };
-
-                mapped.insert(actual_key.to_string(), value.clone());
-            }
-
-            serde_json::Value::Object(mapped)
+            // Delegate to mapper.rs for standard parameter mapping
+            map_tool_parameters(tool_name, arguments)
         } else {
             arguments.clone()
         }
@@ -2055,14 +2193,169 @@ END"#)
 
     /// Map simplified tool names to real tool names.
     ///
-    /// Simplified names are used in LLM prompts (e.g., "device.discover")
-    /// while real names are used in ToolRegistry (e.g., "list_devices").
+    /// Simplified names are used in LLM prompts (e.g., "device_discover")
+    /// Real names are the same as simplified names since we unified to underscore naming.
     ///
     /// This now uses the unified `ToolNameMapper` to ensure consistency
     /// across the codebase.
     fn resolve_tool_name(&self, simplified_name: &str) -> String {
         // Delegate to the unified mapper
         crate::tools::resolve_tool_name(simplified_name)
+    }
+
+    /// Build execution batches based on tool dependencies.
+    ///
+    /// Returns a Vec of batches where:
+    /// - Each batch contains tools that can be executed in parallel
+    /// - Later batches depend on results from earlier batches
+    /// - Tools with dependencies are scheduled after their prerequisites
+    ///
+    /// Uses ToolRelationships metadata from tool definitions:
+    /// - `call_after`: Prerequisites that must execute first
+    /// - `output_to`: Tools that depend on this tool's output
+    /// - `exclusive_with`: Tools that cannot run together
+    async fn build_execution_batches(&self, tool_calls: &[ToolCall]) -> Vec<Vec<ToolCall>> {
+        use std::collections::{HashMap, HashSet};
+
+        if tool_calls.is_empty() {
+            return vec![];
+        }
+
+        // If only one tool, no batching needed
+        if tool_calls.len() == 1 {
+            return vec![tool_calls.to_vec()];
+        }
+
+        // Build maps for normalized tool names and relationships
+        // We need to track both original names (for ToolCall cloning) and resolved names (for dependency resolution)
+        let mut original_to_resolved: HashMap<String, String> = HashMap::new();
+        let mut resolved_to_original: HashMap<String, String> = HashMap::new();
+
+        // First pass: resolve all tool names
+        for tool_call in tool_calls {
+            let real_name = self.resolve_tool_name(&tool_call.name);
+            original_to_resolved.insert(tool_call.name.clone(), real_name.clone());
+            resolved_to_original.entry(real_name).or_insert_with(|| tool_call.name.clone());
+        }
+
+        // Build relationships map using RESOLVED names as keys
+        let mut relationships: HashMap<String, neomind_core::tools::ToolRelationships> = HashMap::new();
+        for tool_call in tool_calls {
+            let real_name = self.resolve_tool_name(&tool_call.name);
+            if let Some(tool) = self.tools.get(&real_name) {
+                relationships.insert(real_name, tool.definition().relationships);
+            } else {
+                // No relationships found, use default
+                relationships.insert(real_name, neomind_core::tools::ToolRelationships::default());
+            }
+        }
+
+        // Create a resolved name to ToolCall map
+        let mut resolved_to_call: HashMap<String, ToolCall> = HashMap::new();
+        for tool_call in tool_calls {
+            let real_name = self.resolve_tool_name(&tool_call.name);
+            resolved_to_call.insert(real_name, tool_call.clone());
+        }
+
+        // Track which tools are in each batch (using resolved names)
+        let mut batches: Vec<Vec<ToolCall>> = vec![];
+        let mut placed_resolved: HashSet<String> = HashSet::new();
+
+        // Kahn's algorithm for topological sorting
+        loop {
+            let mut current_batch = Vec::new();
+            let mut current_batch_resolved: HashSet<String> = HashSet::new();
+
+            for tool_call in tool_calls {
+                let resolved_name = &original_to_resolved[&tool_call.name];
+
+                // Skip if already placed
+                if placed_resolved.contains(resolved_name) {
+                    continue;
+                }
+
+                // Get dependencies (call_after)
+                let deps = relationships.get(resolved_name)
+                    .map(|r| r.call_after.clone())
+                    .unwrap_or_default();
+
+                // Check if all dependencies are satisfied
+                // Dependencies are specified using resolved tool names
+                let deps_satisfied = deps.iter().all(|dep| {
+                    // Resolve the dependency name to handle any aliases in the dependency spec
+                    let resolved_dep = self.resolve_tool_name(dep);
+                    // Dependency is satisfied if:
+                    // 1. It's not in our current tool_calls (not being executed)
+                    // 2. Or it's already been placed in a previous batch
+                    !resolved_to_call.contains_key(&resolved_dep) || placed_resolved.contains(&resolved_dep)
+                });
+
+                if !deps_satisfied {
+                    continue; // Wait for dependencies
+                }
+
+                // Check for mutual exclusivity with tools in current batch
+                let exclusive_with = relationships.get(resolved_name)
+                    .map(|r| r.exclusive_with.clone())
+                    .unwrap_or_default();
+
+                let conflicts_with_batch = exclusive_with.iter()
+                    .any(|excl| {
+                        let resolved_excl = self.resolve_tool_name(excl);
+                        current_batch_resolved.contains(&resolved_excl)
+                    });
+
+                if conflicts_with_batch {
+                    continue; // Can't run with current batch, try next batch
+                }
+
+                // Can add to current batch
+                current_batch.push(tool_call.clone());
+                current_batch_resolved.insert(resolved_name.clone());
+            }
+
+            if current_batch.is_empty() {
+                // No more tools can be placed
+                break;
+            }
+
+            // Mark tools as placed
+            for name in current_batch_resolved {
+                placed_resolved.insert(name);
+            }
+
+            batches.push(current_batch);
+
+            // Exit if all tools are placed
+            if placed_resolved.len() == tool_calls.len() {
+                break;
+            }
+        }
+
+        // Handle circular dependency case (tools still not placed)
+        if placed_resolved.len() < tool_calls.len() {
+            tracing::warn!(
+                placed = placed_resolved.len(),
+                total = tool_calls.len(),
+                "Circular dependency detected, remaining tools will execute in single batch"
+            );
+            // Add remaining tools as a final batch
+            let remaining: Vec<_> = tool_calls
+                .iter()
+                .filter(|tc| !placed_resolved.contains(&original_to_resolved[&tc.name]))
+                .cloned()
+                .collect();
+            if !remaining.is_empty() {
+                batches.push(remaining);
+            }
+        }
+
+        // If batching didn't work (shouldn't happen), fall back to single batch
+        if batches.is_empty() {
+            batches.push(tool_calls.to_vec());
+        }
+
+        batches
     }
 
     /// Sanitize tool output for LLM consumption.
@@ -2076,6 +2369,7 @@ END"#)
     /// - **Large strings**: Truncate with preview
     /// - **Arrays**: Keep first N items + count of remaining
     /// - **Objects**: Keep small fields, truncate large fields
+    /// - **device_discover**: Always preserve summary and device list with id/name/type
     ///
     /// This preserves data structure while avoiding token waste on unusable data.
     fn sanitize_tool_output_for_llm(
@@ -2086,6 +2380,52 @@ END"#)
         const MAX_SIZE: usize = 10_240; // 10KB
         const MAX_PREVIEW_ITEMS: usize = 5; // Keep first 5 array items
         const MAX_STRING_PREVIEW: usize = 500; // 500 chars for string preview
+
+        // Special handling for device_discover - preserve critical structure
+        if tool_name == "device_discover" {
+            if let Some(obj) = data.as_object() {
+                // Always preserve summary - it has accurate counts
+                let summary = obj.get("summary").cloned().unwrap_or_else(|| serde_json::json!({}));
+
+                // Extract minimal device info: id, name, type, status
+                let devices: Vec<serde_json::Value> = obj.get("groups")
+                    .and_then(|g| g.as_array())
+                    .iter()
+                    .flat_map(|groups| groups.iter())
+                    .filter_map(|g| g.get("devices").and_then(|d| d.as_array()))
+                    .flat_map(|devices| devices.iter())
+                    .map(|device| {
+                        serde_json::json!({
+                            "id": device.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                            "name": device.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            "device_type": device.get("device_type").and_then(|v| v.as_str()).unwrap_or(""),
+                            "status": device.get("status").and_then(|v| v.as_str()).unwrap_or("unknown")
+                        })
+                    })
+                    .collect();
+
+                let compact = serde_json::json!({
+                    "summary": summary,
+                    "device_count": devices.len(),
+                    "devices": devices
+                });
+
+                let result = serde_json::to_string(&compact).unwrap_or_else(|_| "null".to_string());
+                let original_size = serde_json::to_string(data).unwrap_or_default().len();
+
+                if result.len() != original_size {
+                    tracing::info!(
+                        session_id = %self.session_id,
+                        tool = %tool_name,
+                        original_bytes = original_size,
+                        compressed_bytes = result.len(),
+                        "device_discover output compressed for LLM"
+                    );
+                }
+
+                return result;
+            }
+        }
 
         // Recursively truncate value to fit within MAX_SIZE
         let truncated = self.truncate_value(data, MAX_SIZE, MAX_PREVIEW_ITEMS, MAX_STRING_PREVIEW);
@@ -2224,6 +2564,19 @@ END"#)
         const MAX_RETRIES: u32 = 2;
         let start = std::time::Instant::now();
 
+        // === CACHE: Check if result is cached ===
+        let args_key = arguments.to_string();
+        if let Some(cached_result) = self.tool_result_cache.read().await.get(name, &args_key) {
+            let elapsed = start.elapsed();
+            tracing::debug!(
+                session_id = %self.session_id,
+                tool = %name,
+                elapsed_ms = elapsed.as_millis(),
+                "Tool result served from cache"
+            );
+            return Ok(cached_result);
+        }
+
         // Map simplified tool name to real tool name
         let real_tool_name = self.resolve_tool_name(name);
 
@@ -2287,7 +2640,12 @@ END"#)
                     );
 
                     // Sanitize output to avoid sending large data (base64, files, etc.) to LLM
-                    return Ok(self.sanitize_tool_output_for_llm(&real_tool_name, &output.data));
+                    let sanitized = self.sanitize_tool_output_for_llm(&real_tool_name, &output.data);
+
+                    // === CACHE: Store successful result ===
+                    self.tool_result_cache.write().await.put(name, args_key, sanitized.clone());
+
+                    return Ok(sanitized);
                 }
                 Err(e) => {
                     let last_error = e.to_string();
@@ -2474,15 +2832,15 @@ mod tests {
     use neomind_tools::{Tool, Result, ToolOutput, ToolError};
     use serde_json::json;
 
-    /// Simple mock list_devices tool for testing
-    struct MockListDevicesTool;
+    /// Simple mock device_discover tool for testing
+    struct MockDeviceDiscoverTool;
     #[async_trait::async_trait]
-    impl Tool for MockListDevicesTool {
-        fn name(&self) -> &str { "list_devices" }
+    impl Tool for MockDeviceDiscoverTool {
+        fn name(&self) -> &str { "device_discover" }
         fn description(&self) -> &str { "List all devices (mock for testing)" }
         fn parameters(&self) -> serde_json::Value { json!({}) }
         async fn execute(&self, _args: serde_json::Value) -> Result<ToolOutput> {
-            let data = json!({"devices": [{"id": "mock_device_1", "name": "Mock Device"}]});
+            let data = json!({"devices": [{"id": "mock_device_1", "name": "模拟设备"}]});
             Ok(ToolOutput::success(data))
         }
     }
@@ -2533,7 +2891,7 @@ mod tests {
         let mut registry = ToolRegistryBuilder::new().build();
 
         // Register mock tools
-        registry.register(std::sync::Arc::new(MockListDevicesTool));
+        registry.register(std::sync::Arc::new(MockDeviceDiscoverTool));
         registry.register(std::sync::Arc::new(MockListRulesTool));
         registry.register(std::sync::Arc::new(MockQueryDataTool));
         registry.register(std::sync::Arc::new(MockGreetTool));
@@ -2587,7 +2945,7 @@ mod tests {
         let tools = agent.available_tools();
 
         assert!(!tools.is_empty());
-        assert!(tools.contains(&"list_devices".to_string()));
+        assert!(tools.contains(&"device_discover".to_string()));
         assert!(tools.contains(&"list_rules".to_string()));
     }
 
@@ -2597,7 +2955,7 @@ mod tests {
         let response = agent.process("列出所有设备").await.unwrap();
 
         assert!(response.message.content.contains("设备"));
-        assert!(response.tools_used.contains(&"list_devices".to_string()));
+        assert!(response.tools_used.contains(&"device_discover".to_string()));
     }
 
     #[tokio::test]

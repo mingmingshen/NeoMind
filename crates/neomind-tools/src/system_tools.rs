@@ -248,7 +248,7 @@ impl Tool for SystemHelpTool {
             ],
             relationships: ToolRelationships {
                 call_after: vec![],
-                output_to: vec!["list_devices".to_string(), "list_agents".to_string(), "list_rules".to_string()],
+                output_to: vec!["device_discover".to_string(), "list_agents".to_string(), "list_rules".to_string()],
                 exclusive_with: vec![],
             },
             deprecated: false,
@@ -329,9 +329,9 @@ impl SystemHelpTool {
             "title": "设备管理功能",
             "description": "管理连接到系统的各类IoT设备",
             "available_commands": [
-                {"command": "list_devices", "description": "查看所有已注册的设备"},
+                {"command": "device_discover", "description": "查看所有已注册的设备"},
                 {"command": "get_device_data", "description": "获取设备的最新数据"},
-                {"command": "control_device", "description": "控制设备（开关、设置参数等）"},
+                {"command": "device_control", "description": "控制设备（开关、设置参数等）"},
                 {"command": "device_analyze", "description": "分析设备数据趋势"}
             ],
             "example_questions": [

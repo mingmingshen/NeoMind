@@ -4,7 +4,6 @@
 //! the NeoMind event bus for tracking tool calls, recording history,
 //! and handling errors.
 
-pub mod automation;
 pub mod dsl;
 pub mod event_integration;
 pub mod interaction;
@@ -41,10 +40,6 @@ pub use rule_gen::{
 pub use tool_search::{ToolSearchResult, ToolSearchTool};
 
 pub use think::{ThinkStorage, ThinkTool, ThoughtRecord};
-
-pub use automation::{
-    CreateAutomationTool, ListAutomationsTool, TriggerAutomationTool, DeleteAutomationTool,
-};
 
 pub use mapper::{
     ToolNameMapper, get_mapper, map_tool_parameters, resolve_tool_name,

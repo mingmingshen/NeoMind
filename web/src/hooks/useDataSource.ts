@@ -854,6 +854,7 @@ export function useDataSource<T = unknown>(
 
   // Ref to track if initial system fetch has completed
   const initialSystemFetchDoneRef = useRef(false)
+  const initialExtensionFetchDoneRef = useRef(false)
 
   // Zustand subscribe only passes (state), not (state, prevState). Keep previous state for comparison.
   const prevStoreStateRef = useRef<{ devices: NeoMindStore['devices'] } | null>(null)
@@ -930,18 +931,14 @@ export function useDataSource<T = unknown>(
     }
 
     try {
-      // Filter out telemetry and system sources - they are handled separately by fetch effects
-      const nonTelemetrySources = currentDataSources.filter((ds) => ds.type !== 'telemetry' && ds.type !== 'system')
+      // Filter out telemetry, system, and extension sources - they are handled separately by fetch effects
+      const nonTelemetrySources = currentDataSources.filter((ds) => ds.type !== 'telemetry' && ds.type !== 'system' && ds.type !== 'extension')
 
       // Only process non-telemetry sources here
       const results = nonTelemetrySources.map((ds) => {
         let result: unknown
 
         switch (ds.type) {
-          case 'static':
-            result = ds.staticValue
-            break
-
           case 'device': {
             const deviceId = ds.deviceId!
             const property = ds.property as string | undefined
@@ -1078,28 +1075,6 @@ export function useDataSource<T = unknown>(
               }
             }
             result = safeExtractValue(result as unknown, (fallbackVal ?? '-') as any)
-            break
-          }
-
-          case 'api':
-          case 'websocket':
-            result = fallbackVal ?? 0
-            break
-
-          case 'computed': {
-            const expression = (ds.params?.expression as string) || '0'
-            try {
-              const tokens = expression.match(/(\d+\.?\d*|[+\-*/])/g)
-              if (tokens) {
-                 
-                result = new Function('return ' + tokens.join(' '))()
-              } else {
-                result = 0
-              }
-            } catch {
-              result = 0
-            }
-            result = safeExtractValue(result, 0)
             break
           }
 
@@ -1322,15 +1297,16 @@ export function useDataSource<T = unknown>(
   }, [dataSources.length, enabled])
 
   // WebSocket events handling
-  // Include telemetry and computed types to enable real-time updates
+  // Include telemetry types to enable real-time updates
   const needsWebSocket = dataSources.some((ds) =>
-    ds.type === 'websocket' ||
     ds.type === 'device' ||
     ds.type === 'metric' ||
     ds.type === 'command' ||
-    ds.type === 'telemetry' ||
-    ds.type === 'computed'
+    ds.type === 'telemetry'
   )
+
+  // Extension sources need WebSocket for real-time updates
+  const needsExtensionWebSocket = dataSources.some((ds) => ds.type === 'extension')
 
   // Use device category instead of specific event types to receive all device events
   // This ensures we get events regardless of the exact type format (device.metric vs DeviceMetric)
@@ -1345,6 +1321,23 @@ export function useDataSource<T = unknown>(
       }
     },
   })
+
+  // Subscribe to extension events for real-time extension metric updates
+  const { events: extensionEvents } = useEvents({
+    enabled: enabled && needsExtensionWebSocket,
+    category: 'extension',
+    onConnected: (connected) => {
+      if (!connected) {
+        // Clear extension event processing state
+        extensionProcessedEventsRef.current.clear()
+        extensionLastProcessedEventCountRef.current = 0
+      }
+    },
+  })
+
+  // Track extension event processing state
+  const extensionProcessedEventsRef = useRef<Set<string>>(new Set())
+  const extensionLastProcessedEventCountRef = useRef(0)
 
   // Create a stable key from events that detects actual changes
   // Using last event ID + length ensures we detect new events even if total length stays same
@@ -1442,13 +1435,6 @@ export function useDataSource<T = unknown>(
           ds.type === 'telemetry' &&
           hasDeviceId &&
           eventData.device_id === ds.deviceId &&
-          isDeviceMetricEvent
-        ) {
-          shouldUpdate = true
-          break
-        } else if (
-          // Computed sources: trigger update when any relevant device data changes
-          ds.type === 'computed' &&
           isDeviceMetricEvent
         ) {
           shouldUpdate = true
@@ -1612,10 +1598,6 @@ export function useDataSource<T = unknown>(
           let result: unknown
 
           switch (ds.type) {
-            case 'static':
-              result = ds.staticValue
-              break
-
             case 'device': {
               const deviceId = ds.deviceId!
               const property = ds.property as string | undefined
@@ -1830,6 +1812,107 @@ export function useDataSource<T = unknown>(
       }
     }
   }, [enabled, dataSourceKey, eventsKey])  // eventsKey ensures effect runs when new events arrive
+
+  // Handle extension events for real-time updates
+  // Create a stable key from extension events
+  const extensionEventsKey = useMemo(() => {
+    if (extensionEvents.length === 0) return 'empty'
+    const lastEvent = extensionEvents[extensionEvents.length - 1]
+    return `ext-events-${extensionEvents.length}-${lastEvent?.id || 'unknown'}`
+  }, [extensionEvents])
+
+  // Extract relevant extension IDs for filtering
+  const relevantExtensionIds = useMemo(() => {
+    const ids = new Set(
+      dataSources
+        .map((ds) => ds.type === 'extension' ? (ds as any).extensionId : null)
+        .filter(Boolean) as string[]
+    )
+    return ids
+  }, [dataSources])
+
+  useEffect(() => {
+    if (!needsExtensionWebSocket || !enabled || extensionEvents.length === 0) return
+
+    // Only process new events since the last run
+    const newEvents = extensionEvents.slice(extensionLastProcessedEventCountRef.current)
+    if (newEvents.length === 0) return
+
+    // Update the processed count
+    extensionLastProcessedEventCountRef.current = extensionEvents.length
+
+    // Extract relevant extension metrics from data sources
+    const extensionDataSources = dataSources.filter((ds) => ds.type === 'extension') as Array<{
+      extensionId: string
+      extensionMetric: string
+    }>
+
+    if (extensionDataSources.length === 0) return
+
+    // Process each new extension event
+    for (const latestEvent of newEvents) {
+      const eventData = (latestEvent as any).data || latestEvent
+      const eventType = (latestEvent as any).type
+
+      // Skip non-extension events
+      if (eventType !== 'ExtensionOutput') continue
+
+      // Skip events we've already processed
+      const uniqueEventId = latestEvent.id || `${eventType}_${Date.now()}_${Math.random()}`
+      if (extensionProcessedEventsRef.current.has(uniqueEventId)) continue
+      extensionProcessedEventsRef.current.add(uniqueEventId)
+
+      // Limit the processed events set size
+      if (extensionProcessedEventsRef.current.size > 100) {
+        const entries = Array.from(extensionProcessedEventsRef.current)
+        extensionProcessedEventsRef.current = new Set(entries.slice(-50))
+      }
+
+      // Check if event matches any of our extension data sources
+      const eventExtensionId = eventData.extension_id as string
+      const eventOutputName = eventData.output_name as string
+
+      if (!relevantExtensionIds.has(eventExtensionId)) continue
+
+      // Find matching data sources
+      const matchingSources = extensionDataSources.filter((ds) => {
+        if (ds.extensionId !== eventExtensionId) return false
+
+        // Parse extensionMetric format (produce:metric or just metric)
+        const parts = ds.extensionMetric.split(':')
+        const metricName = parts.length > 1 ? parts[1] : parts[0]
+
+        return metricName === eventOutputName
+      })
+
+      if (matchingSources.length > 0) {
+        // Trigger data refresh for matching sources
+        // The current extension fetching logic will pick up the new data
+        const { transform: transformFn } = optionsRef.current
+        const currentData = dataRef.current as any
+
+        // Update the current data with the new value from the event
+        let newData = currentData
+        const eventValue = eventData.value
+
+        // Handle both single value and array data formats
+        if (Array.isArray(currentData)) {
+          // Prepend new value to array
+          newData = [{ timestamp: Date.now(), value: eventValue }, ...currentData]
+        } else if (typeof currentData === 'object' && currentData !== null) {
+          // Single value update
+          newData = eventValue
+        } else {
+          // Replace with new value
+          newData = eventValue
+        }
+
+        const transformedData = transformFn ? transformFn(newData) : newData
+        setData(transformedData)
+        setLastUpdate(Date.now())
+      }
+    }
+  }, [enabled, dataSourceKey, extensionEventsKey, needsExtensionWebSocket, relevantExtensionIds.size])
 
   // Telemetry data fetching (for historical time-series data)
   // Use stable key for dependency to prevent infinite re-renders
@@ -2279,6 +2362,171 @@ export function useDataSource<T = unknown>(
       }
     }
   }, [systemKey, enabled])
+
+  // Extension data fetching (metrics from provider/hybrid extensions)
+  const extensionKey = useMemo(() => {
+    return dataSources
+      .filter((ds) => ds.type === 'extension')
+      .map((ds) => createStableKey({
+        extensionId: ds.extensionId,
+        extensionMetric: ds.extensionMetric,
+      }))
+      .join('|')
+  }, [dataSources])
+
+  const extensionDataSources = useMemo(() => {
+    return dataSources.filter((ds) => ds.type === 'extension')
+  }, [dataSources])
+
+  const hasExtensionSource = extensionDataSources.length > 0
+
+  useEffect(() => {
+    if (!hasExtensionSource || !enabled) {
+      // Clean up any existing interval when disabled
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      return
+    }
+
+    const fetchExtensionData = async () => {
+      // Only show loading state on initial fetch, not on interval refreshes
+      if (!initialExtensionFetchDoneRef.current) {
+        setLoading(true)
+      }
+      setError(null)
+
+      try {
+        const api = (await import('@/lib/api')).api
+        const results = await Promise.all(
+          extensionDataSources.map(async (ds) => {
+            const extensionId = ds.extensionId
+            const metric = ds.extensionMetric
+            if (!extensionId || !metric) {
+              return { data: null }
+            }
+
+            // Check if this is a V2 data source (format: command:field)
+            const isV2 = metric.includes(':')
+            const parts = metric.split(':')
+
+            try {
+              if (isV2 && parts.length >= 2) {
+                // V2 data source: extension:{extension_id}:{command}:{field}
+                // The metric format is "command:field"
+                const command = parts[0]
+                const field = parts[1]
+
+                // Special handling for extension commands (non-produce commands)
+                // For commands like "get_counter", "hello", we execute them directly
+                // For "produce:*", we query time-series data
+                if (command !== 'produce') {
+                  // This is an extension command - execute it to get the result
+                  try {
+                    const result = await api.executeExtensionCommand(extensionId, command, {})
+                    // Extract the result field if it exists
+                    const resultData = (result as Record<string, unknown>).result ?? result
+                    // If the field is 'result', return the whole result, otherwise extract the field
+                    if (field === 'result') {
+                      return { data: resultData, success: true }
+                    } else if (typeof resultData === 'object' && resultData !== null) {
+                      const fieldValue = (resultData as Record<string, unknown>)[field]
+                      return { data: fieldValue ?? resultData, success: true }
+                    }
+                    return { data: resultData, success: true }
+                  } catch (cmdErr) {
+                    // Command execution failed, try querying time-series data as fallback
+                    const result = await api.queryData({
+                      extension_id: extensionId,
+                      command,
+                      field,
+                      start_time: Date.now() - (24 * 60 * 60 * 1000),
+                      end_time: Date.now(),
+                      limit: 1,
+                    })
+                    if (result && result.data_points && result.data_points.length > 0) {
+                      return { data: result.data_points[0].value, success: true }
+                    }
+                    return { data: null, success: false }
+                  }
+                }
+
+                // For "produce:*" format, query time-series data
+                const endTime = Date.now()
+                const startTime = endTime - (24 * 60 * 60 * 1000) // Last 24 hours
+
+                const result = await api.queryData({
+                  extension_id: extensionId,
+                  command,
+                  field,
+                  start_time: startTime,
+                  end_time: endTime,
+                  limit: 1,
+                })
+
+                // Result contains data_points array
+                if (result && result.data_points && result.data_points.length > 0) {
+                  return { data: result.data_points[0].value, success: true }
+                }
+                return { data: null, success: false }
+              } else {
+                // V1 data source - try to get extension stats
+                const stats = await api.getExtensionStats(extensionId)
+                // Check if the metric exists in the stats
+                if (stats && typeof stats === 'object' && metric in (stats as unknown as Record<string, unknown>)) {
+                  return { data: (stats as unknown as Record<string, unknown>)[metric], success: true }
+                }
+                return { data: null, success: false }
+              }
+            } catch {
+              return { data: null, success: false }
+            }
+          })
+        )
+
+        // Combine results
+        let finalData: unknown
+        if (results.length > 1) {
+          finalData = results.map((r) => r.data)
+        } else {
+          finalData = results[0]?.data ?? null
+        }
+
+        const { transform: transformFn } = optionsRef.current
+        const transformedData = transformFn ? transformFn(finalData) : (finalData as T)
+        setData(transformedData)
+        setLastUpdate(Date.now())
+        initialExtensionFetchDoneRef.current = true
+      } catch (err) {
+        logError(err, { operation: 'Fetch extension data' })
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch extension data'
+        setError(errorMessage)
+        initialExtensionFetchDoneRef.current = true
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchExtensionData()
+
+    // Set up refresh interval if specified (refresh is in seconds, convert to ms)
+    const refreshIntervals = extensionDataSources.map((ds) => ds.refresh).filter(Boolean) as number[]
+    const minRefreshSeconds = refreshIntervals.length > 0 ? Math.min(...refreshIntervals) : null
+
+    if (minRefreshSeconds) {
+      const minRefreshMs = minRefreshSeconds * 1000
+      intervalRef.current = setInterval(fetchExtensionData, minRefreshMs)
+    }
+
+    // Cleanup function - always clear interval on unmount or dependency change
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [extensionKey, enabled])
 
   // Cleanup effect for telemetry refresh timer
   useEffect(() => {

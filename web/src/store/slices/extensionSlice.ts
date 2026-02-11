@@ -5,16 +5,29 @@
  *
  * Matches backend API: crates/api/src/handlers/extensions.rs
  *
- * This replaces the legacy plugin system for dynamically loaded code modules.
- * Device adapters are built-in (mqtt, http, webhook) and managed via the devices API.
+ * Unified extension system - command-based API where each extension
+ * exposes commands with JSON Schema input/output definitions.
  */
 
 import type { StateCreator } from 'zustand'
-import type { Extension, ExtensionStatsDto, ExtensionTypeDto, ExtensionDiscoveryResult } from '@/types'
+import type {
+  Extension,
+  ExtensionStatsDto,
+  ExtensionTypeDto,
+  ExtensionDiscoveryResult,
+  ExtensionCommandDescriptor,
+  ExtensionDataSourceInfo,
+  ExtensionExecuteRequest,
+  ExtensionExecuteResponse,
+  ExtensionQueryParams,
+  ExtensionQueryResult,
+  TransformDataSourceInfo,
+} from '@/types'
 import { api } from '@/lib/api'
 import { logError } from '@/lib/errors'
 
 export interface ExtensionState {
+  // Unified Extension State
   extensions: Extension[]
   selectedExtension: Extension | null
   extensionsLoading: boolean
@@ -22,6 +35,10 @@ export interface ExtensionState {
   discovering: boolean
   extensionStats: Record<string, ExtensionStatsDto>
   extensionTypes: ExtensionTypeDto[]
+
+  // Commands and data sources (cached by extension_id)
+  commands: Record<string, ExtensionCommandDescriptor[]>
+  dataSources: Record<string, ExtensionDataSourceInfo[]>
 }
 
 export interface ExtensionSlice extends ExtensionState {
@@ -30,9 +47,9 @@ export interface ExtensionSlice extends ExtensionState {
   setExtensionDialogOpen: (open: boolean) => void
 
   // Extension actions
-  fetchExtensions: (params?: { extension_type?: string; state?: string }) => Promise<void>
+  fetchExtensions: (params?: { state?: string }) => Promise<void>
   getExtension: (id: string) => Promise<Extension | null>
-  registerExtension: (extension: { file_path: string; auto_start?: boolean }) => Promise<boolean>
+  registerExtension: (extension: { file_path: string; auto_start?: boolean }) => Promise<void>
   unregisterExtension: (id: string) => Promise<boolean>
   startExtension: (id: string) => Promise<boolean>
   stopExtension: (id: string) => Promise<boolean>
@@ -41,6 +58,17 @@ export interface ExtensionSlice extends ExtensionState {
   discoverExtensions: () => Promise<{ discovered: number; results: ExtensionDiscoveryResult[] }>
   fetchExtensionTypes: () => Promise<void>
   executeExtensionCommand: (id: string, command: string, args?: Record<string, unknown>) => Promise<{ success: boolean; result?: unknown; message?: string }>
+
+  // Command and data source actions
+  fetchCommands: (id: string) => Promise<ExtensionCommandDescriptor[]>
+  executeCommand: (id: string, request: ExtensionExecuteRequest) => Promise<ExtensionExecuteResponse>
+  fetchDataSources: (id: string) => Promise<ExtensionDataSourceInfo[]>
+  fetchAllDataSources: () => Promise<ExtensionDataSourceInfo[]>
+  queryData: (params: ExtensionQueryParams) => Promise<ExtensionQueryResult>
+
+  // Convenience aliases for backward compatibility
+  extensionDataSources: ExtensionDataSourceInfo[]
+  fetchExtensionDataSources: () => Promise<ExtensionDataSourceInfo[]>
 }
 
 export const createExtensionSlice: StateCreator<
@@ -57,6 +85,9 @@ export const createExtensionSlice: StateCreator<
   discovering: false,
   extensionStats: {},
   extensionTypes: [],
+  commands: {},
+  dataSources: {},
+  extensionDataSources: [],
 
   // Dialog actions
   setSelectedExtension: (extension) => set({ selectedExtension: extension }),
@@ -64,23 +95,29 @@ export const createExtensionSlice: StateCreator<
 
   // ========== Extension Actions ==========
 
-  // Fetch all extensions
-  // Backend: GET /api/extensions -> ExtensionDto[]
+  // Fetch all extensions with their commands
+  // Backend: GET /api/extensions -> Extension[]
   fetchExtensions: async (params) => {
     set({ extensionsLoading: true })
     try {
       const extensions = await api.listExtensions(params)
       set({ extensions })
+      // Cache commands for each extension
+      const commandsMap: Record<string, ExtensionCommandDescriptor[]> = {}
+      extensions.forEach((ext) => {
+        commandsMap[ext.id] = ext.commands
+      })
+      set({ commands: commandsMap })
     } catch (error) {
       logError(error, { operation: 'Fetch extensions' })
-      set({ extensions: [] })
+      set({ extensions: [], commands: {} })
     } finally {
       set({ extensionsLoading: false })
     }
   },
 
   // Get single extension
-  // Backend: GET /api/extensions/:id -> ExtensionDto
+  // Backend: GET /api/extensions/:id -> Extension
   getExtension: async (id) => {
     try {
       const extension = await api.getExtension(id)
@@ -92,17 +129,12 @@ export const createExtensionSlice: StateCreator<
   },
 
   // Register new extension
-  // Backend: POST /api/extensions -> { message, extension_id, name, version, extension_type, note }
+  // Backend: POST /api/extensions -> { message, extension_id, name, version, auto_start, note }
+  // Throws on error with message from API
   registerExtension: async (extension) => {
-    try {
-      await api.registerExtension(extension)
-      // Refresh the list after successful registration
-      await get().fetchExtensions()
-      return true
-    } catch (error) {
-      logError(error, { operation: 'Register extension' })
-      return false
-    }
+    await api.registerExtension(extension)
+    // Refresh the list after successful registration
+    await get().fetchExtensions()
   },
 
   // Unregister extension
@@ -116,6 +148,12 @@ export const createExtensionSlice: StateCreator<
         extensionStats: Object.fromEntries(
           Object.entries(state.extensionStats).filter(([key]) => key !== id)
         ) as Record<string, ExtensionStatsDto>,
+        commands: Object.fromEntries(
+          Object.entries(state.commands).filter(([key]) => key !== id)
+        ),
+        dataSources: Object.fromEntries(
+          Object.entries(state.dataSources).filter(([key]) => key !== id)
+        ),
       }))
       return true
     } catch (error) {
@@ -228,5 +266,111 @@ export const createExtensionSlice: StateCreator<
       logError(error, { operation: 'Execute extension command' })
       return { success: false, message: 'Command execution failed' }
     }
+  },
+
+  // ========== Command and Data Source Actions ==========
+
+  // Fetch commands for an extension
+  // Backend: GET /api/extensions/:id/commands -> CommandDescriptor[]
+  fetchCommands: async (id) => {
+    try {
+      const commands = await api.listCommands(id)
+      // Cache the commands
+      set((state) => ({
+        commands: { ...state.commands, [id]: commands },
+      }))
+      return commands
+    } catch (error) {
+      logError(error, { operation: 'Fetch commands' })
+      return []
+    }
+  },
+
+  // Execute an extension command
+  // Backend: POST /api/extensions/:id/command -> ExtensionExecuteResponse
+  executeCommand: async (id, request) => {
+    try {
+      const response = await api.executeCommand(id, request)
+      return response
+    } catch (error) {
+      logError(error, { operation: 'Execute command' })
+      return {
+        success: false,
+        output: {},
+        outputs: [],
+        duration_ms: 0,
+        error: 'Command execution failed',
+      }
+    }
+  },
+
+  // Fetch data sources for an extension
+  // Backend: GET /api/extensions/:id/datasources -> ExtensionDataSourceInfo[]
+  fetchDataSources: async (id) => {
+    try {
+      const dataSources = await api.listDataSources(id)
+      // Cache the data sources
+      set((state) => ({
+        dataSources: { ...state.dataSources, [id]: dataSources },
+      }))
+      return dataSources
+    } catch (error) {
+      logError(error, { operation: 'Fetch data sources' })
+      return []
+    }
+  },
+
+  // Fetch all data sources (for dashboard, rules, etc.)
+  // Backend: GET /api/extensions/datasources -> (ExtensionDataSourceInfo | TransformDataSourceInfo)[]
+  fetchAllDataSources: async () => {
+    try {
+      const allSources = await api.listAllDataSources()
+      // Filter only extension data sources (exclude transform data sources)
+      const dataSources = allSources.filter(
+        (source): source is ExtensionDataSourceInfo => 'extension_id' in source
+      )
+      // Group by extension_id for caching
+      const grouped: Record<string, ExtensionDataSourceInfo[]> = {}
+      dataSources.forEach((ds) => {
+        if (!grouped[ds.extension_id]) {
+          grouped[ds.extension_id] = []
+        }
+        grouped[ds.extension_id].push(ds)
+      })
+      set((state) => ({
+        dataSources: { ...state.dataSources, ...grouped },
+        // Also update the flat array for convenience
+        extensionDataSources: dataSources,
+      }))
+      return dataSources
+    } catch (error) {
+      logError(error, { operation: 'Fetch all data sources' })
+      return []
+    }
+  },
+
+  // Query data from an extension
+  // Backend: POST /api/extensions/query -> ExtensionQueryResult
+  queryData: async (params) => {
+    try {
+      const result = await api.queryData(params)
+      return result
+    } catch (error) {
+      logError(error, { operation: 'Query data' })
+      return {
+        source_id: '',
+        data_points: [],
+      }
+    }
+  },
+
+  // ========== Convenience Properties ==========
+
+  // Alias for fetchAllDataSources
+  fetchExtensionDataSources: async () => {
+    const result = await get().fetchAllDataSources()
+    // Update the flat array
+    set({ extensionDataSources: result })
+    return result
   },
 })

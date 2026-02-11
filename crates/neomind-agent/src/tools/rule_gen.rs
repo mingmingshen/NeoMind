@@ -216,17 +216,28 @@ impl ValidateRuleDslTool {
 
                 // Extract device info from condition for validation
                 let (device_id, metric) = match &rule.condition {
-                    RuleCondition::Simple { device_id, metric, .. } |
-                    RuleCondition::Range { device_id, metric, .. } => {
+                    RuleCondition::Device { device_id, metric, .. } |
+                    RuleCondition::DeviceRange { device_id, metric, .. } => {
                         (Some(device_id.clone()), Some(metric.clone()))
+                    }
+                    RuleCondition::Extension { extension_id, metric, .. } |
+                    RuleCondition::ExtensionRange { extension_id, metric, .. } => {
+                        (Some(extension_id.clone()), Some(metric.clone()))
                     }
                     RuleCondition::And(conditions) | RuleCondition::Or(conditions) => {
                         // For complex conditions, check all sub-conditions
                         let mut devices = Vec::new();
                         for c in conditions {
-                            if let RuleCondition::Simple { device_id, metric, .. } |
-                               RuleCondition::Range { device_id, metric, .. } = c {
-                                devices.push((device_id.clone(), metric.clone()));
+                            match c {
+                                RuleCondition::Device { device_id, metric, .. } |
+                                RuleCondition::DeviceRange { device_id, metric, .. } => {
+                                    devices.push((device_id.clone(), metric.clone()));
+                                }
+                                RuleCondition::Extension { extension_id, metric, .. } |
+                                RuleCondition::ExtensionRange { extension_id, metric, .. } => {
+                                    devices.push((extension_id.clone(), metric.clone()));
+                                }
+                                _ => {}
                             }
                         }
                         if devices.len() == 1 {
@@ -317,7 +328,7 @@ impl ValidateRuleDslTool {
             parsed_rule_summary: parsed_rule.map(|r| {
                 // Extract info from condition for summary
                 let (device_id, metric, operator, threshold) = match &r.condition {
-                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                    RuleCondition::Device { device_id, metric, operator, threshold } => {
                         (
                             device_id.clone(),
                             metric.clone(),
@@ -325,9 +336,25 @@ impl ValidateRuleDslTool {
                             *threshold
                         )
                     }
-                    RuleCondition::Range { device_id, metric, min, max } => {
+                    RuleCondition::Extension { extension_id, metric, operator, threshold } => {
+                        (
+                            extension_id.clone(),
+                            metric.clone(),
+                            operator.as_str().to_string(),
+                            *threshold
+                        )
+                    }
+                    RuleCondition::DeviceRange { device_id, metric, min, max } => {
                         (
                             device_id.clone(),
+                            metric.clone(),
+                            format!("{}-{}", min, max),
+                            *max // Use max as threshold for display
+                        )
+                    }
+                    RuleCondition::ExtensionRange { extension_id, metric, min, max } => {
+                        (
+                            extension_id.clone(),
                             metric.clone(),
                             format!("{}-{}", min, max),
                             *max // Use max as threshold for display
@@ -445,14 +472,14 @@ impl CreateRuleTool {
                 // Check for duplicate condition (only for Simple conditions)
                 // Extract key info from both conditions for comparison
                 let existing_key = match &existing.condition {
-                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                    RuleCondition::Device { device_id, metric, operator, threshold } => {
                         Some((device_id.clone(), metric.clone(), format!("{:?}", operator), *threshold))
                     }
                     _ => None,
                 };
 
                 let parsed_key = match &parsed.condition {
-                    RuleCondition::Simple { device_id, metric, operator, threshold } => {
+                    RuleCondition::Device { device_id, metric, operator, threshold } => {
                         Some((device_id.clone(), metric.clone(), format!("{:?}", operator), *threshold))
                     }
                     _ => None,

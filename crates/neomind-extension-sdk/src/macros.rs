@@ -116,14 +116,19 @@ macro_rules! export_plugin {
             desc
         };
 
-        // Export the descriptor
+        // Export the descriptor (use extension naming convention)
+        #[no_mangle]
+        pub static neomind_extension_descriptor: $crate::descriptor::CPluginDescriptor =
+            unsafe { DESCRIPTOR.export() };
+
+        // Also export with legacy plugin name for backward compatibility
         #[no_mangle]
         pub static neomind_plugin_descriptor: $crate::descriptor::CPluginDescriptor =
             unsafe { DESCRIPTOR.export() };
 
         // Create function
         #[no_mangle]
-        pub extern "C" fn neomind_plugin_create(
+        pub extern "C" fn neomind_extension_create(
             config_json: *const u8,
             config_len: usize,
         ) -> *mut () {
@@ -154,6 +159,42 @@ macro_rules! export_plugin {
         }
 
         // Destroy function
+        #[no_mangle]
+        pub extern "C" fn neomind_extension_destroy(instance: *mut ()) {
+            unsafe {
+                let _ = Box::from_raw(instance as *mut serde_json::Value);
+            }
+        }
+
+        // Legacy aliases for backward compatibility
+        #[no_mangle]
+        pub extern "C" fn neomind_plugin_create(
+            config_json: *const u8,
+            config_len: usize,
+        ) -> *mut () {
+            use std::ptr;
+            use std::slice;
+            use std::str;
+
+            let config_str = if config_json.is_null() || config_len == 0 {
+                "{}"
+            } else {
+                let slice = unsafe { slice::from_raw_parts(config_json, config_len) };
+                match str::from_utf8(slice) {
+                    Ok(s) => s,
+                    Err(_) => return ptr::null_mut(),
+                }
+            };
+
+            let config: serde_json::Value = match serde_json::from_str(config_str) {
+                Ok(c) => c,
+                Err(_) => return ptr::null_mut(),
+            };
+
+            let boxed = Box::new(config);
+            Box::leak(boxed) as *mut serde_json::Value as *mut ()
+        }
+
         #[no_mangle]
         pub extern "C" fn neomind_plugin_destroy(instance: *mut ()) {
             unsafe {

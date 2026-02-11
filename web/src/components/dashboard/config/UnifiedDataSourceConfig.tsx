@@ -7,7 +7,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database, MapPin, Activity } from 'lucide-react'
+import { Search, Check, Server, Zap, Info, X, ChevronRight, Circle, Loader2, Database, MapPin, Activity, Puzzle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,8 @@ import type { DataSource, DataSourceOrList } from '@/types/dashboard'
 import { normalizeDataSource } from '@/types/dashboard'
 import type { MetricDefinition, CommandDefinition } from '@/types'
 import { useDataAvailability } from '@/hooks/useDataAvailability'
+import { api } from '@/lib/api'
+import type { Extension, ExtensionDataSourceInfo, ExtensionCommandDescriptor, TransformDataSourceInfo } from '@/types'
 
 // ============================================================================
 // Types
@@ -24,15 +26,15 @@ import { useDataAvailability } from '@/hooks/useDataAvailability'
 export interface UnifiedDataSourceConfigProps {
   value?: DataSourceOrList
   onChange: (dataSource: DataSourceOrList | undefined) => void
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command'>
   multiple?: boolean
   maxSources?: number
   className?: string
   disabled?: boolean
 }
 
-type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system'
-type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric"
+type CategoryType = 'device-metric' | 'device-command' | 'device' | 'system' | 'extension' | 'extension-command'
+type SelectedItem = string // Format: "device-metric:deviceId:property" or "device-command:deviceId:command" or "device:deviceId" or "system:metric" or "extension:extensionId:metric" or "extension-command:extensionId:command"
 
 // ============================================================================
 // Constants
@@ -74,6 +76,8 @@ function getCategories(t: (key: string) => string) {
     { id: 'device-metric' as const, name: t('dataSource.metrics'), icon: Server, description: t('dataSource.metricsDesc') },
     { id: 'device-command' as const, name: t('dataSource.commands'), icon: Zap, description: t('dataSource.commandsDesc') },
     { id: 'system' as const, name: t('systemDataSource.title'), icon: Activity, description: t('systemDataSource.description') },
+    { id: 'extension' as const, name: t('extensions:dataSource.extensionSource') || 'Extension Metrics', icon: Puzzle, description: t('extensions:dataSource.selectExtension') || 'Select extension metrics' },
+    { id: 'extension-command' as const, name: t('extensions:dataSource.extensionCommand') || 'Extension Commands', icon: Zap, description: t('extensions:dataSource.selectExtensionCommand') || 'Select extension commands' },
   ]
 }
 
@@ -83,9 +87,9 @@ function getCategories(t: (key: string) => string) {
 
 // Convert old allowedTypes format to new format
 function normalizeAllowedTypes(
-  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system'>
+  allowedTypes?: Array<'device-metric' | 'device-command' | 'device-info' | 'device' | 'metric' | 'command' | 'system' | 'extension' | 'extension-command'>
 ): CategoryType[] {
-  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system']
+  if (!allowedTypes) return ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command']
 
   const result: CategoryType[] = []
 
@@ -96,16 +100,20 @@ function normalizeAllowedTypes(
   if (allowedTypes.includes('device-metric')) result.push('device-metric')
   if (allowedTypes.includes('device-command')) result.push('device-command')
   if (allowedTypes.includes('system')) result.push('system')
+  if (allowedTypes.includes('extension')) result.push('extension')
+  if (allowedTypes.includes('extension-command')) result.push('extension-command')
 
   // Old format types - map to new format (but not 'device' since it's distinct now)
   if (allowedTypes.includes('metric')) {
     if (!result.includes('device-metric')) result.push('device-metric')
   }
   if (allowedTypes.includes('command')) {
+    // When 'command' is specified, include both device-command and extension-command
     if (!result.includes('device-command')) result.push('device-command')
+    if (!result.includes('extension-command')) result.push('extension-command')
   }
 
-  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system']
+  return result.length > 0 ? result : ['device', 'device-metric', 'device-command', 'system', 'extension', 'extension-command']
 }
 
 /**
@@ -158,6 +166,27 @@ function selectedItemsToDataSource(
           systemMetric: parts.slice(1).join(':') as any,
           refresh: 10,
         }
+      case 'extension':
+        // Format: extension:extensionId:metric
+        // For provider extension metrics, use "produce:metric" format
+        return {
+          type: 'extension',
+          extensionId: parts[1],
+          extensionMetric: `produce:${parts[2]}`,
+          refresh: 10,  // Auto-refresh every 10 seconds
+          timeRange: 1,
+          limit: 50,
+          aggregate: 'raw',
+          params: { includeRawPoints: true },
+          transform: 'raw',
+        } as any
+      case 'extension-command':
+        // Format: extension-command:extensionId:commandName
+        return {
+          type: 'extension-command',
+          extensionId: parts[1],
+          command: parts.slice(2).join(':'),
+        } as any
       default:
         return undefined
     }
@@ -210,6 +239,26 @@ function selectedItemsToDataSource(
           refresh: 10,
         })
         break
+      case 'extension':
+        result.push({
+          type: 'extension',
+          extensionId: parts[1],
+          extensionMetric: `produce:${parts[2]}`,
+          refresh: 10,  // Auto-refresh every 10 seconds
+          timeRange: 1,
+          limit: 50,
+          aggregate: 'raw',
+          params: { includeRawPoints: true },
+          transform: 'raw',
+        } as any)
+        break
+      case 'extension-command':
+        result.push({
+          type: 'extension-command',
+          extensionId: parts[1],
+          command: parts.slice(2).join(':'),
+        } as any)
+        break
     }
   }
 
@@ -242,6 +291,21 @@ function dataSourceToSelectedItems(ds: DataSourceOrList | undefined): Set<Select
         break
       case 'system':
         items.add(`system:${dataSource.systemMetric}` as SelectedItem)
+        break
+      case 'extension':
+        // For extension type, check if it has extensionId and extensionMetric
+        if ((dataSource as any).extensionId && (dataSource as any).extensionMetric) {
+          // Strip "produce:" prefix if present to get just the metric name
+          const metric = (dataSource as any).extensionMetric
+          const metricName = metric.startsWith('produce:') ? metric.slice(8) : metric
+          items.add(`extension:${(dataSource as any).extensionId}:${metricName}` as SelectedItem)
+        }
+        break
+      case 'extension-command':
+        // For extension-command type, check if it has extensionId and command
+        if ((dataSource as any).extensionId && (dataSource as any).command) {
+          items.add(`extension-command:${(dataSource as any).extensionId}:${(dataSource as any).command}` as SelectedItem)
+        }
         break
     }
   }
@@ -287,6 +351,14 @@ function getSelectedItemLabel(item: SelectedItem, devices: any[], t: (key: strin
       const systemMetric = getSystemMetrics(t).find(m => m.id === metricId)
       return `${t('systemDataSource.title')} · ${systemMetric?.name || metricId}`
     }
+    case 'extension': {
+      // Format: extension:extensionId:metricId - will be resolved in the component
+      return `Extension · ${parts[2]}`
+    }
+    case 'extension-command': {
+      // Format: extension-command:extensionId:commandName
+      return `Extension · ${parts.slice(2).join(':')}`
+    }
     default:
       return item
   }
@@ -310,6 +382,13 @@ export function UnifiedDataSourceConfig({
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('device-metric')
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
+  const [selectedExtensionId, setSelectedExtensionId] = useState<string | null>(null)
+
+  // Extension state
+  const [extensions, setExtensions] = useState<Extension[]>([])
+  const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
+  const [extensionsLoading, setExtensionsLoading] = useState(false)
+  const [extensionError, setExtensionError] = useState<string | null>(null)
 
   // Data availability checking - now includes summaries with virtual metrics
   const { availability, summaries, loading: checkingData, checkDevice } = useDataAvailability()
@@ -322,6 +401,12 @@ export function UnifiedDataSourceConfig({
   // Track previous value to detect actual selection changes
   const prevCoreFieldsRef = useRef<string>()
   const prevValueRef = useRef<DataSourceOrList>()
+
+  // Track if we've already fetched extensions to prevent infinite loops
+  const hasFetchedExtensions = useRef(false)
+
+  // Track if we've already restored extension selection from value
+  const hasRestoredExtensionSelection = useRef(false)
 
   // Extract core identifying fields for comparison (ignores transform settings)
   const getCoreFields = (ds: DataSourceOrList | undefined): string => {
@@ -364,8 +449,8 @@ export function UnifiedDataSourceConfig({
     [allowedTypes, t]
   )
 
-  // Set initial category to first available
-  useMemo(() => {
+  // Set initial category to first available (useEffect instead of useMemo to avoid setState during render)
+  useEffect(() => {
     if (availableCategories.length > 0 && !availableCategories.find(c => c.id === selectedCategory)) {
       setSelectedCategory(availableCategories[0]!.id)
       setSelectedDeviceId(null)
@@ -398,6 +483,115 @@ export function UnifiedDataSourceConfig({
     return map
   }, [devices, deviceTypes, t])
 
+  // Fetch extension data sources when extension category is available
+  useEffect(() => {
+    const hasExtensionCategory = availableCategories.some(c => c.id === 'extension' || c.id === 'extension-command')
+    if (!hasExtensionCategory) {
+      hasFetchedExtensions.current = false
+      return
+    }
+
+    // Skip if already fetched
+    if (hasFetchedExtensions.current && extensions.length > 0) {
+      return
+    }
+
+    const fetchExtensionData = async () => {
+      setExtensionsLoading(true)
+      setExtensionError(null)
+      try {
+        console.log('[UnifiedDataSourceConfig] Fetching extensions...')
+        const [extData, dsData] = await Promise.all([
+          api.listExtensions().catch((err) => {
+            console.error('[UnifiedDataSourceConfig] listExtensions error:', err)
+            return []
+          }),
+          api.listAllDataSources().catch((err) => {
+            console.error('[UnifiedDataSourceConfig] listAllDataSources error:', err)
+            return []
+          }),
+        ])
+        // Debug logging
+        console.log('[UnifiedDataSourceConfig] Fetched extensions:', {
+          count: extData.length,
+          extensions: extData.map(e => ({
+            id: e.id,
+            name: e.name,
+            commandsCount: e.commands?.length || 0,
+            metricsCount: e.metrics?.length || 0,
+            commands: e.commands
+          }))
+        })
+        setExtensions(extData)
+        // Filter only extension data sources (exclude transform data sources)
+        setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source) as ExtensionDataSourceInfo[])
+        hasFetchedExtensions.current = true
+      } catch (err) {
+        console.error('[UnifiedDataSourceConfig] Error fetching extension data:', err)
+        setExtensionError((err as Error).message)
+      } finally {
+        setExtensionsLoading(false)
+      }
+    }
+
+    fetchExtensionData()
+  }, [availableCategories, extensions.length])
+
+  // Restore extension selection from saved value (only runs once after extensions are loaded)
+  useEffect(() => {
+    // Skip if already restored or no extensions loaded yet
+    if (hasRestoredExtensionSelection.current || extensions.length === 0) return
+
+    if (!value) {
+      hasRestoredExtensionSelection.current = true
+      return
+    }
+
+    const dataSources = normalizeDataSource(value)
+
+    // Find first extension or extension-command data source
+    const extensionSource = dataSources.find(ds =>
+      ds.type === 'extension' || ds.type === 'extension-command'
+    ) as any
+
+    if (extensionSource?.extensionId) {
+      // Check if this extension exists in the loaded extensions
+      const extensionExists = extensions.some(e => e.id === extensionSource.extensionId)
+
+      if (extensionExists) {
+        // Restore the selected extension
+        setSelectedExtensionId(extensionSource.extensionId)
+
+        // Also set the correct category based on the data source type
+        if (extensionSource.type === 'extension-command') {
+          setSelectedCategory('extension-command')
+        } else if (extensionSource.type === 'extension') {
+          setSelectedCategory('extension')
+        }
+      }
+    }
+
+    // Mark as restored regardless of whether we found an extension
+    hasRestoredExtensionSelection.current = true
+  }, [value, extensions])
+
+  // Build extension metrics map
+  const extensionMetricsMap = useMemo(() => {
+    const map = new Map<string, Array<{ name: string; display_name: string; data_type: string; unit?: string }>>()
+    extensionDataSources.forEach(ds => {
+      if (!map.has(ds.extension_id)) {
+        map.set(ds.extension_id, [])
+      }
+      map.get(ds.extension_id)!.push({
+        name: ds.field,
+        display_name: ds.display_name,
+        data_type: ds.data_type,
+        unit: ds.unit,
+      })
+    })
+    return map
+  }, [extensionDataSources])
+
   // Check data availability when device is selected (for metrics category)
   useEffect(() => {
     if (selectedCategory === 'device-metric' && selectedDeviceId) {
@@ -409,20 +603,23 @@ export function UnifiedDataSourceConfig({
     }
   }, [selectedCategory, selectedDeviceId, deviceMetricsMap, checkDevice])
 
-  // Build device commands map
+  // Build device commands map - only show commands that are actually defined in the device template
   const deviceCommandsMap = useMemo(() => {
     const map = new Map<string, CommandDefinition[]>()
     for (const device of devices) {
       const deviceType = deviceTypes.find(dt => dt.device_type === device.device_type)
 
+      // Only include commands that are actually defined in the device type
+      // No fallback commands - this prevents users from selecting commands that don't exist
       if (deviceType?.commands && deviceType.commands.length > 0) {
         map.set(device.id, deviceType.commands)
       } else {
-        map.set(device.id, [{ name: 'toggle', display_name: t('dataSource.commandToggle'), parameters: [] }])
+        // No commands defined - return empty array
+        map.set(device.id, [])
       }
     }
     return map
-  }, [devices, deviceTypes, t])
+  }, [devices, deviceTypes])
 
   // Handle item selection
   const handleSelectItem = (itemKey: SelectedItem) => {
@@ -490,11 +687,22 @@ export function UnifiedDataSourceConfig({
   // Convert selected items to array for display
   const selectedItemsArray = useMemo(() => Array.from(selectedItems), [selectedItems])
 
-  // Check if category uses device split layout (device category uses single column layout)
+  // Check if category uses split layout
   const usesDeviceSplitLayout = selectedCategory === 'device-metric' || selectedCategory === 'device-command'
+  const usesExtensionSplitLayout = selectedCategory === 'extension' || selectedCategory === 'extension-command'
 
-  // Get selected device
+  // Get selected device/extension
   const selectedDevice = devices.find(d => d.id === selectedDeviceId)
+  const selectedExtension = extensions.find(e => e.id === selectedExtensionId)
+
+  // Filter extensions by search query
+  const filteredExtensions = useMemo(() => {
+    if (!searchQuery) return extensions
+    return extensions.filter(e =>
+      e.id.toLowerCase().includes(searchQuery) ||
+      (e.name && e.name.toLowerCase().includes(searchQuery))
+    )
+  }, [extensions, searchQuery])
 
   // Render device list for split layout
   const renderDeviceList = () => {
@@ -893,11 +1101,214 @@ export function UnifiedDataSourceConfig({
     return null
   }
 
+  // Render extension list for split layout (left sidebar)
+  const renderExtensionList = () => {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Search input inside extension list */}
+        <div className="p-2 border-b bg-muted/20">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder={t('dataSource.searchPlaceholder')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        </div>
+
+        {/* Extension list header with count */}
+        <div className="px-3 py-1.5 border-b text-xs font-medium text-muted-foreground bg-muted/30 flex items-center justify-between">
+          <span>{t('extensions:extensionList') || 'Extensions'}</span>
+          <span className="text-[10px] text-muted-foreground/60 bg-muted/50 px-1.5 py-0.5 rounded">
+            {filteredExtensions.length} {t('dataSource.count')}
+          </span>
+        </div>
+
+        {/* Extension list */}
+        <div className="flex-1 overflow-y-auto">
+          {extensionsLoading ? (
+            <div className="p-4 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('extensions:loading') || 'Loading...'}
+            </div>
+          ) : filteredExtensions.length === 0 ? (
+            <div className="p-4 text-center text-muted-foreground text-sm">
+              {t('extensions:noExtensions') || 'No extensions'}
+            </div>
+          ) : (
+            filteredExtensions.map(ext => {
+              const isSelected = selectedExtensionId === ext.id
+              return (
+                <button
+                  key={ext.id}
+                  type="button"
+                  onClick={() => setSelectedExtensionId(ext.id)}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-3 py-2.5 border-b text-left transition-colors',
+                    isSelected
+                      ? 'bg-primary/10 border-primary/30'
+                      : 'hover:bg-muted/30 border-transparent'
+                  )}
+                >
+                  <Puzzle className={cn(
+                    'h-4 w-4 shrink-0',
+                    isSelected ? 'text-primary' : 'text-muted-foreground'
+                  )} />
+                  <div className="flex-1 min-w-0">
+                    <div className={cn(
+                      'text-sm truncate',
+                      isSelected ? 'font-medium text-foreground' : 'text-foreground/80'
+                    )}>
+                      {ext.name}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground truncate">
+                      {ext.version && `v${ext.version}`}
+                      {ext.description && ` · ${ext.description}`}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <Check className="h-4 w-4 text-primary shrink-0" />
+                  )}
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Render extension content for split layout (right side)
+  const renderExtensionContent = () => {
+    if (!selectedExtension) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+          {t('extensions:selectExtension') || 'Select an extension'}
+        </div>
+      )
+    }
+
+    if (selectedCategory === 'extension') {
+      // Show extension metrics
+      const metrics = extensionMetricsMap.get(selectedExtension.id) || []
+
+      if (metrics.length === 0) {
+        return (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+            {t('extensions:noMetrics') || 'No metrics available'}
+          </div>
+        )
+      }
+
+      return (
+        <div className="flex flex-col h-full">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted/30">
+            {selectedExtension.name} · {t('dataSource.metrics') || 'Metrics'}
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {metrics.map(metric => {
+              const itemKey = `extension:${selectedExtension.id}:${metric.name}` as SelectedItem
+              const isSelected = selectedItems.has(itemKey)
+
+              return (
+                <button
+                  key={metric.name}
+                  type="button"
+                  onClick={() => handleSelectItem(itemKey)}
+                  className={cn(
+                    'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
+                    'hover:bg-accent/50',
+                    isSelected
+                      ? 'border-primary bg-primary/10'
+                      : 'border-muted'
+                  )}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{metric.display_name || metric.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{metric.name}</div>
+                  </div>
+                  {isSelected && (
+                    <Check className="h-4 w-4 text-primary shrink-0 ml-2" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    if (selectedCategory === 'extension-command') {
+      // Show extension commands
+      const commands = selectedExtension.commands || []
+      // Debug logging
+      console.log('[UnifiedDataSourceConfig] Extension commands:', {
+        extensionId: selectedExtension.id,
+        extensionName: selectedExtension.name,
+        commandsCount: commands.length,
+        commands: commands,
+        fullExtension: selectedExtension
+      })
+
+      if (commands.length === 0) {
+        return (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+            {t('extensions:noCommands') || 'No commands available'}
+          </div>
+        )
+      }
+
+      return (
+        <div className="flex flex-col h-full">
+          <div className="px-3 py-2 border-b text-xs font-medium text-muted-foreground bg-muted/30">
+            {selectedExtension.name} · {t('dataSource.commands') || 'Commands'}
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {commands.map((cmd: ExtensionCommandDescriptor) => {
+              const itemKey = `extension-command:${selectedExtension.id}:${cmd.id}` as SelectedItem
+              const isSelected = selectedItems.has(itemKey)
+
+              return (
+                <button
+                  key={cmd.id}
+                  type="button"
+                  onClick={() => handleSelectItem(itemKey)}
+                  className={cn(
+                    'w-full flex items-center justify-between p-3 rounded-lg border text-left transition-colors',
+                    'hover:bg-accent/50',
+                    isSelected
+                      ? 'border-primary bg-primary/10'
+                      : 'border-muted'
+                  )}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{cmd.display_name || cmd.id}</div>
+                    <div className="text-xs text-muted-foreground truncate">{cmd.description || cmd.id}</div>
+                  </div>
+                  <Zap className={cn(
+                    'h-4 w-4 shrink-0 ml-2',
+                    isSelected ? 'text-amber-500' : 'text-muted-foreground'
+                  )} />
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    return null
+  }
+
   // Render content based on category
   const renderCategoryContent = () => {
     switch (selectedCategory) {
       case 'device-metric':
       case 'device-command':
+      case 'extension':
+      case 'extension-command':
         // Split layout handled separately
         return null
 
@@ -1035,10 +1446,18 @@ export function UnifiedDataSourceConfig({
           <div className="h-4 w-px bg-border" />
           <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
             {selectedItemsArray.slice(0, 3).map(itemKey => {
-              const [type, deviceId, ...rest] = itemKey.split(':')
+              const [type, entityId, ...rest] = itemKey.split(':')
               const label = rest.join(':')
-              const device = devices.find(d => d.id === deviceId)
-              const deviceName = device?.name || deviceId
+
+              // For extension types, find the extension by id
+              let entityName = entityId
+              if (type.startsWith('extension')) {
+                const ext = extensions.find(e => e.id === entityId)
+                entityName = ext?.name || entityId
+              } else {
+                const device = devices.find(d => d.id === entityId)
+                entityName = device?.name || entityId
+              }
 
               // Icon and color based on type
               let TypeIcon = Info
@@ -1057,6 +1476,12 @@ export function UnifiedDataSourceConfig({
                 iconColor = 'text-purple-500'
                 displayLabel = ''  // No label for device type, just device name
                 showSeparator = false
+              } else if (type === 'extension') {
+                TypeIcon = Puzzle
+                iconColor = 'text-cyan-500'
+              } else if (type === 'extension-command') {
+                TypeIcon = Zap
+                iconColor = 'text-orange-500'
               }
 
               return (
@@ -1065,7 +1490,7 @@ export function UnifiedDataSourceConfig({
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-background border border-border/50 text-xs group hover:border-primary/40 transition-all max-w-[140px]"
                 >
                   <TypeIcon className={cn('h-3 w-3 shrink-0', iconColor)} />
-                  <span className="max-w-[80px] truncate text-foreground/70" title={deviceName}>{deviceName}</span>
+                  <span className="max-w-[80px] truncate text-foreground/70" title={entityName}>{entityName}</span>
                   {showSeparator && <span className="text-muted-foreground/40">·</span>}
                   {displayLabel && <span className="truncate text-foreground" title={displayLabel}>{displayLabel}</span>}
                 </div>
@@ -1101,6 +1526,7 @@ export function UnifiedDataSourceConfig({
               onClick={() => {
                 setSelectedCategory(cat.id)
                 setSelectedDeviceId(null)
+                setSelectedExtensionId(null)
               }}
               className={cn(
                 'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors shrink-0',
@@ -1128,6 +1554,19 @@ export function UnifiedDataSourceConfig({
           {/* Right: Device content */}
           <div className="flex-1 overflow-hidden flex flex-col">
             {renderDeviceContent()}
+          </div>
+        </div>
+      ) : usesExtensionSplitLayout ? (
+        // Split layout: extension list on left, metrics/commands on right
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left: Extension list */}
+          <div className="w-56 border-r shrink-0 overflow-hidden flex flex-col">
+            {renderExtensionList()}
+          </div>
+
+          {/* Right: Extension content */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {renderExtensionContent()}
           </div>
         </div>
       ) : (

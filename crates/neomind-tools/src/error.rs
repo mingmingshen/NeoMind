@@ -33,6 +33,10 @@ pub enum ToolError {
     /// Canceled
     #[error("Operation canceled")]
     Canceled,
+
+    /// Configuration error (Phase 3.2)
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
 }
 
 /// Result type for tool operations.
@@ -49,6 +53,7 @@ impl From<ToolError> for NeoMindError {
             ToolError::PermissionDenied(s) => NeoMindError::Unauthorized(s),
             ToolError::Timeout => NeoMindError::Timeout("Tool operation timed out".to_string()),
             ToolError::Canceled => NeoMindError::Internal("Operation canceled".to_string()),
+            ToolError::ConfigurationError(s) => NeoMindError::Internal(s),
         }
     }
 }

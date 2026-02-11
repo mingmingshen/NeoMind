@@ -219,11 +219,12 @@ const SessionDrawerMemo = memo(function SessionDrawer({
           "fixed top-0 left-0 h-full w-80 z-50",
           "bg-[var(--session-drawer-bg)] border-r border-[var(--session-drawer-border)]",
           "transition-transform duration-300 ease-out",
+          "flex flex-col",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-[var(--session-drawer-border)]">
+        <div className="flex items-center justify-between p-4 border-b border-[var(--session-drawer-border)] flex-shrink-0">
           <h2 className="text-lg font-semibold">{t('conversationHistory')}</h2>
           <button
             onClick={onClose}
@@ -234,7 +235,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
         </div>
 
         {/* Search */}
-        <div className="p-4">
+        <div className="p-4 flex-shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -254,7 +255,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
         </div>
 
         {/* New Session Button */}
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 flex-shrink-0">
           <button
             onClick={handleNewSession}
             disabled={isCreating}
@@ -378,7 +379,7 @@ const SessionDrawerMemo = memo(function SessionDrawer({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-[var(--session-drawer-border)]">
+        <div className="p-4 border-t border-[var(--session-drawer-border)] flex-shrink-0">
           <p className="text-xs text-muted-foreground text-center">
             {t('totalSessions', { count: totalSessions })}
             <span className="mx-2">•</span>

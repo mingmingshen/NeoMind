@@ -1,13 +1,21 @@
-//! NeoMind Plugin SDK
+//! NeoMind Extension SDK
 //!
-//! This SDK provides tools and macros for building dynamic plugins for NeoMind.
+//! This SDK provides tools and macros for building dynamic extensions for NeoMind.
 //!
 //! # Quick Start
 //!
 //! ```rust
 //! use neomind_extension_sdk::prelude::*;
 //!
-//! export_plugin!(MyPlugin, "my-plugin", "1.0.0", PluginType::Tool);
+//! declare_extension!(
+//!     MyExtension,
+//!     metadata: ExtensionMetadata {
+//!         name: "my.extension".to_string(),
+//!         version: "1.0.0".to_string(),
+//!         author: "Your Name".to_string(),
+//!         description: "My extension".to_string(),
+//!     },
+//! );
 //! ```
 
 pub mod descriptor;
@@ -16,19 +24,43 @@ pub mod error;
 pub mod macros;
 pub mod types;
 
+// Core extension types defined in the SDK
+pub use types::{
+    Extension, ExtensionMetadata, ExtensionCapabilityDescriptor, ExtensionCapabilityType,
+    ExtensionError, ToolDescriptor, MetricDescriptor, ChannelDescriptor,
+    NEO_EXT_ABI_VERSION,
+};
+
+// Legacy plugin types (for backward compatibility)
+pub use descriptor::{PluginDescriptor, PluginType};
+pub use error::{PluginError, PluginResult};
+
+// Type aliases for backward compatibility
+pub use Extension as Plugin;
+pub use ExtensionError as PluginErrorAlias;
+pub use ExtensionMetadata as PluginMetadata;
+pub use ExtensionCapabilityDescriptor as PluginCapabilityDescriptor;
+pub const PLUGIN_ABI_VERSION: u32 = NEO_EXT_ABI_VERSION;
+
 /// Prelude module with common imports
 pub mod prelude {
+    // Legacy plugin types
     pub use crate::descriptor::{PluginDescriptor, PluginType};
-    pub use crate::error::PluginResult;
+    pub use crate::error::{PluginError, PluginResult};
     pub use crate::types::{PluginContext, PluginRequest, PluginResponse};
+
+    // New extension types
+    pub use crate::types::{
+        Extension, ExtensionMetadata, ExtensionCapabilityDescriptor, ExtensionCapabilityType,
+        ExtensionError, ToolDescriptor, MetricDescriptor, ChannelDescriptor,
+        NEO_EXT_ABI_VERSION,
+    };
     pub use serde_json::Value;
 
     // Macros are automatically available due to #[macro_use]
 }
 
 // Re-exports for convenience
-pub use descriptor::{PLUGIN_ABI_VERSION, PluginDescriptor, PluginType};
-pub use error::{PluginError, PluginResult};
 pub use types::{PluginContext, PluginRequest, PluginResponse};
 
 /// Create a plugin instance from a JSON config string.

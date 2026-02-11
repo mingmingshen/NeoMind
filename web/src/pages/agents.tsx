@@ -17,7 +17,7 @@ import { useErrorHandler } from "@/hooks/useErrorHandler"
 import { Loader2, Bot, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/shared/EmptyState"
-import type { AiAgent, AiAgentDetail } from "@/types"
+import type { AiAgent, AiAgentDetail, Extension, ExtensionDataSourceInfo, TransformDataSourceInfo } from "@/types"
 import type { AgentExecutionStartedEvent, AgentExecutionCompletedEvent, AgentThinkingEvent } from "@/lib/events"
 
 // Import components
@@ -26,9 +26,9 @@ import { AgentEditorFullScreen } from "./agents-components/AgentEditorFullScreen
 import { ExecutionDetailDialog } from "./agents-components/ExecutionDetailDialog"
 import { AgentDetailPanel } from "./agents-components/AgentDetailPanel"
 import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet"
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog"
 
 export function AgentsPage() {
   const { t: tCommon } = useTranslation('common')
@@ -39,7 +39,7 @@ export function AgentsPage() {
   // Dialog states
   const [showAgentDialog, setShowAgentDialog] = useState(false)
   const [executionDetailOpen, setExecutionDetailOpen] = useState(false)
-  const [detailSheetOpen, setDetailSheetOpen] = useState(false)
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false)
 
   // Dialog data states
   const [detailAgentId, setDetailAgentId] = useState('')
@@ -61,6 +61,8 @@ export function AgentsPage() {
   // Resources for dialogs
   const [devices, setDevices] = useState<any[]>([])
   const [deviceTypes, setDeviceTypes] = useState<any[]>([])
+  const [extensions, setExtensions] = useState<Extension[]>([])
+  const [extensionDataSources, setExtensionDataSources] = useState<ExtensionDataSourceInfo[]>([])
 
   // Fetch data
   const loadItems = useCallback(async () => {
@@ -76,6 +78,20 @@ export function AgentsPage() {
         setDeviceTypes(typesData.device_types || [])
       } catch {
         setDeviceTypes([])
+      }
+
+      // Load extensions for agent resources
+      try {
+        const [extData, dsData] = await Promise.all([
+          api.listExtensions().catch((): Extension[] => []),
+          api.listAllDataSources().catch((): (ExtensionDataSourceInfo | TransformDataSourceInfo)[] => []),
+        ])
+        setExtensions(extData)
+        // Filter only extension data sources (exclude transform data sources)
+        setExtensionDataSources(dsData.filter((source): source is ExtensionDataSourceInfo => 'extension_id' in source))
+      } catch {
+        setExtensions([])
+        setExtensionDataSources([])
       }
 
       // Load agents
@@ -146,6 +162,7 @@ export function AgentsPage() {
 
         case 'AgentExecutionCompleted': {
           const completedData = (event as AgentExecutionCompletedEvent).data
+
           // Remove from executing map immediately
           setExecutingAgents(prev => {
             const next = new Map(prev)
@@ -161,9 +178,10 @@ export function AgentsPage() {
           })
 
           // Immediately update the agent's status in the list to Active or Error
+          const newStatus: AiAgent['status'] = completedData.success ? 'Active' : 'Error'
           setAgents(prev => prev.map(agent =>
             agent.id === completedData.agent_id
-              ? { ...agent, status: completedData.success ? 'Active' : 'Error' }
+              ? { ...agent, status: newStatus }
               : agent
           ))
 
@@ -171,12 +189,9 @@ export function AgentsPage() {
           if (selectedAgent?.id === completedData.agent_id) {
             setSelectedAgent(prev => prev ? {
               ...prev,
-              status: completedData.success ? 'Active' : 'Error'
+              status: newStatus
             } : null)
           }
-
-          // Reload agents to get updated stats (non-blocking)
-          loadItems()
           break
         }
 
@@ -347,7 +362,7 @@ export function AgentsPage() {
     try {
       const detail = await api.getAgent(agent.id)
       setSelectedAgent(detail)
-      setDetailSheetOpen(true)
+      setDetailDialogOpen(true)
     } catch (error) {
       handleError(error, { operation: 'Load agent details for panel', showToast: false })
       toast({
@@ -360,12 +375,12 @@ export function AgentsPage() {
 
   // Refresh detail when sheet is open
   useEffect(() => {
-    if (detailSheetOpen && selectedAgent) {
+    if (detailDialogOpen && selectedAgent) {
       api.getAgent(selectedAgent.id).then(setSelectedAgent).catch(err =>
         handleError(err, { operation: 'Refresh agent details', showToast: false })
       )
     }
-  }, [agents, detailSheetOpen, selectedAgent?.id, handleError])
+  }, [agents, detailDialogOpen, selectedAgent?.id, handleError])
 
   // Merge executing state from WebSocket with agent data
   // Only show Executing if agent is currently executing AND not paused/error in database
@@ -390,17 +405,6 @@ export function AgentsPage() {
       title={tAgent('title')}
       subtitle={tAgent('description')}
     >
-      {/* Top action button */}
-      <div className="mb-4 flex justify-start">
-        <Button
-          size="sm"
-          onClick={handleCreate}
-          className="h-9"
-        >
-          <Plus className="h-4 w-4 mr-1.5" />
-          <span className="text-sm">{tAgent('createAgent')}</span>
-        </Button>
-      </div>
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -418,7 +422,19 @@ export function AgentsPage() {
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <>
+          {/* Top action button - only show when there are agents */}
+          <div className="mb-4 flex justify-start">
+            <Button
+              size="sm"
+              onClick={handleCreate}
+              className="h-9"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              <span className="text-sm">{tAgent('createAgent')}</span>
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {agentsWithExecutingStatus.map((agent) => (
             <AgentCard
               key={agent.id}
@@ -431,6 +447,7 @@ export function AgentsPage() {
             />
           ))}
         </div>
+        </>
       )}
 
       {/* Agent Editor Full Screen */}
@@ -440,16 +457,18 @@ export function AgentsPage() {
         agent={editingAgent}
         devices={devices}
         deviceTypes={deviceTypes}
+        extensions={extensions}
+        extensionDataSources={extensionDataSources}
         onSave={handleSave}
       />
 
-      {/* Agent Detail Sheet */}
-      <Sheet open={detailSheetOpen} onOpenChange={setDetailSheetOpen}>
-        <SheetContent className="w-full sm:max-w-3xl p-0 gap-0">
+      {/* Agent Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-5xl max-h-[85vh] p-0 gap-0">
           <div className="px-6 pt-6 pb-4 border-b flex items-center justify-between">
             <h2 className="text-lg font-semibold">{tAgent('detailTitle')}</h2>
           </div>
-          <div className="h-[calc(100vh-100px)] overflow-y-auto">
+          <div className="overflow-y-auto max-h-[calc(85vh-80px)]">
             {selectedAgent && (
               <AgentDetailPanel
                 agent={selectedAgent}
@@ -461,8 +480,8 @@ export function AgentsPage() {
               />
             )}
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       {/* Execution Detail Dialog */}
       <ExecutionDetailDialog

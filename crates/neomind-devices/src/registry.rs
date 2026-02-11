@@ -1172,4 +1172,77 @@ mod tests {
         let result = registry.unregister_template("test_sensor").await;
         assert!(result.is_err());
     }
+
+    /// Test that GitHub device type JSON files can be deserialized correctly
+    /// This validates compatibility with the camthink-ai/NeoMind-DeviceTypes repository
+    #[test]
+    fn test_github_device_types_deserialization() {
+        // ne101_camera.json - uses TitleCase types (String, Integer)
+        let ne101_json = r#"{
+            "device_type": "ne101_camera",
+            "name": "CamThink Sensing Camera",
+            "description": "Test camera",
+            "categories": ["Camera", "Sensing"],
+            "mode": "simple",
+            "metrics": [
+                {"name": "ts", "display_name": "Timestamp", "data_type": "Integer", "required": false},
+                {"name": "values.devName", "display_name": "Device Name", "data_type": "String", "required": false},
+                {"name": "values.battery", "display_name": "Battery Level", "data_type": "Integer", "unit": "%", "min": 0, "max": 100, "required": false}
+            ],
+            "uplink_samples": [
+                {"ts": 1740640441620, "values": {"devName": "NE101", "battery": 84}}
+            ],
+            "commands": []
+        }"#;
+
+        let ne101_result: Result<DeviceTypeTemplate, _> = serde_json::from_str(ne101_json);
+        assert!(ne101_result.is_ok(), "ne101_camera deserialization failed: {:?}", ne101_result.err());
+
+        // ne301_camera.json - uses TitleCase "Array" which was problematic
+        let ne301_json = r#"{
+            "device_type": "ne301_camera",
+            "name": "CamThink Edge AI Camera",
+            "description": "Test AI camera",
+            "categories": ["Camera", "AI"],
+            "mode": "simple",
+            "metrics": [
+                {"name": "metadata.image_id", "display_name": "Image ID", "data_type": "String", "required": false},
+                {"name": "ai_result.ai_result.detections", "display_name": "Detections", "data_type": "Array", "required": false},
+                {"name": "ai_result.ai_result.poses", "display_name": "Poses", "data_type": "Array", "required": false}
+            ],
+            "uplink_samples": [],
+            "commands": [
+                {
+                    "name": "capture",
+                    "display_name": "Capture",
+                    "payload_template": "{\"cmd\": \"capture\"}",
+                    "parameters": [
+                        {"name": "request_id", "display_name": "Request ID", "data_type": "String", "required": true},
+                        {"name": "enable_ai", "display_name": "Enable AI", "data_type": "Boolean", "default_value": true, "required": false}
+                    ]
+                }
+            ]
+        }"#;
+
+        let ne301_result: Result<DeviceTypeTemplate, _> = serde_json::from_str(ne301_json);
+        assert!(ne301_result.is_ok(), "ne301_camera deserialization failed: {:?}", ne301_result.err());
+
+        // Verify the Array type was deserialized correctly
+        let template = ne301_result.unwrap();
+        let detections_metric = template.metrics.iter().find(|m| m.name == "ai_result.ai_result.detections");
+        assert!(detections_metric.is_some(), "detections metric not found");
+        match &detections_metric.unwrap().data_type {
+            MetricDataType::Array { element_type } => {
+                assert!(element_type.is_none(), "element_type should be None for plain 'Array' string");
+            }
+            _ => panic!("Expected Array variant, got {:?}", detections_metric.unwrap().data_type),
+        }
+
+        // Verify command parameter with default_value was deserialized
+        let capture_cmd = template.commands.iter().find(|c| c.name == "capture");
+        assert!(capture_cmd.is_some(), "capture command not found");
+        let enable_ai_param = capture_cmd.unwrap().parameters.iter().find(|p| p.name == "enable_ai");
+        assert!(enable_ai_param.is_some(), "enable_ai parameter not found");
+        assert_eq!(enable_ai_param.unwrap().required, false, "enable_ai should not be required");
+    }
 }

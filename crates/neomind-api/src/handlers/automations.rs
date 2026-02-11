@@ -10,9 +10,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use chrono::Utc;
 
 use neomind_automation::{
     Automation, AutomationConverter, AutomationType, IntentResult,
+    transform::JsTransformExecutor,
 };
 
 use super::{
@@ -623,7 +625,7 @@ pub async fn convert_automation_handler(
     };
 
     // Perform conversion - only Transform <-> Rule conversion is supported
-    let converted = match (existing, req.r#type) {
+    match (existing, req.r#type) {
         (Automation::Transform(_), AutomationType::Transform) => {
             return Err(ErrorResponse::bad_request("Cannot convert to the same type"));
         }
@@ -636,35 +638,9 @@ pub async fn convert_automation_handler(
         (Automation::Rule(_), AutomationType::Transform) => {
             return Err(ErrorResponse::bad_request("Rule to Transform conversion is not supported. Transforms are for data processing, not reactive automation."));
         }
-    };
-
-    // Save the converted automation (with a new ID to preserve the original)
-    let new_id = format!("{}-converted", id);
-    let converted_with_new_id = match converted {
-        Automation::Transform(mut transform) => {
-            transform.metadata.id = new_id.clone();
-            transform.metadata.name = format!("{} (converted)", transform.metadata.name);
-            Automation::Transform(transform)
-        }
-        Automation::Rule(mut rule) => {
-            rule.metadata.id = new_id.clone();
-            rule.metadata.name = format!("{} (converted)", rule.metadata.name);
-            Automation::Rule(rule)
-        }
-    };
-
-    match store.save_automation(&converted_with_new_id).await {
-        Ok(_) => {
-            let dto = AutomationDto::from(converted_with_new_id.clone());
-            ok(json!({
-                "automation": dto,
-                "message": "Automation converted successfully",
-                "original_id": id,
-                "new_id": new_id,
-            }))
-        }
-        Err(e) => {
-            Err(ErrorResponse::internal(format!("Failed to save converted automation: {}", e)))
+        // Future: Add support for actual conversion here
+        _ => {
+            return Err(ErrorResponse::bad_request("Conversion not supported"));
         }
     }
 }
@@ -1032,4 +1008,197 @@ pub async fn list_virtual_metrics_handler(
             Err(ErrorResponse::internal(format!("Failed to list virtual metrics: {}", e)))
         }
     }
+}
+
+// ============================================================================
+// Transform Output Data Source API
+// ============================================================================
+
+/// Get Transform outputs as data sources.
+///
+/// This endpoint returns Transform outputs in a format compatible with
+/// Extension data sources, allowing the frontend to use them interchangeably.
+///
+/// GET /api/automations/transforms/data-sources
+pub async fn list_transform_data_sources_handler(
+    State(state): State<ServerState>,
+) -> HandlerResult<Value> {
+    let Some(transform_engine) = &state.automation.transform_engine else {
+        return ok(json!({
+            "data_sources": [],
+            "count": 0,
+        }));
+    };
+
+    let registry = transform_engine.output_registry();
+    let data_sources = registry.list_as_data_sources().await;
+
+    ok(json!({
+        "data_sources": data_sources,
+        "count": data_sources.len(),
+    }))
+}
+
+/// Get data sources for a specific Transform.
+///
+/// GET /api/automations/transforms/:id/data-sources
+pub async fn get_transform_data_sources_handler(
+    Path(id): Path<String>,
+    State(state): State<ServerState>,
+) -> HandlerResult<Value> {
+    let Some(transform_engine) = &state.automation.transform_engine else {
+        return ok(json!({
+            "data_sources": [],
+            "count": 0,
+        }));
+    };
+
+    let registry = transform_engine.output_registry();
+    let data_sources = registry.get_transform_outputs(&id).await;
+
+    ok(json!({
+        "transform_id": id,
+        "data_sources": data_sources,
+        "count": data_sources.len(),
+    }))
+}
+
+/// Get a specific Transform output data source.
+///
+/// GET /api/automations/transforms/data-sources/:data_source_id
+pub async fn get_transform_data_source_handler(
+    Path(data_source_id): Path<String>,
+    State(state): State<ServerState>,
+) -> HandlerResult<Value> {
+    let Some(transform_engine) = &state.automation.transform_engine else {
+        return Err(ErrorResponse::service_unavailable("Transform engine not available"));
+    };
+
+    let registry = transform_engine.output_registry();
+    match registry.get_output(&data_source_id).await {
+        Some(output) => ok(json!(output)),
+        None => Err(ErrorResponse::not_found("Transform data source not found")),
+    }
+}
+
+// ============================================================================
+// Transform Code Testing API
+// ============================================================================
+
+/// Request body for testing transform code directly.
+#[derive(Debug, Deserialize)]
+pub struct TestTransformCodeRequest {
+    /// JavaScript code to test
+    pub code: String,
+    /// Input data to test with (JSON)
+    pub input_data: Value,
+    /// Output prefix for metrics
+    #[serde(default = "default_output_prefix")]
+    pub output_prefix: String,
+}
+
+fn default_output_prefix() -> String {
+    "transform".to_string()
+}
+
+/// Test transform code directly without saving.
+///
+/// This endpoint allows testing JavaScript code before creating a transform.
+/// It executes the code in a sandboxed environment and returns the result.
+///
+/// POST /api/automations/transforms/test-code
+pub async fn test_transform_code_handler(
+    State(state): State<ServerState>,
+    Json(req): Json<TestTransformCodeRequest>,
+) -> HandlerResult<Value> {
+    use neomind_automation::TransformEngine;
+
+    let Some(transform_engine) = &state.automation.transform_engine else {
+        return Err(ErrorResponse::service_unavailable("Transform engine not available"));
+    };
+
+    // Use the current time for the test
+    let timestamp = Utc::now().timestamp();
+
+    // Preprocess code to handle extensions.invoke calls
+    let processed_code = preprocess_extensions_invoke(&req.code, &req.input_data, &state).await?;
+
+    // Create a temporary transform executor
+    let executor = JsTransformExecutor::new();
+
+    // Execute the code
+    match executor.execute(
+        &processed_code,
+        &req.input_data,
+        &req.output_prefix,
+        "test_device",
+        timestamp,
+        None, // No extension registry for test
+    ) {
+        Ok(metrics) => {
+            // Convert metrics to a more readable format
+            let result_obj: serde_json::Map<String, Value> = metrics
+                .iter()
+                .map(|m| {
+                    // Remove prefix from key for cleaner output
+                    let key = m.metric
+                        .strip_prefix(&format!("{}.", req.output_prefix))
+                        .unwrap_or(&m.metric)
+                        .to_string();
+                    (key, serde_json::json!(m.value))
+                })
+                .collect();
+
+            ok(json!({
+                "success": true,
+                "output": result_obj,
+                "metrics": metrics,
+                "count": metrics.len(),
+                "output_with_prefix": serde_json::to_value(&result_obj).unwrap_or_else(|_| json!({}))
+            }))
+        }
+        Err(e) => {
+            let error_msg: String = e.to_string();
+            ok(json!({
+                "success": false,
+                "error": error_msg
+            }))
+        }
+    }
+}
+
+/// Preprocess JavaScript code to handle extensions.invoke calls.
+///
+/// This replaces extensions.invoke calls with mock results for testing purposes.
+/// In production, the actual extension would be called.
+async fn preprocess_extensions_invoke(
+    code: &str,
+    input_data: &Value,
+    state: &ServerState,
+) -> Result<String, ErrorResponse> {
+    // Check if code contains extensions.invoke
+    if !code.contains("extensions.invoke") {
+        return Ok(code.to_string());
+    }
+
+    // Define a mock extensions object at the beginning of the code
+    let mock_extensions = r#"
+// Mock extensions.invoke for testing
+const extensions = {
+  invoke: (extId, command, args) => ({
+    _mock: true,
+    _extension_id: extId,
+    _command: command,
+    _args: args,
+    result: 'mock_result_from_' + extId,
+    input: args?.data || input,
+    status: 'success'
+  })
+};
+"#;
+
+    // Inject the mock before the user code
+    let processed = format!("{}\n{}", mock_extensions, code);
+
+    Ok(processed)
 }

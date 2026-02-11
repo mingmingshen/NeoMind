@@ -249,6 +249,59 @@ impl FilterBuilder {
         FilteredReceiver::new(rx, NeoMindEvent::is_alert_event)
     }
 
+    /// Subscribe to message events only.
+    pub fn message_events(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(rx, NeoMindEvent::is_message_event)
+    }
+
+    /// Subscribe to tool execution events only.
+    pub fn tool_events(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(rx, NeoMindEvent::is_tool_event)
+    }
+
+    /// Phase 2.2: Subscribe to extension events only.
+    ///
+    /// This includes both ExtensionOutput and ExtensionLifecycle events.
+    pub fn extension_events(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(rx, NeoMindEvent::is_extension_event)
+    }
+
+    /// Phase 2.2: Subscribe to extension output events only.
+    ///
+    /// Filters for ExtensionOutput events (data from providers).
+    pub fn extension_output(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(rx, |event| matches!(event, NeoMindEvent::ExtensionOutput { .. }))
+    }
+
+    /// Phase 2.2: Subscribe to extension lifecycle events only.
+    ///
+    /// Filters for ExtensionLifecycle events (state changes).
+    pub fn extension_lifecycle(&self) -> FilteredReceiver<fn(&NeoMindEvent) -> bool> {
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(rx, |event| matches!(event, NeoMindEvent::ExtensionLifecycle { .. }))
+    }
+
+    /// Phase 2.2: Subscribe to events from a specific extension.
+    ///
+    /// Filters for ExtensionOutput events from the given extension ID.
+    pub fn extension_by_id(
+        &self,
+        extension_id: impl Into<String>,
+    ) -> FilteredReceiver<impl Fn(&NeoMindEvent) -> bool + Send + 'static> {
+        let target_id = extension_id.into();
+        let rx = self.tx.subscribe();
+        FilteredReceiver::new(
+            rx,
+            move |event| {
+                matches!(event, NeoMindEvent::ExtensionOutput { extension_id, .. } | NeoMindEvent::ExtensionLifecycle { extension_id, .. } if extension_id == &target_id)
+            }
+        )
+    }
+
     /// Subscribe with a custom filter function.
     pub fn custom<F>(&self, filter: F) -> FilteredReceiver<F>
     where
@@ -628,5 +681,155 @@ mod tests {
         // Should return the matching event
         let received = rx.try_recv().unwrap();
         assert_eq!(received.0.type_name(), "DeviceOnline");
+    }
+
+    // Phase 2.2: Extension event filter tests
+    #[tokio::test]
+    async fn test_extension_events_filter() {
+        let bus = EventBus::new();
+        let mut rx = bus.filter().extension_events();
+
+        // Publish extension output event
+        bus.publish(NeoMindEvent::ExtensionOutput {
+            extension_id: "yolov8".to_string(),
+            output_name: "person_count".to_string(),
+            value: MetricValue::integer(3),
+            timestamp: 0,
+            labels: None,
+            quality: None,
+        })
+        .await;
+
+        // Publish non-extension event
+        bus.publish(NeoMindEvent::DeviceOnline {
+            device_id: "test".to_string(),
+            device_type: "sensor".to_string(),
+            timestamp: 0,
+        })
+        .await;
+
+        // Should only receive the extension event
+        let received = rx.recv().await.unwrap();
+        assert!(received.0.is_extension_event());
+        assert_eq!(received.0.type_name(), "ExtensionOutput");
+    }
+
+    #[tokio::test]
+    async fn test_extension_output_filter() {
+        let bus = EventBus::new();
+        let mut rx = bus.filter().extension_output();
+
+        // Publish extension output event
+        bus.publish(NeoMindEvent::ExtensionOutput {
+            extension_id: "weather-api".to_string(),
+            output_name: "temperature".to_string(),
+            value: MetricValue::float(23.5),
+            timestamp: 0,
+            labels: None,
+            quality: None,
+        })
+        .await;
+
+        // Publish extension lifecycle event (should be filtered out)
+        bus.publish(NeoMindEvent::ExtensionLifecycle {
+            extension_id: "weather-api".to_string(),
+            state: "started".to_string(),
+            message: None,
+            timestamp: 0,
+        })
+        .await;
+
+        // Should only receive the output event
+        let received = rx.recv().await.unwrap();
+        assert!(matches!(received.0, NeoMindEvent::ExtensionOutput { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_extension_lifecycle_filter() {
+        let bus = EventBus::new();
+        let mut rx = bus.filter().extension_lifecycle();
+
+        // Publish extension lifecycle event
+        bus.publish(NeoMindEvent::ExtensionLifecycle {
+            extension_id: "weather-api".to_string(),
+            state: "started".to_string(),
+            message: None,
+            timestamp: 0,
+        })
+        .await;
+
+        // Publish extension output event (should be filtered out)
+        bus.publish(NeoMindEvent::ExtensionOutput {
+            extension_id: "weather-api".to_string(),
+            output_name: "temperature".to_string(),
+            value: MetricValue::float(23.5),
+            timestamp: 0,
+            labels: None,
+            quality: None,
+        })
+        .await;
+
+        // Should only receive the lifecycle event
+        let received = rx.recv().await.unwrap();
+        assert!(matches!(received.0, NeoMindEvent::ExtensionLifecycle { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_extension_by_id_filter() {
+        let bus = EventBus::new();
+        let mut yolov8_rx = bus.filter().extension_by_id("yolov8");
+
+        // Publish events from different extensions
+        bus.publish(NeoMindEvent::ExtensionOutput {
+            extension_id: "weather-api".to_string(),
+            output_name: "temperature".to_string(),
+            value: MetricValue::float(23.5),
+            timestamp: 0,
+            labels: None,
+            quality: None,
+        })
+        .await;
+
+        bus.publish(NeoMindEvent::ExtensionOutput {
+            extension_id: "yolov8".to_string(),
+            output_name: "person_count".to_string(),
+            value: MetricValue::integer(3),
+            timestamp: 0,
+            labels: None,
+            quality: None,
+        })
+        .await;
+
+        bus.publish(NeoMindEvent::ExtensionLifecycle {
+            extension_id: "yolov8".to_string(),
+            state: "started".to_string(),
+            message: None,
+            timestamp: 0,
+        })
+        .await;
+
+        // Should only receive yolov8 events
+        let received = yolov8_rx.recv().await.unwrap();
+        match &received.0 {
+            NeoMindEvent::ExtensionOutput { extension_id, .. } => {
+                assert_eq!(extension_id, "yolov8");
+            }
+            NeoMindEvent::ExtensionLifecycle { extension_id, .. } => {
+                assert_eq!(extension_id, "yolov8");
+            }
+            _ => panic!("Expected extension event"),
+        }
+
+        // Second event should also be yolov8
+        let received = yolov8_rx.recv().await.unwrap();
+        match &received.0 {
+            NeoMindEvent::ExtensionOutput { extension_id, .. } => {
+                assert_eq!(extension_id, "yolov8");
+            }
+            NeoMindEvent::ExtensionLifecycle { extension_id, .. } => {
+                assert_eq!(extension_id, "yolov8");
+            }
+            _ => panic!("Expected extension event"),
+        }
     }
 }

@@ -358,7 +358,7 @@ pub async fn create_broker_handler(
 
     // If enabled, create MQTT connection through MqttAdapter using shared function
     let mut connected = false;
-    let mut connection_error: Option<String> = None;
+    let mut _connection_error: Option<String> = None;
     if broker.enabled {
         let event_bus = state.core.event_bus.as_ref()
             .ok_or_else(|| ErrorResponse::internal("EventBus not initialized".to_string()))?;
@@ -371,10 +371,10 @@ pub async fn create_broker_handler(
         match create_and_connect_broker(&broker, &context).await {
             Ok(conn_result) => {
                 connected = conn_result;
-                connection_error = if connected { None } else { Some("Connection failed".to_string()) };
+                _connection_error = if connected { None } else { Some("Connection failed".to_string()) };
             }
             Err(e) => {
-                connection_error = Some(e.to_string());
+                _connection_error = Some(e.to_string());
             }
         }
 
@@ -461,7 +461,7 @@ pub async fn update_broker_handler(
 
     // If enabled, restart the MQTT adapter with new configuration using shared function
     let mut connected = false;
-    let mut connection_error: Option<String> = None;
+    let mut _connection_error: Option<String> = None;
     if broker.enabled {
         let adapter_id = format!("external-{}", id);
 
@@ -479,10 +479,10 @@ pub async fn update_broker_handler(
         match create_and_connect_broker(&broker, &context).await {
             Ok(conn_result) => {
                 connected = conn_result;
-                connection_error = if connected { None } else { Some("Connection failed".to_string()) };
+                _connection_error = if connected { None } else { Some("Connection failed".to_string()) };
             }
             Err(e) => {
-                connection_error = Some(e.to_string());
+                _connection_error = Some(e.to_string());
             }
         }
 

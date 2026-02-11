@@ -169,6 +169,7 @@ impl MessagePriority {
             MessageRole::System => Self::System,
             MessageRole::User => Self::User,
             MessageRole::Assistant => Self::Assistant,
+            MessageRole::Tool => Self::Tool,
         }
     }
 }

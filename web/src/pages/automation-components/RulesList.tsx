@@ -38,17 +38,43 @@ const ACTION_CONFIG: Record<string, { icon: typeof Zap; label: string; color: st
 export const ITEMS_PER_PAGE = 10
 
 // Format condition for display
-function formatConditionDisplay(rule: Rule): string {
-  if (!rule.dsl) return '-'
+function formatConditionDisplay(rule: Rule): { text: string; full: string } {
+  if (!rule.dsl) return { text: '-', full: '-' }
+
   const whenMatch = rule.dsl.match(/WHEN\s+(.+?)(?:\nFOR|\nDO|$)/s)
   if (whenMatch) {
     let condition = whenMatch[1].trim()
-    if (condition.length > 50) {
-      condition = condition.substring(0, 47) + '...'
+    // Simplify common patterns for better readability
+    condition = condition
+      .replace(/\s+/g, ' ')  // Collapse multiple spaces
+      .replace(/ > /g, '>')  // Clean up operators
+      .replace(/ < /g, '<')
+      .replace(/ >= /g, '>=')
+      .replace(/ <= /g, '<=')
+      .replace(/ == /g, '=')
+      .replace(/ != /g, '≠')
+
+    const full = condition
+    // Truncate for display
+    let text = condition
+    if (text.length > 45) {
+      text = text.substring(0, 42) + '...'
     }
-    return condition
+    return { text, full }
   }
-  return '-'
+  return { text: '-', full: '-' }
+}
+
+// Parse FOR clause to get duration
+function parseForClause(rule: Rule): { duration: number; unit: string } | null {
+  if (!rule.dsl) return null
+  const forMatch = rule.dsl.match(/FOR\s+(\d+)(ms|s|m|h)\b/)
+  if (forMatch) {
+    const duration = parseInt(forMatch[1], 10)
+    const unit = forMatch[2]
+    return { duration, unit }
+  }
+  return null
 }
 
 // Check if rule has FOR clause
@@ -206,22 +232,24 @@ export function RulesList({
         switch (columnKey) {
           case 'index':
             return (
-              <span className="text-xs text-muted-foreground font-medium">
-                {startIndex + index + 1}
-              </span>
+              <div className="flex items-center justify-center">
+                <span className="text-xs text-muted-foreground font-medium">
+                  {startIndex + index + 1}
+                </span>
+              </div>
             )
 
           case 'name':
             return (
               <div className="flex items-center gap-3">
                 <div className={cn(
-                  "w-9 h-9 rounded-lg flex items-center justify-center transition-colors",
+                  "w-9 h-9 rounded-lg flex items-center justify-center transition-colors shrink-0",
                   rule.enabled ? "bg-amber-500/10 text-amber-600" : "bg-muted text-muted-foreground"
                 )}>
                   <Sparkles className="h-4 w-4" />
                 </div>
-                <div>
-                  <div className="font-medium text-sm">{rule.name}</div>
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">{rule.name}</div>
                   <div className="text-xs text-muted-foreground line-clamp-1">
                     {rule.description || '-'}
                   </div>
@@ -229,20 +257,30 @@ export function RulesList({
               </div>
             )
 
-          case 'trigger':
+          case 'trigger': {
+            const condition = formatConditionDisplay(rule)
+            const forClause = parseForClause(rule)
+
             return (
-              <div className="space-y-1.5">
-                <code className="text-xs bg-muted px-2 py-1 rounded-md block font-mono truncate">
-                  {formatConditionDisplay(rule)}
-                </code>
-                {hasForClause(rule) && (
-                  <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-200">
-                    <Timer className="h-3 w-3" />
-                    {t('automation:ruleBuilder.duration')}
-                  </Badge>
-                )}
+              <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-1 min-w-0 flex-1">
+                  <div className="text-xs font-mono bg-muted/60 px-2.5 py-1.5 rounded-md border border-border/50 truncate" title={condition.full}>
+                    <span className={condition.text === '-' ? 'text-muted-foreground' : 'text-foreground'}>
+                      {condition.text}
+                    </span>
+                  </div>
+                  {forClause && (
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-xs gap-1 px-2 py-0 text-blue-600 border-blue-200 dark:border-blue-800">
+                        <Timer className="h-3 w-3" />
+                        {forClause.duration}{forClause.unit}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
               </div>
             )
+          }
 
           case 'actions': {
             const actions = rule.actions && rule.actions.length > 0
@@ -252,43 +290,67 @@ export function RulesList({
             const firstActions = actions.slice(0, 2)
 
             return actionsCount === 0 ? (
-              <span className="text-muted-foreground text-sm">-</span>
+              <div className="flex items-center justify-center">
+                <span className="text-muted-foreground text-sm">-</span>
+              </div>
             ) : (
-              <div className="flex flex-wrap gap-1 justify-start">
-                {firstActions.map((action, i) => {
-                  const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
-                  const Icon = config.icon
-                  return (
-                    <Badge
-                      key={i}
-                      variant="outline"
-                      className={cn("text-xs gap-1", config.color)}
-                    >
-                      <Icon className="h-3 w-3" />
-                      {t(config.label)}
+              <div className="flex items-center">
+                <div className="flex flex-wrap gap-1">
+                  {firstActions.map((action, i) => {
+                    const config = ACTION_CONFIG[action.type] || ACTION_CONFIG.Execute
+                    const Icon = config.icon
+                    return (
+                      <Badge
+                        key={i}
+                        variant="outline"
+                        className={cn("text-xs gap-1", config.color)}
+                      >
+                        <Icon className="h-3 w-3" />
+                        {t(config.label)}
+                      </Badge>
+                    )
+                  })}
+                  {actionsCount > 2 && (
+                    <Badge variant="outline" className="text-xs bg-muted">
+                      +{actionsCount - 2}
                     </Badge>
-                  )
-                })}
-                {actionsCount > 2 && (
-                  <Badge variant="outline" className="text-xs bg-muted">
-                    +{actionsCount - 2}
-                  </Badge>
+                  )}
+                </div>
+              </div>
+            )
+          }
+
+          case 'lastTriggered': {
+            const hasTriggered = rule.last_triggered && rule.last_triggered !== '-' && rule.last_triggered !== 0
+            const triggerCount = rule.trigger_count || 0
+
+            return (
+              <div className="flex items-center justify-center">
+                {!hasTriggered ? (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" />
+                    <span>{t('automation:never', 'Never')}</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-0.5">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                      <span>{formatTimestamp(rule.last_triggered)}</span>
+                    </div>
+                    {triggerCount > 1 && (
+                      <span className="text-xs text-muted-foreground">
+                        {t('automation:triggeredTimes', '{{count}} times', { count: triggerCount })}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
             )
           }
 
-          case 'lastTriggered':
-            return (
-              <div className="flex items-center gap-2 text-xs justify-start">
-                <span className="text-muted-foreground">{formatTimestamp(rule.last_triggered)}</span>
-                <span className="text-muted-foreground">({rule.trigger_count || 0})</span>
-              </div>
-            )
-
           case 'status':
             return (
-              <div className="flex items-center justify-start gap-2">
+              <div className="flex items-center justify-center gap-2">
                 <Switch
                   checked={rule.enabled}
                   onCheckedChange={() => onToggleStatus(rule)}

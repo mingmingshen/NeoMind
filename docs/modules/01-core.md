@@ -1,7 +1,7 @@
 # Core 模块
 
 **包名**: `neomind-core`
-**版本**: 0.1.0
+**版本**: 0.5.8
 **完成度**: 90%
 **用途**: 定义整个项目的核心trait和类型
 
@@ -31,6 +31,9 @@ crates/core/src/
 │   ├── mod.rs              # 集成trait
 │   ├── connector.rs        # 连接器trait
 │   └── transformer.rs      # 数据转换trait
+├── datasource/
+│   ├── mod.rs              # 数据源ID系统
+│   └── types.rs            # DataSourceId类型
 ├── extension/
 │   ├── mod.rs              # 扩展系统
 │   ├── types.rs            # 扩展类型
@@ -156,7 +159,50 @@ pub trait Extension: Send + Sync {
 }
 ```
 
-### 5. StorageBackend - 存储接口
+### 5. DataSourceId - 数据源标识
+
+提供类型安全的数据源标识，支持设备、扩展和转换数据源。
+
+```rust
+pub struct DataSourceId {
+    /// 数据源类型
+    pub source_type: DataSourceType,
+    /// 数据源ID
+    pub source_id: String,
+    /// 字段路径
+    pub field_path: String,
+}
+
+pub enum DataSourceType {
+    Device,
+    Extension,
+    Transform,
+}
+
+impl DataSourceId {
+    /// 解析数据源ID
+    pub fn new(id: &str) -> Result<Self>;
+
+    /// 获取TimeSeriesStorage使用的device_id部分
+    pub fn device_part(&self) -> String;
+
+    /// 获取TimeSeriesStorage使用的metric部分
+    pub fn metric_part(&self) -> &str;
+
+    /// 获取完整的存储键
+    pub fn storage_key(&self) -> String;
+}
+```
+
+**格式**: `{source_type}:{source_id}:{field_path}`
+
+| 类型 | 格式 | device_part | metric_part |
+|------|------|-------------|-------------|
+| Device | `{device_id}:{field_path}` | `{device_id}` | `{field_path}` |
+| Extension | `extension:{ext_id}:{field_path}` | `extension:{ext_id}` | `{field_path}` |
+| Transform | `transform:{trans_id}:{field_path}` | `transform:{trans_id}` | `{field_path}` |
+
+### 6. StorageBackend - 存储接口
 
 定义了通用存储接口。
 

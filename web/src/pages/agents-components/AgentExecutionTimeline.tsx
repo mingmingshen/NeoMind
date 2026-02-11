@@ -155,9 +155,6 @@ export function AgentExecutionTimeline({
                               <Badge variant="outline" className="text-xs">
                                 #{executions.length - index}
                               </Badge>
-                              <code className="text-xs bg-muted px-2 py-0.5 rounded">
-                                {execution.trigger_type}
-                              </code>
                               <Badge className={cn("text-xs", statusConfig.bg, statusConfig.color)}>
                                 {statusConfig.label}
                               </Badge>
@@ -216,7 +213,7 @@ export function AgentExecutionTimeline({
                                     title={t('agents:memory.dataCollected')}
                                     subtitle={`${detail.decision_process.data_collected.filter(d => d.data_type !== 'device_info').length} ${t('agents:memory.sources')}`}
                                   >
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 gap-2">
                                       {detail.decision_process.data_collected
                                         .filter(data => data.data_type !== 'device_info')
                                         .map((data, idx) => (
@@ -246,7 +243,7 @@ export function AgentExecutionTimeline({
                                     icon={<Play className="h-4 w-4 text-green-500" />}
                                     title={t('agents:memory.decisions')}
                                   >
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 gap-2">
                                       {detail.decision_process.decisions.map((decision, idx) => (
                                         <DecisionItem key={idx} decision={decision} />
                                       ))}
@@ -296,7 +293,7 @@ export function AgentExecutionTimeline({
                                   >
                                     <div className="space-y-2">
                                       {detail.result.actions_executed.map((action, idx) => (
-                                        <Card key={idx} className="p-3">
+                                        <Card key={idx} className="p-3 min-w-0">
                                           <div className="flex items-start justify-between gap-3 mb-2">
                                             <div className="text-sm flex-1 min-w-0">
                                               <div className="font-medium truncate" title={action.description}>
@@ -316,7 +313,7 @@ export function AgentExecutionTimeline({
                                               <div className="text-xs text-muted-foreground mb-1">
                                                 {t('agents:memory.parameters')}:
                                               </div>
-                                              <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-20">
+                                              <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-20 w-full break-all">
                                                 {JSON.stringify(action.parameters, null, 2)}
                                               </pre>
                                             </div>
@@ -327,7 +324,7 @@ export function AgentExecutionTimeline({
                                               <div className="text-xs text-muted-foreground mb-1">
                                                 {t('agents:memory.result')}:
                                               </div>
-                                              <div className="text-xs bg-muted p-2 rounded max-h-20 overflow-auto">
+                                              <div className="text-xs bg-muted p-2 rounded max-h-20 overflow-auto break-words">
                                                 {action.result}
                                               </div>
                                             </div>
@@ -423,12 +420,12 @@ function TimelineSection({ icon, title, subtitle, children }: TimelineSectionPro
 function DataCollectedItem({ data }: { data: DataCollected }) {
   const { t } = useTranslation(['common', 'agents'])
   return (
-    <Card className="p-2">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium truncate flex-1" title={data.source}>{data.source}</span>
-        <Badge variant="outline" className="text-xs h-5 ml-2 shrink-0">{data.data_type}</Badge>
+    <Card className="p-2 min-w-0">
+      <div className="flex items-center justify-between mb-1 gap-2">
+        <span className="text-xs font-medium truncate flex-1 min-w-0" title={data.source}>{data.source}</span>
+        <Badge variant="outline" className="text-xs h-5 shrink-0">{data.data_type}</Badge>
       </div>
-      <pre className="text-xs bg-muted p-1.5 rounded overflow-x-auto max-h-24">
+      <pre className="text-xs bg-muted p-1.5 rounded overflow-x-auto max-h-24 w-full min-w-0 break-all">
         {typeof data.values === 'object'
           ? JSON.stringify(data.values, null, 2)
           : String(data.values)}
@@ -440,22 +437,22 @@ function DataCollectedItem({ data }: { data: DataCollected }) {
 function ReasoningStepItem({ step }: { step: ReasoningStep }) {
   const { t } = useTranslation(['common', 'agents'])
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 min-w-0">
       <div className="flex flex-col items-center shrink-0">
         <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
           {step.step_number}
         </div>
         {step.step_number < 10 && <div className="w-0.5 flex-1 bg-border min-h-[24px]" />}
       </div>
-      <div className="flex-1 pb-4">
-        <div className="text-sm">{step.description}</div>
+      <div className="flex-1 min-w-0 pb-4">
+        <div className="text-sm break-words">{step.description}</div>
         {step.input && (
-          <div className="text-xs text-muted-foreground mt-1">
+          <div className="text-xs text-muted-foreground mt-1 break-words">
             {t('agents:memory.input')}: {step.input}
           </div>
         )}
         {step.output && (
-          <div className="text-xs bg-muted p-2 rounded mt-2">
+          <div className="text-xs bg-muted p-2 rounded mt-2 break-words">
             {t('agents:memory.output')}: {step.output}
           </div>
         )}
@@ -473,14 +470,14 @@ function ReasoningStepItem({ step }: { step: ReasoningStep }) {
 function DecisionItem({ decision }: { decision: Decision }) {
   const { t } = useTranslation(['common', 'agents'])
   return (
-    <Card className="p-2">
-      <div className="text-sm font-medium mb-1">{decision.description}</div>
+    <Card className="p-2 min-w-0">
+      <div className="text-sm font-medium mb-1 break-words">{decision.description}</div>
       {decision.rationale && (
-        <div className="text-xs text-muted-foreground mb-2">{decision.rationale}</div>
+        <div className="text-xs text-muted-foreground mb-2 break-words">{decision.rationale}</div>
       )}
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">{t('agents:memory.action')}</span>
-        <Badge variant="secondary" className="h-5">{decision.action}</Badge>
+      <div className="flex items-center justify-between text-xs gap-2">
+        <span className="text-muted-foreground shrink-0">{t('agents:memory.action')}</span>
+        <Badge variant="secondary" className="h-5 truncate max-w-[150px]">{decision.action}</Badge>
       </div>
     </Card>
   )

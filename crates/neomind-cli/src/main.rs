@@ -115,6 +115,18 @@ enum PluginCommand {
 // Default is num_cpus, but we use more to handle block_in_place alternatives
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() -> Result<()> {
+    // Set up panic hook to catch panics before they abort
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("\n=== PANIC ===");
+        if let Some(location) = panic_info.location() {
+            eprintln!("Location: {}:{}:{}", location.file(), location.line(), location.column());
+        } else {
+            eprintln!("Location: <unknown>");
+        }
+        eprintln!("Message: {}", panic_info);
+        eprintln!("==============\n");
+    }));
+
     let args = Args::parse();
 
     // Initialize logging
@@ -463,35 +475,84 @@ async fn run_server(host: String, port: u16) -> Result<()> {
 
 /// Run plugin management commands.
 async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
-    use neomind_core::extension::WasmExtensionLoader;
+    use neomind_core::extension::{WasmExtensionLoader, loader::native::NativeExtensionLoader};
 
     match cmd {
         PluginCommand::Validate { path, verbose } => {
-            let loader = WasmExtensionLoader::new();
+            // Detect extension type by file extension
+            let is_native = path.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| matches!(e, "so" | "dylib" | "dll"));
 
-            // Try to load the extension
-            let result = loader.load(&path).await;
+            if is_native {
+                // Use NativeExtensionLoader for .so/.dylib/.dll files
+                let loader = NativeExtensionLoader::new();
 
-            match result {
-                Ok(metadata) => {
-                    println!("Extension Validation: PASSED");
-                    println!();
-                    println!("ID:              {}", metadata.id);
-                    println!("Name:            {}", metadata.name);
-                    println!("Version:         {}", metadata.version);
-                    println!("Type:            {:?}", metadata.extension_type);
+                match loader.load(&path) {
+                    Ok(loaded) => {
+                        let ext_guard = loaded.extension.read().await;
+                        let metadata = ext_guard.metadata();
 
-                    if verbose {
-                        println!("\n--- Verbose Details ---\n");
-                        println!("Extension path: {}", path.display());
-                        println!("Current directory: {}", std::env::current_dir()?.display());
-                        if let Some(file_path) = &metadata.file_path {
-                            println!("File path:       {}", file_path.display());
+                        println!("Extension Validation: PASSED");
+                        println!();
+                        println!("ID:              {}", metadata.id);
+                        println!("Name:            {}", metadata.name);
+                        println!("Version:         {}", metadata.version);
+
+                        if verbose {
+                            println!("\n--- Verbose Details ---\n");
+                            println!("Extension path: {}", path.display());
+                            println!("Current directory: {}", std::env::current_dir()?.display());
+                            if let Some(file_path) = &metadata.file_path {
+                                println!("File path:       {}", file_path.display());
+                            }
                         }
-                    }
 
-                    std::process::exit(0);
+                        std::process::exit(0);
+                    }
+                    Err(e) => {
+                        println!("Extension Validation: FAILED");
+                        println!();
+                        println!("Error: {}", e);
+                        println!();
+                        println!("Make sure:");
+                        println!("  1. The extension file exists");
+                        println!("  2. The file has .so/.dylib/.dll extension");
+                        println!("  3. The extension is built for V2 ABI");
+
+                        std::process::exit(1);
+                    }
                 }
+            } else {
+                // Use WasmExtensionLoader for .wasm files
+                let loader = WasmExtensionLoader::new()?;
+
+                // Try to load the extension
+                let result = loader.load(&path).await;
+
+                match result {
+                    Ok(loaded) => {
+                        // Get metadata from the loaded extension
+                        let ext = loaded.extension.blocking_read();
+                        let metadata = ext.metadata();
+
+                        println!("Extension Validation: PASSED");
+                        println!();
+                        println!("ID:              {}", metadata.id);
+                        println!("Name:            {}", metadata.name);
+                        println!("Version:         {}", metadata.version);
+
+                        if verbose {
+                            println!("\n--- Verbose Details ---\n");
+                            println!("Extension path: {}", path.display());
+                            println!("Current directory: {}", std::env::current_dir()?.display());
+                            if let Some(file_path) = &metadata.file_path {
+                                println!("File path:       {}", file_path.display());
+                            }
+                        }
+
+                        std::process::exit(0);
+                    }
                 Err(e) => {
                     println!("Extension Validation: FAILED");
                     println!();
@@ -504,8 +565,9 @@ async fn run_plugin_cmd(cmd: PluginCommand) -> Result<()> {
 
                     std::process::exit(1);
                 }
-            }
-        }
+            }  // Close match result
+            }  // Close else block
+        }  // Close Validate match arm
 
         PluginCommand::Create {
             name,
@@ -660,16 +722,19 @@ async fn show_plugin_info(path: &PathBuf) -> Result<()> {
     let is_wasm = path.extension().is_some_and(|e| e == "wasm");
 
     if is_wasm {
-        let loader = WasmExtensionLoader::new();
+        let loader = WasmExtensionLoader::new()?;
 
         match loader.load(path).await {
-            Ok(metadata) => {
+            Ok(loaded) => {
+                // Get metadata from the loaded extension
+                let ext = loaded.extension.blocking_read();
+                let metadata = ext.metadata();
+
                 println!("Extension Information");
                 println!("======================\n");
                 println!("ID:              {}", metadata.id);
                 println!("Name:            {}", metadata.name);
                 println!("Version:         {}", metadata.version);
-                println!("Type:            {:?}", metadata.extension_type);
                 if let Some(description) = &metadata.description {
                     println!("Description:     {}", description);
                 }
@@ -686,10 +751,6 @@ async fn show_plugin_info(path: &PathBuf) -> Result<()> {
                 }
                 if let Some(license) = &metadata.license {
                     println!("License:         {}", license);
-                }
-
-                if let Some(req_version) = &metadata.required_neomind_version {
-                    println!("Required:        NeoMind {}", req_version);
                 }
             }
             Err(e) => {

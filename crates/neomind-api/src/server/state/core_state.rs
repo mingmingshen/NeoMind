@@ -4,13 +4,13 @@
 //! - EventBus for event-driven communication
 //! - CommandManager for command history and retry
 //! - MessageManager for unified messaging
-//! - ExtensionRegistry for dynamically loaded extensions
+//!
+//! Note: ExtensionRegistry has been moved to ExtensionState for proper decoupling.
 
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use neomind_commands::CommandManager;
-use neomind_core::{EventBus, extension::ExtensionRegistry};
+use neomind_core::EventBus;
 use neomind_messages::MessageManager;
 
 /// Core system services state.
@@ -26,9 +26,6 @@ pub struct CoreState {
 
     /// Message manager for unified messages/notifications system.
     pub message_manager: Arc<MessageManager>,
-
-    /// Extension registry for managing dynamically loaded extensions (.so/.wasm).
-    pub extension_registry: Arc<RwLock<ExtensionRegistry>>,
 }
 
 impl CoreState {
@@ -37,13 +34,11 @@ impl CoreState {
         event_bus: Option<Arc<EventBus>>,
         command_manager: Option<Arc<CommandManager>>,
         message_manager: Arc<MessageManager>,
-        extension_registry: Arc<RwLock<ExtensionRegistry>>,
     ) -> Self {
         Self {
             event_bus,
             command_manager,
             message_manager,
-            extension_registry,
         }
     }
 
@@ -55,7 +50,6 @@ impl CoreState {
             event_bus: Some(Arc::new(EventBus::new())),
             command_manager: None,
             message_manager: Arc::new(MessageManager::new()),
-            extension_registry: Arc::new(RwLock::new(ExtensionRegistry::new())),
         }
     }
 }
